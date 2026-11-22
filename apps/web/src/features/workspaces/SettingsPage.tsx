@@ -2,9 +2,17 @@ import { useEffect } from 'react';
 import { Navigate, useLocation, useNavigate, useParams } from 'react-router';
 import { routes } from '@/lib/routes';
 import { SettingsLayout } from '@/shell/layouts/SettingsLayout';
-import { GlassPanel, SegmentedControl, useToast, type IconName } from '@/ui';
+import { AppTabs } from '@/shell/AppTabs';
+import { useToast, type IconName } from '@/ui';
 import { useAccount } from '@/features/auth';
-import { IntegrationsPanel, WORKSPACE_INTEGRATIONS_NAV } from '@/features/integrations';
+import {
+  INTEGRATION_GROUPS,
+  IntegrationsPanel,
+  workspaceIntegrationsNav,
+  type IntegrationGroup,
+} from '@/features/integrations';
+import { AgentAvatarsSection } from './components/AgentAvatarsSection';
+import { CloudUsage } from './components/CloudUsage';
 import { MembersSection } from './components/MembersSection';
 import { SsoSection } from './components/SsoSection';
 import { UsageSection } from './components/PlanUsage';
@@ -23,6 +31,8 @@ import { useWorkspace } from './hooks/useWorkspace';
 const SECTIONS = {
   usage: { id: 'nutzung', title: 'Plan & Nutzung', icon: 'cloud' },
   general: { id: 'allgemein', title: 'Allgemein', icon: 'settings' },
+  files: { id: 'dateien', title: 'Dateien', icon: 'folder' },
+  agents: { id: 'agenten', title: 'Agenten', icon: 'autoAwesome' },
   domain: { id: 'domain', title: 'Beitritt per Domain', icon: 'link' },
   sso: { id: 'firmen-login', title: 'Firmen-Login', icon: 'key' },
   members: { id: 'mitglieder', title: 'Mitglieder', icon: 'manageAccounts' },
@@ -31,20 +41,35 @@ const SECTIONS = {
 } as const satisfies Record<string, { id: string; title: string; icon: IconName }>;
 const NAV = Object.values(SECTIONS);
 /**
- * The page's tabs: the workspace itself, and its integrations – AI models, speech to text,
- * photos (`/einstellungen/integrationen`, admins only).
+ * The page's tabs, by what they are about – never by app, since what the AI, speech and pictures
+ * run on serves every app: the workspace itself, then the three parts of its integrations
+ * (admins only). The path keeps `integrationen` for the first of them, the header's button.
  */
-type SettingsTab = 'workspace' | 'integrationen';
-const TABS = [
+type SettingsTab = 'workspace' | IntegrationGroup;
+const TAB_PATHS = {
+  integrationen: 'ki',
+  sprache: 'sprache',
+  bilder: 'bilder',
+} as const satisfies Record<string, IntegrationGroup>;
+const pathOf = (tab: IntegrationGroup) =>
+  (Object.keys(TAB_PATHS) as (keyof typeof TAB_PATHS)[]).find((key) => TAB_PATHS[key] === tab)!;
+const TABS: readonly { value: SettingsTab; label: string; icon: IconName }[] = [
   { value: 'workspace', label: 'Workspace', icon: 'settings' },
-  { value: 'integrationen', label: 'Integrationen', icon: 'link' },
-] as const satisfies readonly { value: SettingsTab; label: string; icon: IconName }[];
+  ...(Object.keys(INTEGRATION_GROUPS) as IntegrationGroup[]).map((value) => ({
+    value,
+    label: INTEGRATION_GROUPS[value].label,
+    icon: INTEGRATION_GROUPS[value].icon,
+  })),
+];
+const titleOf = (tab: SettingsTab) =>
+  tab === 'workspace' ? 'Einstellungen' : INTEGRATION_GROUPS[tab].label;
 
 /**
  * `/w/:workspaceId/einstellungen` – plan usage (BER-130), name, joining by domain (BER-148),
  * company login (BER-162), members, invitations, leave and delete (BER-129). `#einladen` scrolls to the members card with the invite row.
- * Admins get a second tab, „Integrationen“ (`/einstellungen/integrationen`, also the header's
- * „Integrationen“ button): the services the workspace works with, within what the instance allows.
+ * Cloud's files stand among them, marked as Cloud's. Admins get the integrations beside it, a
+ * tab per subject – „KI“ (`/einstellungen/integrationen`), „Sprache“, „Bilder“: the services the workspace works with, within what the instance
+ * allows.
  */
 export function Component() {
   const workspace = useWorkspace();
@@ -54,7 +79,8 @@ export function Component() {
   const navigate = useNavigate();
   const { tab: tabParam } = useParams();
   const integrations = canManageIntegrations(workspace.role);
-  const tab: SettingsTab = tabParam === 'integrationen' ? 'integrationen' : 'workspace';
+  const tab: SettingsTab =
+    tabParam && tabParam in TAB_PATHS ? TAB_PATHS[tabParam as keyof typeof TAB_PATHS] : 'workspace';
 
   // `#einladen` from the share dialog: React Router doesn't scroll to anchors by itself.
   useEffect(() => {
@@ -66,42 +92,41 @@ export function Component() {
     }
   }, [hash]);
 
+  // Cloud's files were a tab of their own once: now a section of the workspace's.
+  if (tabParam === 'office')
+    return (
+      <Navigate to={`${routes.workspaceSettings(workspace.id)}#${SECTIONS.files.id}`} replace />
+    );
   // An unknown tab, or the integrations for a member who isn't admin: the workspace tab.
-  if (
-    (tabParam !== undefined && tabParam !== 'integrationen') ||
-    (tab === 'integrationen' && !integrations)
-  )
+  if ((tabParam !== undefined && tab === 'workspace') || (tab !== 'workspace' && !integrations))
     return <Navigate to={routes.workspaceSettings(workspace.id)} replace />;
 
   return (
     <SettingsLayout
-      docTitle={`${tab === 'integrationen' ? 'Integrationen' : 'Einstellungen'} | ${workspace.name} | Slider`}
+      docTitle={`${titleOf(tab)} | ${workspace.name} | Slider`}
       title={workspace.name}
       leading={<WorkspaceMark name={workspace.name} logoUrl={workspace.logoUrl} size={40} />}
-      back={{ to: routes.workspace(workspace.id) }}
+      back="app"
       header="none"
-      nav={tab === 'workspace' ? NAV : WORKSPACE_INTEGRATIONS_NAV}
+      nav={tab === 'workspace' ? NAV : workspaceIntegrationsNav(tab)}
       toast={toast}
     >
       {integrations && (
-        <GlassPanel className="flex items-center self-start p-1">
-          <SegmentedControl<SettingsTab>
-            label="Workspace oder Integrationen"
-            mode="tabs"
-            value={tab}
-            onChange={(next) =>
-              void navigate(
-                next === 'integrationen'
-                  ? routes.workspaceIntegrations(workspace.id)
-                  : routes.workspaceSettings(workspace.id),
-              )
-            }
-            segments={TABS}
-          />
-        </GlassPanel>
+        <AppTabs<SettingsTab>
+          label="Workspace oder seine Integrationen"
+          value={tab}
+          onChange={(next) =>
+            void navigate(
+              next === 'workspace'
+                ? routes.workspaceSettings(workspace.id)
+                : `${routes.workspaceSettings(workspace.id)}/${pathOf(next)}`,
+            )
+          }
+          segments={TABS}
+        />
       )}
-      {tab === 'integrationen' ? (
-        <IntegrationsPanel workspaceId={workspace.id} onNotify={showToast} />
+      {tab !== 'workspace' ? (
+        <IntegrationsPanel workspaceId={workspace.id} group={tab} onNotify={showToast} />
       ) : (
         <>
           <Part section={SECTIONS.usage}>
@@ -109,6 +134,15 @@ export function Component() {
           </Part>
           <Part section={SECTIONS.general}>
             <GeneralSection key={workspace.id} workspace={workspace} onNotify={showToast} />
+          </Part>
+          <Part section={SECTIONS.files}>
+            {/* Two cards of its own (files, areas): spaced like the page's sections. */}
+            <div className="flex flex-col gap-6">
+              <CloudUsage workspaceId={workspace.id} admin={workspace.role === 'admin'} />
+            </div>
+          </Part>
+          <Part section={SECTIONS.agents}>
+            <AgentAvatarsSection workspace={workspace} onNotify={showToast} />
           </Part>
           <Part section={SECTIONS.domain}>
             <DomainSection

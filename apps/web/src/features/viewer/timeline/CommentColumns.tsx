@@ -30,6 +30,7 @@ import { CommentCard, type CardEmphasis } from '../comments/CommentCard';
 import { CompactCard } from '../comments/CompactCard';
 import { useTimeline } from './timeline-context';
 import { useTimelineRange, type TimelineWindow } from './timeline-window';
+import { columnSlides, type TrackStack } from './lib/timeline-layout';
 
 /** Clicking a bubble grows the slides until the column is this wide (full cards). */
 const BUBBLE_TARGET_W = 300;
@@ -42,6 +43,9 @@ interface CommentColumnsProps {
   layout: TrackLayout;
   window: TimelineWindow;
   narrow: boolean;
+  /** The track the band shows: a variant's cards under its slide's place (`columnSlides`). */
+  track: number;
+  stack: TrackStack;
 }
 
 /**
@@ -51,10 +55,19 @@ interface CommentColumnsProps {
  * ⊕ divider. All columns share one grid cell, so the area is as tall as the tallest column
  * without measuring; columns never overlap, `columnSpans` keeps them apart.
  */
-export function CommentColumns({ layout, window, narrow }: CommentColumnsProps) {
+export function CommentColumns({ layout, window, narrow, track, stack }: CommentColumnsProps) {
   const range = useTimelineRange(window);
-  const { slides } = useViewerData();
+  const { slides, variantsOf } = useViewerData();
   const { bySlide, byGap } = useCommentThreads();
+  // On the slides' track (and the notes') a column holds its slide's cards and its gap's; on a
+  // variant track its variant's, on the overview the slide's and all its variants'.
+  const ownTrack = track >= 0;
+  const entriesOf = (slide: Slide) =>
+    columnSlides(slide, variantsOf.get(slide.id) ?? [], track, stack);
+  const threadsAt = (slide: Slide) =>
+    ownTrack
+      ? threadsOf(bySlide, slide.id)
+      : entriesOf(slide).flatMap((entry) => threadsOf(bySlide, entry.id));
 
   // Same bus room for every column and slide size: cards don't jump when lines appear or the split moves.
   const padTop = useMemo(() => {
@@ -72,17 +85,20 @@ export function CommentColumns({ layout, window, narrow }: CommentColumnsProps) 
         (index) => {
           const slide = slides[index];
           const count = slide
-            ? threadsOf(bySlide, slide.id).length +
-              (byGap.get(gapKey(slide.id, slides[index + 1]?.id ?? null))?.length ?? 0)
+            ? threadsAt(slide).length +
+              (ownTrack
+                ? (byGap.get(gapKey(slide.id, slides[index + 1]?.id ?? null))?.length ?? 0)
+                : 0)
             : 0;
           return count > 0 && !narrow ? naturalWidth(count) : 0;
         },
         (index) => {
           const slide = slides[index];
-          return !!slide && byGap.has(gapKey(slide.id, slides[index + 1]?.id ?? null));
+          return ownTrack && !!slide && byGap.has(gapKey(slide.id, slides[index + 1]?.id ?? null));
         },
       ),
-    [layout, slides, bySlide, byGap, narrow],
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- `threadsAt` reads these
+    [layout, slides, bySlide, byGap, narrow, ownTrack, track, stack, variantsOf],
   );
 
   const columns: ReactNode[] = [];
@@ -91,11 +107,12 @@ export function CommentColumns({ layout, window, narrow }: CommentColumnsProps) 
     const box = spans[index];
     const gap = layout.gaps[index];
     if (!slide || !box || !gap) continue;
-    const threads = threadsOf(bySlide, slide.id);
+    const threads = threadsAt(slide);
+    const entries = ownTrack ? undefined : entriesOf(slide);
     // Comments between this slide and the next: cards like any, after the slide's own, their
     // card naming the gap („Zwischen Folie 2 und 3“).
     const key = gapKey(slide.id, slides[index + 1]?.id ?? null);
-    const gapThreads = byGap.get(key) ?? NO_THREADS;
+    const gapThreads = (ownTrack && byGap.get(key)) || NO_THREADS;
     columns.push(
       <SlideColumn
         key={slide.id}
@@ -105,6 +122,7 @@ export function CommentColumns({ layout, window, narrow }: CommentColumnsProps) 
         width={box.w}
         padTop={padTop}
         threads={threads}
+        entries={entries}
         gapThreads={gapThreads}
         narrow={narrow}
       />,
@@ -132,6 +150,8 @@ interface SlideColumnProps {
   width: number;
   padTop: number;
   threads: Thread[];
+  /** Off the slides' track: the slides whose cards `threads` are (a variant, or the overview's). */
+  entries?: readonly Slide[] | undefined;
   /** Comments in the gap after the slide: shown after its own. */
   gapThreads: Thread[];
   narrow: boolean;
@@ -146,6 +166,7 @@ const SlideColumn = memo(function SlideColumn({
   width,
   padTop,
   threads: own,
+  entries,
   gapThreads,
   narrow,
 }: SlideColumnProps) {
@@ -155,13 +176,37 @@ const SlideColumn = memo(function SlideColumn({
   );
   const mode = narrow ? 'full' : cardMode(width);
   // The gap's cards go last, on the right – the gap lies right of the slide.
+  // Each slide's cards round its own shapes (a variant's marks lie on the variant).
   const sorted = useMemo(
-    () => [...sortThreadsClockwise(own, slide.shapes, slide.aspectRatio), ...gapThreads],
-    [own, gapThreads, slide.shapes, slide.aspectRatio],
+    () => [
+      ...(entries
+        ? entries.flatMap((entry) =>
+            sortThreadsClockwise(
+              own.filter((thread) => thread.root.slideId === entry.id),
+              entry.shapes,
+              entry.aspectRatio,
+            ),
+          )
+        : sortThreadsClockwise(own, slide.shapes, slide.aspectRatio)),
+      ...gapThreads,
+    ],
+    [own, entries, gapThreads, slide.shapes, slide.aspectRatio],
   );
   const leftCount = useMemo(
-    () => countLeftExits(own, slide.shapes, slide.aspectRatio),
-    [own, slide.shapes, slide.aspectRatio],
+    () =>
+      entries
+        ? entries.reduce(
+            (sum, entry) =>
+              sum +
+              countLeftExits(
+                own.filter((thread) => thread.root.slideId === entry.id),
+                entry.shapes,
+                entry.aspectRatio,
+              ),
+            0,
+          )
+        : countLeftExits(own, slide.shapes, slide.aspectRatio),
+    [own, entries, slide.shapes, slide.aspectRatio],
   );
 
   let content: ReactNode = null;
@@ -412,7 +457,14 @@ function StackedCards({ slide, threads }: { slide: Slide; threads: Thread[] }) {
 
 /** Props every card gets from the viewer state (emphasis, permissions, gap location, fading). */
 function useCardProps() {
-  const { deck, canComment, slideIndex } = useViewerData();
+  const { deck, canComment, slideIndex, variantsOf } = useViewerData();
+  // A variant's card says whose it is – under its slide's place beside the slide's own.
+  const variantName = useMemo(() => {
+    const names = new Map<string, string>();
+    for (const variants of variantsOf.values())
+      variants.forEach((variant, at) => names.set(variant.id, `Variante ${at + 1}`));
+    return names;
+  }, [variantsOf]);
   const { focusedThreadId, draft, statusFilter } = useViewerState();
   const hoveredThreadId = useHoveredThreadId();
   const indexOf = (slideId: string) => slideIndex.get(slideId);
@@ -427,7 +479,12 @@ function useCardProps() {
     deckId: deck.id,
     emphasis: emphasisOf(thread),
     canResolve: canComment,
-    location: thread.root.anchor.type === 'gap' ? gapLabel(thread.root.anchor, indexOf) : undefined,
+    location:
+      thread.root.anchor.type === 'gap'
+        ? gapLabel(thread.root.anchor, indexOf)
+        : thread.root.slideId
+          ? variantName.get(thread.root.slideId)
+          : undefined,
     fadeDone: fadesDone(statusFilter),
   });
 }

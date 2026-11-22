@@ -1,4 +1,4 @@
-import type { Deck } from '@slider/shared';
+import { DECK_TRASH_DAYS, type Deck } from '@slider/shared';
 import { pluralize } from '@/lib/format';
 import { useDeleteDecks, type BulkResult } from '@/lib/api';
 import { ConfirmDialog } from '@/ui';
@@ -42,16 +42,19 @@ function fileCopy(decks: readonly Deck[]): { removed: string[]; kept: string | n
 export function DeleteDeckDialog({
   decks,
   filesStay = false,
+  forGood = false,
   onClose,
   onDeleted,
 }: {
   decks: readonly Deck[];
   /** In the desktop app: a deck is a file on this computer – that file stays (BER-201). */
   filesStay?: boolean;
+  /** Out of the trash („Endgültig löschen“); else „Löschen“ puts them into it. */
+  forGood?: boolean;
   onClose: () => void;
   onDeleted: (result: BulkResult<unknown>) => void;
 }) {
-  const remove = useDeleteDecks();
+  const remove = useDeleteDecks(forGood);
   const single = decks.length === 1 ? decks[0] : undefined;
   const failed = remove.data?.failed ?? [];
   const copy = fileCopy(decks);
@@ -61,8 +64,8 @@ export function DeleteDeckDialog({
       onClose={onClose}
       title={
         single
-          ? `„${single.title}“ löschen?`
-          : `${pluralize(decks.length, 'Präsentation', 'Präsentationen')} löschen?`
+          ? `„${single.title}“ ${forGood ? 'endgültig ' : ''}löschen?`
+          : `${pluralize(decks.length, 'Präsentation', 'Präsentationen')} ${forGood ? 'endgültig ' : ''}löschen?`
       }
       description={
         <div className="flex flex-col gap-2">
@@ -78,28 +81,43 @@ export function DeleteDeckDialog({
               )}
             </ul>
           )}
-          <span>Wird endgültig entfernt:</span>
-          <ul className="list-disc pl-5">
-            <li>Kommentare und Zeichnungen</li>
-            <li>Folienbilder</li>
-            {copy.removed.map((line) => (
-              <li key={line}>{line}</li>
-            ))}
-          </ul>
-          {copy.kept && <span>{copy.kept}</span>}
-          {filesStay && <span>Die Datei auf diesem Computer bleibt.</span>}
+          {forGood ? (
+            <>
+              <span>Wird endgültig gelöscht:</span>
+              <ul className="list-disc pl-5">
+                <li>Kommentare und Zeichnungen</li>
+                <li>Folienbilder</li>
+                {copy.removed.map((line) => (
+                  <li key={line}>{line}</li>
+                ))}
+              </ul>
+              {copy.kept && <span>{copy.kept}</span>}
+            </>
+          ) : (
+            <span>
+              {single ? 'Sie liegt' : 'Sie liegen'} noch {DECK_TRASH_DAYS} Tage im Papierkorb und{' '}
+              {single ? 'lässt' : 'lassen'} sich so lange wiederherstellen.
+            </span>
+          )}
+          {filesStay && (
+            <span>
+              {single
+                ? 'Die Datei auf diesem Computer bleibt.'
+                : 'Dateien auf diesem Computer bleiben.'}
+            </span>
+          )}
         </div>
       }
-      confirmLabel="Endgültig löschen"
-      confirmIcon="delete"
+      confirmLabel={forGood ? 'Endgültig löschen' : 'Löschen'}
+      confirmIcon={forGood ? 'deleteForever' : 'delete'}
       pending={remove.isPending}
       onConfirm={() =>
         remove.mutate(
           decks.map((deck) => deck.id),
           {
-            // A single deck that couldn't go stays open with the reason; the caller
-            // reports partial failures of several.
-            onSuccess: (result) => (!single || result.failed.length === 0) && onDeleted(result),
+            // Nothing went: the dialog stays open with the reason. The caller reports
+            // partial failures of several.
+            onSuccess: (result) => result.done.length > 0 && onDeleted(result),
           },
         )
       }

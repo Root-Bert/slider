@@ -84,6 +84,10 @@ jobs:
             run: bunx vitest run --project api $(bun scripts/api-test-group.ts 5 5) --maxWorkers=1
           - name: web, packages
             run: bunx vitest run --project web --project web-dom --project pptx --project odp --project shared --maxWorkers=2
+          # The desktop apps' shared service with real processes (desktop/service.mjs): the one
+          # place its Linux side runs – how a process is told apart differs there.
+          - name: desktop service
+            run: bun run --filter @slider/web build && bun run --cwd desktop check:service
     steps:
       - uses: actions/checkout@v5
         with:
@@ -330,9 +334,22 @@ jobs:
             echo "signed=true" >> "$GITHUB_OUTPUT"
             echo "publish=true" >> "$GITHUB_OUTPUT"
           else
+            # No Apple certificate: the app gets a signature of its own making (Apple Silicon
+            # starts nothing without one) and goes out as a DMG alone – macOS asks before the
+            # first start („Dennoch öffnen“), and there is no update feed (it installs only
+            # signed ones).
             unset CSC_LINK CSC_KEY_PASSWORD
-            extra=(-c.mac.identity=null)
-            echo "publish=false" >> "$GITHUB_OUTPUT"
+            node scripts/stage.mjs
+            npx electron-builder --mac --dir --arm64 --publish never \
+              -c.extraMetadata.version="${GITHUB_REF_NAME#v}" -c.mac.identity=null
+            codesign --force --deep --sign - dist/mac-arm64/Slider.app
+            codesign --verify --deep --strict dist/mac-arm64/Slider.app
+            npx electron-builder --mac dmg --arm64 --publish never \
+              --prepackaged dist/mac-arm64/Slider.app \
+              -c.extraMetadata.version="${GITHUB_REF_NAME#v}" -c.mac.identity=null
+            rm -f dist/latest*.yml dist/*.zip dist/*.blockmap
+            echo "publish=true" >> "$GITHUB_OUTPUT"
+            exit 0
           fi
           node scripts/stage.mjs
           npx electron-builder --${{ matrix.os }} ${{ matrix.targets }} --${{ matrix.arch }} \
@@ -351,9 +368,10 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         # The packages, their blockmaps (updates that load only what changed) and the feed.
+        # (An unsigned Mac has the DMG alone, no feed.)
         run: >-
           gh release upload "$GITHUB_REF_NAME" --clobber --repo "$GITHUB_REPOSITORY"
-          dist/Slider-* dist/latest*.yml
+          $(ls dist/Slider-* dist/latest*.yml 2>/dev/null)
       - uses: actions/upload-artifact@v4
         with:
           name: desktop-${{ matrix.os }}-${{ matrix.arch }}
@@ -361,4 +379,142 @@ jobs:
             desktop/dist/Slider-*
             desktop/dist/latest*.yml
             !desktop/dist/*.blockmap
+          retention-days: 14
+
+  # „The Office Cloud“, the files app for the desktop: for the Mac a DMG signed by itself (ad hoc,
+  # `desktop/cloud/pack.sh` – macOS asks before the first start, there is no update feed), for
+  # Linux an AppImage and a deb. Signing with an Apple certificate and notarising come later:
+  # that electron-builder leaves the Finder drive's own rights is untried.
+  cloud-desktop:
+    name: Cloud app ${{ matrix.os }} ${{ matrix.arch }}
+    needs: release
+    if: github.repository == 'Root-Bert/slider' && github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 60
+    permissions:
+      contents: write
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          # macOS 15: the Finder's drive is built against its SDK.
+          - os: mac
+            arch: arm64
+            runner: macos-15
+          - os: linux
+            arch: x64
+            runner: ubuntu-24.04
+          - os: linux
+            arch: arm64
+            runner: ubuntu-24.04-arm
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: ${{ inputs.ref }}
+          persist-credentials: false
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version-file: package.json
+      - uses: actions/setup-node@v5
+        with:
+          node-version-file: .nvmrc
+      - run: bun install --frozen-lockfile
+        working-directory: desktop
+      - name: Build
+        working-directory: desktop
+        run: |
+          version="${GITHUB_REF_NAME#v}"
+          if [ "${{ matrix.os }}" = mac ]; then
+            CLOUD_VERSION="$version" sh cloud/pack.sh
+          else
+            npx electron-builder --linux AppImage deb --${{ matrix.arch }} --publish never \
+              -c cloud/builder.json -c.extraMetadata.version="$version"
+            rm -f dist/cloud/latest*.yml
+          fi
+      - name: Put the packages on the release
+        working-directory: desktop
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: >-
+          gh release upload "$GITHUB_REF_NAME" --clobber --repo "$GITHUB_REPOSITORY"
+          $(ls dist/cloud/Cloud-*.dmg dist/cloud/Cloud-*.AppImage dist/cloud/Cloud-*.deb 2>/dev/null)
+      - uses: actions/upload-artifact@v4
+        with:
+          name: cloud-desktop-${{ matrix.os }}-${{ matrix.arch }}
+          path: |
+            desktop/dist/cloud/Cloud-*.dmg
+            desktop/dist/cloud/Cloud-*.AppImage
+            desktop/dist/cloud/Cloud-*.deb
+          retention-days: 14
+
+  # Writer, the documents app for the desktop: a window on the server's Writer, nothing more in
+  # it. For the Mac a DMG signed by itself (ad hoc, as Slider's without an Apple certificate –
+  # macOS asks before the first start, there is no update feed), for Linux an AppImage and a deb.
+  writer-desktop:
+    name: Writer app ${{ matrix.os }} ${{ matrix.arch }}
+    needs: release
+    if: github.repository == 'Root-Bert/slider' && github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 60
+    permissions:
+      contents: write
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: mac
+            arch: arm64
+            runner: macos-15
+          - os: linux
+            arch: x64
+            runner: ubuntu-24.04
+          - os: linux
+            arch: arm64
+            runner: ubuntu-24.04-arm
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: ${{ inputs.ref }}
+          persist-credentials: false
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version-file: package.json
+      - uses: actions/setup-node@v5
+        with:
+          node-version-file: .nvmrc
+      - run: bun install --frozen-lockfile
+        working-directory: desktop
+      - name: Build
+        working-directory: desktop
+        run: |
+          version="${GITHUB_REF_NAME#v}"
+          if [ "${{ matrix.os }}" = mac ]; then
+            # No Apple certificate: a signature of its own making (Apple Silicon starts nothing
+            # without one), then the DMG from that app.
+            npx electron-builder --mac --dir --arm64 --publish never \
+              -c writer/builder.json -c.extraMetadata.version="$version" -c.mac.identity=null
+            codesign --force --deep --sign - dist/writer/mac-arm64/Writer.app
+            codesign --verify --deep --strict dist/writer/mac-arm64/Writer.app
+            npx electron-builder --mac dmg --arm64 --publish never \
+              --prepackaged dist/writer/mac-arm64/Writer.app \
+              -c writer/builder.json -c.extraMetadata.version="$version" -c.mac.identity=null
+          else
+            npx electron-builder --linux AppImage deb --${{ matrix.arch }} --publish never \
+              -c writer/builder.json -c.extraMetadata.version="$version"
+          fi
+          rm -f dist/writer/latest*.yml dist/writer/*.zip dist/writer/*.blockmap
+      - name: Put the packages on the release
+        working-directory: desktop
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: >-
+          gh release upload "$GITHUB_REF_NAME" --clobber --repo "$GITHUB_REPOSITORY"
+          $(ls dist/writer/Writer-*.dmg dist/writer/Writer-*.AppImage dist/writer/Writer-*.deb 2>/dev/null)
+      - uses: actions/upload-artifact@v4
+        with:
+          name: writer-desktop-${{ matrix.os }}-${{ matrix.arch }}
+          path: |
+            desktop/dist/writer/Writer-*.dmg
+            desktop/dist/writer/Writer-*.AppImage
+            desktop/dist/writer/Writer-*.deb
           retention-days: 14

@@ -443,6 +443,7 @@ function FolderCard({ folder }: { folder: BoardItem }) {
         // Opened: all its files under it, in its glass, each to be pulled out.
         <div
           data-folder-open={folder.id}
+          data-popover-panel=""
           className="nodrag nowheel glass-elevated absolute top-full left-1/2 mt-3 grid max-h-80 w-max -translate-x-1/2 grid-cols-4 gap-2 overflow-y-auto overscroll-contain rounded-panel p-3 transition-[opacity,translate] duration-300 ease-emphasized starting:-translate-y-2 starting:opacity-0"
         >
           {files.map((file) => (
@@ -729,6 +730,7 @@ function CardColors({ item }: { item: BoardItem }) {
   const board = useContext(BoardNodeContext)!;
   return (
     <div
+      data-popover-panel=""
       className="glass-elevated absolute top-full right-0 z-(--z-raised) mt-2 rounded-panel p-1"
       onClick={(event) => event.stopPropagation()}
       onDoubleClick={(event) => event.stopPropagation()}

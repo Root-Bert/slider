@@ -1,7 +1,7 @@
 import { useSyncExternalStore } from 'react';
 
 /** A part of the format panel, picked in the row of tabs at its foot (`FormatBar`). */
-export type PanelTab = 'text' | 'fill' | 'image' | 'arrange';
+export type PanelTab = 'text' | 'fill' | 'image' | 'arrange' | 'motion';
 
 /** The part picked last – kept for the next element that has it, set by a new frame's kind. */
 let pickedTab: PanelTab = 'text';

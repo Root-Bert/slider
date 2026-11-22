@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { MAX_AI_NAME_LENGTH } from './model';
 
 // ── Integrations ─────────────────────────────────────────────────────────
 
@@ -25,7 +26,7 @@ export const isSpeechKind = (kind: IntegrationKind): kind is 'speech' | 'voice' 
   kind === 'speech' || kind === 'voice';
 
 export const INTEGRATION_KIND_LABELS: Record<IntegrationKind, string> = {
-  ai: 'Allgemeines Modell',
+  ai: 'KI-Modelle',
   speech: 'Sprache zu Text',
   voice: 'Sprechen mit der KI',
   live: 'Live-Mitschrift',
@@ -249,12 +250,51 @@ export const integrationsSchema = z.object({
   }),
   /** The workspace's AI by name (`KI` until named); `null` for the instance. */
   aiName: z.string().nullable(),
+  /** An agent writes along in calls and sends notes afterwards; `null` for the instance. */
+  callNotes: z.boolean().nullable(),
 });
 export type Integrations = z.infer<typeof integrationsSchema>;
 
-/** `PATCH /workspaces/:id/ai` – the AI's name; empty gives it back its default. */
+/** A voice an agent may speak with in calls – a preset of the live key's service or its own. */
+export const callVoiceSchema = z.object({
+  id: z.string(),
+  name: z.string(),
+  /** As the service names it: `de`, `en_us`, `fr_fr`. */
+  language: z.string().nullable(),
+  gender: z.enum(['female', 'male']).nullable(),
+});
+export type CallVoice = z.infer<typeof callVoiceSchema>;
+
+/**
+ * `GET /me/call-voice` – the voice agents speak with where this person calls them or brings them
+ * into a call (`picked`, `null` none), and the voices to pick from: those of the first of their
+ * workspaces whose live key speaks (Mistral), German first – none where none does.
+ * `automatic`: the one taken unpicked.
+ */
+export const callVoicesSchema = z.object({
+  voices: z.array(callVoiceSchema),
+  automatic: z.string().nullable(),
+  picked: z.string().nullable(),
+});
+export type CallVoices = z.infer<typeof callVoicesSchema>;
+
+/** `PUT /me/call-voice` – `null`: back to the automatic one. */
+export const updateCallVoiceInputSchema = z.object({
+  voice: z.string().trim().min(1).max(200).nullable(),
+});
+export type UpdateCallVoiceInput = z.infer<typeof updateCallVoiceInputSchema>;
+
+/**
+ * `PATCH /workspaces/:id/ai` – the AI's name (empty gives it back its default) and whether an
+ * agent writes along in calls; what is left out stays.
+ */
 export const updateWorkspaceAiInputSchema = z.object({
-  name: z.string().trim().max(40, 'Höchstens 40 Zeichen.'),
+  name: z
+    .string()
+    .trim()
+    .max(MAX_AI_NAME_LENGTH, `Höchstens ${MAX_AI_NAME_LENGTH} Zeichen.`)
+    .optional(),
+  callNotes: z.boolean().optional(),
 });
 export type UpdateWorkspaceAiInput = z.infer<typeof updateWorkspaceAiInputSchema>;
 

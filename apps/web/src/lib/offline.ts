@@ -55,10 +55,47 @@ const forgetOutbox = () =>
   });
 
 /**
- * Drops what the browser kept of the account (logout, account deleted): the service worker's
- * stored answers and files, and the edits not sent yet – they would go out as the next account.
+ * Who signed out: their drafts go with what the browser kept. `null` – nobody did (a switch, a
+ * session that ended, another account signed in): each account's drafts are its own and wait.
  */
-export async function forgetOffline(): Promise<void> {
+export type SignedOut = null | 'everyone' | { userId: string };
+
+/** Drafts kept in `localStorage` per account (`accountKey`, `<key>:<userId>`); a bare key is older. */
+const isDraftKey = (key: string) =>
+  key === 'slider.sender.drafts' ||
+  key.startsWith('slider.sender.drafts:') ||
+  key.startsWith('slider.creationDraft.');
+
+/**
+ * Drops the unsent text kept in this browser (Sender's drafts, Folie 1's prompt) of whoever
+ * {@link SignedOut} says, and always the older ones kept for nobody in particular.
+ */
+export function forgetDrafts(signedOut: SignedOut): void {
+  try {
+    const keys = Array.from({ length: localStorage.length }, (_, i) => localStorage.key(i));
+    for (const key of keys) {
+      if (key === null || !isDraftKey(key)) continue;
+      const colon = key.lastIndexOf(':');
+      const owner = colon < 0 ? null : key.slice(colon + 1);
+      if (
+        owner === null ||
+        signedOut === 'everyone' ||
+        (signedOut !== null && owner === signedOut.userId)
+      )
+        localStorage.removeItem(key);
+    }
+  } catch {
+    // No storage: nothing was kept.
+  }
+}
+
+/**
+ * Drops what the browser kept of the account (logout, a switch, account deleted): the service
+ * worker's stored answers and files, and the edits not sent yet – they would go out as the next
+ * account; the drafts of who {@link SignedOut} (`forgetDrafts`).
+ */
+export async function forgetOffline(signedOut: SignedOut = null): Promise<void> {
+  forgetDrafts(signedOut);
   await Promise.all([forgetOutbox(), forgetWebFiles()]);
   try {
     const names = await caches.keys();

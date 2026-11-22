@@ -1,5 +1,4 @@
 import {
-  clamp01,
   rectFromPoints,
   type EditableElement,
   isNewLine,
@@ -51,6 +50,7 @@ import { addedElement, addedImage, addedTurned, canMove, NEW_BOX } from '../live
 import { newEditId } from '../new-id';
 import { typedAhead } from '../typed-ahead';
 import { usePlaceAiBox } from '../../voice/hooks/usePlaceAiBox';
+import { slideRoom, toSlidePoint } from '../../lib/geometry';
 
 /** The preview's element (`FramePanelPreview`): never on the server. */
 const DRAFT_ID = 'frame-draft';
@@ -61,13 +61,9 @@ const HAND_OVER_MS = 5000;
 /** Several pictures dropped at once: each this far aside of the one before (of the slide). */
 const DROP_STEP = 0.03;
 
-const pointIn = (element: Element, event: { clientX: number; clientY: number }): Point => {
-  const box = element.getBoundingClientRect();
-  return {
-    x: clamp01((event.clientX - box.left) / Math.max(1, box.width)),
-    y: clamp01((event.clientY - box.top) / Math.max(1, box.height)),
-  };
-};
+/** Where the pointer is on the slide – or, zoomed out, in the room around it (`slideRoom`). */
+const pointIn = (element: Element, event: { clientX: number; clientY: number }): Point =>
+  toSlidePoint(event, element);
 
 /**
  * Drawing a frame on a slide while editing, then saying what it is for – picking the elements it
@@ -97,6 +93,8 @@ export function useInsertFrame(
     from: Point;
     moved: boolean;
     tolerance: RectSize;
+    /** Where the frame may reach: the slide, zoomed out the room around it too. */
+    room: Rect;
     over?: string | null;
     shiftHeld?: boolean;
   } | null>(null);
@@ -228,6 +226,7 @@ export function useInsertFrame(
       from,
       moved: false,
       tolerance,
+      room: slideRoom(event.currentTarget),
       ...(over !== undefined && { over, shiftHeld: true }),
     };
     setFrame(null);
@@ -251,6 +250,7 @@ export function useInsertFrame(
         start.tolerance,
         event.shiftKey && !start.shiftHeld,
         aspect,
+        start.room,
       ),
     );
   };
@@ -531,6 +531,8 @@ export function useInsertFrame(
             handles
             elementEdge
             emphasized
+            // As a picked element: off the slide too.
+            offSlide
             rotation={turn}
             snapLines={snapLines}
             onCommit={placeFrame}

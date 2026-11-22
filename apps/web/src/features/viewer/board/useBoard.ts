@@ -12,15 +12,14 @@ import {
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useCallback, useEffect, useMemo, useRef, useSyncExternalStore } from 'react';
 import { api, ApiError } from '@/lib/api-client';
-import { queryKeys } from '@/lib/api';
+import { boardKeys, boardPath, boardUploadTarget } from '@/lib/api';
 import { sendInParts } from '@/lib/upload-in-parts';
-import { useViewerData } from '../state/viewer-data';
-import { useViewerToast } from '../state/viewer-toast';
+import { ownerIds, useBoardOwner } from './board-owner';
 import { boardOutbox, withQueued } from './board-outbox';
 import { eachLimited, FOLDER_CARD, FOLDER_PARALLEL } from './folder-files';
 
 /*
- * The deck's board (the material page) as the viewer shows it: the server's, with the changes queued here
+ * The board (the material page) of a presentation or a document as its page shows it: the server's, with the changes queued here
  * (`board-outbox.ts`) and the files on their way laid over it – every change shows at once.
  * Others' changes come over the live stream (`board` event → refetch, `useLive`).
  */
@@ -35,11 +34,11 @@ const uploads = new Map<string, Uploads>();
 const uploadListeners = new Set<() => void>();
 const EMPTY_UPLOADS: Uploads = new Map();
 
-function setUpload(deckId: string, id: string, upload: UploadingMaterial | null) {
-  const next = new Map(uploads.get(deckId) ?? EMPTY_UPLOADS);
+function setUpload(ownerId: string, id: string, upload: UploadingMaterial | null) {
+  const next = new Map(uploads.get(ownerId) ?? EMPTY_UPLOADS);
   if (upload) next.set(id, upload);
   else next.delete(id);
-  uploads.set(deckId, next);
+  uploads.set(ownerId, next);
   for (const listener of uploadListeners) listener();
 }
 
@@ -164,22 +163,22 @@ export interface BoardActions {
 }
 
 export function useBoard(): BoardActions {
-  const { deck, viewer } = useViewerData();
-  const deckId = deck.id;
-  const userId = viewer.author.id;
+  const { kind, id: ownerId, viewer: author, toast } = useBoardOwner();
+  // Its owner by kind and id: the same one while both stay.
+  const owner = useMemo(() => ({ kind, id: ownerId }), [kind, ownerId]);
+  const userId = author.id;
   const queryClient = useQueryClient();
-  const toast = useViewerToast();
   const outbox = boardOutbox();
-  const queryKey = queryKeys.board(deckId);
+  const queryKey = boardKeys.board(owner);
 
   const queued = useSyncExternalStore(
     outbox.subscribe,
-    () => outbox.queued(deckId),
-    () => outbox.queued(deckId),
+    () => outbox.queued(ownerId),
+    () => outbox.queued(ownerId),
   );
   const onTheirWay = useSyncExternalStore(
     subscribeUploads,
-    () => uploads.get(deckId) ?? EMPTY_UPLOADS,
+    () => uploads.get(ownerId) ?? EMPTY_UPLOADS,
     () => EMPTY_UPLOADS,
   );
   // When the board last fetched was asked for: what the server took before is in it.
@@ -188,7 +187,7 @@ export function useBoard(): BoardActions {
     queryKey,
     queryFn: async () => {
       const startedAt = Date.now();
-      const board = boardSchema.parse(await api.get(`/decks/${deckId}/board`));
+      const board = boardSchema.parse(await api.get(boardPath(owner, '/board')));
       fetchedFrom.current = startedAt;
       return board;
     },
@@ -197,14 +196,14 @@ export function useBoard(): BoardActions {
     networkMode: 'always',
   });
 
-  useEffect(() => outbox.resume(deckId, userId), [outbox, deckId, userId]);
+  useEffect(() => outbox.resume(ownerId, userId), [outbox, ownerId, userId]);
   useEffect(() => {
-    if (query.dataUpdatedAt > 0) outbox.forget(deckId, fetchedFrom.current);
-  }, [outbox, deckId, query.dataUpdatedAt]);
+    if (query.dataUpdatedAt > 0) outbox.forget(ownerId, fetchedFrom.current);
+  }, [outbox, ownerId, query.dataUpdatedAt]);
   useEffect(
     () =>
       outbox.onSettled((settledDeck, refused) => {
-        if (settledDeck !== deckId) return;
+        if (settledDeck !== ownerId) return;
         if (refused) {
           toast(
             refused instanceof ApiError
@@ -213,9 +212,9 @@ export function useBoard(): BoardActions {
             'danger',
           );
         }
-        void queryClient.invalidateQueries({ queryKey: queryKeys.board(deckId) });
+        void queryClient.invalidateQueries({ queryKey: boardKeys.board(owner) });
       }),
-    [outbox, deckId, queryClient, toast],
+    [outbox, ownerId, owner, queryClient, toast],
   );
 
   const board = useMemo(() => {
@@ -237,8 +236,8 @@ export function useBoard(): BoardActions {
   const taken = () => [...shownRef.current.materials, ...shownRef.current.items] as BoardFrame[];
 
   const enqueue = useCallback(
-    (action: Parameters<typeof outbox.enqueue>[2]) => outbox.enqueue(deckId, userId, action),
-    [outbox, deckId, userId],
+    (action: Parameters<typeof outbox.enqueue>[2]) => outbox.enqueue(ownerId, userId, action, kind),
+    [outbox, ownerId, userId, kind],
   );
 
   const sendFile = useCallback(
@@ -249,16 +248,16 @@ export function useBoard(): BoardActions {
           await online();
           const upload = await sendInParts(
             file,
-            { purpose: 'material', deckId },
-            (progress) => setUpload(deckId, material.id, { ...material, progress }),
+            boardUploadTarget(owner),
+            (progress) => setUpload(ownerId, material.id, { ...material, progress }),
             new AbortController().signal,
           );
-          const saved = await api.post<Material>(`/decks/${deckId}/materials`, {
+          const saved = await api.post<Material>(boardPath(owner, '/materials'), {
             id: material.id,
             upload,
             ...frame,
           });
-          queryClient.setQueryData<Board>(queryKeys.board(deckId), (current) =>
+          queryClient.setQueryData<Board>(boardKeys.board(owner), (current) =>
             current && !current.materials.some((each) => each.id === saved.id)
               ? { ...current, materials: [...current.materials, saved] }
               : current,
@@ -279,9 +278,9 @@ export function useBoard(): BoardActions {
         }
       }
       if (material.previewUrl?.startsWith('blob:')) URL.revokeObjectURL(material.previewUrl);
-      setUpload(deckId, material.id, null);
+      setUpload(ownerId, material.id, null);
     },
-    [deckId, queryClient, toast],
+    [ownerId, owner, queryClient, toast],
   );
 
   const addFiles = useCallback<BoardActions['addFiles']>(
@@ -292,8 +291,8 @@ export function useBoard(): BoardActions {
         const kind = materialKindOf(file.name);
         const material: UploadingMaterial = {
           id: crypto.randomUUID(),
-          deckId,
-          author: viewer.author,
+          ...ownerIds(owner),
+          author,
           name: file.name,
           kind,
           mimeType: file.type,
@@ -312,11 +311,11 @@ export function useBoard(): BoardActions {
           h: MATERIAL_CARD.h,
           progress: 0,
         };
-        setUpload(deckId, material.id, material);
+        setUpload(ownerId, material.id, material);
         void sendFile(file, material);
       });
     },
-    [deckId, viewer.author, sendFile],
+    [ownerId, owner, author, sendFile],
   );
 
   const addFolder = useCallback<BoardActions['addFolder']>(
@@ -346,11 +345,11 @@ export function useBoard(): BoardActions {
           bytesSent: [...sent.values()].reduce((sum, bytes) => sum + bytes, 0),
         });
       report();
-      const board = queryKeys.board(deckId);
+      const board = boardKeys.board(owner);
       void (async () => {
         try {
           await online();
-          const folder = await api.post<BoardItem>(`/decks/${deckId}/board/items`, input);
+          const folder = await api.post<BoardItem>(boardPath(owner, '/board/items'), input);
           queryClient.setQueryData<Board>(board, (current) =>
             current && !current.items.some((each) => each.id === id)
               ? { ...current, items: [...current.items, folder] }
@@ -368,14 +367,14 @@ export function useBoard(): BoardActions {
               await online();
               const upload = await sendInParts(
                 file,
-                { purpose: 'material', deckId },
+                boardUploadTarget(owner),
                 (fraction) => {
                   sent.set(file, fraction * file.size);
                   report();
                 },
                 new AbortController().signal,
               );
-              const saved = await api.post<Material>(`/decks/${deckId}/materials`, {
+              const saved = await api.post<Material>(boardPath(owner, '/materials'), {
                 id: fileId,
                 upload,
                 folderId: id,
@@ -424,7 +423,7 @@ export function useBoard(): BoardActions {
           );
       })();
     },
-    [deckId, queryClient, toast],
+    [owner, queryClient, toast],
   );
 
   const create = useCallback(
@@ -441,14 +440,14 @@ export function useBoard(): BoardActions {
       const item: BoardItem = {
         ...input,
         color: null,
-        deckId,
-        author: viewer.author,
+        ...ownerIds(owner),
+        author,
         createdAt: new Date().toISOString(),
       };
       enqueue({ type: 'create', item, input });
       return id;
     },
-    [deckId, viewer.author, enqueue],
+    [owner, author, enqueue],
   );
 
   return {
@@ -475,6 +474,6 @@ export function useBoard(): BoardActions {
     remove: (itemIds) => {
       for (const itemId of itemIds) enqueue({ type: 'delete', itemId });
     },
-    saved: (itemId) => outbox.saved(deckId, itemId),
+    saved: (itemId) => outbox.saved(ownerId, itemId),
   };
 }

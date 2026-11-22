@@ -1,7 +1,7 @@
 import { Hono } from 'hono';
 import { streamSSE } from 'hono/streaming';
 import { siteLiveInputSchema, siteLiveQuerySchema } from '@slider/shared';
-import { badRequest, notFound } from '../http/errors';
+import { ApiError, badRequest, notFound } from '../http/errors';
 import { clientAddress } from '../http/rate-limit';
 import { readJson } from '../http/validate';
 import type { SiteLive } from '../realtime/site-live';
@@ -24,6 +24,14 @@ export function siteLiveRoutes(site: SiteLive) {
       if (!query.success) throw badRequest('Ungültige Seite.');
       const { page, ...wish } = query.data;
       const address = clientAddress(c);
+      // Refused before a stream is held open: the browser's EventSource gives up on an error.
+      const refused = site.refusal(page, address);
+      if (refused) {
+        c.header('Retry-After', '60');
+        throw refused === 'busy'
+          ? new ApiError(429, 'rate_limited', 'Zu viele Live-Verbindungen von dieser Adresse.')
+          : new ApiError(503, 'rate_limited', 'Die Live-Kommentare sind gerade voll.');
+      }
 
       return streamSSE(c, async (stream) => {
         const send = (event: unknown) => {

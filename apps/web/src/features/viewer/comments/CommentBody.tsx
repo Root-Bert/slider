@@ -1,7 +1,7 @@
 import { useMemo } from 'react';
 import { cn, TextLink } from '@/ui';
 import { tokenizeBody } from './lib/comment-body';
-import { useViewerData } from '../state/viewer-data';
+import { useMentionPeople } from './mention-people';
 
 interface CommentBodyProps {
   body: string;
@@ -10,8 +10,8 @@ interface CommentBodyProps {
 
 /** Renders a comment body with @mentions, **bold** and links as React nodes (no HTML injection). */
 export function CommentBody({ body, className }: CommentBodyProps) {
-  const { participantNames, viewer } = useViewerData();
-  const ownMention = `@${viewer.author.name}`;
+  const { participantNames, myName } = useMentionPeople();
+  const ownMention = `@${myName}`;
   const tokens = useMemo(() => tokenizeBody(body, participantNames), [body, participantNames]);
 
   return (

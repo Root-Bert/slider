@@ -566,7 +566,7 @@ export const textAnnotation = (comment: Pick<Comment, 'strokes'>) =>
 export const asksInWords = (comment: Comment) =>
   commentWords(comment) !== '' || !!comment.media?.transcript?.trim();
 
-/** True when the body only consists of a drawing (shown as "✏️ Markierung"). */
+/** True when the body only consists of a drawing (shown as „Markierung“ with its icon). */
 export const isStrokeOnly = (comment: Comment) =>
   comment.body.trim() === '' && comment.strokes.length > 0;
 
@@ -597,29 +597,36 @@ export function isBareSticker({ root, replies }: Thread): boolean {
   );
 }
 
-/** Stand-in for an empty body: the text on the slide, if any, else "✏️ Markierung". */
+/** Stand-in for an empty body: the text on the slide, if any, else „Markierung“. */
 export const strokeOnlyLabel = (comment: Pick<Comment, 'strokes'>) => {
   const text = textAnnotation(comment);
-  return text ? `„${text.text}“` : '✏️ Markierung';
+  return text ? `„${text.text}“` : 'Markierung';
 };
 
-const MEDIA_ICONS = { audio: '🎙', video: '🎬' } as const;
 const MEDIA_NOUNS = { audio: 'Sprachkommentar', video: 'Videokommentar' } as const;
+/** The recorder's and the pen's own icons – never an emoji in the text. */
+const MEDIA_ICONS = { audio: 'mic', video: 'cameraVideo' } as const;
 
 /**
  * One line of text for a comment in tight spots (compact cards, tooltips): the body, else the
- * transcript (its summary where there is one) or "🎙 Sprachkommentar | 0:42" for recordings, else the drawing label.
+ * transcript (its summary where there is one) or „Sprachkommentar | 0:42“ for recordings, else
+ * the drawing label. Plain text – `previewIcon` says which icon goes in front of it.
  */
 export function commentPreview(comment: Comment): string {
   if (comment.body.trim()) return comment.body;
   const { media } = comment;
   if (media) {
     const said = media.transcriptSummary ?? media.transcript;
-    return said
-      ? `${MEDIA_ICONS[media.kind]} ${said}`
-      : `${MEDIA_ICONS[media.kind]} ${MEDIA_NOUNS[media.kind]} | ${formatDuration(media.durationMs)}`;
+    return said || `${MEDIA_NOUNS[media.kind]} | ${formatDuration(media.durationMs)}`;
   }
   return isStrokeOnly(comment) ? strokeOnlyLabel(comment) : comment.body;
+}
+
+/** The icon before `commentPreview`: a recording's (mic, camera) or a bare drawing's (pen); none for text. */
+export function previewIcon(comment: Comment): 'mic' | 'cameraVideo' | 'gesture' | null {
+  if (comment.body.trim()) return null;
+  if (comment.media) return MEDIA_ICONS[comment.media.kind];
+  return isStrokeOnly(comment) && !textAnnotation(comment) ? 'gesture' : null;
 }
 
 /** An imported comment deleted where it came from (PowerPoint, Google Slides) – kept, but shown muted (BER-114). */

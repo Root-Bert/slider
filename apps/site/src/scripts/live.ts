@@ -8,6 +8,7 @@ import type {
   SiteVisitor,
 } from '@slider/shared';
 import type { Dict } from '~/i18n/en';
+import { API_URL } from '~/lib/links';
 
 /*
  * Live comments on the website (see LiveComments.astro). Positions are shares of the nearest
@@ -27,7 +28,6 @@ const HIDDEN_CLOSE_MS = 20_000;
 const HEARTBEAT_MS = 20_000;
 const COLORS: SiteColor[] = ['blue', 'violet', 'green', 'yellow', 'cyan'];
 const DARK_TEXT = new Set<SiteColor>(['green', 'yellow', 'cyan']);
-const BASE = import.meta.env.BASE_URL.replace(/\/$/, '');
 
 const accent = (color: SiteColor) => `var(--color-accent-${color})`;
 const ink = (color: SiteColor) => (DARK_TEXT.has(color) ? '#000' : '#fff');
@@ -47,10 +47,9 @@ function store(key: string, value: string): void {
   }
 }
 
-/** The room: the path without base and language, so `/de/` and `/` meet. */
+/** The room: the path without its language, so `/office/de/` and `/office/` meet. */
 function roomOf(path: string): string {
-  let rest = path.startsWith(BASE) ? path.slice(BASE.length) : path;
-  rest = rest.replace(/^\/(de|fr)(?=\/|$)/, '').replace(/\/+$/, '');
+  const rest = path.replace(/\/(de|fr)(?=\/|$)/, '').replace(/\/+$/, '');
   return (
     (rest || '/')
       .toLowerCase()
@@ -228,7 +227,7 @@ export function startLive(root: HTMLElement): void {
   function connect(): void {
     if (source || stopped) return;
     const query = new URLSearchParams({ page: room, name, color });
-    source = new EventSource(`${BASE}/api/site-live?${query}`);
+    source = new EventSource(`${API_URL}/site-live?${query}`);
     source.onmessage = (message) => handle(JSON.parse(message.data) as SiteLiveEvent);
     source.addEventListener('refused', (event) => {
       disconnect();
@@ -260,7 +259,7 @@ export function startLive(root: HTMLElement): void {
 
   function send(input: SiteLiveInput, beacon = false): void {
     if (!key) return;
-    const url = `${BASE}/api/site-live/${key}`;
+    const url = `${API_URL}/site-live/${key}`;
     const body = JSON.stringify(input);
     if (beacon && navigator.sendBeacon) {
       navigator.sendBeacon(url, new Blob([body], { type: 'application/json' }));

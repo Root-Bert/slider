@@ -1,5 +1,6 @@
 import {
-  DESKTOP_SCHEME,
+  DESKTOP_SCHEMES,
+  type DesktopApp,
   type CloudSignInStart,
   type CloudStatus,
   type DeckEditState,
@@ -19,10 +20,14 @@ import { queryKeys } from './keys';
 
 const cloudKey = ['desktop', 'cloud'] as const;
 
-/** On the server: the code for the app, then back to it through `slider://auth`. */
-export async function handCodeToDesktop(challenge: string, state: string): Promise<string> {
+/** On the server: the code for the app, then back to it through its scheme (`slider://auth`). */
+export async function handCodeToDesktop(
+  challenge: string,
+  state: string,
+  app: DesktopApp = 'slider',
+): Promise<string> {
   const { code } = await api.post<DesktopCode>('/auth/desktop/code', { challenge });
-  return `${DESKTOP_SCHEME}://auth?${new URLSearchParams({ code, state }).toString()}`;
+  return `${DESKTOP_SCHEMES[app]}://auth?${new URLSearchParams({ code, state }).toString()}`;
 }
 
 /**

@@ -1,0 +1,175 @@
+---
+import Button from '../Button.astro';
+import EndSlide from '../EndSlide.astro';
+import Family from '../Family.astro';
+import Kind from '../Kind.astro';
+import Phrase from '../Phrase.astro';
+import Plans from '../Plans.astro';
+import Screen from '../Screen.astro';
+import Screens from '../Screens.astro';
+import Tile from '../Tile.astro';
+import { s, type Lang } from '~/i18n';
+import { SCREEN_WORDS } from '~/i18n/screens';
+import { APP_NAMES, isLive, type ProductId } from '~/lib/apps';
+import { APP_URL, CLOUD_URL, READER_URL } from '~/lib/links';
+import { LEAD_SCREEN, PRINCIPLE_SCREENS } from '~/lib/screens';
+
+/**
+ * The page of an app (Slider, Writer, Solver, Reader, Cloud), the same in every language:
+ * what it is in one line, the way in right away – an account already includes it – its first
+ * screen as wide as the page, what it does differently in one breath and as three tiles with the
+ * screen that shows each, the rest of its screens as a row to walk through, the family and the plan. Slider's page adds its
+ * questions through the slot (`home/Home.astro`).
+ */
+interface Props {
+  app: ProductId;
+  lang: Lang;
+}
+
+const { app, lang } = Astro.props;
+const w = s(lang);
+const words = w.apps[app];
+const captions = SCREEN_WORDS[lang].captions[app];
+const shown = [LEAD_SCREEN[app], ...PRINCIPLE_SCREENS[app]];
+/** Whose cursor rests on the headline. */
+const BY = { slider: 'Rose', writer: 'Gesa', solver: 'Paul', reader: 'Lara', cloud: 'Anna' } as const;
+/** Cloud and Reader open at their own page of the hosted app; the others lead to the app's start. */
+const OWN: Partial<Record<ProductId, string>> = { cloud: `${CLOUD_URL}/`, reader: READER_URL };
+const own = OWN[app];
+const way = own ? { href: own, label: w.product.open.replace('{app}', APP_NAMES[app]) } : { href: `${APP_URL}/`, label: w.product.start };
+---
+
+<section class="pd-hero" data-section data-live="hero">
+  <div data-reveal><Kind label={APP_NAMES[app]} parts={[w.kinds[app], isLive(app) ? w.status.live : w.status.soon]} /></div>
+  <h1 data-reveal style="--i: 1"><Phrase text={words.tagline} by={BY[app]} /></h1>
+  <p class="exhibit-lead pd-sub" data-reveal style="--i: 2">{words.line}</p>
+  <div class="pd-actions" data-reveal style="--i: 3">
+    <Button href={way.href}>{way.label}</Button>
+  </div>
+  {!isLive(app) && <p class="pd-note" data-reveal style="--i: 4">{w.product.soonNote.replace('{app}', APP_NAMES[app])}</p>}
+  <div class="pd-screen" data-reveal style="--i: 5"><Screen app={app} name={LEAD_SCREEN[app]} lang={lang} eager /></div>
+</section>
+
+<section class="pd-say" data-section data-live="say">
+  <p data-reveal>
+    {
+      words.principles.map((point) => (
+        <>
+          <strong>{point.t}.</strong> {point.b}{' '}
+        </>
+      ))
+    }
+  </p>
+</section>
+
+<section class="pd-grid" data-section data-live="points">
+  {
+    words.principles.map((point, i) => (
+      <Tile app={app} screen={PRINCIPLE_SCREENS[app][i] ?? LEAD_SCREEN[app]} lang={lang} size={i === 0 ? 'wide' : 'half'}>
+        <p class="tile-eyebrow">{point.t}</p>
+        <h2 class="tile-title">{captions[PRINCIPLE_SCREENS[app][i] ?? '']}</h2>
+      </Tile>
+    ))
+  }
+</section>
+
+<slot />
+
+<Screens app={app} lang={lang} skip={shown} />
+
+<Family lang={lang} current={app} />
+
+<Plans lang={lang} />
+
+<EndSlide title={w.office.end.title} sub={w.office.end.sub}>
+  <Button href={`${APP_URL}/`} variant="inverse">{w.office.end.cta}</Button>
+</EndSlide>
+
+<style>
+  .pd-hero {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    padding: clamp(40px, 6vh, 96px) 16px 0;
+    text-align: center;
+  }
+  .pd-hero h1 {
+    max-width: 11em;
+    margin-top: 28px;
+    /* Small enough on a phone that the selected words stay on one line. */
+    font-size: clamp(30px, 5.2vw, 88px);
+    font-weight: 700;
+    line-height: 1.04;
+    letter-spacing: -0.03em;
+    color: var(--color-fg);
+    text-wrap: balance;
+  }
+  .pd-sub {
+    max-width: 30em;
+    margin-top: clamp(28px, 3vw, 44px);
+  }
+  .pd-actions {
+    margin-top: 40px;
+  }
+  .pd-note {
+    max-width: 40em;
+    margin-top: 24px;
+    font-size: 14px;
+    color: var(--color-fg-subtle);
+  }
+  .pd-screen {
+    width: min(100%, 1320px);
+    margin-top: clamp(64px, 7vw, 112px);
+    padding-inline: clamp(8px, 2vw, 32px);
+  }
+
+  /* The first screen grows to its size as it comes up the page. */
+  @supports (animation-timeline: view()) {
+    @media (prefers-reduced-motion: no-preference) {
+      .pd-screen {
+        animation: pd-grow linear both;
+        animation-timeline: view();
+        animation-range: entry 0% cover 38%;
+      }
+    }
+  }
+  @keyframes pd-grow {
+    from {
+      scale: 0.84;
+    }
+  }
+
+  /* What it does differently, said in one breath: the claims dark, what they mean paler. */
+  .pd-say {
+    max-width: 1240px;
+    margin: 0 auto;
+    padding: clamp(150px, 20vw, 320px) 32px 0;
+  }
+  .pd-say p {
+    font-size: clamp(22px, 2.6vw, 40px);
+    font-weight: 600;
+    line-height: 1.2;
+    letter-spacing: -0.025em;
+    color: var(--color-fg-subtle);
+    text-wrap: pretty;
+  }
+  .pd-say strong {
+    font-weight: 600;
+    color: var(--color-fg);
+  }
+
+  /* The same three as tiles, each with the screen that shows it. */
+  .pd-grid {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: clamp(12px, 1.6vw, 24px);
+    max-width: 1680px;
+    margin: 0 auto;
+    padding: clamp(96px, 12vw, 200px) clamp(12px, 1.6vw, 24px) 0;
+  }
+  @media (max-width: 767px) {
+    .pd-say {
+      padding-inline: 16px;
+    }
+  }
+</style>

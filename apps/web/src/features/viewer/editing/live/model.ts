@@ -13,6 +13,7 @@ import {
   type EditableElement,
   type FillLayer,
   type GroupElementsOperation,
+  type ListNumber,
   type LiveElement,
   type LiveParagraph,
   type LiveRun,
@@ -28,6 +29,7 @@ import {
   LIST_INDENT,
   LIST_LABEL_WIDTH,
   listBullet,
+  listBulletFont,
   listOf,
   plainParagraph,
 } from '@slider/shared/live-text';
@@ -112,10 +114,19 @@ export const richFromLive = (paragraphs: readonly LiveParagraph[]): RichParagrap
 const leadOf = (paragraph: LiveParagraph): LiveTextStyle =>
   paragraph.runs.find((run) => run.text.trim()) ?? paragraph.runs[0] ?? paragraph.mark;
 
+type Bullet = NonNullable<LiveParagraph['bullet']>;
+
+/** A bullet asked for as it is: not one the editor only assumed. */
+const sure = (bullet: Bullet): Bullet => {
+  const { assumed: _assumed, ...rest } = bullet;
+  return rest;
+};
+
 /**
  * A paragraph put in a list (`null`: out of it) as it shows until the file says how: with the
  * bullet of a paragraph of `others` in such a list, else the one it had at that level, else as
- * Slider writes a list of its own.
+ * Slider writes a list of its own. A bullet or numbering asked for (`char`, `number`) shows as
+ * the file will have it; one made up here is `assumed`.
  */
 export function withList(
   paragraph: LiveParagraph,
@@ -132,12 +143,26 @@ export function withList(
     const its = listOf(other);
     return its?.kind === list.kind && its.level === list.level;
   };
+  const lead = leadOf(paragraph);
+  const asked = list.kind === 'bullet' ? !!list.char : !!list.number;
+  /** With the bullet or numbering asked for, where it is another: as the file writes it. */
+  const signed = (bullet: Bullet): Bullet => {
+    if (list.kind === 'bullet' && list.char && list.char !== bullet.char) {
+      return { ...bullet, char: list.char, font: listBulletFont(list.char), size: lead.size };
+    }
+    if (list.kind === 'number' && list.number && list.number !== bullet.number) {
+      return { ...bullet, number: list.number };
+    }
+    return bullet;
+  };
   const like = [paragraph, ...others].find(same);
   if (like?.bullet) {
+    const bullet = signed(like.bullet);
     return {
       ...paragraph,
       level: list.level,
-      bullet: { ...like.bullet },
+      // Another paragraph's: the file may draw this one otherwise.
+      bullet: asked ? sure(bullet) : like === paragraph ? bullet : { ...bullet, assumed: true },
       marginLeft: like.marginLeft,
       indent: like.indent,
     };
@@ -145,15 +170,19 @@ export function withList(
   const kept = paragraph.bullet && paragraph.level === list.level ? paragraph.bullet : null;
   const at = kept?.at ?? (list.level - 1) * LIST_INDENT;
   const width = kept?.width ?? LIST_LABEL_WIDTH;
-  const lead = leadOf(paragraph);
-  const look = { font: null, size: lead.size, color: lead.color, at, width };
+  const look = { size: lead.size, color: lead.color, at, width };
+  const made: Bullet =
+    list.kind === 'bullet'
+      ? {
+          char: list.char ?? listBullet(list.level),
+          font: list.char ? listBulletFont(list.char) : null,
+          ...look,
+        }
+      : { char: '', font: null, ...look, number: list.number ?? '1', suffix: '.' };
   return {
     ...paragraph,
     level: list.level,
-    bullet:
-      list.kind === 'bullet'
-        ? { char: listBullet(list.level), ...look }
-        : { char: '', ...look, number: '1', suffix: '.' },
+    bullet: asked ? made : { ...made, assumed: true },
     marginLeft: at + width,
     indent: 0,
   };
@@ -373,6 +402,13 @@ export function applyToElement(
       };
     case 'setLocked':
       return { ...element, locked: operation.locked || undefined };
+    case 'setEntrance': {
+      const { entrance: was, ...rest } = element;
+      // A new one comes after the slide's others (the server's order follows with its state).
+      return operation.entrance
+        ? { ...rest, entrance: { ...operation.entrance, order: was?.order ?? 1000 } }
+        : rest;
+    }
     case 'setFlow': {
       if (!element.children) return element;
       const { flow: _was, ...rest } = element;
@@ -828,6 +864,9 @@ export interface ParagraphPatch {
   lineSpacing?: number;
   /** Into a list of bullets or numbers (at its level, the first), `null`: out of it. */
   list?: TextList['kind'] | null;
+  /** With `list`: its bullet, or how it counts – left out: as the list has it. */
+  char?: string;
+  number?: ListNumber;
   /** A level deeper (1) or less deep (-1) – paragraphs in a list only. */
   levelBy?: 1 | -1;
 }
@@ -856,12 +895,17 @@ export function paragraphRange(
     const others = paragraphs.filter((_, j) => j !== i);
     if (patch.list !== undefined) {
       const level = Math.max(1, next.level);
-      next = withList(next, patch.list && { kind: patch.list, level }, others);
+      const sign =
+        patch.list === 'bullet'
+          ? patch.char && { char: patch.char }
+          : patch.number && { number: patch.number };
+      next = withList(next, patch.list && { kind: patch.list, level, ...sign }, others);
     }
     const list = listOf(next);
     if (patch.levelBy && list) {
       const level = Math.min(9, Math.max(1, list.level + patch.levelBy));
-      if (level !== list.level) next = withList(next, { ...list, level }, others);
+      // Its bullet or numbering as that level has it, not the one it leaves.
+      if (level !== list.level) next = withList(next, { kind: list.kind, level }, others);
     }
     return next;
   });
@@ -877,6 +921,10 @@ export function commonOf<T>(paragraphs: readonly LiveParagraph[], read: (p: Live
 /** The list kind every paragraph is in (`none`: in none), else `null`. */
 export const commonList = (paragraphs: readonly LiveParagraph[]) =>
   commonOf(paragraphs, (paragraph) => listOf(paragraph)?.kind ?? 'none');
+
+/** The bullet, or the numbering (`1`, `a`, …), every paragraph has, else `null`. */
+export const commonSign = (paragraphs: readonly LiveParagraph[]) =>
+  commonOf(paragraphs, (paragraph) => paragraph.bullet?.number ?? paragraph.bullet?.char ?? null);
 
 /** The proportional line spacing every paragraph has, else `null`. */
 export const commonLineSpacing = (paragraphs: readonly LiveParagraph[]) =>

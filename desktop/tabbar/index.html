@@ -4,7 +4,7 @@
     <meta charset="UTF-8" />
     <meta
       http-equiv="Content-Security-Policy"
-      content="default-src 'none'; style-src 'unsafe-inline'; font-src 'self'; script-src 'self'"
+      content="default-src 'none'; style-src 'unsafe-inline'; font-src 'self'; img-src 'self'; script-src 'self'"
     />
     <title>Slider</title>
     <style>
@@ -21,10 +21,11 @@
         --fg-subtle: rgb(255 255 255 / 0.5);
         --hover: rgb(255 255 255 / 0.1);
         --selected: rgb(255 255 255 / 0.15);
-        --logo-back: #7a7a7a;
-        --logo-front: #525252;
-        --logo-lines: #ebebeb;
-        --logo-bubble: #f5f5f5;
+        --logo-legs: #9d3d2a;
+        --logo-roll: #cc4f37;
+        --logo-screen: #782f20;
+        --logo-bars: #b64631;
+        --logo-bubble: #e3583d;
         --hairline-strong: rgb(255 255 255 / 0.16);
         color-scheme: dark;
       }
@@ -35,10 +36,11 @@
         --fg-subtle: rgb(0 0 0 / 0.46);
         --hover: rgb(0 0 0 / 0.07);
         --selected: rgb(0 0 0 / 0.1);
-        --logo-back: #a3a3a3;
-        --logo-front: #c7c7c7;
-        --logo-lines: #262626;
-        --logo-bubble: #1f1f1f;
+        --logo-legs: #f7cdc5;
+        --logo-roll: #e66950;
+        --logo-screen: #f1ac9e;
+        --logo-bars: #ed9281;
+        --logo-bubble: #e3583d;
         --hairline-strong: rgb(0 0 0 / 0.14);
         color-scheme: light;
       }
@@ -111,6 +113,16 @@
         background: var(--selected);
         color: var(--fg);
       }
+      /* Side by side: the tab in the other half; files held over a tab. */
+      .tab[data-beside],
+      .tab[data-over] {
+        background: var(--hover);
+        color: var(--fg);
+      }
+      .tab[data-over] {
+        outline: 2px solid #3b82f6;
+        outline-offset: -2px;
+      }
       /* The presentation's buttons, top right – the deck pill's in the web app. */
       .actions {
         display: flex;
@@ -138,6 +150,12 @@
         background: var(--hover);
         color: var(--fg);
       }
+      /* The arrow beside „+“: narrow, close to it. */
+      .action.more {
+        width: 18px;
+        margin-left: -2px;
+      }
+      .action[aria-pressed='true'],
       .action[aria-expanded='true'] {
         background: var(--selected);
         color: var(--fg);
@@ -208,15 +226,21 @@
         background: var(--hover);
         color: var(--fg);
       }
-      /* The mark's mono tone, as in the app header (--color-logo-mono-*). */
-      .mark .back {
-        fill: var(--logo-back);
+      /* The mark in its own colours, as the app's logo (--color-logo-*). */
+      .mark .roll {
+        fill: var(--logo-roll);
       }
-      .mark .front {
-        fill: var(--logo-front);
+      .mark .legs {
+        stroke: var(--logo-legs);
       }
-      .mark .lines {
-        stroke: var(--logo-lines);
+      .mark .screen {
+        fill: var(--logo-screen);
+      }
+      .mark .bars {
+        fill: var(--logo-bars);
+      }
+      .mark .title {
+        stroke: var(--logo-bubble);
       }
       .mark .bubble {
         fill: var(--logo-bubble);

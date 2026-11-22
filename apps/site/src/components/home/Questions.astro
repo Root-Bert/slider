@@ -18,12 +18,12 @@ interface Props {
 const { lang } = Astro.props;
 const q = t(lang).questions;
 const looks: { bg: string; ink: string; photo: PhotoName }[] = [
-  { bg: 'var(--color-accent-blue)', ink: '#fff', photo: 'collie' },
-  { bg: 'var(--color-accent-yellow)', ink: '#000', photo: 'pom' },
-  { bg: 'var(--color-accent-violet)', ink: '#000', photo: 'reader' },
-  { bg: 'var(--color-accent-green)', ink: '#000', photo: 'corgi' },
-  { bg: 'var(--color-accent-cyan)', ink: '#000', photo: 'forest' },
-  { bg: '#fff', ink: '#000', photo: 'rottweiler' },
+  { bg: 'var(--brand-aura)', ink: '#fff', photo: 'collie' },
+  { bg: 'var(--brand-aura)', ink: '#fff', photo: 'pom' },
+  { bg: 'var(--brand-aura)', ink: '#fff', photo: 'reader' },
+  { bg: 'var(--brand-aura)', ink: '#fff', photo: 'corgi' },
+  { bg: 'var(--brand-aura)', ink: '#fff', photo: 'forest' },
+  { bg: 'var(--brand-aura)', ink: '#fff', photo: 'rottweiler' },
 ];
 const total = q.cards.length;
 const two = (n: number) => String(n).padStart(2, '0');
@@ -104,10 +104,10 @@ const two = (n: number) => String(n).padStart(2, '0');
     margin: 0 auto;
   }
   .qs-head h2 {
-    font-size: clamp(44px, 6vw, 96px);
-    font-weight: 800;
-    line-height: 0.95;
-    letter-spacing: -0.05em;
+    font-size: clamp(30px, 4.2vw, 64px);
+    font-weight: 700;
+    line-height: 1.06;
+    letter-spacing: -0.03em;
   }
   .qs-nav {
     display: flex;
@@ -148,9 +148,9 @@ const two = (n: number) => String(n).padStart(2, '0');
     box-shadow: inset 0 0 0 1px var(--color-fg-subtle);
   }
 
-  /* ── The stack: the slides behind peek out down and to the left, like the logo ──────────── */
+  /* ── The stack: one night-dark slide at a time, the others wait right behind it ──────────── */
   .qs-stack {
-    --step: clamp(10px, 1.8vw, 22px);
+    --step: 0px;
     position: relative;
     display: grid;
     max-width: var(--w);
@@ -225,7 +225,7 @@ const two = (n: number) => String(n).padStart(2, '0');
   }
   .qs-text h3 {
     margin-top: 2.6cqw;
-    font-size: 5.6cqw;
+    font-size: 4.4cqw;
     font-weight: 800;
     line-height: 1;
     letter-spacing: -0.045em;

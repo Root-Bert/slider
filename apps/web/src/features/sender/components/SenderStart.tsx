@@ -1,0 +1,190 @@
+import { Link } from 'react-router';
+import type { SenderSummary, SenderSummaryPart, SenderUnreadItem } from '@slider/shared';
+import { useMailThreads } from '@/lib/api';
+import { formatRelativeTime } from '@/lib/format';
+import { Icon, ListRow } from '@/ui';
+import { useSender } from '../hooks/useSender';
+import { mailGroupsOf } from '../lib/mail';
+import { dayOf, timeOf } from '../lib/time';
+import { ConversationMark } from './ConversationSearch';
+import { Unread } from './SenderSidebar';
+
+/* The parts of Sender's start („Aktuell“, `SenderHomePage`): its rows and the AI's summary. */
+
+/** Where a conversation of the start page opens. */
+function usePlace() {
+  const ui = useSender();
+  return (item: Pick<SenderUnreadItem, 'kind' | 'id' | 'areaId' | 'channelKind'>) =>
+    item.kind === 'agent'
+      ? ui.agentPath(item.id)
+      : item.kind === 'mail'
+        ? ui.mailThreadPath(item.id)
+        : ui.pathOf({ id: item.id, areaId: item.areaId, kind: item.channelKind ?? 'group' });
+}
+
+/**
+ * A conversation's mark as in the side bar: the area, the person, the group, the agent – a mail
+ * with colleagues only on it as a group, as it stands among the chats there.
+ */
+function Mark({ item }: { item: Pick<SenderUnreadItem, 'kind' | 'id'> }) {
+  const ui = useSender();
+  const threads = useMailThreads(ui.workspace.id).data;
+  const mailGroup =
+    item.kind === 'mail' && mailGroupsOf(threads).some((each) => each.id === item.id);
+  const conversation =
+    item.kind === 'agent'
+      ? ui.home?.agents.find((each) => each.id === item.id)
+      : item.kind === 'channel'
+        ? ui.channel(item.id)
+        : undefined;
+  return (
+    <span className="flex size-[18px] shrink-0 items-center justify-center text-fg-muted">
+      {conversation ? (
+        <ConversationMark conversation={conversation} />
+      ) : (
+        <Icon
+          name={mailGroup ? 'groups' : item.kind === 'mail' ? 'mail' : 'chatBubble'}
+          size={mailGroup ? 18 : 16}
+        />
+      )}
+    </span>
+  );
+}
+
+export function UnreadRow({ item }: { item: SenderUnreadItem }) {
+  const place = usePlace();
+  // Who wrote it, unless the conversation is theirs (a direct one, an agent's).
+  const who = item.last?.who && !item.last.who.startsWith(item.name) ? item.last.who : null;
+  const line = item.last ? (who ? `${who}: ${item.last.text}` : item.last.text) : '';
+  return (
+    <ListRow
+      variant="hover"
+      padding="wide"
+      className="relative"
+      leading={<Mark item={item} />}
+      title={
+        // The whole row opens the conversation.
+        <Link
+          to={place(item)}
+          className="outline-none after:absolute after:inset-0 after:rounded-control focus-visible:after:ring-2 focus-visible:after:ring-focus"
+        >
+          {item.name}
+        </Link>
+      }
+      subtitle={line}
+      subtitleTitle={line}
+      trailing={
+        <span className="flex shrink-0 items-center gap-2">
+          {item.last && (
+            <span className="text-xs text-fg-subtle">{formatRelativeTime(item.last.at)}</span>
+          )}
+          <Unread count={item.unread} mentioned={item.mentioned} />
+        </span>
+      }
+    />
+  );
+}
+
+export function UnreadSkeleton() {
+  return (
+    <div aria-hidden className="flex flex-col">
+      {Array.from({ length: 4 }, (_, index) => (
+        <div key={index} className="flex h-13 items-center gap-3 px-0.5">
+          <div className="skeleton size-[18px] rounded-chip" />
+          <div className="flex flex-1 flex-col gap-1.5">
+            <div
+              className="skeleton h-3.5 rounded-mark"
+              style={{ width: `${22 + ((index * 17) % 24)}%` }}
+            />
+            <div
+              className="skeleton h-3 rounded-mark"
+              style={{ width: `${40 + ((index * 23) % 35)}%` }}
+            />
+          </div>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+export function Failed({ message, onRetry }: { message: string; onRetry: () => void }) {
+  return (
+    <p className="text-body text-fg-muted">
+      {message}{' '}
+      <button type="button" className="text-fg underline" onClick={onRetry}>
+        Erneut versuchen
+      </button>
+    </p>
+  );
+}
+
+export function SummaryBody({
+  summary,
+  pending,
+  error,
+  onRetry,
+}: {
+  summary: SenderSummary | undefined;
+  pending: boolean;
+  error: string | null;
+  onRetry: () => void;
+}) {
+  if (error) return <Failed message={error} onRetry={onRetry} />;
+  if (pending || !summary) {
+    return <p className="text-body text-fg-subtle">Die KI liest, was du verpasst hast …</p>;
+  }
+  if (summary.state === 'nothing') {
+    return (
+      <p className="text-body text-fg-muted">
+        Nichts Neues. Seit du zuletzt reingeschaut hast, ist nichts dazugekommen.
+      </p>
+    );
+  }
+  if (summary.state === 'off') {
+    return (
+      <p className="text-body text-fg-muted">
+        {summary.reason ?? 'Für diesen Workspace ist keine KI eingerichtet.'} Was ungelesen ist,
+        steht nebenan.
+      </p>
+    );
+  }
+  if (summary.state === 'failed') {
+    return <Failed message={summary.reason ?? 'Das hat nicht geklappt.'} onRetry={onRetry} />;
+  }
+  return (
+    <>
+      {summary.since && (
+        <p className="-mt-2 text-xs text-fg-subtle">
+          Ungelesen seit{' '}
+          {dayOf(summary.since).replace(/^(Heute|Gestern)$/, (day) => day.toLowerCase())},{' '}
+          {timeOf(summary.since)}
+        </p>
+      )}
+      <ul className="flex flex-col gap-3 pt-1">
+        {summary.parts.map((part) => (
+          <SummaryPart key={`${part.kind}:${part.id}`} part={part} />
+        ))}
+      </ul>
+    </>
+  );
+}
+
+function SummaryPart({ part }: { part: SenderSummaryPart }) {
+  const place = usePlace();
+  return (
+    <li className="flex gap-2.5">
+      <span className="pt-px">
+        <Mark item={part} />
+      </span>
+      <span className="flex min-w-0 flex-col gap-0.5">
+        <Link
+          to={place(part)}
+          className="truncate text-body font-medium text-fg hover:underline focus-visible:underline focus-visible:outline-none"
+        >
+          {part.name}
+        </Link>
+        <span className="text-body text-fg-muted">{part.text}</span>
+      </span>
+    </li>
+  );
+}

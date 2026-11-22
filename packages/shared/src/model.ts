@@ -13,6 +13,18 @@ const unit = z.number().min(0).max(1);
 export const pointSchema = z.object({ x: unit, y: unit });
 export const rectSchema = z.object({ x: unit, y: unit, w: unit, h: unit });
 
+/**
+ * How far off a slide things may lie, of the slide: an element (`elementBoxSchema`) and what a
+ * comment marks – a slide zoomed out shows the room around it, worked in as on the slide.
+ */
+export const AROUND_SLIDE = { min: -10, max: 10, size: 20 } as const;
+const around = z.number().min(AROUND_SLIDE.min).max(AROUND_SLIDE.max);
+const aroundSize = z.number().min(0).max(AROUND_SLIDE.size);
+/** A point on the slide or in the room around it. */
+export const aroundPointSchema = z.object({ x: around, y: around });
+/** A box on the slide or in the room around it. */
+export const aroundRectSchema = z.object({ x: around, y: around, w: aroundSize, h: aroundSize });
+
 // ── People ──────────────────────────────────────────────────────────────────
 
 /** Each reviewer gets a default accent colour for pins, lines and drawings (BER-99). */
@@ -48,6 +60,16 @@ export type Author = z.infer<typeof authorSchema>;
 
 /** What the AI is called until a workspace admin names it. */
 export const DEFAULT_AI_NAME = 'KI';
+/** A name is short: it stands in buttons and fields („Frag Clippy …“). */
+export const MAX_AI_NAME_LENGTH = 8;
+/** The name as it is shown – one saved before names were short is cut. */
+export const aiNameOf = (name: string | null | undefined): string =>
+  (name || DEFAULT_AI_NAME).slice(0, MAX_AI_NAME_LENGTH).trim() || DEFAULT_AI_NAME;
+/** The AI in a sentence: „die KI“ until it has a name of its own („Frag die KI“, „Frag Clippy“). */
+export const aiInSentence = (name: string | null | undefined, start = false): string => {
+  const own = aiNameOf(name);
+  return own === DEFAULT_AI_NAME ? (start ? 'Die KI' : 'die KI') : own;
+};
 
 /** The AI as the author of its own comments – grey like no person, never mentionable. */
 export const AI_AUTHOR: Author = { id: 'ai', name: DEFAULT_AI_NAME, type: 'ai', color: 'deleted' };
@@ -55,7 +77,7 @@ export const AI_AUTHOR: Author = { id: 'ai', name: DEFAULT_AI_NAME, type: 'ai', 
 /** The AI under the name its workspace gave it. */
 export const aiAuthor = (name: string | null | undefined): Author => ({
   ...AI_AUTHOR,
-  name: name || DEFAULT_AI_NAME,
+  name: aiNameOf(name),
 });
 
 /** What comments and @mentions of a deleted account show instead of the name (BER-145). */
@@ -323,6 +345,15 @@ export const updateDeckTemplateInputSchema = deckTemplateSchema
   .partial();
 export type UpdateDeckTemplateInput = z.infer<typeof updateDeckTemplateInputSchema>;
 
+/** Where a presentation lies in the files: in words, and the folder or area to open for it. */
+export const deckPlaceSchema = z.object({
+  words: z.string(),
+  /** The folder it lies in; `null`: at the top of `areaId`, or of one's own files. */
+  folderId: z.string().nullable(),
+  areaId: z.string().nullable(),
+});
+export type DeckPlace = z.infer<typeof deckPlaceSchema>;
+
 export const deckSchema = z.object({
   id: z.string(),
   /** The workspace the deck belongs to (BER-129). */
@@ -334,6 +365,8 @@ export const deckSchema = z.object({
   createdAt: z.iso.datetime(),
   updatedAt: z.iso.datetime(),
   archivedAt: z.iso.datetime().nullable(),
+  /** In the trash since then („Papierkorb“); `null` or absent: not deleted. */
+  deletedAt: z.iso.datetime().nullable().optional(),
   revisionNumber: z.number().int(),
   /** Visible slides of the current revision – hidden ones (PowerPoint "Folie ausblenden") don't count. */
   slideCount: z.number().int(),
@@ -362,6 +395,10 @@ export const deckSchema = z.object({
   folderId: z.string().nullable().optional(),
   /** Only selected accounts may open it (see `deckAccessSchema`). Optional for older API versions. */
   restricted: z.boolean().optional(),
+  /** Its file in Cloud – where it lies; `null`/absent: no place yet. */
+  cloudNodeId: z.string().nullable().optional(),
+  /** That place in words, with what to open for it; `null`/absent: none the caller sees. */
+  place: deckPlaceSchema.nullable().optional(),
   /**
    * A template being designed, no review: its slides are the layouts. `null` for every review.
    * Optional for older API versions.
@@ -470,7 +507,7 @@ export type ShapeRef = z.infer<typeof shapeRefSchema>;
 
 /** A box a comment marks: an area, bound to a PowerPoint shape or free. */
 export const anchorBoxSchema = z.object({
-  rect: rectSchema,
+  rect: aroundRectSchema,
   shapeRef: shapeRefSchema.nullable(),
 });
 export type AnchorBox = z.infer<typeof anchorBoxSchema>;
@@ -481,10 +518,14 @@ export const MAX_ANCHOR_BOXES = 50;
 export const anchorSchema = z.discriminatedUnion('type', [
   /** Comment about the slide as a whole. */
   z.object({ type: z.literal('slide') }),
-  z.object({ type: z.literal('point'), point: pointSchema, shapeRef: shapeRefSchema.nullable() }),
+  z.object({
+    type: z.literal('point'),
+    point: aroundPointSchema,
+    shapeRef: shapeRefSchema.nullable(),
+  }),
   z.object({
     type: z.literal('rect'),
-    rect: rectSchema,
+    rect: aroundRectSchema,
     shapeRef: shapeRefSchema.nullable(),
     /**
      * Further boxes the same comment is about (several boxes picked with ⇧/⌘ in box mode): one
@@ -518,7 +559,7 @@ export const PATH_STROKE_TOOLS = ['pen', 'arrow', 'highlighter', 'rect', 'ellips
 export const pathStrokeSchema = z.object({
   tool: z.enum(PATH_STROKE_TOOLS),
   color: accentColorSchema,
-  points: z.array(pointSchema).min(2).max(2000),
+  points: z.array(aroundPointSchema).min(2).max(2000),
 });
 export type PathStroke = z.infer<typeof pathStrokeSchema>;
 export type PathStrokeTool = PathStroke['tool'];
@@ -526,29 +567,22 @@ export type PathStrokeTool = PathStroke['tool'];
 /** Relative font size of on-slide text: a fraction of the slide height. */
 export const TEXT_FONT_SIZE = { min: 0.01, max: 0.2, default: 0.04 } as const;
 export const MAX_TEXT_ANNOTATION_LENGTH = 2000;
-/** Tolerance for rounding when checking that a text box stays on the slide. */
-const RECT_EPSILON = 1e-6;
-
 /**
- * Text written directly on the slide ("Text auf Folie"). The box is normalised to the slide
- * (`x`/`y` top-left, `w`/`h` size); `fontSize` is relative to the slide height, so the text keeps
+ * Text written directly on the slide ("Text auf Folie") – or beside it. The box is normalised to
+ * the slide (`x`/`y` top-left, `w`/`h` size); `fontSize` is relative to the slide height, so the text keeps
  * its proportions at every slide size. A sticker sent without a comment of its own carries the
  * same text as its body – so it counts, is listed and goes to the AI like any comment.
  */
-export const textStrokeSchema = z
-  .object({
-    tool: z.literal('text'),
-    color: accentColorSchema,
-    x: unit,
-    y: unit,
-    w: z.number().gt(0).max(1),
-    h: z.number().gt(0).max(1),
-    text: z.string().trim().min(1).max(MAX_TEXT_ANNOTATION_LENGTH),
-    fontSize: z.number().min(TEXT_FONT_SIZE.min).max(TEXT_FONT_SIZE.max),
-  })
-  .refine((box) => box.x + box.w <= 1 + RECT_EPSILON && box.y + box.h <= 1 + RECT_EPSILON, {
-    message: 'Das Textfeld muss auf der Folie liegen.',
-  });
+export const textStrokeSchema = z.object({
+  tool: z.literal('text'),
+  color: accentColorSchema,
+  x: around,
+  y: around,
+  w: z.number().gt(0).max(1),
+  h: z.number().gt(0).max(1),
+  text: z.string().trim().min(1).max(MAX_TEXT_ANNOTATION_LENGTH),
+  fontSize: z.number().min(TEXT_FONT_SIZE.min).max(TEXT_FONT_SIZE.max),
+});
 export type TextStroke = z.infer<typeof textStrokeSchema>;
 
 /** Everything drawn or written on a slide as part of a comment (BER-99). */
@@ -576,7 +610,8 @@ export const isDrawing = (comment: { strokes: readonly Stroke[] }): boolean =>
 type Placed = { anchor: Anchor; strokes: Stroke[] };
 
 /**
- * The shift by (`dx`, `dy`) cut down so the drawing and its anchor stay on the slide.
+ * The shift by (`dx`, `dy`) cut down so the drawing and its anchor stay where things may lie
+ * (`AROUND_SLIDE`: the slide and the room around it).
  */
 export function clampDrawingShift(
   { anchor, strokes }: Placed,
@@ -600,16 +635,19 @@ export function clampDrawingShift(
   }
   if (xs.length === 0) return { dx: 0, dy: 0 };
   const within = (value: number, values: number[]) =>
-    Math.min(1 - Math.max(...values), Math.max(-Math.min(...values), value));
+    Math.min(
+      AROUND_SLIDE.max - Math.max(...values),
+      Math.max(AROUND_SLIDE.min - Math.min(...values), value),
+    );
   return { dx: within(dx, xs), dy: within(dy, ys) };
 }
 
-/** Moves a comment's drawn strokes and its point/box anchor by (`dx`, `dy`), kept on the slide. */
+/** Moves a comment's drawn strokes and its point/box anchor by (`dx`, `dy`) – off the slide too. */
 export function moveDrawing<T extends Placed>(comment: T, dx: number, dy: number): T {
   const shift = clampDrawingShift(comment, dx, dy);
   const move = ({ x, y }: { x: number; y: number }) => ({
-    x: Math.min(1, Math.max(0, x + shift.dx)),
-    y: Math.min(1, Math.max(0, y + shift.dy)),
+    x: x + shift.dx,
+    y: y + shift.dy,
   });
   const { anchor } = comment;
   return {

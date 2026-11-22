@@ -1,16 +1,18 @@
 ---
 import Category from './Category.astro';
 import { formatDate, type Post } from './posts';
+import type { Lang } from '~/i18n';
 
-/** Category chip + "Oct 14, 2026 | 8 min read". */
+/** Category chip + "Oct 14, 2026 | 8 min read", in mono. Stands on a dark card. */
 interface Props {
   post: Post;
+  lang?: Lang;
 }
 
-const { post } = Astro.props;
+const { post, lang = 'en' } = Astro.props;
 ---
 
 <div class="flex flex-wrap items-center gap-2.5">
-  <Category tag={post.data.tag} accent={post.data.accent} />
-  <span class="text-xs tabular-nums whitespace-pre text-fg-subtle">{formatDate(post.data.date)} | {post.data.readingTime}</span>
+  <Category tag={post.data.tag} accent={post.data.accent} lang={lang} />
+  <span class="font-mono text-xs whitespace-pre text-white/55">{formatDate(post.data.date, lang)}  |  {post.data.readingTime}</span>
 </div>

@@ -13,14 +13,10 @@ export function failureMessage(result: BulkResult<unknown>, verb: string): strin
 /** Toast text after a move: what went where, or what failed. */
 export function movedMessage(
   result: BulkResult<unknown>,
-  folderName: string | null,
+  placeName: string,
 ): { text: string; tone?: 'danger' } {
   const failure = failureMessage(result, 'verschoben');
   if (failure) return { text: failure, tone: 'danger' };
   const what = pluralize(result.done.length, 'Präsentation', 'Präsentationen');
-  return {
-    text: folderName
-      ? `${what} nach „${folderName}“ verschoben`
-      : `${what} aus dem Ordner genommen`,
-  };
+  return { text: `${what} nach „${placeName}“ verschoben` };
 }

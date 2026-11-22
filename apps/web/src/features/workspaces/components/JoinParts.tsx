@@ -1,6 +1,7 @@
 import { useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router';
 import type { InviteState, JoinPreview } from '@slider/shared';
+import { appStart, useBackApp } from '@/lib/apps';
 import { routes } from '@/lib/routes';
 import { ApiError } from '@/lib/api-client';
 import { useAuthProviders, useJoinWorkspace, useMe, useOtherAccounts } from '@/lib/api';
@@ -72,7 +73,7 @@ export function Invitation({
         title={copy.title}
         message={copy.message}
       >
-        {signedIn && <ReviewsLink />}
+        {signedIn && <StartLink />}
       </CenteredCard>
     );
   }
@@ -191,7 +192,7 @@ export function JoinButton({
         </Button>
       )}
       {accounts.dialog}
-      {full && <ReviewsLink />}
+      {full && <StartLink />}
     </div>
   );
 }
@@ -212,11 +213,12 @@ export function SignInToJoin({ token }: { token: string }) {
   );
 }
 
-/** "Zu den Projekten" below a join card. */
-export function ReviewsLink() {
+/** Below a join card: to the app one came from – opened from a mail, the start page. */
+export function StartLink() {
+  const start = appStart(useBackApp());
   return (
-    <TextLink to={routes.reviews()} variant="underline" size="sm">
-      Zu den Präsentationen
+    <TextLink to={start.to} variant="underline" size="sm">
+      {start.label}
     </TextLink>
   );
 }

@@ -21,7 +21,7 @@ import {
 } from '@/ui';
 import {
   buildThreads,
-  commentPreview,
+  CommentPreview,
   doneByAi,
   isBareDrawing,
   isRemovedInSource,
@@ -309,7 +309,7 @@ function OpenThreadItem({
               done && 'text-fg-subtle line-through',
             )}
           >
-            {commentPreview(root)}
+            <CommentPreview comment={root} />
           </span>
         </Link>
 
@@ -349,7 +349,7 @@ function OpenThreadItem({
                     >
                       <CommentMeta comment={reply} />
                       <span className="line-clamp-3 text-body text-fg-muted">
-                        {commentPreview(reply)}
+                        <CommentPreview comment={reply} />
                       </span>
                     </Link>
                   </li>
@@ -373,8 +373,8 @@ function OpenThreadItem({
             !done
               ? 'Als erledigt markieren'
               : doneByAi(root)
-                ? 'Von der KI erledigt – klicken zum Wiederöffnen'
-                : 'Erledigt – klicken zum Wiederöffnen'
+                ? 'Von der KI erledigt. Klicken zum Wiederöffnen'
+                : 'Erledigt. Klicken zum Wiederöffnen'
           }
           onClick={toggle}
         />

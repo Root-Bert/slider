@@ -7,19 +7,13 @@ export const en = {
     title: 'Slider | Presentations everyone gets a say in',
     description:
       'Slider is the presentation tool where everyone gets a say. Show your slides, collect opinions right on them and turn them into the better version, together in the browser. Open source, hosted in the EU.',
-    pricingTitle: 'Pricing',
-    pricingDescription:
-      'Priced per workspace, never per seat: free for small teams, €79 a month for up to 100 people, €249 with AI included, free when you host it yourself.',
     downloadTitle: 'Download',
     downloadDescription:
       'Slider as an app for Mac and Linux: works offline, your presentations stay on your computer, the AI runs with your own keys.',
   },
   nav: {
-    home: 'Home',
-    pricing: 'Pricing',
-    blog: 'Blog',
     login: 'Log in',
-    start: 'Start for free',
+    start: 'Open Slider',
     menu: 'Menu',
     skip: 'Skip to content',
     language: 'Language',
@@ -195,8 +189,7 @@ export const en = {
   photo: { by: 'Photo by', on: 'on' },
   cta: {
     title: 'Ready for your next presentation.',
-    button: 'Start for free',
-    pricing: 'See pricing',
+    button: 'Open Slider',
   },
   footer: {
     tagline: 'Get your ideas across.',
@@ -206,65 +199,6 @@ export const en = {
     source: 'Source code',
     changelog: 'Changelog',
     contact: 'Contact',
-  },
-  pricing: {
-    title: 'Priced per workspace, never per seat.',
-    sub: 'Feedback works best when everyone can join. So bring the whole team.',
-    monthly: 'per month',
-    forever: 'forever',
-    contract: 'per contract',
-    custom: 'Custom',
-    soon: 'Coming soon',
-    popular: 'Most teams',
-    over: 'Over a limit? Nothing gets deleted. You can still read, export and clean up, you just cannot create new things until you upgrade.',
-    plans: {
-      free: {
-        pitch: 'For small teams. Free for as long as you like, no catch.',
-        cta: 'Start for free',
-        note: 'No payment method needed.',
-        lead: 'Everything you need:',
-        features: [
-          'Unlimited presentations',
-          'Up to 5 people',
-          '2 GB storage',
-          'All review tools',
-          'Live collaboration',
-        ],
-      },
-      team: {
-        pitch: 'One flat price. With 100 people that is just €0.79 per person.',
-        note: 'Start with Free today, upgrading comes soon.',
-        lead: 'Everything in Free, plus:',
-        features: ['Up to 100 people', '100 GB storage', 'Invoices for your accounting'],
-      },
-      ai: {
-        pitch: 'AI built in. No own key, no tokens to manage, we run it for you.',
-        note: 'Start with Free today, upgrading comes soon.',
-        lead: 'Everything in Team, plus:',
-        features: [
-          'AI included, no own key',
-          'Tokens covered by us',
-          'Models kept up to date',
-          'One bill, no extra AI costs',
-        ],
-      },
-      enterprise: {
-        pitch: 'For more than 100 people or your own requirements.',
-        cta: 'Contact us',
-        note: 'We set it up together with you.',
-        lead: 'Everything in Team, plus:',
-        features: [
-          'More than 100 people',
-          'Storage sized to your team',
-          'Help with self-hosting',
-          'Contract and invoice billing',
-        ],
-      },
-    },
-    selfTitle: 'Prefer your own server?',
-    selfBody: 'Host Slider yourself for free, without limits. One docker compose up.',
-    selfButton: 'View on GitHub',
-    license: 'Open source under the EUPL-1.2. Need support or a commercial license?',
   },
   /** The desktop app's download page (not linked until a release carries the files). */
   download: {
@@ -276,7 +210,7 @@ export const en = {
     macTitle: 'Mac',
     macButton: 'Download for Mac',
     macNote:
-      'For Macs with an Apple chip (M1 or newer) on macOS 12 or newer, checked by Apple. LibreOffice, which Slider uses to read and write presentation files, is loaded on first start if your Mac doesn’t have it.',
+      'For Macs with an Apple chip (M1 or newer) on macOS 12 or newer. LibreOffice, which Slider uses to read and write presentation files, is loaded on first start if your Mac doesn’t have it.',
     linuxTitle: 'Linux',
     linuxButton: 'Download for Linux',
     debButton: 'Download for Ubuntu and Debian',

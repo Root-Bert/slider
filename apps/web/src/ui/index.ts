@@ -32,6 +32,7 @@ export { Divider, type DividerProps } from './Divider';
 export { EmptyState, type EmptyStateProps } from './EmptyState';
 export { ErrorText, type ErrorTextProps } from './ErrorText';
 export { Legend, type LegendItem, type LegendProps } from './Legend';
+export { ColorMixer, HexField, PercentField } from './ColorMixer';
 export { GlassPanel, type GlassPanelTone } from './GlassPanel';
 export { DeleteButton } from './DeleteButton';
 export { Icon, type IconName } from './Icon';
@@ -79,6 +80,8 @@ export { SelectionBar } from './SelectionBar';
 export { SelectedMark, SelectionBox } from './SelectionMarks';
 export {
   collectionGridClass,
+  highlightedCardClass,
+  highlightedRowClass,
   selectedCardClass,
   selectedOutlineClass,
   selectedRowClass,
@@ -97,6 +100,7 @@ export { TextField, type TextFieldProps } from './TextField';
 export { BackLink, TextLink, type TextLinkProps } from './TextLink';
 export { Toast } from './Toast';
 export { Toggle, type SwitchSize } from './Toggle';
+export { SidePanel, SidePanelHeader } from './SidePanel';
 export { Toolbar, ToolbarDivider, type ToolbarDividerProps, type ToolbarProps } from './Toolbar';
 export { Tooltip, type TooltipProps } from './Tooltip';
 export { useCopyToClipboard } from './hooks/useCopyToClipboard';
@@ -108,4 +112,5 @@ export { useFullscreen } from './hooks/useFullscreen';
 export { useIsNarrow, useMediaQuery } from './hooks/useMediaQuery';
 export { usePointerSpot } from './hooks/usePointerSpot';
 export { usePopover, type UsePopover, type UsePopoverOptions } from './hooks/usePopover';
+export { TOP_LAYER_CLASS, useTopLayer } from './hooks/useTopLayer';
 export { useToast, type ShowToast, type ToastMessage, type ToastTone } from './hooks/useToast';

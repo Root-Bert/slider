@@ -7,6 +7,9 @@ test.use({
       '--no-proxy-server',
       '--use-fake-device-for-media-stream',
       '--use-fake-ui-for-media-stream',
+      // A null audio sink clocks playback: on the machine's speakers a video with sound stays at
+      // 0:00 whenever macOS has stalled its output (screen locked for hours).
+      '--disable-audio-output',
     ],
   },
 });
@@ -17,10 +20,14 @@ test('slides can be navigated with the keyboard', async ({ page }) => {
   const counter = page.getByRole('textbox', { name: 'Aktuelle Folie, 1 bis 5' });
   const slideParam = async () => new URL(page.url()).searchParams.get('slide');
   await expect(counter).toHaveValue('1');
+  // The URL follows the slide once it has stayed a moment (SLIDE_URL_SETTLE_MS): wait for it.
+  await expect.poll(slideParam).not.toBeNull();
+  const first = await slideParam();
 
   await page.keyboard.press('ArrowRight');
   await expect(counter).toHaveValue('2');
   await expect(page.getByText('Folie 2 von 5', { exact: true })).toBeAttached();
+  await expect.poll(slideParam).not.toBe(first);
   const second = await slideParam();
 
   await page.keyboard.press('ArrowRight');
@@ -106,7 +113,7 @@ test('slides can be navigated with the keyboard', async ({ page }) => {
 
   // The run is kept: „Durchgänge“ in the deck's menu shows it, as „Speicherplatz“ does.
   await page.evaluate(() => localStorage.clear());
-  await page.goto('/');
+  await page.goto('/slider');
   const card = page.locator(`[data-select-id="${deck.id}"]`);
   await card.click({ button: 'right' });
   await page.getByRole('menuitem', { name: 'Durchgänge …' }).click();

@@ -2,7 +2,7 @@ import type { Slide } from '@slider/shared';
 import { Fragment, type ReactNode } from 'react';
 import { threadsOf, useCommentThreads } from '../comments/hooks/useCommentThreads';
 import { fadesDone, gapKey } from '../comments/lib/comment-selectors';
-import type { TrackLayout, TrackStack } from './lib/timeline-layout';
+import { isOverviewTrack, type TrackLayout, type TrackStack } from './lib/timeline-layout';
 import { DeletedSlidesEntry } from '../revisions/DeletedSlidesEntry';
 import { GapDivider } from '../stage/GapDivider';
 import { gapButtons, gapDotsLift } from '../stage/lib/gap-buttons';
@@ -18,6 +18,7 @@ import type { TrackSwipe } from './hooks/useTrackSwipe';
 import { GapDots } from './TrackDots';
 import { useTimelineRange, type TimelineWindow } from './timeline-window';
 import { SlideNotes, VariantBadge, VariantGhost, VariantNoteHint } from './TrackRows';
+import { VariantOverview } from './VariantOverview';
 
 interface TrackProps {
   layout: TrackLayout;
@@ -38,7 +39,8 @@ interface TrackProps {
  *
  * More tracks lie over and under it, as tall and wide as it (`trackStack`): one per variant over
  * it – each slide's first variant right over it, full size and edited like a slide, and over the
- * last one a „Variante erstellen“ – and the speaker notes under it. The band shows one track at a
+ * last one a „Variante erstellen“, on top the overview („Varianten vergleichen“: each slide and its
+ * variants side by side) – and the speaker notes under it. The band shows one track at a
  * time; paged (`useTrackSwipe`), its tracks slide up and down, clipped to the band, and only
  * then are the tracks beside it drawn.
  */
@@ -78,8 +80,18 @@ export function Track({ layout, window, snap, stack, swipe }: TrackProps) {
   const height = layout.h;
   const { track, moving, reach, attachBand } = swipe;
 
-  /** A slide (or a variant) as a frame on a track. */
-  const frame = (slide: Slide, index: number, box: { x: number; w: number }) => {
+  /**
+   * A slide (or a variant) as a frame on track `level` – full height in its place, or (the
+   * overview) smaller at `top`, to review only. The draft only on the track shown: a slide can be
+   * on two while they slide.
+   */
+  const frame = (
+    slide: Slide,
+    index: number,
+    box: { x: number; w: number; top?: number; h?: number },
+    level: number,
+    review = false,
+  ) => {
     const threads = threadsOf(marksBySlide, slide.id);
     const ownsEmphasis = emphasisId !== null && threads.some((t) => t.id === emphasisId);
     return (
@@ -88,13 +100,13 @@ export function Track({ layout, window, snap, stack, swipe }: TrackProps) {
         index={index}
         total={slides.length}
         x={box.x}
-        top={0}
+        top={box.top ?? 0}
         w={box.w}
-        h={height}
+        h={box.h ?? height}
         isActive={slide.id === activeSlideId}
         threads={threads}
         emphasisId={ownsEmphasis ? emphasisId : null}
-        draft={draft?.slideId === slide.id ? draft : null}
+        draft={level === track && draft?.slideId === slide.id ? draft : null}
         fadeDone={fadesDone(statusFilter)}
         tool={canComment ? tool : null}
         canSelect={canComment && tool === null && !editing.active}
@@ -105,7 +117,8 @@ export function Track({ layout, window, snap, stack, swipe }: TrackProps) {
         boxMode={boxes}
         showGuides={showGuides}
         showLayoutGrid={showLayoutGrid}
-        layered={layers.open && slide.id === activeSlideId}
+        layered={!review && layers.open && slide.id === activeSlideId}
+        review={review}
       />
     );
   };
@@ -163,15 +176,32 @@ export function Track({ layout, window, snap, stack, swipe }: TrackProps) {
         );
         continue;
       }
+      // The top track: each slide with variants, it and they side by side.
+      if (isOverviewTrack(level, stack)) {
+        if ((variantsOf.get(slide.id)?.length ?? 0) > 0)
+          items.push(
+            <VariantOverview
+              key={slide.id}
+              slideId={slide.id}
+              index={index}
+              x={box.x}
+              w={box.w}
+              h={height}
+              frame={(item, place) => frame(item, index, place, level, true)}
+            />,
+          );
+        continue;
+      }
       if (level < 0) {
         const variants = variantsOf.get(slide.id) ?? [];
         const variant = variants[-level - 1];
         if (variant)
           items.push(
             <Fragment key={variant.id}>
-              {frame(variant, index, box)}
+              {frame(variant, index, box, level)}
               <VariantBadge
                 variantId={variant.id}
+                slideId={slide.id}
                 number={-level}
                 x={box.x}
                 w={box.w}
@@ -188,7 +218,7 @@ export function Track({ layout, window, snap, stack, swipe }: TrackProps) {
       const key = gapKey(slide.id, next?.id ?? null);
       items.push(
         <Fragment key={slide.id}>
-          {frame(slide, index, box)}
+          {frame(slide, index, box, 0)}
           <GapDivider
             gapKey={key}
             x={gap.x}

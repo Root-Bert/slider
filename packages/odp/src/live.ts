@@ -19,6 +19,7 @@ import { propertiesOf as propsOf, type Properties, type StyleIndex, unquote } fr
 import { lengthToCm } from './units';
 import {
   attr,
+  spaceRun,
   childrenOf,
   element,
   elementChildren,
@@ -394,8 +395,7 @@ function readRuns(ctx: TextContext, paragraph: XmlNode, base: LiveTextStyle): Li
           props.reduce((current, p) => applyText(ctx.index, current, p), style),
         );
       } else if (tag === 'text:a') walk(child, style);
-      else if (tag === 'text:s')
-        push(' '.repeat(Math.max(1, Number(attr(child, 'text:c') ?? 1) || 1)), style);
+      else if (tag === 'text:s') push(spaceRun(attr(child, 'text:c')), style);
       else if (tag === 'text:tab') push('\t', style);
       else if (tag === 'text:line-break') push('\n', style);
       else notLive(`inline ${tag}`);

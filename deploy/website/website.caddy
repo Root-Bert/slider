@@ -1,6 +1,6 @@
-# The product website (https://{$WEBSITE_DOMAIN}/slider/) and the personal page at the root → the
-# website container. Mounted into the Caddy of deploy/docker-compose.yml by
-# docker-compose.website.yml.
+# The website of the office and its apps (https://{$WEBSITE_DOMAIN}/office/, /slider/, /writer/,
+# /solver/, /cloud/) and the personal page at /me/ → the website container. Mounted into the Caddy
+# of deploy/docker-compose.yml by docker-compose.website.yml.
 {$WEBSITE_DOMAIN} {
 	encode zstd gzip
 	header {
@@ -20,25 +20,9 @@
 			header_up X-Forwarded-For {client_ip}
 		}
 	}
-	handle /slider/* {
-		reverse_proxy website:80
-	}
-	# Crawlers only look at the domain root; the file itself ships with the site.
-	handle /robots.txt {
-		rewrite * /slider/robots.txt
-		reverse_proxy website:80
-	}
-	# The personal page at the root (apps/home) and its files.
-	@home path / /assets/*
-	handle @home {
-		reverse_proxy website:80
-	}
-	# Nothing else lives on the domain: /slider without the slash lands on the site, the rest on
-	# the personal page.
-	handle /slider {
-		redir * /slider/ 302
-	}
+	# Everything else is the site's: its pages, the redirect from the root to the office and its
+	# own 404 page for what does not exist.
 	handle {
-		redir * / 302
+		reverse_proxy website:80
 	}
 }

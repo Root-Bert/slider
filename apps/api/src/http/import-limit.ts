@@ -25,7 +25,7 @@ function createImportLimit(deps: AppDeps) {
     windowMs: HOUR_MS,
     clock: deps.clock,
   });
-  return createMiddleware<ViewerEnv>(async (c, next) => {
+  const middleware = createMiddleware<ViewerEnv>(async (c, next) => {
     const user = byUser.hit(c.var.viewer.author.id);
     const client = byClient.hit(clientAddress(c));
     if (!user.allowed || !client.allowed) {
@@ -42,10 +42,10 @@ function createImportLimit(deps: AppDeps) {
     }
     await next();
   });
+  return { middleware, byUser };
 }
 
-/** One budget per app, shared by every import route (after `viewerMiddleware`). */
-export function importLimit(deps: AppDeps) {
+function limiterOf(deps: AppDeps) {
   let limiter = limiters.get(deps);
   if (!limiter) {
     limiter = createImportLimit(deps);
@@ -53,6 +53,12 @@ export function importLimit(deps: AppDeps) {
   }
   return limiter;
 }
+
+/** One budget per app, shared by every import route (after `viewerMiddleware`). */
+export const importLimit = (deps: AppDeps) => limiterOf(deps).middleware;
+
+/** The same budget for an import that is no request of its own (a presentation made by an AI app). */
+export const countImport = (deps: AppDeps, userId: string) => limiterOf(deps).byUser.hit(userId);
 
 /** Deck files (uploads and new versions) one account may send at once – each is buffered whole. */
 export const DECK_UPLOADS_IN_FLIGHT = 2;

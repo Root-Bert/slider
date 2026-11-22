@@ -1,0 +1,90 @@
+{
+  "fill": "automatic",
+  "groups": [
+    {
+      "layers": [
+        {
+          "fill": "automatic",
+          "image-name": "Comment box.png",
+          "name": "Comment box",
+          "position": {
+            "scale": 0.93,
+            "translation-in-points": [96.42, -64.28]
+          }
+        }
+      ],
+      "shadow": {
+        "kind": "neutral",
+        "opacity": 0.5
+      },
+      "translucency": {
+        "enabled": true,
+        "value": 0.3
+      }
+    },
+    {
+      "layers": [
+        {
+          "fill": "automatic",
+          "image-name": "Fold.png",
+          "name": "Fold",
+          "position": {
+            "scale": 0.93,
+            "translation-in-points": [-275.28, -252.96]
+          }
+        }
+      ],
+      "shadow": {
+        "kind": "neutral",
+        "opacity": 0.5
+      },
+      "translucency": {
+        "enabled": true,
+        "value": 0.3
+      }
+    },
+    {
+      "layers": [
+        {
+          "fill": "automatic",
+          "glass": true,
+          "image-name": "Page.png",
+          "name": "Page",
+          "position": {
+            "scale": 0.93,
+            "translation-in-points": [-100.44, 1.86]
+          }
+        }
+      ],
+      "shadow": {
+        "kind": "neutral",
+        "opacity": 0.5
+      },
+      "translucency": {
+        "enabled": true,
+        "value": 0.3
+      }
+    },
+    {
+      "layers": [
+        {
+          "glass": false,
+          "image-name": "Background.png",
+          "name": "Background"
+        }
+      ],
+      "shadow": {
+        "kind": "neutral",
+        "opacity": 0.5
+      },
+      "translucency": {
+        "enabled": true,
+        "value": 0.3
+      }
+    }
+  ],
+  "supported-platforms": {
+    "circles": ["watchOS"],
+    "squares": "shared"
+  }
+}

@@ -85,10 +85,18 @@ export type TextAlign = z.infer<typeof textAlignSchema>;
 export const listNumberSchema = z.enum(['1', 'a', 'A', 'i', 'I']);
 export type ListNumber = z.infer<typeof listNumberSchema>;
 
-/** A paragraph in a list: with bullets or numbers, at a level (1 outermost). */
+/** The bullets Slider offers: a dot, a dash, shapes. */
+export const LIST_BULLETS = ['•', '–', '○', '■', '◆', '→', '✓', '★'] as const;
+
+/**
+ * A paragraph in a list: with bullets or numbers, at a level (1 outermost). `char`: its bullet,
+ * `number`: how it counts – left out: as the text's list draws that level.
+ */
 export const textListSchema = z.object({
   kind: z.enum(['bullet', 'number']),
   level: z.number().int().min(1).max(9),
+  char: z.string().min(1).max(4).optional(),
+  number: listNumberSchema.optional(),
 });
 export type TextList = z.infer<typeof textListSchema>;
 
@@ -135,6 +143,11 @@ export const liveParagraphSchema = z.object({
       prefix: z.string().max(8).optional(),
       suffix: z.string().max(8).optional(),
       start: z.number().int().min(0).max(9999).optional(),
+      /**
+       * Made up by the editor (a line put in a list, a level deeper) until the file says how its
+       * list draws that level: not asked for when the text is written (`listOf`).
+       */
+      assumed: z.boolean().optional(),
     })
     .nullable(),
 });
@@ -524,6 +537,29 @@ export const elementFlowSchema = z.object({
 });
 export type ElementFlow = z.infer<typeof elementFlowSchema>;
 
+/**
+ * How an element comes in when its slide is presented – each one after the one before (the first
+ * as the slide comes), or together with it; the file's entrance effects, which LibreOffice and
+ * PowerPoint play alike. `rise`: fades in moving up a little; `fly`: from outside the slide, from
+ * `from`; `zoom`: grows from its middle; `wipe`: uncovered from the left.
+ */
+export const ELEMENT_ENTRANCES = ['appear', 'fade', 'rise', 'fly', 'zoom', 'wipe'] as const;
+export type ElementEntranceEffect = (typeof ELEMENT_ENTRANCES)[number];
+export const ENTRANCE_SIDES = ['left', 'right', 'top', 'bottom'] as const;
+export const entranceSchema = z.object({
+  effect: z.enum(ELEMENT_ENTRANCES),
+  /**
+   * `after`: once the one before is in; `with`: together with it; `click`: on a click – files from
+   * elsewhere only (Slider shows such an element at once and leaves the effect as it is).
+   */
+  start: z.enum(['after', 'with', 'click']).default('after'),
+  /** Where `fly` comes from (left out: the bottom). */
+  from: z.enum(ENTRANCE_SIDES).optional(),
+});
+export type Entrance = z.infer<typeof entranceSchema>;
+/** Seconds one entrance takes. */
+export const ENTRANCE_SECONDS = 0.5;
+
 export const editableElementSchema = z.object({
   /** Stable while the deck is edited in Slider. */
   id: z.string(),
@@ -564,6 +600,11 @@ export const editableElementSchema = z.object({
    * slide (`duplicateSlide`), and so on back – the one first copied. Left out: none was.
    */
   morphKey: z.string().optional(),
+  /**
+   * How it comes in when presenting, and its place among the slide's entrances (0 first). Left
+   * out: it is there as the slide comes (or has an effect Slider does not offer).
+   */
+  entrance: entranceSchema.extend({ order: z.number().int().nonnegative() }).optional(),
   /**
    * A group: the ids of the elements in it, bottom first (`groupElements`; `ungroupElements` sets
    * them on the slide again). Left out: no group, or one whose elements have no ids.
@@ -976,6 +1017,16 @@ export const setLockedOperationSchema = z.object({
 });
 
 /**
+ * Sets how an element comes in when presenting (`EditableElement.entrance`): a new one after the
+ * slide's others, a changed one in its place; `null`: none.
+ */
+export const setEntranceOperationSchema = z.object({
+  type: z.literal('setEntrance'),
+  elementId,
+  entrance: entranceSchema.nullable(),
+});
+
+/**
  * How a picture fills its frame: `fill` cropped to it (proportions kept) – the part shown by
  * `focus`, else as it was –, `stretch` the whole picture stretched to it.
  */
@@ -1156,6 +1207,7 @@ export const slideOperationSchema = z.discriminatedUnion('type', [
   replaceImageOperationSchema,
   setTiltOperationSchema,
   setLockedOperationSchema,
+  setEntranceOperationSchema,
   setFlowOperationSchema,
   setCornerRadiusOperationSchema,
   setImageFitOperationSchema,
@@ -1186,6 +1238,7 @@ export type CopyElementOperation = z.infer<typeof copyElementOperationSchema>;
 export type ReplaceImageOperation = z.infer<typeof replaceImageOperationSchema>;
 export type SetTiltOperation = z.infer<typeof setTiltOperationSchema>;
 export type SetLockedOperation = z.infer<typeof setLockedOperationSchema>;
+export type SetEntranceOperation = z.infer<typeof setEntranceOperationSchema>;
 export type SetFlowOperation = z.infer<typeof setFlowOperationSchema>;
 export type SetCornerRadiusOperation = z.infer<typeof setCornerRadiusOperationSchema>;
 export type SetImageFitOperation = z.infer<typeof setImageFitOperationSchema>;

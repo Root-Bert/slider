@@ -1,7 +1,7 @@
 import type { ReactNode } from 'react';
 import { cn } from './cn';
 
-/** Keyboard shortcut hint, e.g. "⌘K" in the search field. */
+/** Keyboard shortcut hint, e.g. "⌘F" in the search field. */
 export function Kbd({ children, className }: { children: ReactNode; className?: string }) {
   return (
     <kbd

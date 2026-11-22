@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import {
   DEFAULT_AI_NAME,
+  MAX_AI_NAME_LENGTH,
   INTEGRATION_KIND_LABELS,
   INTEGRATION_KINDS,
   updateWorkspaceAiInputSchema,
@@ -16,13 +17,22 @@ import {
   Notice,
   Section,
   TextField,
+  Toggle,
   type ShowToast,
 } from '@/ui';
+import { AppModelsOverview } from './components/AppModels';
 import { InstanceRow } from './components/InstanceRow';
 import { KeyForm } from './components/KeyForm';
 import { KeyRow } from './components/KeyRow';
 import { WorkspaceRules } from './components/WorkspaceRules';
-import { AI_NAME_SECTION, describeInherited, KINDS } from './lib/providers';
+import {
+  AI_NAME_SECTION,
+  CALL_NOTES_SECTION,
+  describeInherited,
+  INTEGRATION_GROUPS,
+  KINDS,
+  type IntegrationGroup,
+} from './lib/providers';
 
 /** Kinds that work without a key of their own – the form does not open by itself for them. */
 const OPTIONAL: ReadonlySet<IntegrationKind> = new Set(['voice', 'live']);
@@ -32,22 +42,28 @@ const OPTIONAL: ReadonlySet<IntegrationKind> = new Set(['voice', 'live']);
  * (`workspaceId` `null`). The instance stores keys for every workspace and sets per kind a rule –
  * for all workspaces, and for single ones apart: own keys or not, and what of its key they take
  * over. A workspace sees what the instance gives it, and stores its own where it may. Admins only
- * (workspace: its admins; instance: the instance admin).
+ * (workspace: its admins; instance: the instance admin). `group`: only that part – the AI, what is
+ * spoken, what is pictured; without one, all of it on one page (the setup).
  */
 export function IntegrationsPanel({
   workspaceId,
+  group,
   onNotify,
 }: {
   workspaceId: string | null;
+  group?: IntegrationGroup;
   onNotify: ShowToast;
 }) {
   const integrations = useIntegrations(workspaceId);
   if (integrations.isError) return <ErrorText>{integrations.error.message}</ErrorText>;
   if (!integrations.data) return <LoadingState padding="lg" />;
-  const { areas, aiName } = integrations.data;
+  const { areas, aiName, callNotes } = integrations.data;
+  const kinds: readonly IntegrationKind[] = group
+    ? INTEGRATION_GROUPS[group].kinds
+    : INTEGRATION_KINDS;
   return (
     <>
-      {workspaceId && aiName !== null && (
+      {workspaceId && aiName !== null && (!group || group === 'ki') && (
         <Section
           {...AI_NAME_SECTION}
           description="So heißt die KI in Kommentaren und bei den Personen in einer Präsentation."
@@ -55,7 +71,15 @@ export function IntegrationsPanel({
           <NameForm workspaceId={workspaceId} name={aiName} onNotify={onNotify} />
         </Section>
       )}
-      {INTEGRATION_KINDS.map((kind) => (
+      {workspaceId && callNotes !== null && (!group || group === 'ki') && (
+        <Section
+          {...CALL_NOTES_SECTION}
+          description="In jedem Anruf in einer Unterhaltung schreibt ein Agent mit. Danach schickt er Notizen, Beschlüsse und Aufgaben in die Unterhaltung, und man kann ihn zum Anruf fragen. Er braucht einen Key für Live-Mitschrift (Sprache) und einen für die KI."
+        >
+          <CallNotesToggle workspaceId={workspaceId} on={callNotes} onNotify={onNotify} />
+        </Section>
+      )}
+      {kinds.map((kind) => (
         <AreaSection key={kind} workspaceId={workspaceId} area={areas[kind]} onNotify={onNotify} />
       ))}
     </>
@@ -88,6 +112,7 @@ function AreaSection({
       description={instance ? KINDS[kind].instance : KINDS[kind].workspace}
     >
       <div className="flex flex-col gap-4">
+        {kind === 'ai' && <AppModelsOverview />}
         <Applies area={area} instance={instance} anyActive={anyActive} />
         {KINDS[kind].models && ((editable && keys.length > 0) || inherited) && (
           <p className="flex gap-1.5 text-xs text-fg-subtle">
@@ -234,6 +259,41 @@ function Applies({
   return null;
 }
 
+/** Whether an agent writes along in the workspace's calls – at once, back on a refusal. */
+function CallNotesToggle({
+  workspaceId,
+  on: saved,
+  onNotify,
+}: {
+  workspaceId: string;
+  on: boolean;
+  onNotify: ShowToast;
+}) {
+  const [on, setOn] = useState(saved);
+  const update = useUpdateWorkspaceAi(workspaceId);
+  return (
+    <Toggle
+      checked={on}
+      icon="autoAwesome"
+      label="Ein Agent schreibt in Anrufen mit"
+      description="Alle im Anruf sehen es an einem Zeichen. Gilt ab dem nächsten Anruf."
+      onChange={(next) => {
+        setOn(next);
+        update.mutate(
+          { callNotes: next },
+          {
+            onSuccess: () => onNotify(next ? 'Notizen in Anrufen an' : 'Notizen in Anrufen aus'),
+            onError: (error) => {
+              setOn(!next);
+              onNotify(error.message, 'danger');
+            },
+          },
+        );
+      }}
+    />
+  );
+}
+
 /** What the AI is called in comments and beside the people in a deck; empty gives back `KI`. */
 function NameForm({
   workspaceId,
@@ -268,7 +328,7 @@ function NameForm({
       <TextField
         label="Name"
         value={name}
-        maxLength={40}
+        maxLength={MAX_AI_NAME_LENGTH}
         placeholder={DEFAULT_AI_NAME}
         error={parsed.success ? null : parsed.error.issues[0]?.message}
         onChange={(event) => setName(event.target.value)}

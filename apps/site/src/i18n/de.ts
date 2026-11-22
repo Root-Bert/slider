@@ -5,19 +5,13 @@ export const de: Dict = {
     title: 'Slider | Präsentationen, bei denen alle mitreden',
     description:
       'Slider ist das Präsentationsprogramm, bei dem alle mitreden. Folien zeigen, Meinungen direkt darauf sammeln und gemeinsam die bessere Version machen, im Browser. Open Source, gehostet in der EU.',
-    pricingTitle: 'Preise',
-    pricingDescription:
-      'Preis pro Workspace, nie pro Kopf: kostenlos für kleine Teams, 79 € im Monat für bis zu 100 Personen, 249 € mit KI inklusive, kostenlos auf deinem eigenen Server.',
     downloadTitle: 'Download',
     downloadDescription:
       'Slider als App für Mac und Linux: läuft auch offline, deine Präsentationen bleiben auf deinem Computer, die KI läuft mit deinen eigenen Schlüsseln.',
   },
   nav: {
-    home: 'Start',
-    pricing: 'Preise',
-    blog: 'Blog',
     login: 'Anmelden',
-    start: 'Kostenlos starten',
+    start: 'Slider öffnen',
     menu: 'Menü',
     skip: 'Zum Inhalt',
     language: 'Sprache',
@@ -185,8 +179,7 @@ export const de: Dict = {
   photo: { by: 'Foto von', on: 'auf' },
   cta: {
     title: 'Bereit für deine nächste Präsentation.',
-    button: 'Kostenlos starten',
-    pricing: 'Preise ansehen',
+    button: 'Slider öffnen',
   },
   footer: {
     tagline: 'Bring deine Ideen rüber.',
@@ -196,65 +189,6 @@ export const de: Dict = {
     source: 'Quellcode',
     changelog: 'Änderungen',
     contact: 'Kontakt',
-  },
-  pricing: {
-    title: 'Preis pro Workspace, nie pro Kopf.',
-    sub: 'Feedback wirkt am besten, wenn alle mitmachen können. Also bring das ganze Team mit.',
-    monthly: 'pro Monat',
-    forever: 'für immer',
-    contract: 'nach Vertrag',
-    custom: 'Individuell',
-    soon: 'Bald verfügbar',
-    popular: 'Die meisten Teams',
-    over: 'Über einem Limit? Es wird nichts gelöscht. Du kannst weiter lesen, exportieren und aufräumen, nur nichts Neues anlegen, bis du upgradest.',
-    plans: {
-      free: {
-        pitch: 'Für kleine Teams. Kostenlos, so lange ihr wollt, ohne Haken.',
-        cta: 'Kostenlos starten',
-        note: 'Keine Zahlungsmethode nötig.',
-        lead: 'Alles, was ihr braucht:',
-        features: [
-          'Unbegrenzt Präsentationen',
-          'Bis zu 5 Personen',
-          '2 GB Speicher',
-          'Alle Prüf-Werkzeuge',
-          'Live-Zusammenarbeit',
-        ],
-      },
-      team: {
-        pitch: 'Ein fester Preis. Bei 100 Personen sind das nur 0,79 € pro Kopf.',
-        note: 'Starte heute mit Free, das Upgrade kommt bald.',
-        lead: 'Alles aus Free, dazu:',
-        features: ['Bis zu 100 Personen', '100 GB Speicher', 'Rechnungen für die Buchhaltung'],
-      },
-      ai: {
-        pitch: 'KI eingebaut. Kein eigener Schlüssel, keine Tokens, wir betreiben alles für dich.',
-        note: 'Starte heute mit Free, das Upgrade kommt bald.',
-        lead: 'Alles aus Team, dazu:',
-        features: [
-          'KI inklusive, kein eigener Schlüssel',
-          'Tokens übernehmen wir',
-          'Modelle immer aktuell',
-          'Eine Rechnung, keine KI-Extrakosten',
-        ],
-      },
-      enterprise: {
-        pitch: 'Für mehr als 100 Personen oder eigene Anforderungen.',
-        cta: 'Kontakt aufnehmen',
-        note: 'Wir richten es gemeinsam mit dir ein.',
-        lead: 'Alles aus Team, dazu:',
-        features: [
-          'Mehr als 100 Personen',
-          'Speicher passend zum Team',
-          'Hilfe beim Selbst-Hosten',
-          'Abrechnung per Vertrag und Rechnung',
-        ],
-      },
-    },
-    selfTitle: 'Lieber auf dem eigenen Server?',
-    selfBody: 'Betreib Slider selbst, kostenlos und ohne Limits. Ein docker compose up.',
-    selfButton: 'Auf GitHub ansehen',
-    license: 'Open Source unter der EUPL-1.2. Support oder eine kommerzielle Lizenz?',
   },
   /** The desktop app's download page (not linked until a release carries the files). */
   download: {
@@ -266,7 +200,7 @@ export const de: Dict = {
     macTitle: 'Mac',
     macButton: 'Für den Mac laden',
     macNote:
-      'Für Macs mit Apple Chip (M1 oder neuer) ab macOS 12, von Apple geprüft. LibreOffice, mit dem Slider Präsentationsdateien liest und schreibt, lädt die App beim ersten Start, falls es fehlt.',
+      'Für Macs mit Apple Chip (M1 oder neuer) ab macOS 12. LibreOffice, mit dem Slider Präsentationsdateien liest und schreibt, lädt die App beim ersten Start, falls es fehlt.',
     linuxTitle: 'Linux',
     linuxButton: 'Für Linux laden',
     debButton: 'Für Ubuntu und Debian laden',

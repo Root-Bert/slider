@@ -18,12 +18,15 @@ const ITEM_CONTROLS = 'button, input, [role="menu"]';
 export function useCollectionSelection(
   containerRef: RefObject<HTMLElement | null>,
   visibleIds: readonly string[],
+  /** What scrolls under the items, when it isn't the window (`containerRef` lies inside it). */
+  scroller?: RefObject<HTMLElement | null>,
 ) {
   const selection = useMultiSelect(visibleIds);
   const boxRef = useRef<HTMLDivElement>(null);
   const marquee = useMarqueeSelect(containerRef, boxRef, {
     attribute: SELECT_ID,
     ...selection.marquee,
+    ...(scroller ? { scroller } : {}),
   });
   return {
     ...selection,
@@ -34,7 +37,7 @@ export function useCollectionSelection(
 
 export interface SelectableItems {
   selected: ReadonlySet<string>;
-  /** ⌘/Ctrl/Shift-click on an item, or any click while some are selected; true when it changed the selection. */
+  /** ⌘/Ctrl/Shift-click on an item, or a plain one while several are selected; true when it changed the selection. */
   onModifiedClick: (id: string, event: MouseEvent) => boolean;
   /** Right click on one of several selected: their shared actions instead of its own. */
   onSelectionMenu: (at: { x: number; y: number }) => void;
@@ -53,6 +56,7 @@ export function selectableItemProps(
   const controls = ownControls ? `${ownControls}, ${ITEM_CONTROLS}` : ITEM_CONTROLS;
   return {
     [SELECT_ID]: id,
+    'data-selected': selected.has(id) ? '' : undefined,
     onClickCapture: (event: MouseEvent) => {
       if ((event.target as Element).closest(controls)) return;
       if (onModifiedClick(id, event)) {

@@ -21,8 +21,8 @@ const wordParam = (word: string | undefined) => {
 };
 
 /**
- * The spell check's own words: the account's (`/me/words`, „Wörterbuch“) and a workspace's
- * (`/workspaces/:id/words`, „Wörter“ in its Bibliothek). Each answers with the whole list.
+ * The spell check's own words: the account's (`/me/words`) and a workspace's
+ * (`/workspaces/:id/words`) – both „Wörter“ in the Bibliothek. Each answers with the whole list.
  */
 export function spellingRoutes(deps: AppDeps) {
   const viewer = viewerMiddleware(deps);

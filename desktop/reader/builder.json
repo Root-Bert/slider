@@ -1,0 +1,42 @@
+{
+  "appId": "dev.bertro.reader",
+  "productName": "Reader",
+  "artifactName": "Reader-${arch}.${ext}",
+  "directories": { "output": "dist/reader" },
+  "extraMetadata": {
+    "name": "reader-desktop",
+    "productName": "Reader",
+    "main": "reader/main.mjs",
+    "description": "Reader as a desktop app: your PDFs in a window of their own."
+  },
+  "files": ["reader/**", "!reader/builder.json", "tabbar/**", "tabs.mjs", "package.json"],
+  "mac": {
+    "category": "public.app-category.productivity",
+    "target": ["dmg", "zip"],
+    "hardenedRuntime": true,
+    "entitlements": "entitlements.mac.plist",
+    "entitlementsInherit": "entitlements.mac.plist",
+    "notarize": true,
+    "darkModeSupport": true,
+    "extendInfo": {
+      "NSMicrophoneUsageDescription": "Für Anrufe, Sprach- und Videokommentare und um mit der KI zu sprechen.",
+      "NSCameraUsageDescription": "Für Videoanrufe und Videokommentare."
+    },
+    "icon": "reader/icon.png"
+  },
+  "linux": {
+    "target": ["AppImage", "deb"],
+    "category": "Office",
+    "executableName": "reader",
+    "icon": "reader/icon.png"
+  },
+  "electronFuses": {
+    "runAsNode": false,
+    "enableNodeOptionsEnvironmentVariable": false,
+    "enableNodeCliInspectArguments": false,
+    "onlyLoadAppFromAsar": true,
+    "enableEmbeddedAsarIntegrityValidation": true,
+    "resetAdHocDarwinSignature": true
+  },
+  "protocols": [{ "name": "Reader", "schemes": ["slider-reader"] }]
+}

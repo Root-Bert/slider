@@ -1,0 +1,2 @@
+ALTER TABLE "sender_messages" ADD COLUMN "call_id" text;--> statement-breakpoint
+ALTER TABLE "sender_messages" ADD CONSTRAINT "sender_messages_call_id_call_records_id_fk" FOREIGN KEY ("call_id") REFERENCES "public"."call_records"("id") ON DELETE cascade ON UPDATE no action;

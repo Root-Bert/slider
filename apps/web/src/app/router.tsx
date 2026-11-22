@@ -27,6 +27,12 @@ export const router = createBrowserRouter([
       { path: 'datenanfrage', lazy: () => import('@/features/account/DataRequestFormPage') },
       { path: 'daten/:token', lazy: () => import('@/features/account/DataRequestPage') },
       { path: 'd/:deckId', lazy: () => import('@/features/viewer/DeckPage') },
+      // Writer: one document, open – like the deck viewer it sends signed-out visitors on itself.
+      { path: 't/:documentId', lazy: () => import('@/features/writer/DocumentPage') },
+      // Reader: one PDF, open – it sends signed-out visitors on itself too.
+      { path: 'r/:pdfId', lazy: () => import('@/features/reader/PdfPage') },
+      // Cloud: what a link shows to someone outside – no account needed.
+      { path: 's/:token', lazy: () => import('@/features/cloud/PublicPage') },
       {
         lazy: () => import('@/features/auth/AccountGate'),
         children: [
@@ -41,14 +47,47 @@ export const router = createBrowserRouter([
           // An AI app asks to be let in (OAuth, „KI-Apps“).
           { path: 'verbinden', lazy: () => import('@/features/account/ConnectAppPage') },
           { path: 'einstellungen', lazy: () => import('@/features/account/PreferencesPage') },
-          { path: 'woerterbuch', lazy: () => import('@/features/account/DictionaryPage') },
           { path: 'nutzung', lazy: () => import('@/features/account/UsagePage') },
+          // Slider's presentations; the installed Slider starts here (`manifest.webmanifest`).
+          { path: 'slider', lazy: () => import('@/features/reviews/SliderStart') },
+          // The installed Cloud starts here (`cloud.webmanifest`).
+          { path: 'cloud', lazy: () => import('@/features/cloud/CloudStart') },
+          // Its address before it was called Cloud: installed apps and old links still start there.
+          { path: 'office', lazy: () => import('@/features/cloud/CloudStart') },
+          // The installed Writer starts here (`writer.webmanifest`).
+          { path: 'writer', lazy: () => import('@/features/writer/WriterStart') },
+          // The installed Reader starts here.
+          { path: 'reader', lazy: () => import('@/features/reader/ReaderStart') },
+          // The installed Sender starts here (`sender.webmanifest`).
+          { path: 'sender', lazy: () => import('@/features/sender/SenderStart') },
           { path: 'instanz', lazy: () => import('@/features/instance/InstancePage') },
           {
             path: 'w/:workspaceId',
             lazy: () => import('@/features/workspaces/WorkspaceLayout'),
             children: [
               { index: true, lazy: () => import('@/features/reviews/ReviewsPage') },
+              // Writer – the workspace's text documents; „Papierkorb“ is a tab of the same page.
+              { path: 'dokumente', lazy: () => import('@/features/writer/DocumentsPage') },
+              // „Bibliothek“: Slider's pages, here beside the documents (`useLibrary`).
+              {
+                path: 'dokumente/bibliothek',
+                lazy: () => import('@/features/workspaces/MaterialPage'),
+              },
+              {
+                path: 'dokumente/bibliothek/neu',
+                lazy: () => import('@/features/onboarding/NewMaterialPage'),
+              },
+              {
+                path: 'dokumente/bibliothek/vorlagen/:masterId',
+                lazy: () => import('@/features/workspaces/MasterPage'),
+              },
+              {
+                path: 'dokumente/geloescht',
+                lazy: () => import('@/features/writer/DocumentsPage'),
+              },
+              // Reader – the workspace's PDFs; „Papierkorb“ is a tab of the same page.
+              { path: 'pdfs', lazy: () => import('@/features/reader/PdfsPage') },
+              { path: 'pdfs/geloescht', lazy: () => import('@/features/reader/PdfsPage') },
               { path: 'material', lazy: () => import('@/features/workspaces/MaterialPage') },
               { path: 'material/neu', lazy: () => import('@/features/onboarding/NewMaterialPage') },
               {
@@ -59,6 +98,113 @@ export const router = createBrowserRouter([
                 // Links from before designs were called „Vorlagen“.
                 path: 'material/folienmaster/:masterId',
                 lazy: () => import('@/features/workspaces/MasterPage'),
+              },
+              {
+                // Cloud – the workspace's files, with a side bar of its own.
+                path: 'dateien',
+                lazy: () => import('@/features/cloud/CloudLayout'),
+                children: [
+                  { index: true, lazy: () => import('@/features/cloud/RecentPage') },
+                  { path: 'meine', lazy: () => import('@/features/cloud/FilesPage') },
+                  { path: 'bereich/:areaId', lazy: () => import('@/features/cloud/FilesPage') },
+                  {
+                    path: 'bereich/:areaId/agenten',
+                    lazy: () => import('@/features/cloud/AreaAgentsPage'),
+                  },
+                  {
+                    path: 'bereich/:areaId/aufgaben',
+                    lazy: () => import('@/features/cloud/AreaTodosPage'),
+                  },
+                  {
+                    path: 'bereich/:areaId/chat/:channelId?',
+                    lazy: () => import('@/features/cloud/AreaChatPage'),
+                  },
+                  { path: 'chat/:channelId', lazy: () => import('@/features/cloud/ChatPage') },
+                  { path: 'ordner/:folderId', lazy: () => import('@/features/cloud/FilesPage') },
+                  { path: 'geteilt', lazy: () => import('@/features/cloud/SharedPage') },
+                  { path: 'geloescht', lazy: () => import('@/features/cloud/TrashPage') },
+                  { path: 'entwuerfe', lazy: () => import('@/features/cloud/DraftsPage') },
+                  { path: 'aufgaben', lazy: () => import('@/features/cloud/TodosPage') },
+                  { path: 'kalender', lazy: () => import('@/features/cloud/CalendarPage') },
+                  {
+                    // The list – wide, with the open mail beside it (`MailBody`).
+                    path: 'mail',
+                    lazy: () => import('@/features/cloud/MailPage'),
+                    children: [
+                      { index: true, element: null },
+                      { path: ':threadId', lazy: () => import('@/features/cloud/MailThreadPage') },
+                    ],
+                  },
+                  {
+                    path: 'mail/postfaecher',
+                    lazy: () => import('@/features/cloud/MailAccountsPage'),
+                  },
+                  {
+                    path: 'mail/postfaecher/neu',
+                    lazy: () => import('@/features/cloud/NewMailboxPage'),
+                  },
+                  { path: 'bereiche', lazy: () => import('@/features/cloud/AreasPage') },
+                  { path: 'uebersicht', lazy: () => import('@/features/cloud/OverviewPage') },
+                  { path: 'agenten', lazy: () => import('@/features/cloud/AgentsPage') },
+                  { path: 'agenten/:agentId', lazy: () => import('@/features/cloud/AgentPage') },
+                  {
+                    path: 'agenten/:agentId/anruf/:callId',
+                    lazy: () => import('@/features/cloud/AgentCallPage'),
+                  },
+                  {
+                    path: 'verbindungen',
+                    lazy: () => import('@/features/cloud/ConnectionsPage'),
+                  },
+                  // „Bibliothek“: Slider's pages, here beside the files (`useLibrary`).
+                  { path: 'bibliothek', lazy: () => import('@/features/workspaces/MaterialPage') },
+                  {
+                    path: 'bibliothek/neu',
+                    lazy: () => import('@/features/onboarding/NewMaterialPage'),
+                  },
+                  {
+                    path: 'bibliothek/vorlagen/:masterId',
+                    lazy: () => import('@/features/workspaces/MasterPage'),
+                  },
+                ],
+              },
+              {
+                // Sender – the workspace's conversations, with a side bar of its own.
+                path: 'nachrichten',
+                lazy: () => import('@/features/sender/SenderLayout'),
+                children: [
+                  { index: true, lazy: () => import('@/features/sender/SenderHomePage') },
+                  { path: 'kanal/:channelId', lazy: () => import('@/features/sender/ChannelPage') },
+                  {
+                    path: 'kanal/:channelId/anruf/:callId',
+                    lazy: () => import('@/features/sender/CallPage'),
+                  },
+                  { path: 'agent/:agentId', lazy: () => import('@/features/sender/AgentChatPage') },
+                  {
+                    path: 'agent/:agentId/anruf/:callId',
+                    lazy: () => import('@/features/sender/CallPage'),
+                  },
+                  { path: 'entwuerfe', lazy: () => import('@/features/sender/DraftsPage') },
+                  {
+                    // The list – wide, with the open mail beside it (`MailBody`).
+                    path: 'mail',
+                    lazy: () => import('@/features/sender/MailPage'),
+                    children: [
+                      { index: true, element: null },
+                      {
+                        path: ':threadId',
+                        lazy: () => import('@/features/sender/MailThreadPage'),
+                      },
+                    ],
+                  },
+                  {
+                    path: 'mail/postfaecher',
+                    lazy: () => import('@/features/sender/MailAccountsPage'),
+                  },
+                  {
+                    path: 'mail/postfaecher/neu',
+                    lazy: () => import('@/features/sender/NewMailboxPage'),
+                  },
+                ],
               },
               {
                 // `integrationen`: the integrations tab – one route, so switching tabs keeps the page.

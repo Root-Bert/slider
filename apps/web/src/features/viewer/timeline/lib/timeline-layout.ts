@@ -1,4 +1,4 @@
-import { clamp } from '@slider/shared';
+import { clamp, type Slide } from '@slider/shared';
 /**
  * Geometry of the deck timeline: every slide side by side in one horizontal track, each slide's
  * comments in a column of exactly its width below it. The split handle between the slide area
@@ -16,21 +16,55 @@ export const TRACK_PAD_TOP = 16;
  * The tracks stacked over and under the slides' – the band shows one of them at a time, swiped
  * up and down (`useTrackSwipe`): `above` variant tracks (the first variant of each slide right
  * over the slides, the second over that, …, and on an editable deck one more to make a variant
- * in), `below` the speaker notes. A track is named by its place: 0 the slides, -1 the first
- * variants, 1 the notes.
+ * in, and once any slide has a variant the overview on top: each slide and its variants side by
+ * side), `below` the speaker notes. A track is named by its place: 0 the slides, -1 the first
+ * variants, 1 the notes, `-above` the overview (`overview`).
  */
 export interface TrackStack {
   above: number;
   below: number;
+  /** The top track is the overview of the variants („Varianten vergleichen“). */
+  overview?: boolean;
 }
 
 export function trackStack(mostVariants: number, canEdit: boolean): TrackStack {
-  return { above: mostVariants + (canEdit ? 1 : 0), below: canEdit ? 1 : 0 };
+  const overview = mostVariants > 0;
+  return {
+    above: mostVariants + (canEdit ? 1 : 0) + (overview ? 1 : 0),
+    below: canEdit ? 1 : 0,
+    overview,
+  };
+}
+
+/** Whether track `track` of `stack` is the overview of the variants. */
+export const isOverviewTrack = (track: number, stack: TrackStack): boolean =>
+  !!stack.overview && track === -stack.above;
+
+/**
+ * Whose comments a slide's column shows while track `track` is shown: the slide's own (and its
+ * notes'), a variant track its variant's, the overview the slide's and all its variants'.
+ */
+export function columnSlides(
+  slide: Slide,
+  variants: readonly Slide[],
+  track: number,
+  stack: TrackStack,
+): readonly Slide[] {
+  if (track >= 0) return [slide];
+  if (isOverviewTrack(track, stack)) return [slide, ...variants];
+  const variant = variants[-track - 1];
+  return variant ? [variant] : [];
 }
 
 /** What track `track` holds, as its dot names it. */
-export const trackName = (track: number): string =>
-  track === 0 ? 'Folien' : track > 0 ? 'Notizen' : `Variante ${-track}`;
+export const trackName = (track: number, stack: TrackStack): string =>
+  track === 0
+    ? 'Folien'
+    : track > 0
+      ? 'Notizen'
+      : isOverviewTrack(track, stack)
+        ? 'Varianten vergleichen'
+        : `Variante ${-track}`;
 
 /** Desktop-1 slide height (982px wide at 16:9): the default split never makes slides taller. */
 export const DEFAULT_SLIDE_H_MAX = 552;

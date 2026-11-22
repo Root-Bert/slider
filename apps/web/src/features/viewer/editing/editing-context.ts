@@ -40,6 +40,8 @@ export interface TextEditorHandle {
   /** Of the paragraphs the selection touches, `null` where they differ. */
   align: TextAlign | null;
   list: 'bullet' | 'number' | 'none' | null;
+  /** Their bullet, or how they count (`1`, `a`, …). */
+  listSign: string | null;
   lineSpacing: number | null;
   /** Formats the selection (a caret: its word). */
   format: (patch: TextStylePatch) => void;

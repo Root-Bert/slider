@@ -227,3 +227,178 @@
     0 0 0 1.5px rgb(255 255 255 / 0.9),
     0 4px 12px rgb(0 0 0 / 0.25);
 }
+
+/*
+ * The apps' colours (Figma: Brand Guide, „Logo-Farben“).
+ * They belong to the marks and to the objects that show an app.
+ */
+:root {
+  --app-slider: #e3583d;
+  --app-writer: #003399;
+  --app-solver: #009572;
+  --app-cloud: #6a3fc4;
+  --app-reader: #b3261e;
+}
+
+/*
+ * The page's own colour: each app's page acts, selects and glows in its app's colour, the
+ * office's pages (and the blog) in the gradient of all four. `--brand-fill` paints buttons,
+ * `--brand-on` is the text on them, `--brand-line` text, frames and ticks on the page,
+ * `--brand-ink` the text on a white button, `--brand-aura` the glow of a night-dark tile.
+ */
+html {
+  --brand: var(--app-slider);
+  --brand-fill: var(--brand);
+  --brand-on: #fff;
+  --brand-line: var(--brand);
+  --brand-ink: var(--brand);
+  --brand-edge: transparent;
+  --brand-aura: radial-gradient(
+    110% 80% at 50% 0%,
+    color-mix(in srgb, var(--brand) 64%, #0b0b0d),
+    #0b0b0d 78%
+  );
+}
+html[data-app='writer'] {
+  --brand: var(--app-writer);
+}
+/* Writer's blue is too dark to read on the dark page: lines and words get a lighter one there. */
+html[data-app='writer']:not([data-theme='light']) {
+  --brand-line: #6b8fe8;
+}
+html[data-app='solver'] {
+  --brand: var(--app-solver);
+}
+html[data-app='cloud'] {
+  --brand: var(--app-cloud);
+}
+html[data-app='reader'] {
+  --brand: var(--app-reader);
+}
+/* Reader's red is too dark to read on the dark page: lines and words get a lighter one there. */
+html[data-app='reader']:not([data-theme='light']) {
+  --brand-line: #e5675c;
+}
+html[data-app='office'] {
+  --brand-fill: linear-gradient(
+    90deg,
+    var(--app-slider),
+    var(--app-cloud) 34%,
+    var(--app-writer) 66%,
+    var(--app-solver)
+  );
+  --brand-line: var(--app-writer);
+  --brand-ink: #0b0b0d;
+  --brand-aura:
+    radial-gradient(
+      40% 70% at 10% 0%,
+      color-mix(in srgb, var(--app-slider) 50%, transparent),
+      transparent 100%
+    ),
+    radial-gradient(
+      40% 78% at 37% 0%,
+      color-mix(in srgb, var(--app-cloud) 62%, transparent),
+      transparent 100%
+    ),
+    radial-gradient(
+      40% 78% at 63% 0%,
+      color-mix(in srgb, var(--app-writer) 80%, transparent),
+      transparent 100%
+    ),
+    radial-gradient(
+      40% 70% at 90% 0%,
+      color-mix(in srgb, var(--app-solver) 48%, transparent),
+      transparent 100%
+    ),
+    #0b0b0d;
+}
+html[data-app='office']:not([data-theme='light']) {
+  --brand-line: #6b8fe8;
+}
+/* On the office's pages a selection's frame runs through all four colours. */
+html[data-app='office'] [data-hl-frame] {
+  border-image: var(--brand-fill) 1;
+}
+
+/*
+ * A page of the office reads as a row of exhibits: a lot of room, a few words, one object.
+ * `.exhibit-title` is the line over each of them.
+ */
+@utility exhibit-title {
+  font-size: clamp(30px, 4.2vw, 64px);
+  font-weight: 700;
+  line-height: 1.06;
+  letter-spacing: -0.03em;
+  color: var(--color-fg);
+  text-wrap: balance;
+}
+@utility exhibit-lead {
+  font-size: clamp(16px, 1.35vw, 19px);
+  line-height: 1.6;
+  color: var(--color-fg-muted);
+  text-wrap: pretty;
+}
+
+/*
+ * An object: drawn in units of its own width (`cqw`), so it is the same picture at every size,
+ * and leaning a little towards the pointer (`scripts/tilt.ts` sets `--tx`/`--ty`).
+ */
+.object {
+  container-type: inline-size;
+  position: relative;
+  width: 100%;
+  perspective: 1600px;
+}
+.object-stage {
+  position: absolute;
+  inset: 0;
+  transform: rotateX(calc(var(--ty, 0) * 1deg)) rotateY(calc(var(--tx, 0) * 1deg));
+  transform-style: preserve-3d;
+  transition: transform 500ms var(--ease-emphasized);
+}
+/* Parts of an object are dealt onto it from the top right, like slides onto the logo's stack. */
+.js [data-deal] {
+  opacity: 0;
+  translate: 14cqw -12cqw;
+  rotate: 8deg;
+  transition:
+    opacity 500ms ease-out,
+    translate 900ms var(--ease-emphasized),
+    rotate 900ms var(--ease-emphasized);
+  transition-delay: calc(150ms + var(--i, 0) * 130ms);
+}
+.js .is-in [data-deal] {
+  opacity: 1;
+  translate: none;
+  rotate: none;
+}
+@media (prefers-reduced-motion: reduce) {
+  .object-stage {
+    transform: none;
+  }
+  .js [data-deal] {
+    translate: none;
+    rotate: none;
+    transition: opacity 300ms linear;
+  }
+}
+
+/*
+ * The app's dot grid, faint and fading out downwards, on every night-dark tile so it reads as a
+ * canvas (as the blog's covers do). Sits over the tile's glow and under what is on it.
+ */
+.canvas-dots {
+  position: relative;
+  isolation: isolate;
+}
+.canvas-dots::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  border-radius: inherit;
+  background-image: radial-gradient(rgb(255 255 255 / 0.14) 1px, transparent 1.2px);
+  background-size: 22px 22px;
+  mask-image: linear-gradient(#000 20%, transparent 90%);
+  pointer-events: none;
+}

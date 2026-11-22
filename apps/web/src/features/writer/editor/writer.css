@@ -1,0 +1,437 @@
+/*
+ * The sheet and the text on it. A document's paper is white and its colours are its own – none
+ * of this follows the app's theme. A Markdown file has no paper and no colours: its surface
+ * (`writer-code`, `writer-notes`) is the app's, dark or light. „Seitenfarbe“ (`data-pages` on
+ * `.writer-editor`, at the end of this file) turns either dark or light.
+ */
+
+.writer-stack {
+  position: relative;
+  flex: none;
+}
+
+.writer-sheet {
+  position: absolute;
+  left: 0;
+  background: #fff;
+  border-radius: 2px;
+  /* No shadow: a hairline keeps a white sheet apart from a light stage. */
+  box-shadow: 0 0 0 1px rgb(0 0 0 / 0.08);
+}
+
+.writer-sheet-number {
+  position: absolute;
+  inset-inline: 0;
+  text-align: center;
+  font:
+    9pt/1.15 'Liberation Serif',
+    'Times New Roman',
+    serif;
+  color: #000;
+  pointer-events: none;
+  user-select: none;
+}
+
+/* The head's or foot's words typed where they stand (`Editor`). */
+.writer-edge {
+  position: absolute;
+  z-index: 3;
+  padding: 0 4px;
+  border-radius: 2px;
+  background: #fff;
+  color: #000;
+  text-align: center;
+  font:
+    9pt/1.15 'Liberation Serif',
+    'Times New Roman',
+    serif;
+  outline: 1.5px solid var(--selection);
+}
+.writer-edge::placeholder {
+  color: #9a9a9a;
+}
+
+/* Marks behind the words: comments, hits of the search. */
+.writer-marks {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  z-index: 1;
+}
+.writer-marks > span {
+  position: absolute;
+  border-radius: 2px;
+}
+
+.writer-flow {
+  position: absolute;
+  z-index: 2;
+  display: flex;
+  flex-direction: column;
+  outline: none;
+  color: #000;
+  caret-color: #000;
+  overflow-wrap: break-word;
+  cursor: text;
+  font-kerning: normal;
+  font-variant-ligatures: common-ligatures;
+  hyphens: manual;
+  tab-size: 1.25cm;
+}
+.writer-flow ::selection {
+  background: color-mix(in srgb, var(--selection, #3b82f6) 35%, transparent);
+}
+
+.writer-p {
+  position: relative;
+  flex: none;
+  min-width: 0;
+  margin-top: calc(var(--before, 0pt) + var(--push, 0px));
+  white-space: pre-wrap;
+}
+.writer-p[data-marker]::before {
+  content: attr(data-marker);
+  position: absolute;
+  left: var(--marker-left);
+  width: var(--marker-width);
+  text-indent: 0;
+  text-align: left;
+  font-weight: 400;
+  font-style: normal;
+  text-decoration: none;
+  white-space: nowrap;
+  pointer-events: none;
+}
+.writer-p [data-link] {
+  cursor: pointer;
+}
+.writer-p[data-locked] {
+  cursor: default;
+}
+
+.writer-picture {
+  display: block;
+  max-width: 100%;
+  height: auto;
+  user-select: none;
+}
+/* In a line it stands on the line like a letter, and the line is as high as it. */
+.writer-picture[data-inline] {
+  display: inline-block;
+  vertical-align: baseline;
+}
+.writer-p[data-picked] .writer-picture:not([data-inline]),
+.writer-picture[data-picked] {
+  outline: 2px solid var(--selection, #3b82f6);
+  outline-offset: 2px;
+}
+/* The picked picture's corners: dragged, it grows and shrinks in its shape. */
+.writer-handles {
+  position: absolute;
+  z-index: 3;
+  pointer-events: none;
+}
+.writer-handles[hidden] {
+  display: none;
+}
+.writer-handles > span {
+  position: absolute;
+  width: 10px;
+  height: 10px;
+  margin: -7px;
+  box-sizing: border-box;
+  border: 2px solid var(--selection, #3b82f6);
+  border-radius: 2px;
+  background: #fff;
+  pointer-events: auto;
+  touch-action: none;
+}
+.writer-handles > [data-corner='nw'] {
+  left: 0;
+  top: 0;
+  cursor: nwse-resize;
+}
+.writer-handles > [data-corner='ne'] {
+  right: 0;
+  top: 0;
+  cursor: nesw-resize;
+}
+.writer-handles > [data-corner='sw'] {
+  left: 0;
+  bottom: 0;
+  cursor: nesw-resize;
+}
+.writer-handles > [data-corner='se'] {
+  right: 0;
+  bottom: 0;
+  cursor: nwse-resize;
+}
+
+.writer-table {
+  flex: none;
+  width: 100%;
+  margin-top: var(--push, 0px);
+  border-collapse: collapse;
+  table-layout: fixed;
+}
+.writer-table td {
+  border: 0.5pt solid #000;
+  padding: 0.1cm;
+  vertical-align: top;
+}
+/* On the border between two columns, and while it is dragged: nothing is selected on the way. */
+.writer-flow[data-border] {
+  cursor: col-resize;
+}
+.writer-flow[data-border='drag'] {
+  user-select: none;
+}
+.writer-table td > .writer-p {
+  margin-top: var(--before, 0pt);
+}
+.writer-table tr[data-spacer] td {
+  border-left: 0;
+  border-right: 0;
+}
+
+/* The small sheets of the strip: the same text, only smaller. */
+.writer-thumb .writer-flow {
+  cursor: inherit;
+  pointer-events: none;
+  user-select: none;
+}
+
+@media print {
+  html:has(.writer-editor),
+  html:has(.writer-editor) body,
+  html:has(.writer-editor) #root {
+    height: auto !important;
+    overflow: visible !important;
+    background: #fff !important;
+  }
+  .writer-editor {
+    position: static !important;
+    height: auto !important;
+    overflow: visible !important;
+    background: #fff !important;
+    /* Printed from its material page: the document where it stands, not moved out. */
+    translate: none !important;
+  }
+  .writer-editor [data-chrome] {
+    display: none !important;
+  }
+  .writer-stage {
+    position: static !important;
+    display: block !important;
+    height: auto !important;
+    overflow: visible !important;
+    padding: 0 !important;
+  }
+  .writer-row {
+    display: block !important;
+    padding: 0 !important;
+    margin: 0 !important;
+  }
+  .writer-stack {
+    margin: 0 !important;
+  }
+  .writer-sheet {
+    box-shadow: none;
+    border-radius: 0;
+    break-after: page;
+  }
+  .writer-marks {
+    display: none;
+  }
+  .writer-p[data-picked] .writer-picture,
+  .writer-picture[data-picked] {
+    outline: none;
+  }
+  .writer-handles {
+    display: none;
+  }
+  /* Printed on white whatever the theme and „Seitenfarbe“: a Markdown file's surface takes the
+     light inks, a dark sheet its own colours again. */
+  .writer-stack:is(.writer-code, .writer-notes) {
+    --color-fg: rgb(0 0 0 / 0.88) !important;
+    --color-fg-subtle: rgb(0 0 0 / 0.46) !important;
+    --color-fg-faint: rgb(0 0 0 / 0.28) !important;
+    --color-surface-2: rgb(0 0 0 / 0.06) !important;
+    background: #fff !important;
+    box-shadow: none !important;
+  }
+  .writer-sheet {
+    background: #fff !important;
+  }
+  .writer-flow,
+  .writer-picture {
+    filter: none !important;
+  }
+  .writer-sheet-number {
+    color: #000 !important;
+  }
+}
+
+/*
+ * A Markdown file as it is written (`Editor`, pageless): a code editor's surface over the whole
+ * room – one face of fixed width, its lines numbered; a long line wraps under itself, as an
+ * editor's soft wrap, its number at its start.
+ */
+.writer-stack.writer-code {
+  border-radius: 6px;
+  box-shadow: 0 0 0 1px var(--color-hairline);
+  background: var(--color-glass-solid);
+}
+.writer-code .writer-sheet {
+  box-shadow: none;
+  background: none;
+}
+.writer-code .writer-flow {
+  counter-reset: line;
+  width: 100%;
+  padding: 20px 32px 32px 64px;
+  box-sizing: border-box;
+  color: var(--color-fg);
+  caret-color: var(--color-fg);
+  overflow-wrap: anywhere;
+  tab-size: 4;
+}
+.writer-code .writer-p {
+  counter-increment: line;
+  margin-top: 0 !important;
+  margin-bottom: 0 !important;
+  font-family:
+    ui-monospace, 'SF Mono', SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace !important;
+  font-size: 13px !important;
+  line-height: 20px !important;
+  text-indent: 0 !important;
+  padding: 0 !important;
+  /* Over the format's ink (`MARKDOWN_FORMATS`), drawn for white paper. */
+  color: var(--color-fg) !important;
+}
+.writer-code .writer-p::after {
+  content: counter(line);
+  position: absolute;
+  top: 0;
+  right: calc(100% + 20px);
+  min-width: 2ch;
+  text-align: right;
+  color: var(--color-fg-faint);
+  font-size: 12px;
+  pointer-events: none;
+  user-select: none;
+}
+
+/*
+ * A Markdown file rendered („Formatiert“): one column as Notion draws a page – no sheet, the
+ * text 708 px wide; code on grey, a quote behind a bar. The formats' inks (`MARKDOWN_FORMATS`,
+ * Notion's on white) give way to the theme's: text `fg`, the quiet kinds and what is shown as
+ * written `fg-subtle`.
+ */
+.writer-stack.writer-notes {
+  border-radius: 6px;
+  box-shadow: 0 0 0 1px var(--color-hairline);
+  background: var(--color-glass-solid);
+}
+.writer-notes .writer-p {
+  color: var(--color-fg) !important;
+}
+.writer-notes .writer-p span {
+  color: inherit !important;
+}
+.writer-notes .writer-p:is([data-kind='subtitle'], [data-kind='caption'], [data-level='6']),
+.writer-notes .writer-p[data-locked] {
+  color: var(--color-fg-subtle) !important;
+}
+.writer-notes .writer-sheet {
+  box-shadow: none;
+  background: none;
+}
+.writer-notes .writer-flow {
+  width: 100%;
+  padding: 48px 96px 96px;
+  box-sizing: border-box;
+  overflow-wrap: anywhere;
+  caret-color: var(--color-fg);
+}
+.writer-notes .writer-p[data-kind='preformatted'] {
+  background: var(--color-surface-2);
+  padding-right: 16px !important;
+  padding-left: 16px !important;
+}
+.writer-notes .writer-p[data-kind='preformatted']:not(.writer-p[data-kind='preformatted'] + *) {
+  margin-top: 6px;
+  padding-top: 12px;
+  border-top-left-radius: 4px;
+  border-top-right-radius: 4px;
+}
+.writer-notes .writer-p[data-kind='preformatted']:not(:has(+ .writer-p[data-kind='preformatted'])) {
+  margin-bottom: 6px !important;
+  padding-bottom: 12px;
+  border-bottom-left-radius: 4px;
+  border-bottom-right-radius: 4px;
+}
+.writer-notes .writer-p[data-kind='quote'] {
+  border-left: 3px solid currentColor;
+}
+.writer-notes .writer-p[data-locked] {
+  white-space: pre;
+  overflow-x: auto;
+}
+
+/*
+ * „Seitenfarbe“ (`WRITER_PAGES`, the view's tools): dark sheets – chosen, or as a dark
+ * „Darstellung“ – and light ones in a dark one.
+ *
+ * A text document's sheet goes dark and its text is turned over as a PDF reader's night view does
+ * it: light becomes dark, the hues stay (`invert` + `hue-rotate`), so the document's own colours
+ * still tell apart; pictures are turned back. Only the paper: comments' marks, cursors, guides and
+ * ⊕ lie beside it and keep their colours. A Markdown file's surface simply takes the other inks.
+ */
+:is(:root[data-theme='dark'] [data-pages='theme'], [data-pages='dark']) {
+  --writer-paper: #1e1e1e;
+}
+:is(:root[data-theme='dark'] [data-pages='theme'], [data-pages='dark'])
+  .writer-stack:not(.writer-code, .writer-notes)
+  .writer-sheet {
+  background: var(--writer-paper);
+  box-shadow: 0 0 0 1px var(--color-hairline);
+}
+:is(:root[data-theme='dark'] [data-pages='theme'], [data-pages='dark'])
+  .writer-stack:not(.writer-code, .writer-notes)
+  .writer-flow,
+:is(:root[data-theme='dark'] [data-pages='theme'], [data-pages='dark']) .writer-thumb .writer-flow,
+:is(:root[data-theme='dark'] [data-pages='theme'], [data-pages='dark'])
+  .writer-flow
+  .writer-picture {
+  filter: invert(1) hue-rotate(180deg);
+}
+:is(:root[data-theme='dark'] [data-pages='theme'], [data-pages='dark']) .writer-thumb {
+  background: var(--writer-paper);
+}
+:is(:root[data-theme='dark'] [data-pages='theme'], [data-pages='dark']) .writer-sheet-number {
+  color: rgb(255 255 255 / 0.9);
+}
+:is(:root[data-theme='dark'] [data-pages='theme'], [data-pages='dark']) .writer-edge {
+  background: var(--writer-paper);
+  color: rgb(255 255 255 / 0.9);
+}
+
+/* A Markdown file's surface: the light theme's inks in a dark „Darstellung“ … */
+:root[data-theme='dark'] [data-pages='light'] .writer-stack:is(.writer-code, .writer-notes) {
+  --color-glass-solid: #ffffff;
+  --color-hairline: rgb(0 0 0 / 0.08);
+  --color-fg: rgb(0 0 0 / 0.88);
+  --color-fg-subtle: rgb(0 0 0 / 0.46);
+  --color-fg-faint: rgb(0 0 0 / 0.28);
+  --color-surface-2: rgb(0 0 0 / 0.06);
+}
+/* … and the dark theme's in a light one. */
+:root[data-theme='light'] [data-pages='dark'] .writer-stack:is(.writer-code, .writer-notes) {
+  --color-glass-solid: #141414;
+  --color-hairline: rgb(255 255 255 / 0.08);
+  --color-fg: rgb(255 255 255 / 0.9);
+  --color-fg-subtle: rgb(255 255 255 / 0.5);
+  --color-fg-faint: rgb(255 255 255 / 0.3);
+  --color-surface-2: rgb(255 255 255 / 0.08);
+}

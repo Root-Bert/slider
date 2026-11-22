@@ -49,6 +49,7 @@ import {
 import { RenderProgress } from '../src/import/render-progress';
 import { silentLogger } from '../src/logger';
 import { NullMailer, type Mailer } from '../src/mail/mailer';
+import type { MailServers } from '../src/mail/servers';
 import type { LiveHub } from '../src/realtime/live-hub';
 import { DEFAULT_PLAN_LIMITS } from '../src/services/plans';
 import { upsertUser } from '../src/services/users';
@@ -97,7 +98,7 @@ export const testConfig = (overrides: Partial<Config> = {}): Config => ({
   microsoft: null,
   nextcloud: { server: null, login: null, loginAnyServer: false },
   media: { dir: '/unused', maxBytes: 1024 * 1024 },
-  // The real plans (free: 5 people, 2 GB, decks unlimited); tests that need more pass `plans`.
+  // The real plans (free: 5 people, 20 GB, decks unlimited); tests that need more pass `plans`.
   limited: true,
   plans: DEFAULT_PLAN_LIMITS,
   // Without Stripe; billing tests pass `billing` and a fake provider (`test/fakes/billing`).
@@ -265,6 +266,12 @@ export async function createTestContext(
     stockPhotos?: StockPhotoSource;
     /** A fake rembg: pictures cut out without network. */
     cutOuts?: CutOutSource;
+    /** Fake IMAP/SMTP: mailboxes without servers. */
+    mailServers?: MailServers;
+    /** Fake token endpoints of Microsoft and Google for mailboxes' sign-ins. */
+    mailOAuthFetch?: (input: string, init?: RequestInit) => Promise<Response>;
+    /** Fake calendars of mail accounts (CalDAV, Google, Graph). */
+    mailCalendars?: AppDeps['mailCalendars'];
     /** Fake passkey verification (no real authenticator in tests). */
     webauthn?: WebAuthn;
     /** Environment and restart hook for the setup page; without it `/api/setup` is a 404. */
@@ -382,6 +389,11 @@ export async function createTestContext(
     cloudFetch: options.cloudFetch,
     stockPhotos: options.stockPhotos,
     cutOuts: options.cutOuts,
+    mailServers: options.mailServers,
+    mailOAuthFetch: options.mailOAuthFetch ?? offlineFetch,
+    mailCalendars: options.mailCalendars,
+    // Firms' logos beside mails: never the real DNS or web (a test swaps the fakes in place).
+    senderLogos: { fetch, lookup: options.lookup ?? publicLookup, resolveTxt: async () => [] },
     ssoNetwork: {
       fetch,
       lookup: options.lookup ?? publicLookup,

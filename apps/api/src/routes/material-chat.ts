@@ -13,6 +13,7 @@ import {
   listMaterialChats,
   startMaterialChat,
 } from '../services/material-chat';
+import { BOARD_OWNER_PATH, ownerIn } from './materials';
 
 /**
  * The AI on the material page (`services/material-chat.ts`), each person's own chats:
@@ -20,25 +21,25 @@ import {
  *   `MaterialChatEvent`s (event `chat`) until it is done; the stream closed, it stops;
  * - `GET /decks/:deckId/material-chats` → the chats, latest first; `GET …/:chatId` → one with its
  *   messages; `DELETE …/:chatId`.
+ *
+ * The same under `/documents/:documentId/…` for a text document's board.
  */
 export function materialChatRoutes(deps: AppDeps) {
   const viewer = viewerMiddleware(deps);
   const asks = aiLimits(deps).materialQuestions;
 
   return new Hono<ViewerEnv>()
-    .get('/decks/:deckId/material-chats', viewer, async (c) =>
-      c.json(await listMaterialChats(deps, c.var.viewer, c.req.param('deckId'))),
+    .get(`${BOARD_OWNER_PATH}/material-chats`, viewer, async (c) =>
+      c.json(await listMaterialChats(deps, c.var.viewer, ownerIn(c))),
     )
-    .get('/decks/:deckId/material-chats/:chatId', viewer, async (c) =>
-      c.json(
-        await getMaterialChat(deps, c.var.viewer, c.req.param('deckId'), c.req.param('chatId')),
-      ),
+    .get(`${BOARD_OWNER_PATH}/material-chats/:chatId`, viewer, async (c) =>
+      c.json(await getMaterialChat(deps, c.var.viewer, ownerIn(c), c.req.param('chatId'))),
     )
-    .delete('/decks/:deckId/material-chats/:chatId', viewer, async (c) => {
-      await deleteMaterialChat(deps, c.var.viewer, c.req.param('deckId'), c.req.param('chatId'));
+    .delete(`${BOARD_OWNER_PATH}/material-chats/:chatId`, viewer, async (c) => {
+      await deleteMaterialChat(deps, c.var.viewer, ownerIn(c), c.req.param('chatId'));
       return c.body(null, 204);
     })
-    .post('/decks/:deckId/material-chat', viewer, async (c) => {
+    .post(`${BOARD_OWNER_PATH}/material-chat`, viewer, async (c) => {
       const input = await readJson(c, materialChatInputSchema);
       assertWithinLimit(
         c,
@@ -46,7 +47,7 @@ export function materialChatRoutes(deps: AppDeps) {
         'Zu viele Fragen auf einmal. Bitte warte einen Moment.',
       );
       // Refusals (no key, no access) answer with their status before the stream starts.
-      const chat = await startMaterialChat(deps, c.var.viewer, c.req.param('deckId'), input);
+      const chat = await startMaterialChat(deps, c.var.viewer, ownerIn(c), input);
       return streamSSE(c, async (stream) => {
         const gone = new AbortController();
         stream.onAbort(() => gone.abort());

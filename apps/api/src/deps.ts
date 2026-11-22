@@ -12,7 +12,7 @@ import type { Database } from './db/client';
 import type { ImportJob, JobQueue } from './import/queue';
 import type { RenderProgress } from './import/render-progress';
 import type { SlideRenderers } from './import/rerender';
-import type { DocumentToPdf, MaterialToPdf } from './import/libreoffice';
+import type { DocumentToOdt, DocumentToPdf, MaterialToPdf } from './import/libreoffice';
 import type { Logger } from './logger';
 import type { Mailer } from './mail/mailer';
 import type { LiveHub } from './realtime/live-hub';
@@ -20,10 +20,16 @@ import type { LiveTexts } from './realtime/live-texts';
 import type { WorkspacePresence } from './realtime/workspace-presence';
 import type { SourceAdapters } from './sources/source-adapter';
 import type { CutOutSource } from './services/cut-outs';
+import type { DocumentLive } from './services/documents';
 import type { StockPhotoSource } from './services/stock-photos';
 import type { BlobStorage } from './storage/blob-storage';
+import type { DkimDns } from './mail/dkim';
+import type { MailServers } from './mail/servers';
+import type { SenderLogoNetwork } from './services/mail-logos';
 import type { BlankDecks } from './import/ready-blank';
 import type { SyncService } from './sync/sync-service';
+import type { MailAccountRow } from './db/schema';
+import type { CalendarSource } from './services/calendar/remote';
 
 /** Everything the HTTP layer depends on; injected so tests can build an app in memory. */
 export interface AppDeps {
@@ -42,6 +48,11 @@ export interface AppDeps {
   log: Logger;
   /** Presence, live cursors and live comments (BER-104); `createApp` makes one when absent. */
   live?: LiveHub;
+  /**
+   * Who has a text document open (Writer); `createApp` makes one when absent. A change on a
+   * document's board „Material“ is told through it (`board-owner.ts`).
+   */
+  documentLive?: DocumentLive;
   /**
    * Texts typed in together (the live editor); `createApp` makes them. A step that changes a
    * text being typed in writes the change into it (`commitStep`).
@@ -71,6 +82,8 @@ export interface AppDeps {
    * text is read from the PDF; absent → their text is not read.
    */
   materialPdf?: MaterialToPdf | null;
+  /** LibreOffice making a text document of a Word or text file (Writer); absent → only .odt. */
+  documentOdt?: DocumentToOdt | null;
   /** Generic OpenID Connect login (BER-129); `null` when OIDC_ISSUER is not set. */
   oidc: OidcClient | null;
   /** "Weiter mit Google" – the OIDC client against accounts.google.com; `null` without GOOGLE_*. */
@@ -80,6 +93,13 @@ export interface AppDeps {
    * when absent (tests inject fakes).
    */
   ssoNetwork?: SsoNetwork;
+  /**
+   * How mailboxes' sign-ins (`mail/oauth.ts`: Microsoft, Google) reach the providers' token
+   * endpoints; `fetch` when absent (tests inject a fake).
+   */
+  mailOAuthFetch?: (input: string, init?: RequestInit) => Promise<Response>;
+  /** How a mail account's calendars are read (`calendar/mail-calendars.ts`); tests inject one. */
+  mailCalendars?: (account: MailAccountRow) => CalendarSource | null;
   /** Passkey ceremonies; defaults to `@simplewebauthn/server` (tests inject fakes). */
   webauthn?: WebAuthn;
   /** Makes the Anthropic client for a workspace's key (BER-183); tests inject a fake. */
@@ -93,6 +113,12 @@ export interface AppDeps {
   cloudFetch?: (input: string, init?: RequestInit) => Promise<Response>;
   /** Unsplash; absent → the real one with `config.unsplash` (tests inject a fake). */
   stockPhotos?: StockPhotoSource;
+  /** IMAP/SMTP of the mailboxes; absent → the real servers (tests inject a fake). */
+  mailServers?: MailServers;
+  /** DNS TXT for the mails' DKIM keys; absent → the real DNS (tests inject their records). */
+  mailDns?: DkimDns;
+  /** DNS and the web for the firms' logos beside their mails; absent → the real ones (tests: fakes). */
+  senderLogos?: SenderLogoNetwork;
   /** rembg; absent → the real one with `config.rembg` (tests inject a fake). */
   cutOuts?: CutOutSource;
   /** Stripe for the paid plan (BER-152); `null` without `config.billing` (self-hosting). */

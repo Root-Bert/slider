@@ -2,8 +2,8 @@ import { z } from 'zod';
 
 /*
  * The spell check's own words: a word one said is right („Passt so“ on a misspelt word) goes
- * into the account's dictionary (`/me/words`, „Wörterbuch“ in the account menu) and into the
- * workspace's of the deck (`/workspaces/:id/words`, „Wörter“ in its Bibliothek). A word either
+ * into the account's dictionary (`/me/words`) and into the workspace's of the deck
+ * (`/workspaces/:id/words`) – both shown under „Wörter“ in the Bibliothek. A word either
  * knows is no longer marked.
  */
 

@@ -40,7 +40,7 @@ function PenSurface({
   return (
     <div
       {...handlers}
-      className="absolute inset-0 z-(--z-overlay) cursor-crosshair touch-none select-none"
+      className="absolute inset-0 z-(--z-overlay) cursor-crosshair touch-none select-none slide-room"
     >
       {previewStrokes.length > 0 && (
         <svg
@@ -140,7 +140,7 @@ function EraserSurface({ boxRef, threads }: Pick<DrawingSurfaceProps, 'boxRef' |
       onPointerCancel={() => {
         wiping.current = false;
       }}
-      className="absolute inset-0 z-(--z-overlay) cursor-cell touch-none select-none"
+      className="absolute inset-0 z-(--z-overlay) cursor-cell touch-none select-none slide-room"
     />
   );
 }

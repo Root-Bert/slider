@@ -1,5 +1,4 @@
 import {
-  clamp01,
   TEXT_FONT_SIZE,
   type AccentColor,
   type Anchor,
@@ -56,13 +55,15 @@ export function startFontSize(slideHeightPx: number): number {
 }
 
 /**
- * Where a click opens a text box: top-left at the pointer, nudged in so the first line fits.
+ * Where a click opens a text box: top-left at the pointer, nudged in so the first line fits on
+ * the slide – beside the slide (zoomed out) where it was clicked.
  * The box then grows with the text (`width: null`).
  */
 export function clickTextBox(point: { x: number; y: number }, fontSize: number) {
+  const off = point.x < 0 || point.x > 1 || point.y < 0 || point.y > 1;
   return {
-    x: Math.min(point.x, 1 - CLICK_ROOM),
-    y: Math.min(point.y, Math.max(0, 1 - fontSize * 1.6)),
+    x: off ? point.x : Math.min(point.x, 1 - CLICK_ROOM),
+    y: off ? point.y : Math.min(point.y, Math.max(0, 1 - fontSize * 1.6)),
     width: null,
     minHeight: 0,
     fontSize,
@@ -71,11 +72,13 @@ export function clickTextBox(point: { x: number; y: number }, fontSize: number) 
 
 /** A dragged-open text box: fixed width, at least as tall as dragged. */
 export function dragTextBox(rect: Rect, fontSize: number) {
-  const x = Math.min(rect.x, 1 - MIN_TEXT_WIDTH);
+  // Dragged off the slide (zoomed out): as dragged.
+  const off = rect.x < 0 || rect.x + rect.w > 1;
+  const x = off ? rect.x : Math.min(rect.x, 1 - MIN_TEXT_WIDTH);
   return {
     x,
     y: rect.y,
-    width: Math.min(1 - x, Math.max(MIN_TEXT_WIDTH, rect.w)),
+    width: Math.min(off ? 1 : 1 - x, Math.max(MIN_TEXT_WIDTH, rect.w)),
     minHeight: rect.h,
     fontSize,
   };
@@ -83,15 +86,13 @@ export function dragTextBox(rect: Rect, fontSize: number) {
 
 const round = (value: number) => Math.round(value * 10_000) / 10_000;
 
-/** Rounds a measured box and keeps it on the slide. */
+/** Rounds a measured box – where it lies, off the slide too; no larger than the slide. */
 export function normalizeTextRect(rect: Rect): Rect {
-  const x = round(clamp01(rect.x));
-  const y = round(clamp01(rect.y));
   return {
-    x,
-    y,
-    w: Math.max(0.001, round(Math.min(rect.w, 1 - x))),
-    h: Math.max(0.001, round(Math.min(rect.h, 1 - y))),
+    x: round(rect.x),
+    y: round(rect.y),
+    w: Math.max(0.001, round(Math.min(rect.w, 1))),
+    h: Math.max(0.001, round(Math.min(rect.h, 1))),
   };
 }
 

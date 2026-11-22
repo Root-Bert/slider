@@ -1,0 +1,16 @@
+{
+  "name": "@slider/templates",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Slider's template library: every template written from a spec as a real .otp, drawn by LibreOffice for its preview.",
+  "scripts": {
+    "library": "bun src/build.ts",
+    "typecheck": "tsc -p tsconfig.json"
+  },
+  "dependencies": {
+    "@napi-rs/canvas": "^1.0.10",
+    "@slider/shared": "workspace:*",
+    "jszip": "^3.10.2"
+  }
+}

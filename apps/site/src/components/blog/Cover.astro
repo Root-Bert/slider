@@ -1,12 +1,11 @@
 ---
 import Slide from '~/components/slides/Slide.astro';
 import { asset } from '~/lib/links';
-import { ACCENT_CSS, ACCENT_INK, type Post } from './posts';
+import { ACCENT_CSS, type Post } from './posts';
 
 /**
- * A post's cover, drawn in code as a slide in the post's accent on its paler copy, down and to the
- * left (the logo): a versus pill pair, a ranking, a version number, a slide with pins, or code
- * braces. Inside a link, hovering lifts the slide off its copy, like the buttons.
+ * A post's cover, drawn in code: night-dark in both themes with a glow in the post's accent, and
+ * on it a versus pill pair, a ranking, a version number, a slide with pins, or code braces.
  */
 interface Props {
   post: Post;
@@ -22,13 +21,13 @@ const wide = size === 'wide';
 
 <div
   class:list={['cv', wide && 'is-wide', className]}
-  style={`--bg: ${ACCENT_CSS[accent]}; --ink: ${ACCENT_INK[accent]}`}
+  style={`--bg: ${ACCENT_CSS[accent]}`}
   aria-hidden="true"
 >
   {
     cover.kind === 'versus' && (
       <div class="cv-versus">
-        <span class="cv-pill is-slider">Slider</span>
+        <span class="cv-pill is-slider">{cover.self ?? 'Slider'}</span>
         <span class="cv-vs">vs</span>
         <span class="cv-pill is-other">{cover.other}</span>
       </div>
@@ -66,30 +65,38 @@ const wide = size === 'wide';
 
 <style>
   .cv {
-    --step: 10px;
+    --ground: #0b0b0d;
     position: relative;
     display: flex;
     align-items: center;
     justify-content: center;
     aspect-ratio: 16 / 10;
     container-type: inline-size;
-    margin: 0 0 var(--step) var(--step);
-    border-radius: 20px;
-    background: var(--bg);
-    color: var(--ink);
-    box-shadow: calc(var(--step) * -1) var(--step) 0 color-mix(in srgb, var(--bg) 45%, transparent);
-    transition:
-      translate 200ms var(--ease-emphasized),
-      box-shadow 200ms var(--ease-emphasized);
+    overflow: hidden;
+    border-radius: var(--cv-radius, 20px);
+    background:
+      radial-gradient(70% 78% at 50% 50%, color-mix(in srgb, var(--bg) 42%, transparent), transparent 100%),
+      var(--ground);
+    color: #fff;
+  }
+  /* The app's dot grid, faint, so the cover reads as a canvas. */
+  .cv::before {
+    content: '';
+    position: absolute;
+    inset: 0;
+    background-image: radial-gradient(rgb(255 255 255 / 0.13) 1px, transparent 1.2px);
+    background-size: 22px 22px;
+    pointer-events: none;
+  }
+  .cv > * {
+    position: relative;
+    transition: scale 500ms var(--ease-emphasized);
+  }
+  :global(a:hover) .cv > * {
+    scale: 1.04;
   }
   .cv.is-wide {
-    --step: clamp(12px, 1.6vw, 22px);
-    border-radius: clamp(20px, 2.2vw, 32px);
-  }
-  :global(a:hover) > .cv,
-  :global(a:hover) .cv {
-    translate: 3px -3px;
-    box-shadow: calc(var(--step) * -1 - 3px) calc(var(--step) + 3px) 0 color-mix(in srgb, var(--bg) 45%, transparent);
+    --cv-radius: clamp(20px, 2.2vw, 32px);
   }
 
   .cv-versus {
@@ -97,28 +104,28 @@ const wide = size === 'wide';
     align-items: center;
     gap: 12px;
   }
-  /* Sized by the slide's width, so the pair always fits, from a phone to the article hero. */
+  /* Sized by the cover's width, so the pair always fits, from a phone to the article hero. */
   .cv-pill {
     padding: 0.55em 1.1em;
     border-radius: 999px;
     font-size: clamp(12px, 3.6cqw, 26px);
-    font-weight: 700;
+    font-weight: 600;
     letter-spacing: -0.01em;
     white-space: nowrap;
   }
   .cv-pill.is-slider {
-    background: var(--color-accent-blue);
-    color: #fff;
-    box-shadow: -4px 4px 0 color-mix(in srgb, var(--color-accent-blue) 45%, transparent);
-  }
-  .cv-pill.is-other {
     background: #fff;
     color: #000;
   }
+  .cv-pill.is-other {
+    background: #151517;
+    color: #fff;
+    box-shadow: inset 0 0 0 1px rgb(255 255 255 / 0.16);
+  }
   .cv-vs {
-    font-size: 14px;
-    font-weight: 600;
-    opacity: 0.7;
+    font-family: var(--font-mono);
+    font-size: 13px;
+    color: rgb(255 255 255 / 0.55);
   }
 
   .cv-ranking {
@@ -133,29 +140,32 @@ const wide = size === 'wide';
     gap: 10px;
     padding: 10px 16px 10px 12px;
     border-radius: 12px;
-    background: rgb(255 255 255 / 0.55);
-    color: #000;
+    background: rgb(255 255 255 / 0.08);
+    color: rgb(255 255 255 / 0.55);
+    font-family: var(--font-mono);
     font-size: 13px;
-    font-variant-numeric: tabular-nums;
     white-space: pre;
   }
   .cv-ranking div.is-first {
-    background: #fff;
+    background: #0b0b0d;
+    color: #fff;
+    box-shadow: inset 0 0 0 1px rgb(255 255 255 / 0.16);
   }
   .cv-ranking i {
     height: 8px;
     border-radius: 99px;
-    background: rgb(0 0 0 / 0.2);
+    background: rgb(255 255 255 / 0.25);
   }
   .cv-ranking .is-first i {
-    background: var(--color-accent-blue);
+    background: var(--bg);
   }
 
   .cv-big {
     font-size: 96px;
-    font-weight: 800;
+    font-weight: 700;
     line-height: 1;
-    letter-spacing: -0.05em;
+    letter-spacing: -0.04em;
+    text-shadow: 0 0 60px color-mix(in srgb, var(--bg) 80%, transparent);
   }
   .is-wide .cv-big {
     font-size: clamp(96px, 12vw, 180px);
@@ -164,5 +174,11 @@ const wide = size === 'wide';
     font-family: var(--font-mono);
     font-weight: 500;
     letter-spacing: 0;
+    color: var(--bg);
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .cv > * {
+      transition: none;
+    }
   }
 </style>

@@ -299,7 +299,7 @@ async function deckRef(db: Executor, deckId: string | null): Promise<DeckRef> {
   const [deck] = await db
     .select({ id: decks.id, title: decks.title })
     .from(decks)
-    .where(and(eq(decks.id, deckId), isNull(decks.restrictedAt)));
+    .where(and(eq(decks.id, deckId), isNull(decks.restrictedAt), isNull(decks.deletedAt)));
   return deck ?? null;
 }
 

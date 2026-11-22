@@ -69,6 +69,8 @@ export function PopoverPanel({
   const Component = as as ElementType;
   return (
     <Component
+      // A glass it opens in leaves its blur meanwhile (index.css), so this one blurs the page.
+      data-popover-panel=""
       className={cn(
         tone === 'elevated' ? 'glass-elevated' : 'glass-control',
         'z-(--z-popover) flex animate-pop-in flex-col rounded-panel',

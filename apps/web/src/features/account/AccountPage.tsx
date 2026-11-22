@@ -1,6 +1,5 @@
 import { useSearchParams } from 'react-router';
 import { useAuthProviders } from '@/lib/api';
-import { routes } from '@/lib/routes';
 import { SettingsLayout } from '@/shell/layouts/SettingsLayout';
 import { isLoginError, LoginErrorBanner, useAccount } from '@/features/auth';
 import { Avatar, Section, TextField, useToast } from '@/ui';
@@ -39,7 +38,7 @@ export function Component() {
       docTitle="Konto & Anmeldung | Slider"
       title="Konto & Anmeldung"
       leading={<Avatar author={viewer.author} size={32} />}
-      back={{ to: routes.reviews() }}
+      back="app"
       toast={toast}
     >
       {isLoginError(linkError) && <LoginErrorBanner code={linkError} />}

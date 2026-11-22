@@ -109,6 +109,8 @@ export function ViewerStoreProvider({
     dispatch({
       type: 'slidesReplaced',
       slideIds: slides.map((slide) => slide.id),
+      // A comment begun on a variant is not on a slide gone.
+      variantIds: [...data.variantsOf.values()].flat().map((variant) => variant.id),
       fallbackSlideId: fallback,
     });
   }, [all, data, dispatch]);

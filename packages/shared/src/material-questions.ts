@@ -24,7 +24,9 @@ export type MaterialQuestionKind = (typeof MATERIAL_QUESTION_KINDS)[number];
 
 export const materialQuestionSchema = z.object({
   id: z.string(),
-  deckId: z.string(),
+  /** The deck whose board the note lies on – or `documentId`: exactly one is set. */
+  deckId: z.string().nullable(),
+  documentId: z.string().nullable(),
   /** The note asked (`BoardItem.id`). */
   noteId: z.string(),
   kind: z.enum(MATERIAL_QUESTION_KINDS),

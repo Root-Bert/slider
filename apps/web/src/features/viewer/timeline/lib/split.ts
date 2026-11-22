@@ -1,5 +1,4 @@
-import { clamp } from '@slider/shared';
-import { wheelPixels } from '@/lib/wheel';
+import { wheelFactor } from '@/lib/wheel';
 import { slideHeightAt, splitForHeight, type TrackGeometry } from './timeline-layout';
 
 export { SPLIT_MAX, SPLIT_MIN } from '@/lib/preferences/split';
@@ -14,10 +13,6 @@ export { SPLIT_MAX, SPLIT_MIN } from '@/lib/preferences/split';
 export const SPLIT_KEY_STEP_PX = 24;
 export const SPLIT_KEY_STEP_LARGE_PX = 96;
 
-/** Wheel pixels per e-fold of slide height; a single wheel notch is capped so mice don't jump. */
-const WHEEL_SENSITIVITY = 0.005;
-const WHEEL_MAX_DELTA = 50;
-
 /** Dragging the handle by `dy` pixels (down = positive) from where the slides were `startH` tall. */
 export const dragSplit = (startH: number, dy: number, geo: TrackGeometry) =>
   splitForHeight(startH + dy, geo);
@@ -30,11 +25,7 @@ export const stepSplit = (
   stepPx = SPLIT_KEY_STEP_PX,
 ) => splitForHeight(slideHeightAt(split, geo) + direction * stepPx, geo);
 
-/** Ctrl/⌘ + wheel and trackpad pinch as a size factor: scrolling down (positive delta) shrinks. */
-export const wheelFactor = (deltaY: number, deltaMode: number) =>
-  Math.exp(
-    -clamp(wheelPixels(deltaY, deltaMode), -WHEEL_MAX_DELTA, WHEEL_MAX_DELTA) * WHEEL_SENSITIVITY,
-  );
+export { wheelFactor };
 
 /** Ctrl/⌘ + wheel and trackpad pinch: scrolling down (positive delta) makes the slides smaller. */
 export const wheelSplit = (

@@ -4,14 +4,18 @@ import { useViewerData } from '../../state/viewer-data';
 import { useViewerDispatch } from '../../state/viewer-state';
 import { useViewerToast } from '../../state/viewer-toast';
 import { useVariantCopy } from '../../timeline/hooks/useVariantFlow';
-import { askVariant } from '../../timeline/lib/variant-requests';
+import {
+  askVariant,
+  canCompareVariants,
+  compareVariants,
+} from '../../timeline/lib/variant-requests';
 import { useEditing } from '../editing-context';
 import { newEditId } from '../new-id';
 import { useAskAi } from './useAskAi';
 
 /**
- * „Variante erstellen“, „Folie duplizieren“, „Hintergrund“, „Folie ausblenden/einblenden“ and „Folie löschen“ for a
- * slide's right-click menu – „Variante verwenden“ and „Variante löschen“ for a variant's
+ * „Variante erstellen“, „Varianten vergleichen“ (once it has some), „Folie duplizieren“, „Hintergrund“, „Folie ausblenden/einblenden“ and „Folie löschen“ for a
+ * slide's right-click menu – „Varianten vergleichen“, „Variante verwenden“ and „Variante löschen“ for a variant's
  * – on its thumbnail and on the slide itself, in „Bearbeiten“ as in review. Nothing on decks this
  * viewer cannot edit. „Hintergrund“ opens the slide's background in the side panel
  * (`SlideBackgroundPanel`). In a template, „Layout umbenennen“ first – the only way to rename a
@@ -24,7 +28,7 @@ export function useSlideActions(): (slide: Slide) => MenuAction[] {
   const editing = useEditing();
   const dispatch = useViewerDispatch();
   const toast = useViewerToast();
-  const { slides, deck } = useViewerData();
+  const { slides, deck, variantsOf } = useViewerData();
   const ai = useAskAi();
   const copyVariant = useVariantCopy();
 
@@ -35,6 +39,15 @@ export function useSlideActions(): (slide: Slide) => MenuAction[] {
     // A variant (above its slide): taken into the deck in its slide's place, or deleted.
     if (slide.variantOf)
       return [
+        ...(canCompareVariants()
+          ? [
+              {
+                label: 'Varianten vergleichen',
+                icon: 'gridView',
+                onSelect: () => compareVariants(slide.variantOf!),
+              } satisfies MenuAction,
+            ]
+          : []),
         {
           label: 'Variante verwenden',
           icon: 'compareArrows',
@@ -80,6 +93,15 @@ export function useSlideActions(): (slide: Slide) => MenuAction[] {
                 if (!ai.available || !askVariant(slide.id)) copyVariant(slide.id);
               },
             } satisfies MenuAction,
+            ...((variantsOf.get(slide.id)?.length ?? 0) > 0 && canCompareVariants()
+              ? [
+                  {
+                    label: 'Varianten vergleichen',
+                    icon: 'gridView',
+                    onSelect: () => compareVariants(slide.id),
+                  } satisfies MenuAction,
+                ]
+              : []),
           ]),
       // Right after it, shown at once (`pending-slides`), one undo takes it back.
       {

@@ -1,5 +1,5 @@
 import JSZip from 'jszip';
-import { declaredSize, inflateEntry } from '@slider/shared';
+import { declaredSize, inflateEntry, zipEntriesAtMost } from '@slider/shared';
 import { OdpError } from './errors';
 
 /*
@@ -60,6 +60,10 @@ export class OdpArchive {
   }
 
   static async open(bytes: Uint8Array): Promise<OdpArchive> {
+    // Before the zip is read: every entry becomes an object there.
+    if (!zipEntriesAtMost(bytes, MAX_ENTRIES)) {
+      throw new OdpError('corrupt', 'The file has too many parts.');
+    }
     let zip: JSZip;
     try {
       zip = await JSZip.loadAsync(bytes);

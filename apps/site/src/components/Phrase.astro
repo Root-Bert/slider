@@ -1,0 +1,21 @@
+---
+import Highlight from './Highlight.astro';
+import type { PersonName } from '~/lib/people';
+
+/**
+ * A headline whose last words are selected like a shape in the editor (`Highlight`), as on the
+ * blog. `words` says how many; `by` rests a reviewer's cursor on the selection.
+ */
+interface Props {
+  text: string;
+  words?: number;
+  by?: PersonName;
+}
+
+const { text, words = 2, by } = Astro.props;
+const all = text.trim().split(/\s+/);
+const head = all.slice(0, Math.max(0, all.length - words)).join(' ');
+const mark = all.slice(-words).join(' ');
+---
+
+{head}{' '}<Highlight by={by}>{mark}</Highlight>

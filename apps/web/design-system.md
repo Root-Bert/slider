@@ -39,7 +39,7 @@ canvas, frosted glass and white at fixed opacities.
 | `glass-hover`    | `rgb(110 110 110/.38)` | Hover on clickable glass cards                          |
 | `glass-panel`    | `rgb(30 30 30/.5)`     | `glass-panel` utility (side panels over slides)         |
 | `glass-control`  | `rgb(40 40 40/.25)`    | `glass-control` utility (control pills, buttons)        |
-| `glass-elevated` | `rgb(20 20 20/.86)`    | `glass-elevated` utility (dialogs, popovers, menus)     |
+| `glass-elevated` | `rgb(20 20 20/.62)`    | `glass-elevated` utility (dialogs, popovers, menus)     |
 
 ### White overlay ladder (fills and states)
 
@@ -73,7 +73,6 @@ Above 0.35 use the foreground tokens: `fg-faint` 0.3, `fg-subtle` 0.5, `fg-muted
 | `well-dark`    | 0.25  | Dark wells for media/reply controls                             |
 | `scrim`        | 0.60  | Dialog backdrop, chips over slides/thumbnails (`glass-dark`)    |
 | `scrim-strong` | 0.75  | Full-screen sheet backdrop, strong badges (`glass-dark-strong`) |
-| `scrim-max`    | 0.90  | Hover on `scrim-strong` controls                                |
 
 ### Foreground
 
@@ -109,7 +108,7 @@ white-on-colour spots listed in §12 (count bubbles, slide chrome, brand marks).
 | `glass-panel`          | Side panel over slides (24px blur, darker)                            |
 | `glass-floating`       | `glass-panel` + hairline ring + float shadow (thread, deleted panels) |
 | `glass-control`        | Control pill / button (4px blur) + hairline ring                      |
-| `glass-elevated`       | Dialog, popover, menu (32px blur, near-opaque) + strong ring + float  |
+| `glass-elevated`       | Every overlay: dialog, popover, menu, toast (24px blur, see-through) + strong ring + float |
 | `glass-dark`           | Chip over a slide or thumbnail (`scrim` + 8px blur)                   |
 | `glass-dark-strong`    | Badge over a slide (`scrim-strong` + 8px blur)                        |
 | `ring-hairline`        | `inset 0 0 0 1px hairline` as box-shadow                              |
@@ -167,7 +166,7 @@ Slightly boxy, concentric: inner radius = outer radius − padding.
 ## 6. Elevation
 
 Shadows: `shadow-float` (overlays), `shadow-mark` (marks and labels on slides), `shadow-pin` (comment pin dots, centred so they sit on their arrow), `shadow-lift`
-(live cursors and labels), `hover:shadow-card-glow` (the featured card growing a little, white rim and halo), `shadow-glow` / `hover:shadow-glow-hover` (soft white halo around the
+(live cursors and labels), `shadow-soft` (a picture lying on its card – an agent's face), `hover:shadow-card-glow` (the featured card growing a little, white rim and halo), `shadow-glow` / `hover:shadow-glow-hover` (soft white halo around the
 primary button of the login page). Tailwind's `shadow-sm`/`shadow-lg` are not used.
 
 Stacking uses named layers (`z-(--z-…)`):
@@ -182,7 +181,6 @@ Stacking uses named layers (`z-(--z-…)`):
 | `--z-popover`        | 50    | Menus, popovers, composer, mention menu                             |
 | `--z-popover-anchor` | 51    | A trigger its panel unfolds around (account avatar)                 |
 | `--z-toast`          | 55    | Toasts (above popovers)                                             |
-| `--z-stage`          | 60    | Import stage                                                        |
 
 ## 7. Motion
 
@@ -290,6 +288,12 @@ App chrome lives in `shell/` (not `ui/`): `SettingsLayout` (`docTitle`, `title`,
 `headingLevel`, `density`, `titleId`) and `CenteredMessage`.
 
 ### Inputs, misc, hooks
+
+Two kinds of field, nothing else. **At a page's top**, beside its buttons and button groups: 40 px
+high, `glass` with the `focus-field` ring – `TextField`, or `AgentComposer top` where one writes
+to an agent (`Agenten`, „Zuletzt“, an area's agents, Sender's „Neu“). **Under a conversation**
+(chat, an agent's chat, a mail's reply): the slim 36 px `glass-elevated` composer – Sender's
+`Composer` and `AgentComposer` without `top` (`flat`/`inline` where a column would cut its shadow).
 
 | Component          | Props                                                                                                                                                                                                                                                                                                        |
 | ------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |

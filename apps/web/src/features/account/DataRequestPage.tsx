@@ -78,7 +78,7 @@ export function Component() {
             request.data.hasAccount
               ? 'Alles, was Slider über dich speichert, als ZIP.'
               : 'Zu dieser Adresse gibt es kein Konto – gespeichert sind nur Einladungen. Du bekommst sie als ZIP.'
-          } Der Link gilt bis ${formatDateTime(request.data.expiresAt)}.`}
+          } Der Link gilt bis ${formatDateTime(request.data.expiresAt)} und lädt die Daten höchstens dreimal herunter.`}
         >
           <a href={dataRequestExportUrl(token)} download className={buttonClasses({ size: 'lg' })}>
             Daten herunterladen

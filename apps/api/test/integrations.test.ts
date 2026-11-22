@@ -11,6 +11,7 @@ import {
 } from '../src/services/ai-providers';
 import {
   aiConnectionFor,
+  effectiveKey,
   workspaceAiConnection,
   workspaceSpeechConnection,
 } from '../src/services/integration-keys';
@@ -259,6 +260,8 @@ describe('a workspace’s AI keys', () => {
       expect(await deckAi()).toEqual({ name: 'KI', available: false });
       expect(integrationsSchema.parse((await call('')).body).aiName).toBe('KI');
 
+      // A name is short: it stands in the chat's field („Frag Lektor …“).
+      expect((await call('', { method: 'PATCH', json: { name: 'Neunlang9' } })).status).toBe(400);
       await call('', { method: 'PATCH', json: { name: '  Lektor ' } });
       expect(integrationsSchema.parse((await call('')).body).aiName).toBe('Lektor');
       await call('/keys', {
@@ -420,6 +423,7 @@ describe('a workspace’s AI keys', () => {
         config: {
           unsplash: { accessKey: 'unsplash-env-12345678' },
           anthropicApiKey: 'sk-ant-api03-env-AbCdWxYz',
+          mistralApiKey: 'mistral-env-old-0000OldK',
         },
       });
       const context = ctx;
@@ -428,6 +432,9 @@ describe('a workspace’s AI keys', () => {
         return { status: res.status, body: (await res.json()) as unknown };
       };
       const areas = async () => integrationsSchema.parse((await instance()).body).areas;
+      // A call's live words run on the environment's Mistral key before anyone opens the settings.
+      const live = await effectiveKey(context.deps, context.workspaceId, 'live');
+      expect(live.row).toMatchObject({ provider: 'mistral', apiKey: 'mistral-env-old-0000OldK' });
 
       const { ai, photos } = await areas();
       expect(ai.keys).toMatchObject([
@@ -448,6 +455,25 @@ describe('a workspace’s AI keys', () => {
       // Removed, it stays removed – the environment names the same value still.
       await instance(`/keys/${ai.keys[0]!.id}`, { method: 'DELETE' });
       expect((await areas()).ai.keys).toEqual([]);
+
+      // Mistral: voice and the live words taken over from it. The service refuses the old key;
+      // the environment names another – it takes the old one's place, the live words follow.
+      const first = await areas();
+      expect(first.voice.keys).toMatchObject([{ provider: 'mistral', hint: expect.stringMatching(/OldK$/), active: true }]);
+      expect(first.live.keys).toMatchObject([{ provider: 'mistral', active: true }]);
+      await context.deps.db
+        .update(integrationKeys)
+        .set({ error: 'Der Dienst hat den Key abgelehnt.' })
+        .where(eq(integrationKeys.provider, 'mistral'));
+      context.deps.config.mistralApiKey = 'mistral-env-new-1111NewK';
+      const next = await areas();
+      for (const area of [next.voice, next.speech, next.live]) {
+        const mistral = area.keys.filter((key) => key.provider === 'mistral');
+        expect(mistral).toHaveLength(1);
+        expect(mistral[0]).toMatchObject({ hint: expect.stringMatching(/NewK$/), error: null });
+      }
+      expect(next.voice.keys[0]!.active).toBe(true);
+      expect(next.live.keys[0]!.active).toBe(true);
     }
   });
 });

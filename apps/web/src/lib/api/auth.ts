@@ -12,8 +12,8 @@ import type {
   StartNextcloudSignInInput,
 } from '@slider/shared';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { api, leavingAccount, onAccountChanged } from '../api-client';
-import { forgetOffline } from '../offline';
+import { api, currentAccount, leavingAccount, onAccountChanged } from '../api-client';
+import { forgetDrafts, forgetOffline } from '../offline';
 import { registerPasskey } from '../passkeys';
 import { queryKeys, workspaceKeys } from './keys';
 
@@ -157,6 +157,8 @@ export function useSwitchAccount() {
 export function useSignOutAccount() {
   return useMutation({
     mutationFn: async () => {
+      const account = currentAccount();
+      const signedOut = account ? { userId: account } : null;
       leavingAccount(true);
       try {
         await api.post<void>('/auth/accounts/logout');
@@ -164,7 +166,8 @@ export function useSignOutAccount() {
         leavingAccount(false);
         throw error;
       }
-      await forgetOffline();
+      // Its drafts go with it; the other accounts' stay theirs.
+      await forgetOffline(signedOut);
       announceAccountChange();
     },
   });
@@ -174,7 +177,10 @@ export function useSignOutAccount() {
 export function useSignOutOtherAccount() {
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: (userId: string) => api.post<void>('/auth/accounts/logout', { userId }),
+    mutationFn: async (userId: string) => {
+      await api.post<void>('/auth/accounts/logout', { userId });
+      forgetDrafts({ userId });
+    },
     onSettled: () => queryClient.invalidateQueries({ queryKey: workspaceKeys.otherAccounts }),
   });
 }
@@ -201,7 +207,8 @@ export const useLogout = () =>
   useMutation({
     mutationFn: async () => {
       await api.post<void>('/auth/logout');
-      await forgetOffline();
+      // Every account signed in here is signed out.
+      await forgetOffline('everyone');
       announceAccountChange();
     },
   });

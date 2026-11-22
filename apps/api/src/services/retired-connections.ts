@@ -34,29 +34,9 @@ export async function retireFileConnections(deps: {
   /** Google could not be asked (offline, an error there): kept for the next start. */
   const retry: string[] = [];
   for (const grant of grants) {
-    let token: string;
-    try {
-      token = await decryptToken(deps.secret, grant.refreshToken!, GOOGLE_PURPOSE);
-    } catch (error) {
-      // Unreadable (another secret): it can never be used or revoked – deleted.
-      deps.log.warn(`Could not read a Google grant (connection ${grant.id})`, error);
-      continue;
-    }
-    try {
-      const response = await fetchImpl(GOOGLE_REVOKE_URL, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-        body: new URLSearchParams({ token }),
-        signal: AbortSignal.timeout(15_000),
-      });
-      await response.body?.cancel();
-      // 400 `invalid_token`: revoked or expired already.
-      if (response.ok || response.status === 400) revoked += 1;
-      else retry.push(grant.id);
-    } catch (error) {
-      deps.log.warn(`Could not revoke a Google grant (connection ${grant.id})`, error);
-      retry.push(grant.id);
-    }
+    const result = await revokeGoogleGrant({ ...deps, fetch: fetchImpl }, grant);
+    if (result === 'revoked') revoked += 1;
+    else if (result === 'retry') retry.push(grant.id);
   }
   const google = await deps.db
     .delete(googleConnections)
@@ -69,5 +49,37 @@ export async function retireFileConnections(deps: {
     deps.log.info(
       `Retired file connections: ${google.length} Google (${revoked} revoked), ${microsoft.length} Microsoft`,
     );
+  }
+}
+
+/**
+ * Revokes one Google grant at Google. `retry`: Google could not be asked (offline, an error
+ * there); `gone`: unreadable (another secret) – it can never be used or revoked. Never throws.
+ */
+export async function revokeGoogleGrant(
+  deps: { secret: string; log: Logger; fetch?: Fetch },
+  grant: { id: string; refreshToken: string | null },
+): Promise<'revoked' | 'retry' | 'gone'> {
+  if (!grant.refreshToken) return 'gone';
+  let token: string;
+  try {
+    token = await decryptToken(deps.secret, grant.refreshToken, GOOGLE_PURPOSE);
+  } catch (error) {
+    deps.log.warn(`Could not read a Google grant (connection ${grant.id})`, error);
+    return 'gone';
+  }
+  try {
+    const response = await (deps.fetch ?? fetch)(GOOGLE_REVOKE_URL, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+      body: new URLSearchParams({ token }),
+      signal: AbortSignal.timeout(15_000),
+    });
+    await response.body?.cancel();
+    // 400 `invalid_token`: revoked or expired already.
+    return response.ok || response.status === 400 ? 'revoked' : 'retry';
+  } catch (error) {
+    deps.log.warn(`Could not revoke a Google grant (connection ${grant.id})`, error);
+    return 'retry';
   }
 }

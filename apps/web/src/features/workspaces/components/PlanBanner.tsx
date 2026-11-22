@@ -21,7 +21,7 @@ export function PlanBanner({ workspace, userId }: { workspace: Workspace; userId
   if (!message) return null;
   const urgent = workspace.locked || Boolean(downgradeAt);
   return (
-    <div className="dot-grid px-4 pt-3 md:px-14">
+    <div className="dot-grid px-4 pt-3 md:px-8">
       <Notice
         tone={urgent ? 'warning' : 'info'}
         variant="tinted"

@@ -1,7 +1,8 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <!-- Hardened runtime exceptions for the signed app and everything inside it (bun included):
-     JIT for V8 and JavaScriptCore, native addons (@napi-rs/canvas) loaded by bun. -->
+     JIT for V8 and JavaScriptCore, native addons (@napi-rs/canvas) loaded by bun, microphone
+     and camera. -->
 <plist version="1.0">
 <dict>
   <key>com.apple.security.cs.allow-jit</key>
@@ -9,6 +10,11 @@
   <key>com.apple.security.cs.allow-unsigned-executable-memory</key>
   <true/>
   <key>com.apple.security.cs.disable-library-validation</key>
+  <true/>
+  <!-- Microphone and camera: calls, voice and video comments, speaking to the AI. -->
+  <key>com.apple.security.device.audio-input</key>
+  <true/>
+  <key>com.apple.security.device.camera</key>
   <true/>
 </dict>
 </plist>

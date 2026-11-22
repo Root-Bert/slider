@@ -15,7 +15,20 @@
   "scripts": {
     "start": "node scripts/stage.mjs && node scripts/dev-name.mjs .",
     "open": "node scripts/dev-name.mjs .",
+    "cloud": "node scripts/dev-name.mjs --cloud cloud/main.mjs",
+    "cloud:app": "electron-builder --mac --dir --arm64 -c cloud/builder.json -c.mac.identity=null && DRIVE_IDENTITY=- sh cloud/sign-dev.sh",
+    "cloud:dmg": "sh cloud/pack.sh",
+    "writer": "node scripts/dev-name.mjs --writer writer/main.mjs",
+    "writer:app": "electron-builder --mac --dir --arm64 -c writer/builder.json -c.mac.identity=null",
+    "writer:dmg": "electron-builder --mac dmg --arm64 -c writer/builder.json -c.mac.identity=null",
+    "reader": "node scripts/dev-name.mjs --reader reader/main.mjs",
+    "reader:app": "electron-builder --mac --dir --arm64 -c reader/builder.json -c.mac.identity=null",
+    "reader:dmg": "electron-builder --mac dmg --arm64 -c reader/builder.json -c.mac.identity=null",
+    "sender": "node scripts/dev-name.mjs --sender sender/main.mjs",
+    "sender:app": "electron-builder --mac --dir --arm64 -c sender/builder.json -c.mac.identity=null",
+    "sender:dmg": "electron-builder --mac dmg --arm64 -c sender/builder.json -c.mac.identity=null",
     "stage": "node scripts/stage.mjs",
+    "check:service": "node scripts/check-service.mjs",
     "app": "node scripts/stage.mjs && electron-builder --mac --dir --arm64 -c.mac.identity=null",
     "dmg": "node scripts/stage.mjs && electron-builder --mac dmg --arm64 -c.mac.identity=null"
   },
@@ -37,6 +50,7 @@
       "main.mjs",
       "libreoffice.mjs",
       "live.mjs",
+      "service.mjs",
       "updates.mjs",
       "splash.html",
       "package.json",
@@ -57,6 +71,10 @@
       "entitlementsInherit": "entitlements.mac.plist",
       "notarize": true,
       "darkModeSupport": true,
+      "extendInfo": {
+        "NSMicrophoneUsageDescription": "Für Anrufe, Sprach- und Videokommentare und um mit der KI zu sprechen.",
+        "NSCameraUsageDescription": "Für Videoanrufe und Videokommentare."
+      },
       "icon": "icon.png"
     },
     "linux": {
@@ -73,6 +91,14 @@
       "provider": "github",
       "owner": "Root-Bert",
       "repo": "slider"
+    },
+    "electronFuses": {
+      "runAsNode": false,
+      "enableNodeOptionsEnvironmentVariable": false,
+      "enableNodeCliInspectArguments": false,
+      "onlyLoadAppFromAsar": true,
+      "enableEmbeddedAsarIntegrityValidation": true,
+      "resetAdHocDarwinSignature": true
     },
     "afterPack": "scripts/after-pack.cjs",
     "protocols": [

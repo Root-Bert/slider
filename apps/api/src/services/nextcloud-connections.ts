@@ -42,6 +42,7 @@ export async function listNextcloudConnections(
               rows.map((row) => row.id),
             ),
             isNull(decks.archivedAt),
+            isNull(decks.deletedAt),
           ),
         )
         .groupBy(decks.nextcloudConnectionId)

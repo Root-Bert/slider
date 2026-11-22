@@ -189,7 +189,10 @@ export function draftReducer(draft: Draft | null, action: ViewerAction): Draft |
       // slide is back. A gap draft moves along to where its gap is now (`placeGap`).
       let slideGone: boolean;
       let anchor = draft.anchor;
-      if (draft.slideId !== null) slideGone = !action.slideIds.includes(draft.slideId);
+      if (draft.slideId !== null)
+        slideGone =
+          !action.slideIds.includes(draft.slideId) &&
+          !(action.variantIds ?? []).includes(draft.slideId);
       else if (anchor.type !== 'gap') return draft;
       else {
         const place = placeGap(

@@ -54,10 +54,22 @@ const DIRECTIVES: [string, ...string[]][] = [
 export const CONTENT_SECURITY_POLICY = DIRECTIVES.map((d) => d.join(' ')).join('; ');
 
 /** Headers for an HTML document of the web app. */
+/**
+ * What holds already while the rest only reports: the page is framed by itself alone, loads no
+ * plug-ins and keeps its base. None of it can break a page that works.
+ */
+const ALWAYS_ENFORCED = "frame-ancestors 'self'; object-src 'none'; base-uri 'self'";
+
 export function cspHeaders(): Record<string, string> {
-  const name = ENFORCE_CSP ? 'Content-Security-Policy' : 'Content-Security-Policy-Report-Only';
+  if (ENFORCE_CSP) {
+    return {
+      'Content-Security-Policy': CONTENT_SECURITY_POLICY,
+      'Reporting-Endpoints': `${REPORT_GROUP}="${CSP_REPORT_PATH}"`,
+    };
+  }
   return {
-    [name]: CONTENT_SECURITY_POLICY,
+    'Content-Security-Policy': ALWAYS_ENFORCED,
+    'Content-Security-Policy-Report-Only': CONTENT_SECURITY_POLICY,
     'Reporting-Endpoints': `${REPORT_GROUP}="${CSP_REPORT_PATH}"`,
   };
 }

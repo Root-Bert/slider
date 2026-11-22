@@ -11,6 +11,7 @@ import { OidcClient } from './auth/oidc';
 import { systemClock } from './clock';
 import { dataPaths, loadBootConfig } from './config';
 import { openDatabase } from './db/client';
+import { GUARDED_EXIT_CODE, holdData } from './desktop-apps';
 import { users } from './db/schema';
 import { releaseRunningImportAttempts } from './import/attempts';
 import { findInterruptedImports, importDeck } from './import/import-deck';
@@ -20,6 +21,7 @@ import { configurePdfJobs, stopPdfJobs, warmPdfWorker } from './import/pdf-jobs'
 import {
   createLibreOfficeDocumentPdf,
   createMaterialPdf,
+  createTextDocumentOdt,
   createLibreOfficePdf,
   findSoffice,
   stopRunningConversions,
@@ -46,15 +48,19 @@ import {
 import { upsertUser } from './services/users';
 import { retireFileConnections } from './services/retired-connections';
 import { backfillMasterColors } from './services/workspace-masters';
+import { placeOlderDecks } from './services/deck-places';
 import { backfillDeckFilesBytes } from './services/workspace-storage';
 import { ensurePersonalWorkspace } from './services/workspaces';
 import { createSourceAdapters } from './sources/source-adapter';
 import { FsBlobStorage } from './storage/fs-blob-storage';
 import type { AppDeps } from './deps';
 import { deckFontAdopter } from './services/deck-fonts';
+import { sendDueMail, syncAllMail } from './services/mail';
+import { runDueCloudAgents, runWatchingCloudAgents } from './services/cloud-agents';
 import { RetentionSweeper } from './services/retention';
 import { resumeTranscripts } from './services/transcripts';
 import { resumeExtractions } from './services/material-extract';
+import { DocumentLive } from './services/documents';
 import { SyncService } from './sync/sync-service';
 
 /** Exit code that asks `supervisor.ts` to start the server again (settings were saved); same there. */
@@ -62,11 +68,21 @@ const RESTART_EXIT_CODE = 75;
 
 async function main(): Promise<void> {
   const env = process.env;
+  // Read first: killed during the start, the supervisor must not be taken for whoever comes after.
+  const supervisor = process.ppid;
   // Data folder, database and secret come from the environment only; then the settings saved on
   // the setup page fill in what the environment leaves open, and the whole is validated.
   const boot = loadBootConfig(env);
   const { dbDir, blobsDir } = dataPaths(boot);
   const clock = systemClock;
+  // The desktop's service: the database bears one process only. Held from before it is opened
+  // until this process is gone – a second service on the same data ends here.
+  if (env['SLIDER_GUARD_PORT'] && !(await holdData(Number(env['SLIDER_GUARD_PORT'])))) {
+    log.error(
+      `Slider already runs on this data (port ${env['SLIDER_GUARD_PORT']} is taken), not starting a second time.`,
+    );
+    process.exit(GUARDED_EXIT_CODE);
+  }
   // Self-hosting: a Postgres server when DATABASE_URL is set, else PGlite in the data folder.
   const database = await openDatabase(boot.hosting?.databaseUrl ?? dbDir);
   const { db } = database;
@@ -148,6 +164,10 @@ async function main(): Promise<void> {
         timeoutMs: config.libreOfficeTimeoutMs,
         pool: officePool,
       })
+    : null;
+  // Writer: Word and text files become text documents.
+  const documentOdt = soffice
+    ? createTextDocumentOdt({ binary: soffice, log, timeoutMs: config.libreOfficeTimeoutMs })
     : null;
   // PDFs are read in worker threads, cut off after this long (plus a second per page).
   configurePdfJobs({ timeoutMs: config.pdfTimeoutMs });
@@ -253,12 +273,15 @@ async function main(): Promise<void> {
     blankDecks,
     documentPdf,
     materialPdf,
+    documentOdt,
     oidc,
     google,
     billing: config.billing ? new StripeBilling(config.billing) : null,
     mailer,
     live,
     liveTexts,
+    // Made here, so files read after a restart (`resumeExtractions`) tell an open document too.
+    documentLive: new DocumentLive(),
     background,
     ownerId: owner?.id ?? null,
     instance: {
@@ -267,11 +290,60 @@ async function main(): Promise<void> {
         env['SLIDER_SUPERVISED'] === '1' ? () => shutdown('Restart', RESTART_EXIT_CODE) : null,
     },
   };
+  // Presentations and their folders from before Cloud get their place there, once.
+  placeOlderDecks(deps)
+    .then((count) => count > 0 && log.info(`${count} older presentations got their place`))
+    .catch((error: unknown) => log.error('Placing older presentations failed', error));
+
   const app = createApp(deps);
   await announceSetup(config, db, log);
   // Deletion deadlines (BER-143, BER-147): unused accounts and decks, old invites, sessions.
   const sweeper = new RetentionSweeper(deps);
   sweeper.start();
+  // „Agenten“: orders that repeat are taken up when their time has come – looked at twice a minute.
+  let agentsDue = false;
+  const agentClock = setInterval(() => {
+    if (agentsDue) return;
+    agentsDue = true;
+    void runDueCloudAgents(deps)
+      .catch((error: unknown) => log.error('Running repeated cloud agent orders failed', error))
+      .finally(() => {
+        agentsDue = false;
+      });
+  }, 30_000);
+  agentClock.unref?.();
+  // What they watch is looked at every few seconds: an agent that waits 20 s for quiet starts
+  // then, not half a minute later (one look at a time: `runWatchingCloudAgents`).
+  const watchClock = setInterval(() => {
+    void runWatchingCloudAgents(deps).catch((error: unknown) =>
+      log.error('Looking where cloud agents watch failed', error),
+    );
+  }, 5_000);
+  watchClock.unref?.();
+  // Mail: every mailbox is read once a minute (one round at a time: `syncAllMail`).
+  let mailDue = false;
+  const mailClock = setInterval(() => {
+    if (mailDue) return;
+    mailDue = true;
+    void syncAllMail(deps)
+      .catch((error: unknown) => log.error('Reading the mailboxes failed', error))
+      .finally(() => {
+        mailDue = false;
+      });
+  }, 60_000);
+  mailClock.unref?.();
+  // The outbox: what is due goes out (one round at a time) – a mail waits `delay` seconds there.
+  let outboxDue = false;
+  const outboxClock = setInterval(() => {
+    if (outboxDue) return;
+    outboxDue = true;
+    void sendDueMail(deps)
+      .catch((error: unknown) => log.error('Sending the outbox failed', error))
+      .finally(() => {
+        outboxDue = false;
+      });
+  }, 3_000);
+  outboxClock.unref?.();
   // Recordings a stopped server left without their transcript.
   await resumeTranscripts(deps);
   await resumeExtractions(deps);
@@ -290,6 +362,10 @@ async function main(): Promise<void> {
     shuttingDown = true;
     log.info(`${signal} received, shutting down…`);
     sweeper.stop();
+    clearInterval(agentClock);
+    clearInterval(watchClock);
+    clearInterval(mailClock);
+    clearInterval(outboxClock);
     // LibreOffice runs in its own process group and would outlive this process.
     stopRunningConversions();
     officePool?.close();
@@ -331,6 +407,13 @@ async function main(): Promise<void> {
   }
   process.on('SIGINT', () => shutdown('SIGINT'));
   process.on('SIGTERM', () => shutdown('SIGTERM'));
+  // The desktop's service (desktop/service.mjs): its supervisor ends it when no app is left and
+  // is the process the apps know. With that one gone – killed alone – nothing would end this.
+  if (env['SLIDER_APPS_DIR']) {
+    setInterval(() => {
+      if (process.ppid !== supervisor) shutdown('Supervisor gone');
+    }, 5_000).unref();
+  }
 }
 
 main().catch((error: unknown) => {

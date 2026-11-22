@@ -14,6 +14,7 @@ import {
 } from '../src/db/schema';
 import { loadBootConfig, loadConfig } from '../src/config';
 import { silentLogger, type Logger } from '../src/logger';
+import { addressBucket } from '../src/http/rate-limit';
 import { MAX_TOKEN_FAILURES } from '../src/routes/setup';
 import { claimInstance } from '../src/services/accounts';
 import {
@@ -552,6 +553,10 @@ describe('claiming the instance with the setup token', () => {
   });
 
   it(`rate-limits wrong tokens: after ${MAX_TOKEN_FAILURES}, even the right one waits – the right one alone never locks out`, async () => {
+    // Counted per address – IPv6 by its /64, so rotating within one's own prefix doesn't help.
+    expect(
+      ['::ffff:1.2.3.4', '2001:db8:1:2:aaaa::1', '2001:0db8:0001:0002:ffff:1:2:3', '2001:db8:1:3::1'].map(addressBucket),
+    ).toEqual(['1.2.3.4', '2001:db8:1:2::/64', '2001:db8:1:2::/64', '2001:db8:1:3::/64']);
     for (let i = 0; i < MAX_TOKEN_FAILURES + 5; i++) {
       expect((await status(withToken())).body.authorized).toBe(true);
     }

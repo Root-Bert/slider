@@ -14,6 +14,7 @@ import { toShape } from '../../import/common';
 import { odpParsedSlide, odpPreviewSvg } from '../../import/odp-deck';
 import { storeSlideRender } from '../../import/office-pages';
 import { blobKeys } from '../../storage/blob-storage';
+import { scheduleDeckFile } from '../cloud/files';
 import { scheduleTemplateSave } from '../workspace-masters';
 import {
   dropUnusedImages,
@@ -197,6 +198,8 @@ export async function commitStep(
       : undefined,
   );
   if (deck.isTemplate) scheduleTemplateSave(deps, deck.id);
+  // Its file in Cloud is this file: brought along a while after the last step.
+  else if (deck.cloudNodeId) scheduleDeckFile(deps, deck.id);
   // The step stands either way: texts typed in together that could not be brought along are
   // logged, their editors get the file's text with their next join.
   try {

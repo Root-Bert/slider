@@ -1,4 +1,4 @@
-import { and, asc, count, eq, inArray, isNull, lt, ne, sql } from 'drizzle-orm';
+import { and, asc, count, eq, inArray, isNotNull, isNull, lt, ne, sql } from 'drizzle-orm';
 import {
   DELETED_ACCOUNT_NAME,
   type Author,
@@ -8,13 +8,24 @@ import {
 import { emailHash } from '../crypto/content-crypto';
 import type { Executor } from '../db/client';
 import {
+  cloudConnections,
+  cloudNodes,
   comments,
   deckBoardItems,
   deckMaterials,
   decks,
+  documentComments,
+  googleConnections,
+  integrationKeys,
+  materialQuestions,
   media,
   loginLinks,
+  mailAccounts,
   nextcloudConnections,
+  pdfComments,
+  senderChannels,
+  senderMessages,
+  showRuns,
   users,
   workspaceInvites,
   workspaceMembers,
@@ -24,10 +35,23 @@ import {
 import type { AppDeps } from '../deps';
 import { badRequest, notFound } from '../http/errors';
 import { inviteMail } from '../mail/mailer';
-import { deleteMediaBlobs } from './media';
+import { runInBackground } from '../background-work';
+import { blobKeys } from '../storage/blob-storage';
+import {
+  deckBlobs,
+  deleteNotedBlobs,
+  mailBlobs,
+  noteBlobs,
+  storageBlobs,
+  type BlobDeletion,
+} from './blob-deletions';
+import { measureDeckFiles } from './deck-storage';
+import { anonymiseCalls } from './call-records';
 import { cancelSubscriptions, isRenewing, reassignBillingOwner } from './billing-owner';
+import { revokeCloudConnection } from './cloud-connections';
+import { revokeGoogleGrant } from './retired-connections';
 import { lockWorkspaceRow } from './plans';
-import { deleteDeckFiles, departDecks } from './workspaces/departure';
+import { departDecks } from './workspaces/departure';
 import { revokeInvitesBy } from './workspaces/members';
 import { getRole, RANK, VIEWER_LAST_RESORT } from './workspaces/roles';
 import { purgeIfEmpty } from './workspaces/workspaces';
@@ -44,9 +68,12 @@ import { purgeIfEmpty } from './workspaces/workspaces';
  * - Their comments in other people's decks stay, anonymised: no name, no avatar, a fresh id
  *   that leads nowhere (`DELETED_ACCOUNT_NAME`). @mentions of them read the same. Voice and video
  *   recordings and images (drawn, pasted or picked) can't be anonymised (voice, face, what a
- *   screenshot shows) and are deleted; the comment text stays.
+ *   screenshot shows) and are deleted; the comment text stays. So are the recordings of their
+ *   rehearsals (`show_runs.recorded_by`); the run's timings stay. Calls they were in
+ *   (`call_records`) read as the deleted account; one they were alone in with an agent goes.
  * - Invitations to their address are deleted; logins, passkeys, sessions, Microsoft connections
- *   (and tokens) and memberships go with the account row (`on delete cascade`).
+ *   (and tokens), mailboxes and memberships go with the account row (`on delete cascade`) – the
+ *   mailboxes' attachments after it (`mailBlobs`).
  *
  * Where they are the only admin of a workspace with others, someone else becomes admin
  * first: whom the person chose when they delete themselves (`successors`, one per such
@@ -81,11 +108,20 @@ export async function deleteAccount(
 
   const memberships = await membershipsOf(deps.db, userId);
   // Their rows go with the account (Microsoft and Google connections of before too); the app
-  // passwords at Nextcloud are revoked after.
+  // passwords at Nextcloud, Google's grants left and the OAuth tokens of their connections in
+  // Cloud („Verbindungen“) are revoked after.
   const nextcloud = await deps.db
     .select()
     .from(nextcloudConnections)
     .where(eq(nextcloudConnections.userId, userId));
+  const google = await deps.db
+    .select({ id: googleConnections.id, refreshToken: googleConnections.refreshToken })
+    .from(googleConnections)
+    .where(eq(googleConnections.userId, userId));
+  const connections = await deps.db
+    .select()
+    .from(cloudConnections)
+    .where(eq(cloudConnections.userId, userId));
   // Checked before anything is deleted.
   const handOverPayingFirst = successors !== 'automatic' && !options.erasure;
   if (handOverPayingFirst) {
@@ -197,9 +233,30 @@ export async function deleteAccount(
       .where(eq(media.uploaderId, userId))
       .returning({ key: media.storageKey, deckId: media.deckId });
 
+    // Their rehearsals' recordings too (voice, face); the run's timings stay with the deck.
+    const runs = await tx
+      .select({ key: showRuns.recordingKey, deckId: showRuns.deckId })
+      .from(showRuns)
+      .where(and(eq(showRuns.recordedBy, userId), isNotNull(showRuns.recordingKey)));
+    if (runs.length > 0) {
+      await tx
+        .update(showRuns)
+        .set({ recordingKey: null })
+        .where(and(eq(showRuns.recordedBy, userId), isNotNull(showRuns.recordingKey)));
+    }
+
     const touched = new Set(recordings.map((r) => r.deckId));
     const anonymised = await anonymiseComments(tx, user.id, user.name, memberships);
     for (const deckId of anonymised.decks) touched.add(deckId);
+    // AI keys they set show who set them by a copy of the name: it reads like a comment's.
+    await tx
+      .update(integrationKeys)
+      .set({ setByName: DELETED_ACCOUNT_NAME })
+      .where(eq(integrationKeys.setById, userId));
+    await tx
+      .update(workspaces)
+      .set({ aiKeySetByName: DELETED_ACCOUNT_NAME })
+      .where(eq(workspaces.aiKeySetById, userId));
 
     await tx
       .delete(workspaceInvites)
@@ -212,10 +269,25 @@ export async function deleteAccount(
       .update(workspaceRemovals)
       .set({ emailHash: emailHash(user.email) })
       .where(and(eq(workspaceRemovals.userId, userId), isNull(workspaceRemovals.emailHash)));
+    // Their mailboxes go with the row; the attachments kept of them after the commit.
+    const mailboxes = await tx
+      .select({ id: mailAccounts.id })
+      .from(mailAccounts)
+      .where(eq(mailAccounts.userId, userId));
     await tx.delete(users).where(eq(users.id, userId));
+    // Their files go after the commit – noted here with the rows, so that a crash in between
+    // leaves them to the hourly sweep rather than nowhere.
+    const runKeys = runs.flatMap((run) => (run.key ? [{ key: run.key, deckId: run.deckId }] : []));
+    const blobs: BlobDeletion[] = [
+      ...recordings.map((r) => ({ store: 'media' as const, key: r.key, prefix: false })),
+      ...storageBlobs(runKeys.map((run) => run.key)),
+      ...orphaned.flatMap((deckId) => deckBlobs(blobKeys.deckPrefix(deckId))),
+      ...mailBlobs(mailboxes.map((row) => row.id)),
+    ];
+    await noteBlobs(tx, blobs);
     return {
-      orphaned,
-      recordingKeys: recordings.map((r) => r.key),
+      blobs,
+      runs: runKeys,
       touched,
       promoted,
       solo,
@@ -225,11 +297,25 @@ export async function deleteAccount(
   if (!result) return false;
 
   await cancelSubscriptions(deps, result.cancelled);
-  // Full access to someone's files must not outlive their account (best effort, logged).
-  for (const row of nextcloud) await deps.nextcloud.revoke(row);
-  // The account is gone now: files that can't be deleted yet are retried by the hourly sweep.
-  await deleteMediaBlobs(deps, result.recordingKeys);
-  await deleteDeckFiles(deps, result.orphaned);
+  // The account is gone now: files that can't be deleted yet stay noted for the hourly sweep.
+  await deleteNotedBlobs(deps, result.blobs);
+  for (const deckId of new Set(result.runs.map((run) => run.deckId))) {
+    await measureDeckFiles(deps, deckId).catch((error: unknown) =>
+      deps.log.warn(`Measuring deck ${deckId} after deleting recordings failed: ${String(error)}`),
+    );
+  }
+  // Full access to someone's files must not outlive their account (best effort, logged) – asked
+  // of the services in the background, each up to 15 s, after the files here are gone.
+  runInBackground(deps, async () => {
+    for (const row of nextcloud) {
+      await deps.nextcloud
+        .revoke(row)
+        .catch((error: unknown) => deps.log.warn(`Revoking Nextcloud ${row.id}: ${String(error)}`));
+    }
+    const network = { secret: deps.config.secret, log: deps.log, fetch: deps.ssoNetwork?.fetch };
+    for (const grant of google) await revokeGoogleGrant(network, grant);
+    for (const row of connections) await revokeCloudConnection(deps, row);
+  });
   // Left over on an error here, `purgeEmptyWorkspaces` in the hourly sweep finishes the job.
   for (const workspaceId of result.solo) {
     await purgeIfEmpty(deps, workspaceId).catch((error: unknown) =>
@@ -440,6 +526,11 @@ async function anonymiseComments(
     .update(deckBoardItems)
     .set({ author: deleted })
     .where(sql`${deckBoardItems.author}->>'id' = ${userId}`);
+  // Their replies under notes there (`material_questions.author`; `user_id` goes null).
+  await tx
+    .update(materialQuestions)
+    .set({ author: deleted })
+    .where(sql`${materialQuestions.author}->>'id' = ${userId}`);
   const touched = new Set(authored.map((row) => row.deckId));
 
   // Mentions are plain `@Name` text (BER-105). Too short a name would match other words. Also
@@ -472,6 +563,78 @@ async function anonymiseComments(
       await tx.update(comments).set({ body }).where(eq(comments.id, row.id));
       touched.add(row.deckId);
     }
+    // The same in Writer's and Reader's comments on the workspaces' files.
+    for (const table of [documentComments, pdfComments]) {
+      const fileId = table === documentComments ? documentComments.documentId : pdfComments.pdfId;
+      const rows = await tx
+        .select({ id: table.id, body: table.body })
+        .from(table)
+        .innerJoin(cloudNodes, eq(cloudNodes.id, fileId))
+        .where(and(inArray(cloudNodes.workspaceId, workspaceIds), ne(table.body, '')));
+      for (const row of rows) {
+        const body = row.body.replace(pattern, `@${DELETED_ACCOUNT_NAME}`);
+        if (body !== row.body) await tx.update(table).set({ body }).where(eq(table.id, row.id));
+      }
+    }
   }
+  await anonymiseSender(tx, userId, name, deleted.id);
+  // Calls they were in read as the deleted account; one alone with an agent goes.
+  await anonymiseCalls(tx, userId, deleted.id, name);
   return { decks: [...touched], authorId: deleted.id };
+}
+
+/**
+ * Sender: the messages that count them among their `mentions` (Sender records them in every
+ * conversation, `mentionsIn`) – found by SQL, so only those are read. There `@Vor Nachname` and
+ * `@Vorname` read as the deleted author, unless they begin the name of someone else the message
+ * mentions (`@Anna Schmidt` beside a deleted Anna Berg, a living namesake); their id leaves
+ * `mentions`. A direct conversation's key (the two ids) takes the deleted id.
+ */
+async function anonymiseSender(tx: Executor, userId: string, name: string, deletedId: string) {
+  const full = name.trim();
+  const first = full.split(/\s+/)[0] ?? '';
+  const rows = await tx
+    .select({ id: senderMessages.id, text: senderMessages.text, mentions: senderMessages.mentions })
+    .from(senderMessages)
+    .where(sql`${senderMessages.mentions} @> ${JSON.stringify([userId])}::jsonb`);
+  const othersIds = [...new Set(rows.flatMap((row) => row.mentions))].filter((id) => id !== userId);
+  const names = new Map(
+    othersIds.length > 0
+      ? (
+          await tx
+            .select({ id: users.id, name: users.name })
+            .from(users)
+            .where(inArray(users.id, othersIds))
+        ).map((row) => [row.id, row.name.trim().toLowerCase()])
+      : [],
+  );
+  const boundary = /[\p{L}\p{N}]/u;
+  /** `@word` replaced where no other mentioned person's name (full or first) starts there. */
+  const rewrite = (text: string, word: string, others: readonly string[]) => {
+    if (word.length < 2) return text;
+    const pattern = new RegExp(`@${escapeRegExp(word)}(?![\\p{L}\\p{N}])`, 'giu');
+    return text.replace(pattern, (match, offset: number) => {
+      const here = text.slice(offset + 1).toLowerCase();
+      const theirs = others.some(
+        (other) =>
+          other.length >= word.length &&
+          here.startsWith(other) &&
+          !boundary.test(here.charAt(other.length)),
+      );
+      return theirs ? match : `@${DELETED_ACCOUNT_NAME}`;
+    });
+  };
+  for (const row of rows) {
+    const mentions = row.mentions.filter((id) => id !== userId);
+    const others = mentions.flatMap((id) => {
+      const other = names.get(id);
+      return other ? [other, other.split(/\s+/)[0] ?? other] : [];
+    });
+    const text = rewrite(rewrite(row.text, full, others), first, others);
+    await tx.update(senderMessages).set({ text, mentions }).where(eq(senderMessages.id, row.id));
+  }
+  await tx
+    .update(senderChannels)
+    .set({ directKey: sql`replace(${senderChannels.directKey}, ${userId}, ${deletedId})` })
+    .where(sql`${senderChannels.directKey} like ${`%${userId}%`}`);
 }

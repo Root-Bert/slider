@@ -1,4 +1,5 @@
 import { and, eq } from 'drizzle-orm';
+import type { Executor } from '../db/client';
 import { blobDeletions } from '../db/schema';
 import type { AppDeps } from '../deps';
 
@@ -46,9 +47,45 @@ export async function deleteBlobs(
   }
 }
 
+/**
+ * Notes deletions in the transaction that deletes their rows: should the process end before
+ * {@link deleteNotedBlobs} ran, the hourly sweep still finds them.
+ */
+export async function noteBlobs(db: Executor, items: readonly BlobDeletion[]): Promise<void> {
+  if (items.length > 0)
+    await db
+      .insert(blobDeletions)
+      .values([...items])
+      .onConflictDoNothing();
+}
+
+/**
+ * Deletes what {@link noteBlobs} noted, each note once its files are gone; what fails stays
+ * noted for the sweep. Never throws.
+ */
+export async function deleteNotedBlobs(
+  deps: BlobDeletionDeps,
+  items: readonly BlobDeletion[],
+): Promise<void> {
+  for (const item of items) {
+    try {
+      await run(deps, item);
+      await deps.db
+        .delete(blobDeletions)
+        .where(and(eq(blobDeletions.store, item.store), eq(blobDeletions.key, item.key)));
+    } catch (error) {
+      deps.log.warn(`Could not delete ${item.store} ${item.key}, retried later: ${String(error)}`);
+    }
+  }
+}
+
 /** Single files of the deck store. */
 export const storageBlobs = (keys: readonly string[]): BlobDeletion[] =>
   keys.map((key) => ({ store: 'storage', key, prefix: false }));
+
+/** The attachments kept of mailboxes (`mail/<accountId>/`, `services/mail.ts`). */
+export const mailBlobs = (accountIds: readonly string[]): BlobDeletion[] =>
+  accountIds.map((id) => ({ store: 'storage', key: `mail/${id}/`, prefix: true }));
 
 /** Both stores' files of a deck. */
 export const deckBlobs = (prefix: string): BlobDeletion[] => [

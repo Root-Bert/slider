@@ -21,6 +21,9 @@ const FEATURES: Record<AiFeature, { label: string; color: string }> = {
   recording: { label: 'Aufnahmen abschreiben', color: 'bg-accent-yellow' },
   summary: { label: 'Zusammenfassungen', color: 'bg-accent-violet' },
   image: { label: 'Bilder erzeugen', color: 'bg-accent-red' },
+  office: { label: 'Dateien ordnen und finden', color: 'bg-sky' },
+  document: { label: 'Dokumente ändern', color: 'bg-fg-subtle' },
+  mail: { label: 'Mails schreiben', color: 'bg-accent-violet/50' },
 };
 
 const minutes = new Intl.NumberFormat('de-DE', { maximumFractionDigits: 1 });

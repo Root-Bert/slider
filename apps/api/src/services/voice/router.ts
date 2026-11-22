@@ -51,6 +51,22 @@ export const MORE_ELEMENT_PROPERTIES = {
   },
   ungroup: { type: 'boolean', description: 'A group taken apart.' },
   locked: { type: 'boolean' },
+  entrance: {
+    description:
+      'How it comes in when presenting: {effect: appear, fade, rise (fades in moving up), fly (from `from`: left, right, top, bottom), zoom or wipe; with: true – together with the one before, else after it}, or "none". In the order set.',
+    anyOf: [
+      {
+        type: 'object',
+        properties: {
+          effect: { type: 'string', enum: ['appear', 'fade', 'rise', 'fly', 'zoom', 'wipe'] },
+          with: { type: 'boolean' },
+          from: { type: 'string', enum: ['left', 'right', 'top', 'bottom'] },
+        },
+        required: ['effect'],
+      },
+      { type: 'string', enum: ['none'] },
+    ],
+  },
   shadow: { type: 'boolean' },
   glow: { description: 'true, false, or its colour #rrggbb.' },
   soft_edge: { type: 'boolean' },
@@ -302,7 +318,7 @@ export type RouterAction = z.infer<typeof actionSchema>;
  * The actions as given – also as the fast model now and then wraps them: the list as a JSON
  * string, or in another `{ actions }` inside it.
  */
-function actionList(input: unknown, depth = 0): unknown[] {
+export function actionList(input: unknown, depth = 0): unknown[] {
   if (depth > 3) return [];
   if (typeof input === 'string') {
     // Now and then with a bracket too many at its end: cut off until it reads.
@@ -522,6 +538,10 @@ export function elementLine(element: EditableElement): string {
     );
   }
   if (element.locked) parts.push('locked in place by the user – cannot be moved or resized');
+  if (element.entrance)
+    parts.push(
+      `comes in when presenting: ${element.entrance.effect}${element.entrance.from ? ` from the ${element.entrance.from}` : ''}, ${element.entrance.start === 'with' ? 'with the one before' : element.entrance.start === 'click' ? 'on a click' : 'after the one before'} (${element.entrance.order + 1}.)`,
+    );
   if (!element.movable) parts.push('cannot be moved');
   else if (!element.resizable) parts.push('only moves');
   if (element.paragraphs && !element.live) parts.push('text not editable directly');

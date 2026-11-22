@@ -42,6 +42,13 @@ const SCROLL_SPEED = 18;
 const NOT_EMPTY_SPACE =
   'a, button, input, textarea, select, label, dialog, [role="menu"], [data-selection-bar]';
 
+/**
+ * Marks the parts of an item that drag the item (a list row's picture and name). An item that has
+ * some starts a selection box from the rest of it, as a row in the Finder does – unless it is
+ * picked (`data-selected`): then all of it drags what is picked.
+ */
+export const GRIP = 'data-grip';
+
 /** A right click here is on a control, not on the page's empty space (its own menu, if any). */
 export const isOnControl = (target: EventTarget) =>
   (target as Element).closest('a, button, input, textarea, select, [role="menu"]') !== null;
@@ -85,12 +92,28 @@ export function useMarqueeSelect(
     if (event.button !== 0 || event.defaultPrevented) return;
     const { attribute, ignore } = latest.current;
     const target = event.target as Element;
-    if (target.closest(NOT_EMPTY_SPACE) || target.closest(`[${attribute}]`)) return;
+    const item = target.closest(`[${attribute}]`);
+    const grips = item ? [...item.querySelectorAll(`[${GRIP}]`)] : [];
+    if (grips.length > 0 && item && !item.matches('[data-selected]')) {
+      // A row: its picture and name are the row's – where they stand, not where the name's link
+      // reaches (it is stretched over the row, so a click anywhere opens it).
+      const onGrip = grips.some((grip) => {
+        const at = grip.getBoundingClientRect();
+        return (
+          event.clientX >= at.left &&
+          event.clientX <= at.right &&
+          event.clientY >= at.top &&
+          event.clientY <= at.bottom
+        );
+      });
+      const inGrip = grips.some((grip) => grip.contains(target));
+      if (onGrip || (!inGrip && target.closest(NOT_EMPTY_SPACE))) return;
+    } else if (item || target.closest(NOT_EMPTY_SPACE)) return;
     if (ignore && target.closest(ignore)) return;
     const scroller = latest.current.scroller?.current ?? null;
     const container = containerRef.current;
     if (!container) return;
-    // No text selection while dragging.
+    // No text selection while dragging – and on a row, no drag of the row.
     event.preventDefault();
     (document.activeElement as HTMLElement | null)?.blur?.();
 
@@ -191,7 +214,15 @@ export function useMarqueeSelect(
       cleanup.current?.();
       geometry.current = null;
       setActive(false);
-      if (!wasDragging) latest.current.onClick(additive);
+      if (wasDragging) {
+        // Let go over an item: the click that follows is the drag's end, not a pick of that item.
+        const swallow = (click: globalThis.MouseEvent) => {
+          click.stopPropagation();
+          click.preventDefault();
+        };
+        window.addEventListener('click', swallow, { capture: true, once: true });
+        setTimeout(() => window.removeEventListener('click', swallow, { capture: true }), 0);
+      } else if (!item) latest.current.onClick(additive);
     };
 
     window.addEventListener('mousemove', onMove);

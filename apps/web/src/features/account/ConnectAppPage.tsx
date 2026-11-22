@@ -84,11 +84,10 @@ export function Component() {
         title={`${clientName} mit Slider verbinden?`}
         message={
           <>
-            {clientName} darf dann
-            {me?.user ? ` als ${me.user.name}` : ''} deine Präsentationen, Kommentare und das
-            Material lesen, Notizen, Links und Dateien auf Boards legen, kommentieren und neue
-            Präsentationen erstellen. Zurück geht es an{' '}
-            <strong className="font-medium text-fg">{redirectHost}</strong>.
+            {clientName} handelt dann {me?.user ? `als ${me.user.name}` : 'in deinem Namen'}, mit
+            allen deinen Rechten: Es darf Präsentationen, Dokumente, Dateien, Kommentare und
+            Material lesen, ändern und löschen, sie teilen und ändern, wer sie sehen darf. Zurück
+            geht es an <strong className="font-medium text-fg">{redirectHost}</strong>.
           </>
         }
       >

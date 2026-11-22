@@ -6,14 +6,13 @@ import {
 } from '@slider/shared';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { accountHeader, api, proxyError, unreachableError, ApiError } from '../api-client';
-import { queryKeys } from './keys';
+import { boardKeys, boardPath, type BoardRef } from './board-owner';
 
 /** The threads under the material page's notes – the AI's answers and the replies – everyone's. */
-export const useMaterialQuestions = (deckId: string, enabled = true) =>
+export const useMaterialQuestions = (owner: BoardRef, enabled = true) =>
   useQuery({
-    queryKey: queryKeys.materialQuestions(deckId),
-    queryFn: () =>
-      api.get<MaterialQuestion[]>(`/decks/${encodeURIComponent(deckId)}/material-questions`),
+    queryKey: boardKeys.questions(owner),
+    queryFn: () => api.get<MaterialQuestion[]>(boardPath(owner, '/material-questions')),
     enabled,
   });
 
@@ -23,17 +22,12 @@ export const useMaterialQuestions = (deckId: string, enabled = true) =>
  * stream, which stops the answer on the server.
  */
 export const askMaterial = (
-  deckId: string,
+  owner: BoardRef,
   input: Partial<AskMaterialInput> & Pick<AskMaterialInput, 'id' | 'noteId' | 'question'>,
   onEvent: (event: MaterialAnswerEvent) => void,
   signal?: AbortSignal,
 ): Promise<void> =>
-  postEventStream(
-    `/decks/${encodeURIComponent(deckId)}/material-questions`,
-    input,
-    onEvent,
-    signal,
-  );
+  postEventStream(boardPath(owner, '/material-questions'), input, onEvent, signal);
 
 /**
  * POSTs `body` and reads the `text/event-stream` answer, one JSON per event, until it ends.
@@ -106,9 +100,9 @@ export const stopMaterialAnswer = (questionId: string) =>
  * „Antwort löschen“: the AI's answer goes, the note stays (a reply too, not asked any more);
  * `all`: a reply with its answer, by its writer.
  */
-export function useDeleteMaterialAnswer(deckId: string) {
+export function useDeleteMaterialAnswer(owner: BoardRef) {
   const queryClient = useQueryClient();
-  const key = queryKeys.materialQuestions(deckId);
+  const key = boardKeys.questions(owner);
   return useMutation({
     mutationFn: ({ entry, part }: { entry: MaterialQuestion; part: 'answer' | 'all' }) =>
       api.delete(

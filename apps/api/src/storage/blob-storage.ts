@@ -4,6 +4,12 @@
  */
 export interface BlobStorage {
   put(key: string, data: Uint8Array): Promise<void>;
+  /**
+   * Writes a blob as its bytes come in, never holding it whole – for files of any size (Cloud).
+   * Resolves with the bytes written. A stream that fails leaves no blob. Stores without it take
+   * the bytes collected (`putBlobStream`).
+   */
+  putStream?(key: string, data: AsyncIterable<Uint8Array>): Promise<number>;
   /** `null` when the key does not exist. */
   get(key: string): Promise<Uint8Array<ArrayBuffer> | null>;
   /** Size in bytes; `null` when the key does not exist. */
@@ -23,6 +29,29 @@ export interface BlobStorage {
   deletePrefix(prefix: string): Promise<void>;
   /** Keys of every blob under `prefix` (which must end in `/`); `[]` when there are none. */
   list(prefix: string): Promise<string[]>;
+}
+
+/** `storage.putStream` where the store has it, else the bytes collected and `put`. */
+export async function putBlobStream(
+  storage: BlobStorage,
+  key: string,
+  data: AsyncIterable<Uint8Array>,
+): Promise<number> {
+  if (storage.putStream) return storage.putStream(key, data);
+  const chunks: Uint8Array[] = [];
+  let length = 0;
+  for await (const chunk of data) {
+    chunks.push(chunk);
+    length += chunk.byteLength;
+  }
+  const all = new Uint8Array(length);
+  let offset = 0;
+  for (const chunk of chunks) {
+    all.set(chunk, offset);
+    offset += chunk.byteLength;
+  }
+  await storage.put(key, all);
+  return length;
 }
 
 const SEGMENT = /^[A-Za-z0-9][A-Za-z0-9._-]*$/;
@@ -122,7 +151,34 @@ export const blobKeys = {
   material: (deckId: string, materialId: string) => `decks/${deckId}/materials/${materialId}`,
   materialPreview: (deckId: string, materialId: string) =>
     `decks/${deckId}/materials/${materialId}-preview.jpg`,
+  /**
+   * A file on a text document's board „Material“ in the media store and its small picture; the
+   * prefix goes when the document is deleted for good.
+   */
+  documentMaterialsPrefix: (documentId: string) => `documents/${documentId}/materials/`,
+  documentMaterial: (documentId: string, materialId: string) =>
+    `documents/${documentId}/materials/${materialId}`,
+  documentMaterialPreview: (documentId: string, materialId: string) =>
+    `documents/${documentId}/materials/${materialId}-preview.jpg`,
   workspacePrefix: (workspaceId: string) => `workspaces/${workspaceId}/`,
+  /** Cloud: everything of one file – its versions, their small pictures and PDFs. */
+  cloudNodePrefix: (workspaceId: string, nodeId: string) =>
+    `workspaces/${workspaceId}/cloud/${nodeId}/`,
+  cloudVersion: (workspaceId: string, nodeId: string, versionId: string) =>
+    `workspaces/${workspaceId}/cloud/${nodeId}/${versionId}`,
+  cloudThumbnail: (workspaceId: string, nodeId: string, versionId: string) =>
+    `workspaces/${workspaceId}/cloud/${nodeId}/${versionId}.thumb.jpg`,
+  cloudPreview: (workspaceId: string, nodeId: string, versionId: string) =>
+    `workspaces/${workspaceId}/cloud/${nodeId}/${versionId}.preview.pdf`,
+  /** A page of the version (a PDF, or an office file drawn as one) as a picture, 1-based. */
+  cloudPage: (workspaceId: string, nodeId: string, versionId: string, page: number) =>
+    `workspaces/${workspaceId}/cloud/${nodeId}/${versionId}.page-${page}.jpg`,
+  /** Its text, read once, for the search in what files say. */
+  cloudText: (workspaceId: string, nodeId: string, versionId: string) =>
+    `workspaces/${workspaceId}/cloud/${nodeId}/${versionId}.text.txt`,
+  /** How many pages it has (`{ pages }`), counted once. */
+  cloudPages: (workspaceId: string, nodeId: string, versionId: string) =>
+    `workspaces/${workspaceId}/cloud/${nodeId}/${versionId}.pages.json`,
   workspaceLogo: (workspaceId: string, extension: string) =>
     `workspaces/${workspaceId}/logo-${crypto.randomUUID()}.${extension}`,
   /** A face of a font the workspace uploaded (`workspace_fonts`). */

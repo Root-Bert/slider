@@ -11,6 +11,21 @@ import { accentColorSchema } from './model';
 /** The app's custom URL scheme: `slider://auth?code=…&state=…`. */
 export const DESKTOP_SCHEME = 'slider';
 
+/**
+ * Each desktop app has a scheme of its own, so the code lands in the one that asked:
+ * `/desktop-anmelden?app=cloud` hands it to Cloud (`desktop/cloud`), `app=writer` to Writer
+ * (`desktop/writer`), `app=reader` to Reader (`desktop/reader`), `app=sender` to Sender
+ * (`desktop/sender`).
+ */
+export const DESKTOP_SCHEMES = {
+  slider: DESKTOP_SCHEME,
+  cloud: 'slider-cloud',
+  writer: 'slider-writer',
+  reader: 'slider-reader',
+  sender: 'slider-sender',
+} as const;
+export type DesktopApp = keyof typeof DESKTOP_SCHEMES;
+
 /** 43 URL-safe characters: SHA-256 (challenge) or 32 random bytes (verifier), base64url. */
 const pkceValue = z.string().regex(/^[\w-]{43}$/);
 

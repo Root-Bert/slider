@@ -1,11 +1,13 @@
 import type Anthropic from '@anthropic-ai/sdk';
-import { createCanvas, loadImage } from '@napi-rs/canvas';
+import { createCanvas } from '@napi-rs/canvas';
+import { loadImage } from '../import/load-image';
 import { asc, eq } from 'drizzle-orm';
 import { formatFileSize, searchFold } from '@slider/shared';
 import { z } from 'zod';
 import { deckBoardItems, deckMaterials, materialChunks, type DeckMaterialRow } from '../db/schema';
 import type { AppDeps } from '../deps';
 import { runPdfTask } from '../import/pdf-jobs';
+import { ownedBy, type BoardOwner } from './board-owner';
 import { materialAsPdf, readWorkbook, sheetRows } from './material-extract';
 
 /*
@@ -105,22 +107,23 @@ const sheetInput = materialInput.extend({
   sheet: z.string().optional(),
   range: z.string().optional(),
 });
-const searchInput = z.object({ query: z.string().min(1) });
+// Capped: the words are looked for in every file's text, a megabyte of them never.
+const searchInput = z.object({ query: z.string().min(1).max(500) });
 const viewInput = materialInput.extend({ page: z.number().int().min(1).optional() });
 
-/** The materials of a deck, oldest first. */
-export async function materialsOf(deps: AppDeps, deckId: string): Promise<DeckMaterialRow[]> {
+/** The files on a deck's or a document's board, oldest first. */
+export async function materialsOf(deps: AppDeps, owner: BoardOwner): Promise<DeckMaterialRow[]> {
   return deps.db
     .select()
     .from(deckMaterials)
-    .where(eq(deckMaterials.deckId, deckId))
+    .where(ownedBy(deckMaterials, owner))
     .orderBy(asc(deckMaterials.createdAt), asc(deckMaterials.id));
 }
 
 class ToolError extends Error {}
 
-async function findMaterial(deps: AppDeps, deckId: string, wanted: string) {
-  const rows = await materialsOf(deps, deckId);
+async function findMaterial(deps: AppDeps, owner: BoardOwner, wanted: string) {
+  const rows = await materialsOf(deps, owner);
   const key = wanted.trim();
   const row =
     rows.find((each) => each.id === key) ??
@@ -148,13 +151,13 @@ export function describeMaterial(row: DeckMaterialRow): string {
   return `${row.id}: „${row.name}“ (${parts.join(', ')})${state}`;
 }
 
-async function listMaterials(deps: AppDeps, deckId: string): Promise<string> {
+async function listMaterials(deps: AppDeps, owner: BoardOwner): Promise<string> {
   const [rows, items] = await Promise.all([
-    materialsOf(deps, deckId),
+    materialsOf(deps, owner),
     deps.db
       .select()
       .from(deckBoardItems)
-      .where(eq(deckBoardItems.deckId, deckId))
+      .where(ownedBy(deckBoardItems, owner))
       .orderBy(asc(deckBoardItems.createdAt)),
   ]);
   if (rows.length === 0 && items.length === 0) return 'The board is empty.';
@@ -196,12 +199,12 @@ async function listMaterials(deps: AppDeps, deckId: string): Promise<string> {
     if (item.kind === 'link') {
       const notes = notesOn(items, item.id, 'link').map((note) => `\n  ${note}`);
       lines.push(
-        `- link ${item.url}${item.text ? ` „${item.text}“` : ''} (${item.author.name})${notes.join('')}`,
+        `- link ${item.id}: ${item.url}${item.text ? ` „${item.text}“` : ''} (${item.author.name})${notes.join('')}`,
       );
     } else if (
       !item.boundIds.some((id) => items.some((each) => each.id === id && each.kind === 'link'))
     )
-      lines.push(`- note by ${item.author.name}: ${item.text.slice(0, 2000)}`);
+      lines.push(`- note ${item.id} by ${item.author.name}: ${item.text.slice(0, 2000)}`);
   }
   return lines.join('\n');
 }
@@ -211,7 +214,13 @@ async function listMaterials(deps: AppDeps, deckId: string): Promise<string> {
  * – the AI reads them with the file.
  */
 export function notesOn(
-  items: readonly { kind: string; boundIds: string[]; text: string; author: { name: string } }[],
+  items: readonly {
+    id?: string;
+    kind: string;
+    boundIds: string[];
+    text: string;
+    author: { name: string };
+  }[],
   thingId: string,
   thing: 'file' | 'link' = 'file',
 ): string[] {
@@ -221,20 +230,20 @@ export function notesOn(
       const others = item.boundIds.length - 1;
       return item.kind === 'box'
         ? `in the box „${item.text.slice(0, 200)}“ by ${item.author.name}${others > 0 ? ` with ${others} more thing(s) of the board` : ''}`
-        : `note on this ${thing} by ${item.author.name}: ${item.text.slice(0, 2000)}`;
+        : `note${item.id ? ` ${item.id}` : ''} on this ${thing} by ${item.author.name}: ${item.text.slice(0, 2000)}`;
     });
 }
 
 async function readMaterial(
   deps: AppDeps,
-  deckId: string,
+  owner: BoardOwner,
   input: z.infer<typeof readInput>,
 ): Promise<string> {
-  const row = await findMaterial(deps, deckId, input.material);
+  const row = await findMaterial(deps, owner, input.material);
   const items = await deps.db
     .select()
     .from(deckBoardItems)
-    .where(eq(deckBoardItems.deckId, deckId))
+    .where(ownedBy(deckBoardItems, owner))
     .orderBy(asc(deckBoardItems.createdAt));
   const notes = notesOn(items, row.id);
   const withNotes = (text: string) =>
@@ -286,15 +295,21 @@ async function readMaterialText(
 
 async function readSheet(
   deps: AppDeps,
-  deckId: string,
+  owner: BoardOwner,
   input: z.infer<typeof sheetInput>,
 ): Promise<string> {
-  const row = await findMaterial(deps, deckId, input.material);
+  const row = await findMaterial(deps, owner, input.material);
   if (row.kind !== 'spreadsheet')
     return `„${row.name}“ is no spreadsheet – read_material reads it.`;
   const bytes = await deps.media.get(row.storageKey);
   if (!bytes) throw new ToolError(`„${row.name}“ is no longer stored.`);
-  const book = readWorkbook(bytes, row.name);
+  let book: Awaited<ReturnType<typeof readWorkbook>>;
+  try {
+    book = await readWorkbook(bytes, row.name);
+  } catch {
+    // Damaged, or far larger unpacked than a spreadsheet is.
+    throw new ToolError(`„${row.name}“ cannot be read as a spreadsheet.`);
+  }
   const name =
     input.sheet === undefined
       ? book.SheetNames[0]
@@ -328,7 +343,7 @@ const columnLetters = (index: number): string => {
  * Finds the words in the pieces of text of every file of the deck – read and compared here, not
  * in SQL: the text is encrypted at rest. Places holding more of the words, more often, first.
  */
-async function searchMaterials(deps: AppDeps, deckId: string, query: string): Promise<string> {
+async function searchMaterials(deps: AppDeps, owner: BoardOwner, query: string): Promise<string> {
   const words = [
     ...new Set(
       searchFold(query)
@@ -338,11 +353,11 @@ async function searchMaterials(deps: AppDeps, deckId: string, query: string): Pr
   ];
   if (words.length === 0) return 'Nothing to search for.';
   const [rows, chunks] = await Promise.all([
-    materialsOf(deps, deckId),
+    materialsOf(deps, owner),
     deps.db
       .select()
       .from(materialChunks)
-      .where(eq(materialChunks.deckId, deckId))
+      .where(ownedBy(materialChunks, owner))
       .orderBy(asc(materialChunks.materialId), asc(materialChunks.seq)),
   ]);
   const names = new Map(rows.map((row) => [row.id, row.name]));
@@ -414,10 +429,10 @@ const jpegBlock = (bytes: Uint8Array): Anthropic.Beta.BetaImageBlockParam => ({
 
 async function viewMaterial(
   deps: AppDeps,
-  deckId: string,
+  owner: BoardOwner,
   input: z.infer<typeof viewInput>,
 ): Promise<ToolContent> {
-  const row = await findMaterial(deps, deckId, input.material);
+  const row = await findMaterial(deps, owner, input.material);
   const bytes = await deps.media.get(row.storageKey);
   if (!bytes) throw new ToolError(`„${row.name}“ is no longer stored.`);
   if (row.kind === 'image') {
@@ -443,30 +458,32 @@ async function viewMaterial(
 }
 
 /**
- * Runs one of the material tools for the deck; `null` when `name` is none of them. A wrong
+ * Runs one of the material tools for the deck's or the document's board; `null` when `name` is none of them. A wrong
  * input or an unknown material comes back as the tool's error, for the AI to call again.
  */
 export async function runMaterialTool(
   deps: AppDeps,
-  deckId: string,
+  owner: BoardOwner,
   name: string,
   input: unknown,
 ): Promise<{ content: ToolContent; isError: boolean } | null> {
   if (!MATERIAL_TOOL_NAMES.has(name)) return null;
   try {
     let content: ToolContent;
-    if (name === 'list_materials') content = await listMaterials(deps, deckId);
+    if (name === 'list_materials') content = await listMaterials(deps, owner);
     else if (name === 'read_material')
-      content = await readMaterial(deps, deckId, readInput.parse(input));
-    else if (name === 'read_sheet')
-      content = await readSheet(deps, deckId, sheetInput.parse(input));
+      content = await readMaterial(deps, owner, readInput.parse(input));
+    else if (name === 'read_sheet') content = await readSheet(deps, owner, sheetInput.parse(input));
     else if (name === 'search_materials')
-      content = await searchMaterials(deps, deckId, searchInput.parse(input).query);
-    else content = await viewMaterial(deps, deckId, viewInput.parse(input));
+      content = await searchMaterials(deps, owner, searchInput.parse(input).query);
+    else content = await viewMaterial(deps, owner, viewInput.parse(input));
     return { content, isError: false };
   } catch (error) {
     if (error instanceof ToolError) return { content: error.message, isError: true };
     if (error instanceof z.ZodError) return { content: z.prettifyError(error), isError: true };
-    throw error;
+    // The storage, the database, a file that does not parse: told without its words, so the
+    // answer goes on with what it has instead of ending in an error.
+    deps.log.warn(`Material tool ${name} failed: ${String(error)}`);
+    return { content: 'That did not work – a problem on the server.', isError: true };
   }
 }

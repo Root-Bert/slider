@@ -8,13 +8,15 @@ import {
   MAX_MEDIA_PEAKS,
   mediaKindSchema,
   pathStrokeSchema,
-  pointSchema,
-  rectSchema,
+  AROUND_SLIDE,
+  aroundPointSchema,
+  aroundRectSchema,
   shapeRefSchema,
   strokeSchema,
   type Viewer,
   type WorkspaceRole,
 } from './model';
+import type { MailCheckFailure } from './mail';
 import type { DomainWorkspace, MeLimits, MeUser, PendingInvite, Workspace } from './workspaces';
 
 /**
@@ -96,6 +98,7 @@ import type { DomainWorkspace, MeLimits, MeUser, PendingInvite, Workspace } from
  * | PUT    | /workspaces/:id/logo                   | multipart `file` (PNG/JPEG/WebP) | Workspace (admin) |
  * | DELETE | /workspaces/:id/logo                   |                            | Workspace (admin)     |
  * | PUT    | /workspaces/:id/domain                 | UpdateWorkspaceDomainInput | Workspace (admin)     |
+ * | PUT    | /workspaces/:id/agent-avatars          | UpdateAgentAvatarsInput    | Workspace (admin)     |
  * | POST   | /workspaces/:id/domain-join            |                            | JoinResult            |
  * | GET    | /workspaces/:id/sso                    |                            | WorkspaceSso (admin)  |
  * | PUT    | /workspaces/:id/sso                    | UpdateWorkspaceSsoInput    | WorkspaceSso (admin)  |
@@ -197,6 +200,13 @@ export const ERROR_CODES = [
   /** The desktop app could not reach its Slider server, or it refused the sign-in. */
   'cloud_unreachable',
   'cloud_refused',
+  /** Cloud: the file changed since the version a computer's change was made on. */
+  'cloud_conflict',
+  /**
+   * „Verbindungen“: the address answered as no MCP server, or not at all – the page then offers
+   * it as an API or opens an agent that helps.
+   */
+  'connection_failed',
   'internal',
 ] as const;
 export type ErrorCode = (typeof ERROR_CODES)[number];
@@ -207,6 +217,8 @@ export interface ApiError {
     message: string;
     /** With `nextcloud_login_required`: the Nextcloud to connect (`POST /nextcloud/login`). */
     nextcloudServer?: string;
+    /** A mailbox not let in: the step where it stopped and what the server said. */
+    mailCheck?: MailCheckFailure;
   };
 }
 
@@ -457,35 +469,36 @@ export const updateCommentInputSchema = z
     body: z.string().trim().max(MAX_COMMENT_BODY_LENGTH),
     status: commentStatusSchema,
     /** Moves / resizes the comment's text on the slide ("Text auf Folie"); author only. */
-    textBox: rectSchema
+    textBox: aroundRectSchema
       .refine((box) => box.w > 0 && box.h > 0, { message: 'Das Textfeld braucht eine Größe.' })
-      .refine((box) => box.x + box.w <= 1 + 1e-6 && box.y + box.h <= 1 + 1e-6, {
-        message: 'Das Textfeld muss auf der Folie liegen.',
+      .refine((box) => box.w <= 1 && box.h <= 1, {
+        message: 'Das Textfeld ist größer als die Folie.',
       }),
     /** Moves / resizes the comment's box on the slide; author only, rect anchors only. */
     anchor: z.object({
       type: z.literal('rect'),
-      rect: rectSchema
-        .refine((box) => box.w > 0 && box.h > 0, { message: 'Die Box braucht eine Größe.' })
-        .refine((box) => box.x + box.w <= 1 + 1e-6 && box.y + box.h <= 1 + 1e-6, {
-          message: 'Die Box muss auf der Folie liegen.',
-        }),
+      rect: aroundRectSchema.refine((box) => box.w > 0 && box.h > 0, {
+        message: 'Die Box braucht eine Größe.',
+      }),
       shapeRef: shapeRefSchema.nullable(),
     }),
-    /** Moves a drawing (strokes and anchor) or a pin by this shift, kept on the slide; author only. */
-    move: z.object({ dx: z.number().min(-1).max(1), dy: z.number().min(-1).max(1) }),
+    /** Moves a drawing (strokes and anchor) or a pin by this shift – off the slide too; author only. */
+    move: z.object({
+      dx: z.number().min(-AROUND_SLIDE.size).max(AROUND_SLIDE.size),
+      dy: z.number().min(-AROUND_SLIDE.size).max(AROUND_SLIDE.size),
+    }),
     /**
      * Removes the comment's drawing / text on the slide, the comment stays; author only. `pin`:
      * where its point goes when its box was that drawing or text, else `null` (the anchor stays).
      */
-    removeMarks: z.object({ pin: pointSchema.nullable() }),
+    removeMarks: z.object({ pin: aroundPointSchema.nullable() }),
     /**
      * Adds freehand strokes to one's own bare freehand drawing – drawn on without a comment in
      * between, they make one drawing. `rect`: the bounds of all its strokes, the new anchor box.
      */
     addStrokes: z.object({
       strokes: z.array(pathStrokeSchema).min(1).max(MAX_DRAWING_STROKES),
-      rect: rectSchema,
+      rect: aroundRectSchema,
     }),
   })
   .partial();

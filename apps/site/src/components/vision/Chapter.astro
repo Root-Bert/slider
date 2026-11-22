@@ -1,0 +1,91 @@
+---
+import Highlight from '../Highlight.astro';
+import SectionMark from '../SectionMark.astro';
+import type { PersonName } from '~/lib/people';
+
+/**
+ * A chapter of the founder's letter: its number on the line that runs down the page, the
+ * section mark, the headline with its last phrase selected, the paragraph, then whatever shows
+ * it (the slot).
+ */
+interface Props {
+  n: number;
+  label: string;
+  title: string;
+  mark: string;
+  body?: string;
+  /** Whose cursor rests on the selected phrase. */
+  by?: PersonName;
+}
+
+const { n, label, title, mark, body, by } = Astro.props;
+---
+
+<section class="ch" data-section data-live={`chapter-${n}`}>
+  <p class="ch-n" aria-hidden="true"><span>{String(n).padStart(2, '0')}</span></p>
+  <div class="ch-body">
+    <div data-reveal><SectionMark label={label} /></div>
+    <h2 data-reveal style="--i: 1">{title} <Highlight by={by}>{mark}</Highlight></h2>
+    {body && <p class="ch-text" data-reveal style="--i: 2">{body}</p>}
+    <div class="ch-show" data-reveal style="--i: 3"><slot /></div>
+  </div>
+</section>
+
+<style>
+  .ch {
+    position: relative;
+    display: grid;
+    grid-template-columns: var(--rail) minmax(0, 1fr);
+    padding-top: clamp(110px, 13vw, 220px);
+  }
+  /* The number sits left of the line, its dot on it. */
+  .ch-n {
+    position: relative;
+    padding-top: 2px;
+    font-family: var(--font-mono);
+    font-size: 13px;
+    color: var(--color-accent-blue);
+  }
+  .ch-n::after {
+    content: '';
+    position: absolute;
+    top: 3px;
+    left: calc(var(--line) - 6px);
+    width: 14px;
+    height: 14px;
+    border: 2px solid var(--color-accent-blue);
+    border-radius: 50%;
+    background: var(--color-canvas);
+  }
+  .ch h2 {
+    max-width: 17em;
+    margin-top: clamp(20px, 2.2vw, 32px);
+    font-size: clamp(32px, 4.6vw, 68px);
+    font-weight: 700;
+    line-height: 1.12;
+    letter-spacing: -0.03em;
+    color: var(--color-fg);
+  }
+  .ch-text {
+    max-width: 33em;
+    margin-top: clamp(24px, 2.6vw, 40px);
+    font-size: clamp(17px, 1.55vw, 22px);
+    line-height: 1.6;
+    color: var(--color-fg-muted);
+    text-wrap: pretty;
+  }
+  .ch-show:not(:empty) {
+    margin-top: clamp(40px, 4.4vw, 72px);
+  }
+  @media (max-width: 767px) {
+    .ch-n::after {
+      display: none;
+    }
+    .ch {
+      grid-template-columns: minmax(0, 1fr);
+    }
+    .ch-n {
+      margin-bottom: 14px;
+    }
+  }
+</style>

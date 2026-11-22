@@ -307,6 +307,9 @@ export async function effectiveKey(
   if (kind === 'ai') await moveOldKey(deps, workspaceId);
   await importEnvKeys(deps, kind);
   if (kind === 'live') {
+    // The environment names no live key: it is adopted from its Mistral voice/speech ones.
+    await importEnvKeys(deps, 'voice');
+    await importEnvKeys(deps, 'speech');
     await adoptLiveKey(deps, null);
     await adoptLiveKey(deps, workspaceId);
   }
@@ -640,11 +643,15 @@ const ENV_KEYS: {
   },
 ];
 
+const ENV_KEY_NAME = 'Umgebung des Servers (.env)';
+
 /**
  * The keys of the server's environment (`UNSPLASH_ACCESS_KEY`, `ANTHROPIC_API_KEY`,
  * `MISTRAL_API_KEY`, `BFL_API_KEY`, `SPEECH_URL`) become keys of the instance – active unless another of their kind is – and from
  * then on are keys like any other: shown, replaced, removed. Each value is taken over once: a key
- * removed stays removed until the environment names another.
+ * removed stays removed until the environment names another. Another value replaces the key the
+ * environment named before (active where that one was), and the `live` key taken over from it
+ * follows – an old key the service refuses never stays in the way of the new one.
  */
 async function importEnvKeys(deps: AppDeps, kind?: IntegrationKind): Promise<void> {
   for (const env of ENV_KEYS) {
@@ -666,6 +673,58 @@ async function importEnvKeys(deps: AppDeps, kind?: IntegrationKind): Promise<voi
           setWhere: ne(instanceSettings.value, hash),
         })
         .returning({ key: instanceSettings.key });
+      const before = await tx
+        .select()
+        .from(integrationKeys)
+        .where(
+          and(
+            isNull(integrationKeys.workspaceId),
+            eq(integrationKeys.kind, env.kind),
+            eq(integrationKeys.provider, env.provider),
+            isNull(integrationKeys.setById),
+            eq(integrationKeys.setByName, ENV_KEY_NAME),
+          ),
+        )
+        .orderBy(desc(integrationKeys.setAt));
+      const same = (row: IntegrationKeyRow) =>
+        row.apiKey === apiKey && (row.baseUrl ?? null) === baseUrl;
+      const kept = before.find(same) ?? before[0];
+      if (kept) {
+        // The environment's key of this kind is one: the value named now, in the place it had.
+        const old = before.filter((row) => row !== kept);
+        // Gone first: only one key of a kind is active at a time.
+        for (const row of old) await tx.delete(integrationKeys).where(eq(integrationKeys.id, row.id));
+        await tx
+          .update(integrationKeys)
+          .set({
+            apiKey,
+            baseUrl,
+            hint: keyHint(apiKey),
+            active: kept.active || old.some((row) => row.active),
+            ...(same(kept) ? {} : { model, setAt: deps.clock.now(), error: null }),
+          })
+          .where(eq(integrationKeys.id, kept.id));
+        // The live words taken over from an earlier value go on the one named now.
+        const earlier = new Set(before.filter((row) => !same(row)).map((row) => row.apiKey));
+        if (env.provider === 'mistral' && earlier.size > 0) {
+          const live = await tx
+            .select()
+            .from(integrationKeys)
+            .where(
+              and(
+                isNull(integrationKeys.workspaceId),
+                eq(integrationKeys.kind, 'live'),
+                eq(integrationKeys.provider, 'mistral'),
+              ),
+            );
+          for (const row of live.filter((one) => earlier.has(one.apiKey)))
+            await tx
+              .update(integrationKeys)
+              .set({ apiKey, hint: keyHint(apiKey), error: null, setAt: deps.clock.now() })
+              .where(eq(integrationKeys.id, row.id));
+        }
+        return;
+      }
       if (claimed.length === 0) return;
       const [active] = await tx
         .select({ id: integrationKeys.id })
@@ -688,7 +747,7 @@ async function importEnvKeys(deps: AppDeps, kind?: IntegrationKind): Promise<voi
         model,
         active: !active,
         setById: null,
-        setByName: 'Umgebung des Servers (.env)',
+        setByName: ENV_KEY_NAME,
         setAt: deps.clock.now(),
         error: null,
       });

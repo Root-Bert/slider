@@ -22,6 +22,7 @@ import { useEditing } from '../editing-context';
 import {
   commonLineSpacing,
   commonList,
+  commonSign,
   commonOf,
   formatRange,
   listOf,
@@ -326,6 +327,7 @@ export function InlineTextEditor({
       style: styleAt(model.current, at),
       align: commonOf(touched, (paragraph) => paragraph.align),
       list: commonList(touched),
+      listSign: commonSign(touched),
       lineSpacing: commonLineSpacing(touched),
       format,
       tryFormat,

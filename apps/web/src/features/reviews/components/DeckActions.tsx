@@ -67,7 +67,7 @@ function useRerender(deck: Deck, onNotify: ShowToast) {
       void invalidateImages();
       onNotify(`„${deck.title}“ neu gerendert`);
     } else {
-      onNotify('Keine besseren Folienbilder möglich – die Vorschau bleibt.');
+      onNotify('Keine besseren Folienbilder möglich. Die Vorschau bleibt.');
     }
   }, [finished, following, renderedAt, invalidateImages, onNotify, deck.title]);
 
@@ -78,7 +78,7 @@ function useRerender(deck: Deck, onNotify: ShowToast) {
     rerender.mutate(undefined, {
       onSuccess: (result) => {
         if (result.status === 'newVersion') {
-          onNotify('Die Datei hat sich geändert – die neue Version wird importiert.');
+          onNotify('Die Datei hat sich geändert. Die neue Version wird importiert.');
           return;
         }
         setFollowing({ renderedAt: result.renderedAt, startedAt });
@@ -153,6 +153,8 @@ export function DeckActions({
         disabled: pins.full,
         title: pins.full ? pins.limitMessage() : undefined,
       };
+  // An archived presentation's pin would be gone with the next look at the list.
+  const pinActions = archived && !pinned ? [] : [pinAction];
 
   const keepAction: MenuAction[] =
     here.kept !== undefined
@@ -254,8 +256,8 @@ export function DeckActions({
     { label: 'Löschen', icon: 'delete', tone: 'danger', onSelect: () => setDeleting(true) },
   ];
   const actions = deck.permissions.canManage
-    ? [pinAction, ...keepAction, ...fileActions, ...manageActions]
-    : [pinAction, ...keepAction, ...fileActions, ...rerenderAction, ...runAction];
+    ? [...pinActions, ...keepAction, ...fileActions, ...manageActions]
+    : [...pinActions, ...keepAction, ...fileActions, ...rerenderAction, ...runAction];
 
   return (
     <>
@@ -281,9 +283,9 @@ export function DeckActions({
           decks={[deck]}
           workspaceId={deck.workspaceId}
           onClose={() => setMoving(false)}
-          onMoved={(result, folderName) => {
+          onMoved={(result, placeName) => {
             setMoving(false);
-            const message = movedMessage(result, folderName);
+            const message = movedMessage(result, placeName);
             onNotify(message.text, message.tone);
           }}
         />
@@ -295,7 +297,7 @@ export function DeckActions({
           closing={storagePanel.closing}
           onClosed={storagePanel.onClosed}
           onClose={() => setStorage(false)}
-          onPruned={(freed) => onNotify(`${formatFileSize(freed)} freigegeben`)}
+          onPruned={(freed) => onNotify(`Ältere Versionen gelöscht, ${formatFileSize(freed)} frei`)}
         />
       )}
       {runPanel.mounted && run && (
@@ -312,6 +314,7 @@ export function DeckActions({
         <DeckAccessDialog
           deck={deck}
           onClose={() => setRestricting(false)}
+          onPlaced={(areaName) => onNotify(`„${deck.title}“ liegt jetzt in „${areaName}“`)}
           onSaved={(access, before) => {
             setRestricting(false);
             // Only a change of who may open it is news; otherwise just that it's saved.

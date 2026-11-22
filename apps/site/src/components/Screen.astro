@@ -1,0 +1,67 @@
+---
+import { SCREEN_WORDS } from '~/i18n/screens';
+import type { Lang } from '~/i18n';
+import type { ProductId } from '~/lib/apps';
+import { screenOf } from '~/lib/screens';
+
+/**
+ * One screen of an app, as a window with a soft glow in the app's colour under it. Its caption is its alt text and, with `caption`, stands under it.
+ */
+interface Props {
+  app: ProductId;
+  /** The screen's name (`lib/screens.ts`). */
+  name: string;
+  lang: Lang;
+  caption?: boolean;
+  /** The first screen of a page loads right away. */
+  eager?: boolean;
+  class?: string;
+}
+
+const { app, name, lang, caption = false, eager = false, class: className } = Astro.props;
+const { image } = screenOf(app, name);
+const text = SCREEN_WORDS[lang].captions[app][name] ?? '';
+---
+
+<figure class:list={['screen', className]} style={`--app: var(--app-${app})`}>
+  <div class="screen-window">
+    <img
+      src={image.src}
+      width={image.width}
+      height={image.height}
+      alt={text}
+      loading={eager ? 'eager' : 'lazy'}
+      decoding="async"
+      fetchpriority={eager ? 'high' : undefined}
+    />
+  </div>
+  {caption && <figcaption>{text}</figcaption>}
+</figure>
+
+<style>
+  .screen {
+    container-type: inline-size;
+    width: 100%;
+  }
+  .screen-window {
+    overflow: hidden;
+    border-radius: 1.4cqw;
+    background: #1c1c1c;
+    box-shadow:
+      0 0 0 1px var(--color-hairline-strong, rgb(127 127 127 / 0.3)),
+      0 6cqw 9cqw -5cqw color-mix(in srgb, var(--app) 55%, transparent);
+  }
+  .screen img {
+    display: block;
+    width: 100%;
+    height: auto;
+  }
+  .screen figcaption {
+    margin-top: 24px;
+    font-size: clamp(16px, 1.3vw, 20px);
+    font-weight: 600;
+    line-height: 1.4;
+    letter-spacing: -0.01em;
+    color: var(--color-fg);
+  }
+</style>

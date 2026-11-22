@@ -1,4 +1,4 @@
 User-agent: *
 Allow: /
 
-Sitemap: https://bertro.dev/slider/sitemap.xml
+Sitemap: https://bertro.dev/sitemap.xml

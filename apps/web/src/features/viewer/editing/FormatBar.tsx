@@ -47,6 +47,7 @@ import {
 import { useAutoZoom } from './useAutoZoom';
 import { PlaceholderControl } from '../template/PlaceholderControl';
 import { ArrangeControls } from './ArrangeControls';
+import { EntranceControls } from './EntranceControls';
 import { FlowControls } from './FlowControls';
 import { ImageFitControls } from './ImageFitControls';
 import { useShownBox } from './hooks/useMoveElements';
@@ -61,6 +62,7 @@ const TABS: { id: PanelTab; icon: IconName; label: string }[] = [
   { id: 'fill', icon: 'formatColorFill', label: 'Aussehen' },
   { id: 'image', icon: 'image', label: 'Bild' },
   { id: 'arrange', icon: 'alignCenter', label: 'Anordnen' },
+  { id: 'motion', icon: 'animation', label: 'Animation' },
 ];
 /** A symbol's picture part: its colours and other symbols. */
 const SYMBOL_TAB = {
@@ -83,6 +85,7 @@ function tabsOf(element: EditableElement): PanelTab[] {
     if (id === 'fill') return element.look !== null;
     // Locked, it stays where it is.
     if (id === 'arrange') return canMove(element);
+    if (id === 'motion') return true;
     return element.kind === 'image';
   });
 }
@@ -346,7 +349,8 @@ function FormatBarView({
     ? group.some((item) => item.locked)
       ? []
       : ['arrange']
-    : tabsOf(element);
+    : // How it comes in when presenting: a whole element of the slide, not a part of a group.
+      tabsOf(element).filter((id) => id !== 'motion' || !editing.entered);
   // Locked in place (all picked together): unlocked by the same button.
   const locked = (group ?? [element]).every((item) => item.locked);
   // The tab picked before, if this element has it – else its first.
@@ -614,6 +618,7 @@ function FormatBarView({
               <FlowControls elements={group ?? [element]} />
             </>
           )}
+          {shown === 'motion' && <EntranceControls element={element} />}
           {narrow && !framePreview && tabRow}
         </div>
       </div>
@@ -711,7 +716,7 @@ function SwapImage({
   // The search is open from the start, with photos at random – the editor's keys stay its own
   // until it is opened by hand (`StockPhotoSearch`); its button folds it away, as „Generieren“
   // its description.
-  const [open, setOpen] = useState<'search' | 'generate' | 'icons' | null>(
+  const [open, setOpen] = useState<'search' | 'generate' | null>(
     stock ? 'search' : (ahead || previewQuery !== undefined) && generation ? 'generate' : null,
   );
   const [searchedByHand, setSearchedByHand] = useState(Boolean(ahead));
@@ -744,8 +749,7 @@ function SwapImage({
     }
   };
   const shown = editing.offline ? null : open;
-  const toggle = (what: 'search' | 'generate' | 'icons') =>
-    setOpen((now) => (now === what ? null : what));
+  const toggle = (what: 'search' | 'generate') => setOpen((now) => (now === what ? null : what));
   // A symbol: the symbols' search, with what was typed on its frame – the keys go there at once
   // only in a new frame (not its preview, where the frame's chooser has them); a symbol picked
   // again keeps them for the editor until its field is clicked.
@@ -775,7 +779,9 @@ function SwapImage({
           if (file) void swap(file);
         }}
       />
-      <div className="flex flex-wrap gap-2">
+      {/* One row: where the picture comes from in words, the AI's two as icons (their tooltips say
+          what they do). Symbols are their own tool („Symbol“), not a way to fill a picture. */}
+      <div className="flex gap-2">
         <Button
           size="sm"
           variant="secondary"
@@ -809,59 +815,43 @@ function SwapImage({
             Foto suchen
           </Button>
         )}
-        <Button
-          size="sm"
-          variant={shown === 'icons' ? 'primary' : 'secondary'}
-          icon="shapes"
-          aria-expanded={shown === 'icons'}
-          disabled={editing.offline}
-          title={
-            editing.offline
-              ? OFFLINE_HINT
-              : 'Ein Icon oder Piktogramm in einer Farbe der Präsentation – es wird in den Rahmen eingepasst.'
-          }
-          onClick={() => toggle('icons')}
-          className="flex-1"
-        >
-          Symbole
-        </Button>
         {generation && (
-          <Button
+          <IconButton
             size="sm"
-            variant={shown === 'generate' ? 'primary' : 'secondary'}
+            variant={shown === 'generate' ? 'primary' : 'glass'}
             icon="autoAwesome"
-            aria-expanded={shown === 'generate'}
+            label="Generieren"
+            expanded={shown === 'generate'}
             disabled={editing.offline}
             title={
               editing.offline
                 ? OFFLINE_HINT
-                : 'Ein Bild aus einer Beschreibung erzeugen – passend zum Rahmen.'
+                : 'Generieren – ein Bild aus einer Beschreibung, passend zum Rahmen'
             }
             onClick={() => toggle('generate')}
-            className="flex-1"
-          >
-            Generieren
-          </Button>
+            className="rounded-control-sm"
+          />
+        )}
+        {cutOut && (
+          <IconButton
+            size="sm"
+            variant="glass"
+            icon="autoFixHigh"
+            label={removeBackground.isPending ? 'Wird freigestellt …' : 'Hintergrund entfernen'}
+            // The server cuts out the picture it has: edits still on their way first.
+            disabled={editing.offline || editing.pending > 0 || removeBackground.isPending}
+            title={
+              editing.offline
+                ? OFFLINE_HINT
+                : removeBackground.isPending
+                  ? 'Wird freigestellt …'
+                  : 'Hintergrund entfernen – rückgängig mit ⌘Z'
+            }
+            onClick={() => void freeUp()}
+            className={cn('rounded-control-sm', removeBackground.isPending && 'animate-pulse')}
+          />
         )}
       </div>
-      {cutOut && (
-        <Button
-          size="sm"
-          variant="secondary"
-          icon="autoFixHigh"
-          loading={removeBackground.isPending}
-          // The server cuts out the picture it has: edits still on their way first.
-          disabled={editing.offline || editing.pending > 0}
-          title={
-            editing.offline
-              ? OFFLINE_HINT
-              : 'Den Hintergrund des Bilds durchsichtig machen – rückgängig mit ⌘Z.'
-          }
-          onClick={() => void freeUp()}
-        >
-          {removeBackground.isPending ? 'Wird freigestellt …' : 'Hintergrund entfernen'}
-        </Button>
-      )}
       {element.picture && (
         <ImageFitControls element={element} picture={element.picture} slideId={slideId} />
       )}
@@ -875,9 +865,6 @@ function SwapImage({
           query={previewQuery}
           onPicked={() => setOpen(null)}
         />
-      )}
-      {shown === 'icons' && (
-        <IconSearch element={element} large={large} onPicked={() => setOpen(null)} />
       )}
       {generation && shown === 'generate' && (
         <GenerateImage

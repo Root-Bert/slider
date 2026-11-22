@@ -1,23 +1,21 @@
 import { useEffect, useRef, useState } from 'react';
 import { cn } from '@/ui';
-import { useViewerData } from '../state/viewer-data';
-import { useViewerDispatch, useViewerState } from '../state/viewer-state';
+import { useBoardOwner } from './board-owner';
 import { MaterialBoard } from './MaterialBoard';
 
 /** Room round the board, as round the slides (`TRACK_PAD_X`, `TRACK_PAD_TOP`). */
 const PAD = 16;
 
 /**
- * The material page: the deck's board over the whole screen, beside the presentation – it slides
- * in from the left while the presentation slides out to the right (`Viewer`), no slide overview
- * and no comments here. The paperclip left of the slide overview or M opens it; „Präsentation →“
- * or M goes back. Mounted once first opened, then kept: the board stays where it was looked at.
- * A template has none.
+ * The material page: the board of a presentation or a text document (`BoardOwner`) over the whole
+ * screen, beside it – it slides in from the left while the presentation slides out to the right
+ * (`Viewer`; a document: Writer's `Editor`), no slide overview and no comments here. The paperclip
+ * left of the slide overview (above a document's pages) or M opens it; „Präsentation →“ or M goes
+ * back. Mounted once first opened, then kept: the board stays where it was looked at. A template
+ * has none.
  */
 export function MaterialPage() {
-  const { deck } = useViewerData();
-  const { materialOpen } = useViewerState();
-  const dispatch = useViewerDispatch();
+  const { open: materialOpen, setOpen, template } = useBoardOwner();
   const [mounted, setMounted] = useState(materialOpen);
   if (materialOpen && !mounted) setMounted(true);
   const boxRef = useRef<HTMLDivElement>(null);
@@ -45,7 +43,7 @@ export function MaterialPage() {
     return () => cancelAnimationFrame(frame);
   }, [materialOpen, measured]);
 
-  if (deck.template) return null;
+  if (template) return null;
   return (
     <div
       data-material-page
@@ -57,13 +55,7 @@ export function MaterialPage() {
       )}
     >
       <div ref={boxRef} className="absolute" style={{ inset: PAD }}>
-        {mounted && size && (
-          <MaterialBoard
-            w={size.w}
-            h={size.h}
-            onLeave={() => dispatch({ type: 'materialSet', open: false })}
-          />
-        )}
+        {mounted && size && <MaterialBoard w={size.w} h={size.h} onLeave={() => setOpen(false)} />}
       </div>
     </div>
   );

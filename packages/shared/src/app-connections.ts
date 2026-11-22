@@ -67,6 +67,3 @@ export const approveAppInputSchema = appRequestInputSchema.extend({
   workspaceId: z.string().min(1).max(100).nullable(),
 });
 export type ApproveAppInput = z.infer<typeof approveAppInputSchema>;
-
-/** Where the browser goes on: back to the app, with its code or the refusal. */
-export const appRedirectSchema = z.object({ redirectUrl: z.string() });

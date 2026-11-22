@@ -1,4 +1,10 @@
-import type { EditableElement, EditSlide, FillLayer, SlideOperation } from '@slider/shared';
+import type {
+  EditableElement,
+  EditSlide,
+  Entrance,
+  FillLayer,
+  SlideOperation,
+} from '@slider/shared';
 import { applyToElement, richFromLive } from './live/model';
 
 /*
@@ -211,6 +217,18 @@ function inverseOne(
         },
       ];
     }
+    case 'setEntrance': {
+      const was = element(operation.elementId);
+      if (!was) return null;
+      const { order: _order, ...entrance } = was.entrance ?? { order: 0 };
+      return [
+        {
+          type: 'setEntrance',
+          elementId: operation.elementId,
+          entrance: was.entrance ? (entrance as Entrance) : null,
+        },
+      ];
+    }
     case 'setLocked': {
       const was = element(operation.elementId);
       return was
@@ -371,6 +389,7 @@ function comparable(element: EditableElement | null | undefined): unknown {
     heads: element.line?.heads ?? null,
     fit: element.picture ? { fit: element.picture.fit, focus: element.picture.focus } : null,
     locked: element.locked === true,
+    entrance: element.entrance ?? null,
   };
 }
 

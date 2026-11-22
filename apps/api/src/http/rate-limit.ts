@@ -1,3 +1,4 @@
+import { isIPv4, isIPv6 } from 'node:net';
 import type { Context } from 'hono';
 import { createMiddleware } from 'hono/factory';
 import type { Clock } from '../clock';
@@ -15,12 +16,30 @@ export interface RateLimitOptions {
 /**
  * The client's address: from `X-Forwarded-For` behind a trusted proxy (`TRUST_PROXY`), else the
  * remote address from `@hono/node-server`; falls back to one shared bucket elsewhere (tests).
+ * An IPv6 client counts by its /64 – one connection gets a whole /64 and could rotate within it.
  */
 export function clientAddress(c: Context): string {
   const forwarded: unknown = c.get(FORWARDED_CLIENT);
-  if (typeof forwarded === 'string') return forwarded;
+  if (typeof forwarded === 'string') return addressBucket(forwarded);
   const env = c.env as { incoming?: { socket?: { remoteAddress?: string } } } | undefined;
-  return env?.incoming?.socket?.remoteAddress ?? 'local';
+  const remote = env?.incoming?.socket?.remoteAddress;
+  return remote ? addressBucket(remote) : 'local';
+}
+
+/** IPv4 as is (also IPv4-mapped IPv6), IPv6 as its /64 prefix (`2001:db8:1:2::/64`). */
+export function addressBucket(address: string): string {
+  const mapped = /^::ffff:(\d+\.\d+\.\d+\.\d+)$/i.exec(address)?.[1];
+  if (mapped && isIPv4(mapped)) return mapped;
+  const bare = address.split('%')[0] ?? address;
+  if (!isIPv6(bare)) return address;
+  const [head = '', tail = ''] = bare.split('::');
+  const left = head ? head.split(':') : [];
+  const right = tail ? tail.split(':') : [];
+  const groups = bare.includes('::')
+    ? [...left, ...Array<string>(8 - left.length - right.length).fill('0'), ...right]
+    : left;
+  const prefix = groups.slice(0, 4).map((group) => (parseInt(group, 16) || 0).toString(16));
+  return `${prefix.join(':')}::/64`;
 }
 
 /**

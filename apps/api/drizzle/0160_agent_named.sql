@@ -1,0 +1,1 @@
+ALTER TABLE "cloud_agents" ADD COLUMN "named" boolean DEFAULT false NOT NULL;

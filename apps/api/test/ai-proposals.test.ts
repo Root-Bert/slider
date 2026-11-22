@@ -1,7 +1,7 @@
 import Anthropic from '@anthropic-ai/sdk';
 import { createCanvas } from '@napi-rs/canvas';
 import { eq } from 'drizzle-orm';
-import { imageSize } from '@slider/odp';
+import { imageSize, type OdpSlide } from '@slider/odp';
 import JSZip from 'jszip';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import {
@@ -17,6 +17,7 @@ import {
   type LiveEvent,
 } from '@slider/shared';
 import { media, integrationKeys } from '../src/db/schema';
+import { layoutCheck, measureDeck } from '../src/services/ai-context';
 import { asksForVariant, callGroups } from '../src/services/ai-proposals';
 import { effortMessage, runTurn } from '../src/services/ai-providers';
 import type { CutOutSource } from '../src/services/cut-outs';
@@ -207,16 +208,6 @@ async function setup(
   return { ctx, anthropic, deckId: deck.id, state };
 }
 
-/** A PNG as far as Slider reads it: its header. */
-function pngOf(width: number, height: number): Uint8Array {
-  const png = new Uint8Array(64);
-  png.set([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0, 0, 0, 13], 0);
-  png.set(Buffer.from('IHDR'), 12);
-  new DataView(png.buffer).setUint32(16, width);
-  new DataView(png.buffer).setUint32(20, height);
-  return png;
-}
-
 const titleOf = (state: DeckEditState, slide: number) =>
   state.slides[slide]!.elements.find((element) => element.role === 'title')!;
 
@@ -311,6 +302,7 @@ describe('AI proposals', { timeout: 60_000 }, () => {
       const first = anthropic.requests[0]!;
       expect(first.model).toBe('claude-sonnet-5-5');
       expect(first.tools?.map((tool) => ('name' in tool ? tool.name : ''))).toEqual([
+        'search_icons',
         'view_slide',
         'search_deck',
         'deck_overview',
@@ -1054,8 +1046,27 @@ describe('AI proposals', { timeout: 60_000 }, () => {
                 },
                 { copy_of: 'a', name: 'b', next_to: { element: 'a', side: 'right', gap: 4 } },
                 { add: 'arrow', from: { element: 'a' }, to: { element: 'b' } },
-                { add: 'text', next_to: { element: 'b', side: 'right' }, text: ['Ziel'], width: 5 },
+                {
+                  add: 'text',
+                  next_to: { element: 'b', side: 'right' },
+                  text: ['Ziel · 2026'],
+                  width: 5,
+                },
                 { element: 'b', text: ['B'], text_color: '#ffffff' },
+                // One of Slider's symbols, drawn in a colour; a gradient fill to transparent.
+                {
+                  add: 'icon',
+                  icon: 'phosphor/leaf',
+                  icon_color: '#C8902E',
+                  entrance: { effect: 'zoom' },
+                  box: { x: 20, y: 15, width: 2, height: 2 },
+                },
+                {
+                  add: 'rectangle',
+                  box: { x: 24, y: 15, width: 4, height: 2 },
+                  gradient: { angle: 90, stops: ['#2563EB', { color: '#2563EB', opacity: 0 }] },
+                  entrance: { effect: 'fly', from: 'left', with: true },
+                },
                 // The slide's own settings in the same call.
                 { slide: 3, transition: 'fade' },
               ],
@@ -1075,6 +1086,8 @@ describe('AI proposals', { timeout: 60_000 }, () => {
       expect(drawn).toMatch(/New elements \(xml:id\): a: sl[\w-]+, b: sl[\w-]+, sl[\w-]+, sl/);
       expect(drawn).toContain('image/webp');
       expect(drawn).toContain('Layout check of slide 3');
+      // A mark between words is named as a sign of generated slides.
+      expect(drawn).toContain('Marks between words');
       const after = deckEditStateSchema.parse(
         await (await ctx.request(`/api/decks/${deckId}/edit`)).json(),
       );
@@ -1086,13 +1099,58 @@ describe('AI proposals', { timeout: 60_000 }, () => {
       const added = after.slides[2]!.elements.filter(
         (element) => element.id.startsWith('sl') && element.id.length > 20,
       );
-      expect(added.map((element) => element.kind)).toEqual(['shape', 'shape', 'line', 'text']);
-      const [a, b, arrow, label] = added as [
+      expect(added.map((element) => element.kind)).toEqual([
+        'shape',
+        'shape',
+        'line',
+        'text',
+        'image',
+        'shape',
+      ]);
+      const [a, b, arrow, label, leaf, fade] = added as [
+        EditableElement,
+        EditableElement,
         EditableElement,
         EditableElement,
         EditableElement,
         EditableElement,
       ];
+      // The editor knows the symbol (other colours, other symbols) and the gradient.
+      expect(leaf.symbol).toEqual({ id: 'phosphor/leaf', label: 'Leaf', color: '#c8902e' });
+      // They come in when presenting: the icon first, the gradient with it.
+      expect(leaf.entrance).toEqual({ effect: 'zoom', start: 'after', order: 0 });
+      expect(fade.entrance).toEqual({ effect: 'fly', start: 'with', from: 'left', order: 1 });
+      // Every piece of a diagram coming in by itself is named as too many.
+      const pieces = Array.from({ length: 9 }, (_, i) => ({
+        ...fade,
+        id: `piece${i}`,
+        bbox: { x: 0.1 * i, y: 0.4, w: 0.05, h: 0.05 },
+        entrance: { effect: 'fade' as const, start: 'with' as const, order: i },
+      }));
+      const design = {
+        title: '',
+        template: null,
+        palette: [],
+        custom: [],
+        grid: null,
+        guides: [],
+        workspaceFonts: [],
+      };
+      const size = { width: 28, height: 15.75 };
+      const crowded = { index: 0, hidden: false, elements: pieces } as unknown as OdpSlide;
+      expect(layoutCheck(crowded, measureDeck([crowded], size, design)).join(' ')).toContain(
+        '9 elements come in when presenting (1 steps)',
+      );
+      expect(fade.look?.fills).toMatchObject([
+        {
+          type: 'gradient',
+          angle: 90,
+          stops: [
+            { color: '#2563eb', at: 0 },
+            { color: '#2563eb', at: 1, opacity: 0 },
+          ],
+        },
+      ]);
       expect(a.look?.fill).toBe('#2563eb');
       expect(b.look?.fill).toBe('#2563eb');
       expect(b.paragraphs).toEqual(['B']);
@@ -1102,7 +1160,7 @@ describe('AI proposals', { timeout: 60_000 }, () => {
       expect(arrow.bbox.h).toBe(0);
       expect(arrow.bbox.x).toBeGreaterThan(a.bbox.x + a.bbox.w);
       expect(arrow.bbox.x + arrow.bbox.w).toBeLessThan(b.bbox.x);
-      expect(label.paragraphs).toEqual(['Ziel']);
+      expect(label.paragraphs).toEqual(['Ziel · 2026']);
       expect(after.slides[2]!.transition).toBe('fade');
       // In the slide's body text, as the editor's new text box.
       const note = after.slides[2]!.elements.find((element) => element.name === 'Hinweis')!;
@@ -1259,13 +1317,14 @@ describe('AI proposals', { timeout: 60_000 }, () => {
     }
     {
       const sent: { width: number; height: number }[] = [];
-      // rembg as far as Slider reads its answer: a PNG header of the size it got.
+      // rembg: a clear PNG of the size it got.
+      const { createCanvas } = await import('@napi-rs/canvas');
       const cutOuts: CutOutSource = {
         cutOut: async (bytes) => {
           const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
           const size = { width: view.getUint32(16), height: view.getUint32(20) };
           sent.push(size);
-          return pngOf(size.width, size.height);
+          return new Uint8Array(await createCanvas(size.width, size.height).encode('png'));
         },
       };
       const { ctx, anthropic, deckId, state } = await setup(true, { cutOuts });
@@ -1297,6 +1356,34 @@ describe('AI proposals', { timeout: 60_000 }, () => {
           )![1]!;
           return writeShown(4, (xml) => xml.replace(original, copy))(body);
         },
+        // The copy cut into a circle and shown whole as a new picture, without XML.
+        () =>
+          message(
+            [
+              toolUse('change_elements', {
+                slide: 4,
+                changes: [
+                  { add: 'ellipse', box: { x: 2, y: 2, width: 4, height: 4 }, picture: copy },
+                  { add: 'picture', picture: copy, width: 8 },
+                  { add: 'picture', picture: 'Pictures/nope.png' },
+                ],
+              }),
+            ],
+            'tool_use',
+          ),
+        () =>
+          message(
+            [
+              toolUse('change_elements', {
+                slide: 4,
+                changes: [
+                  { add: 'ellipse', box: { x: 2, y: 2, width: 4, height: 4 }, picture: copy },
+                  { add: 'picture', picture: copy, box: { x: 20, y: 2, width: 8, height: 8 } },
+                ],
+              }),
+            ],
+            'tool_use',
+          ),
         message([text('Hintergrund entfernt.')], 'end_turn'),
       ];
       await ask(ctx, deckId, state.slides[3]!.slideId, 'Hintergrund weg');
@@ -1330,6 +1417,27 @@ describe('AI proposals', { timeout: 60_000 }, () => {
       expect(copy).not.toBe(original);
       expect(zip.file(copy)).not.toBeNull();
       expect(await zip.file('content.xml')!.async('string')).toContain(copy);
+      expect(toolResults(anthropic.requests[4]!)[0]).toMatchObject({
+        is_error: true,
+        content: expect.stringContaining('There is no picture Pictures/nope.png'),
+      });
+      const shown = deckEditStateSchema
+        .parse(await (await ctx.request(`/api/decks/${deckId}/edit`)).json())
+        .slides[3]!.elements.filter(
+          (element) => element.id.startsWith('sl') && element.id.length > 20,
+        );
+      // The circle filled with the copy, cut to it; the picture whole in the box asked, its
+      // height by the copy's proportions (320 × 180).
+      expect(shown).toHaveLength(2);
+      expect(shown[0]!.look?.fills).toMatchObject([{ type: 'image', fit: 'fill' }]);
+      // Its picture and the style naming it came into the deck with the slide.
+      const fill = (await zip.file('styles.xml')!.async('string')).match(
+        /<draw:fill-image [^>]*xlink:href="(Pictures\/[^"]+)"/,
+      );
+      expect(zip.file(fill![1]!)).not.toBeNull();
+      expect(shown[1]!.kind).toBe('image');
+      expect((shown[1]!.bbox.w * 33.867) / 8).toBeCloseTo(1, 2);
+      expect((shown[1]!.bbox.w * 33.867) / (shown[1]!.bbox.h * 19.05)).toBeCloseTo(320 / 180, 1);
     }
     {
       const { ctx, anthropic, deckId, state } = await setup();

@@ -29,6 +29,8 @@ export interface ConnectorItem {
 /** One slide whose lines are drawn: its marks → its comment column (and its gap's bubble). */
 export interface ConnectorRoute {
   slideId: string;
+  /** The column its cards are in, when not the slide's own (a variant's: its slide's place). */
+  columnId?: string;
   /** Divider left of the slide (`null` for the first slide) and right of it. */
   prevGapKey: string | null;
   nextGapKey: string;
@@ -231,7 +233,7 @@ export function useConnectorLayout({
           content.right - content.left > slide.right - slide.left + 1 ||
           content.bottom - content.top > slide.bottom - slide.top + 1;
         const column = scroller.querySelector<HTMLElement>(
-          `[data-column="${CSS.escape(route.slideId)}"]`,
+          `[data-column="${CSS.escape(route.columnId ?? route.slideId)}"]`,
         );
         const prevGap = route.prevGapKey ? registry.getGapElement(route.prevGapKey) : null;
         const nextGap = registry.getGapElement(route.nextGapKey);

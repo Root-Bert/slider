@@ -33,35 +33,39 @@ const listQuery = (q: string, offset: number) => {
   return search ? `?${search}` : '';
 };
 
-type Refresh = { refetchInterval?: number | false };
+/** `enabled: false` for someone who isn't the instance admin: nothing asked, no 403. */
+type Refresh = { refetchInterval?: number | false; enabled?: boolean };
 
 /** The instance as it is now – nothing here depends on the chart's window. */
-export const useInstanceOverview = ({ refetchInterval }: Refresh = {}) =>
+export const useInstanceOverview = ({ refetchInterval, enabled }: Refresh = {}) =>
   useQuery({
     queryKey: instanceKeys.overview,
     queryFn: () => api.get<InstanceOverview>('/instance/overview'),
     refetchInterval,
+    enabled,
   });
 
 /**
  * What was created in the chart's window (`interval=…&to=…`, as built by `timelineQuery`); the
  * previous window stays while the next loads, so moving it never flickers.
  */
-export const useInstanceTimeline = (query: string, { refetchInterval }: Refresh = {}) =>
+export const useInstanceTimeline = (query: string, { refetchInterval, enabled }: Refresh = {}) =>
   useQuery({
     queryKey: instanceKeys.timeline(query),
     queryFn: () => api.get<InstanceTimeline>(`/instance/timeline?${query}`),
     placeholderData: keepPreviousData,
     refetchInterval,
+    enabled,
   });
 
 /** What the AI used in the chart's window – the timeline's query; the previous window stays meanwhile. */
-export const useInstanceAiUsage = (query: string, { refetchInterval }: Refresh = {}) =>
+export const useInstanceAiUsage = (query: string, { refetchInterval, enabled }: Refresh = {}) =>
   useQuery({
     queryKey: instanceKeys.aiUsage(query),
     queryFn: () => api.get<InstanceAiUsage>(`/instance/ai-usage?${query}`),
     placeholderData: keepPreviousData,
     refetchInterval,
+    enabled,
   });
 
 /** `interval=31d&to=…` – the timeline's query for a window. */
@@ -72,11 +76,12 @@ export const timelineQuery = (interval: InstanceInterval, to: number) =>
 const HISTORY_STALE_MS = 5 * 60_000;
 
 /** The whole history, for the strip the window slides over. */
-export const useInstanceHistory = () =>
+export const useInstanceHistory = (enabled = true) =>
   useQuery({
     queryKey: instanceKeys.history,
     queryFn: () => api.get<InstanceHistory>('/instance/history'),
     staleTime: HISTORY_STALE_MS,
+    enabled,
   });
 
 /** One page of accounts; the previous page stays while the next loads (search as you type). */

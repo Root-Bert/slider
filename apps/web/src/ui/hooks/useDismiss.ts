@@ -24,6 +24,8 @@ export function useDismiss({
   const handlePointerDown = useEffectEvent((event: PointerEvent) => {
     const target = event.target as Node;
     if (refs.some((ref) => ref?.current?.contains(target))) return;
+    // A menu opened from inside (portalled out to the body) is still inside: its pick must land.
+    if (target instanceof Element && target.closest('[data-floating-menu]')) return;
     onDismiss();
   });
 

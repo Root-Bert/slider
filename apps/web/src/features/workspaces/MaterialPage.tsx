@@ -2,16 +2,19 @@ import { useDeferredValue, useEffect, useMemo, useRef, useState, type MouseEvent
 import { searchFold, type SpellingWord, type WorkspaceMaster } from '@slider/shared';
 import {
   useCreateBlankDeck,
+  useOwnWords,
   useRemoveSpellingWord,
   useRemoveWorkspaceFontFamily,
   useRemoveWorkspaceMaster,
   useWorkspaceFonts,
+  useSliderTemplates,
   useWorkspaceMasters,
   useWorkspaceWords,
 } from '@/lib/api';
 import { useNavigate, useSearchParams } from 'react-router';
 import { selectionStyle } from '@/lib/accent';
 import { pluralize } from '@/lib/format';
+import { useLibrary, useSliderDoor } from '@/lib/apps';
 import { routes } from '@/lib/routes';
 import { useCollectionSelection } from '@/lib/collection-selection';
 import { isOnControl } from '@/lib/marquee-select';
@@ -20,6 +23,7 @@ import { useWorkspaceFontFaces } from '@/lib/workspace-fonts';
 import { useAccount } from '@/features/auth';
 import { searchIcons, useIconLibrary, type IconFilter } from '@/features/icons';
 import { registerOfficeFonts } from '@/features/viewer';
+import { DOCUMENT_TEMPLATES, DocumentTemplates } from '@/features/writer';
 import {
   Button,
   ConfirmDialog,
@@ -40,10 +44,12 @@ import { IconCollection, IconCollectionSkeleton } from './components/material/Ic
 import { FontSpecimens } from './components/material/FontSpecimens';
 import { MasterCollection, MasterCollectionSkeleton } from './components/material/MasterCollection';
 import { MasterSpecimens } from './components/material/MasterSpecimens';
+import { SliderTemplateCollection } from './components/material/SliderTemplateCollection';
 import { WordCollection, WordCollectionSkeleton } from './components/material/WordCollection';
 import {
   MaterialToolbar,
   type FontSource,
+  type WordSource,
   type MaterialKind,
   type MaterialSort,
 } from './components/material/MaterialToolbar';
@@ -114,21 +120,39 @@ const SOURCE_PARAMS: Record<FontSource, string> = {
   slider: 'slider-schriften',
   workspace: 'workspace-schriften',
 };
+/** `?filter=` of „Vorlagen“ by whose templates it shows, as „Schriften“. */
+const MASTER_SOURCE_PARAMS: Record<FontSource, string> = {
+  all: 'vorlagen',
+  slider: 'slider-vorlagen',
+  workspace: 'workspace-vorlagen',
+};
 /** `?filter=` of „Symbole“ by which kind it shows – both under „Symbole“'s own. */
 const ICON_KIND_PARAMS: Record<IconFilter, string> = {
   all: 'icons',
   icons: 'nur-icons',
   pictograms: 'piktogramme',
 };
+/** `?filter=` of „Wörter“ by whose it shows. */
+const WORD_SOURCE_PARAMS: Record<WordSource, string> = {
+  workspace: 'woerter',
+  own: 'eigene-woerter',
+};
 /** The filter last shown, as its `?filter=` – the page opens on it again without one. */
 const KIND_KEY = 'slider.material.filter';
 const filterOf = (
   param: string | null,
-): { kind: MaterialKind; source: FontSource; iconKind: IconFilter } => {
+): { kind: MaterialKind; source: FontSource; iconKind: IconFilter; wordSource?: WordSource } => {
+  if (param === WORD_SOURCE_PARAMS.own) {
+    return { kind: 'words', source: 'all', iconKind: 'all', wordSource: 'own' };
+  }
   const source = (Object.keys(SOURCE_PARAMS) as FontSource[]).find(
     (key) => SOURCE_PARAMS[key] === param,
   );
   if (source) return { kind: 'fonts', source, iconKind: 'all' };
+  const masterSource = (Object.keys(MASTER_SOURCE_PARAMS) as FontSource[]).find(
+    (key) => MASTER_SOURCE_PARAMS[key] === param,
+  );
+  if (masterSource) return { kind: 'masters', source: masterSource, iconKind: 'all' };
   const iconKind = (Object.keys(ICON_KIND_PARAMS) as IconFilter[]).find(
     (key) => ICON_KIND_PARAMS[key] === param,
   );
@@ -166,9 +190,14 @@ export function Component() {
   // A presentation built on a design: its first layout, straight into the editor.
   const createDeck = useCreateBlankDeck(workspace.id);
   const navigate = useNavigate();
+  const library = useLibrary();
+  const toSlider = useSliderDoor();
   // The words its spell check takes as right („Passt so“ in a deck): members and admins delete.
-  const words = useWorkspaceWords(workspace.id);
-  const removeWord = useRemoveSpellingWord(workspace.id);
+  const workspaceWords = useWorkspaceWords(workspace.id);
+  const removeWorkspaceWord = useRemoveSpellingWord(workspace.id);
+  // One's own („Eigene Wörter“): taught in any workspace, they go along into every one.
+  const ownWords = useOwnWords();
+  const removeOwnWord = useRemoveSpellingWord(null);
   const [removingWord, setRemovingWord] = useState<SpellingWord | null>(null);
   useWorkspaceFontFaces(fonts.data);
   // Slider's fonts as the editor draws them; a face downloads once a card on screen shows it.
@@ -184,13 +213,23 @@ export function Component() {
   const [pageMenuAt, setPageMenuAt] = useState<{ x: number; y: number } | null>(null);
   // In the URL: a design's page leads back to its filter, and a link can open one.
   const [params, setParams] = useSearchParams();
-  const { kind, source, iconKind } = filterOf(params.get('filter') || readString(KIND_KEY));
+  const {
+    kind,
+    source,
+    iconKind,
+    wordSource = 'workspace',
+  } = filterOf(params.get('filter') || readString(KIND_KEY));
   // „Schriften“ opens on all fonts again, „Symbole“ on all symbols.
-  useEffect(() => writeString(KIND_KEY, KIND_PARAMS[kind]), [kind]);
+  useEffect(
+    () =>
+      writeString(KIND_KEY, kind === 'words' ? WORD_SOURCE_PARAMS[wordSource] : KIND_PARAMS[kind]),
+    [kind, wordSource],
+  );
   const setKind = (
     next: MaterialKind,
     nextSource: FontSource = 'all',
     nextIcons: IconFilter = 'all',
+    nextWords: WordSource = 'workspace',
   ) =>
     setParams(
       (current) => {
@@ -198,9 +237,13 @@ export function Component() {
           'filter',
           next === 'fonts'
             ? SOURCE_PARAMS[nextSource]
-            : next === 'icons'
-              ? ICON_KIND_PARAMS[nextIcons]
-              : KIND_PARAMS[next],
+            : next === 'masters'
+              ? MASTER_SOURCE_PARAMS[nextSource]
+              : next === 'icons'
+                ? ICON_KIND_PARAMS[nextIcons]
+                : next === 'words'
+                  ? WORD_SOURCE_PARAMS[nextWords]
+                  : KIND_PARAMS[next],
         );
         return current;
       },
@@ -227,7 +270,22 @@ export function Component() {
       )
       .toSorted(SORTERS[sort]);
   const showsOwn = kind === 'fonts' && source !== 'slider';
-  const visibleMasters = (masters.data ?? [])
+  // The templates Slider brings along, under the workspace's own – found by name, group and tags.
+  const sliderTemplates = useSliderTemplates();
+  // Writer's library: what a text document starts from – a presentation's design is none of it.
+  const documentTemplates = library.app === 'writer';
+  const visibleSliderTemplates = (
+    kind === 'masters' && source !== 'workspace' && !documentTemplates
+      ? (sliderTemplates.data ?? [])
+      : []
+  ).filter((template) =>
+    matches(
+      searchContent
+        ? [template.name, template.group, ...template.tags, ...template.layouts.map((l) => l.name)]
+        : [template.name, template.group],
+    ),
+  );
+  const visibleMasters = (documentTemplates ? [] : (masters.data ?? []))
     .filter((master) =>
       matches(
         searchContent
@@ -251,6 +309,9 @@ export function Component() {
       ),
     )
     .toSorted(COLOR_SORTERS[sort]);
+  const ownShown = wordSource === 'own';
+  const words = ownShown ? ownWords : workspaceWords;
+  const removeWord = ownShown ? removeOwnWord : removeWorkspaceWord;
   const visibleWords = (words.data ?? []).filter((word) => matches([word.word]));
   const visible =
     kind !== 'fonts'
@@ -408,11 +469,22 @@ export function Component() {
         : `${pluralize(removingMasters.length, 'Vorlage', 'Vorlagen')} gelöscht`,
     );
 
+  // A presentation of a template opens in Slider's editor – from Cloud in Slider's window.
+  const createFrom = (templateId: string) => {
+    const slider = toSlider();
+    createDeck.mutate(templateId, {
+      onSuccess: (deck) => slider.go(routes.deck(deck.id)),
+      onError: (error) => {
+        slider.close();
+        showToast(error.message, 'danger');
+      },
+    });
+  };
   const pickFiles = () => inputRef.current?.click();
   const pickMaster = () => masterInputRef.current?.click();
 
   // „Neues Asset“: its own page – a template to design, or files to upload.
-  const goToNew = () => void navigate(routes.newMaterial(workspace.id));
+  const goToNew = () => void navigate(library.create(workspace.id));
   // Right click on empty space (not on a font – its own menu has run – nor a control).
   const pageActions: MenuAction[] = editable
     ? [{ label: 'Neues Asset', icon: 'add', onSelect: goToNew }]
@@ -436,19 +508,27 @@ export function Component() {
   return (
     <div
       ref={pageRef}
-      className="dot-grid relative min-h-full overflow-x-clip"
+      className="dot-grid relative min-h-full overflow-x-clip [overflow-clip-margin:4px]"
       // Selection in the viewer's own colour, as on "Projekte".
       style={selectionStyle(user.color)}
       onMouseDown={selection.onMouseDown}
       onContextMenu={onPageContextMenu}
       {...(editable ? dropHandlers : {})}
     >
-      <title>{`Bibliothek | ${workspace.name} | Slider`}</title>
+      <title>{`Bibliothek | ${workspace.name} | ${library.appName}`}</title>
 
-      <main className="flex flex-col gap-6 px-4 pt-2 pb-16 md:px-14">
+      {/* A container: the grids count their columns by the room this page has (beside
+          Cloud's side bar less than in Slider). Cloud's layout brings the side padding. */}
+      <main
+        className={cn(
+          '@container flex flex-col gap-6 pb-16',
+          // Cloud's title stands where „Zuletzt“ has it: nothing moves on the way across.
+          !library.cloud && 'px-4 pt-2 md:px-8',
+        )}
+      >
         <PageHeader
           titleRow
-          title={<WorkspaceViews workspaceId={workspace.id} current="material" />}
+          title={<WorkspaceViews workspaceId={workspace.id} current="material" app={library.app} />}
         />
 
         {selectionCount > 0 ? (
@@ -469,7 +549,9 @@ export function Component() {
             }}
             counts={{
               fonts: SLIDER_FAMILIES.length + own.length,
-              masters: masters.data?.length ?? 0,
+              masters: documentTemplates
+                ? DOCUMENT_TEMPLATES.length
+                : (masters.data?.length ?? 0) + (sliderTemplates.data?.length ?? 0),
               colors: new Set(colored.flatMap((master) => master.colors!.map((c) => c.color))).size,
               icons: icons.data?.icons.length,
               words: words.data?.length,
@@ -482,11 +564,14 @@ export function Component() {
             onSortChange={setSort}
             view={view}
             onViewChange={setView}
+            masterSources={!documentTemplates}
             source={source}
             onSourceChange={(next) => {
               selection.clear();
-              setKind('fonts', next);
+              setKind(kind, next);
             }}
+            wordSource={wordSource}
+            onWordSourceChange={(next) => setKind('words', 'all', 'all', next)}
             iconKind={iconKind}
             onIconKindChange={(next) => setKind('icons', 'all', next)}
             action={
@@ -585,7 +670,11 @@ export function Component() {
             ) : words.data.length === 0 ? (
               <EmptyState
                 title="Noch keine Wörter"
-                message="Markiert die Rechtschreibprüfung ein Wort, das stimmt: Rechtsklick darauf und „Passt so“. Es steht dann hier und gilt für alle Präsentationen im Workspace."
+                message={
+                  ownShown
+                    ? 'Markiert die Rechtschreibprüfung ein Wort, das stimmt: Rechtsklick darauf und „Passt so“. Es steht dann hier und gilt für dich in jedem Workspace.'
+                    : 'Markiert die Rechtschreibprüfung ein Wort, das stimmt: Rechtsklick darauf und „Passt so“. Es steht dann hier und gilt für alle im Workspace.'
+                }
               />
             ) : visibleWords.length === 0 ? (
               <EmptyState
@@ -596,7 +685,7 @@ export function Component() {
               <WordCollection
                 words={visibleWords}
                 view={view}
-                onRemove={editable ? setRemovingWord : null}
+                onRemove={ownShown || editable ? setRemovingWord : null}
                 onNotify={showToast}
               />
             )
@@ -663,94 +752,111 @@ export function Component() {
                 onNotify={showToast}
               />
             )
+          ) : kind === 'masters' && documentTemplates ? (
+            <DocumentTemplates
+              workspaceId={workspace.id}
+              query={query}
+              view={view}
+              canCreate={editable}
+              onNotify={showToast}
+            />
           ) : kind === 'masters' ? (
-            masters.isPending ? (
-              <MasterCollectionSkeleton view={view} />
-            ) : masters.isError ? (
-              <EmptyState
-                title="Vorlagen konnten nicht geladen werden"
-                message={masters.error.message}
-                action={
-                  <Button variant="secondary" icon="refresh" onClick={() => void masters.refetch()}>
-                    Erneut versuchen
-                  </Button>
-                }
-              />
-            ) : masters.data.length === 0 ? (
-              <EmptyState
-                illustration={<MasterSpecimens />}
-                title="Noch keine Vorlagen"
-                message={
-                  editable
-                    ? 'Ladet euer Firmendesign als Vorlage hoch. Slider liest Master und Layouts daraus aus.'
-                    : 'Sobald jemand ein Firmendesign hochlädt, erscheinen seine Master und Layouts hier.'
-                }
-                action={
-                  editable && (
-                    <Button icon="upload" loading={uploadingMaster} onClick={pickMaster}>
-                      Vorlage hochladen
+            <>
+              {source === 'slider' ? null : masters.isPending ? (
+                <MasterCollectionSkeleton view={view} />
+              ) : masters.isError ? (
+                <EmptyState
+                  title="Vorlagen konnten nicht geladen werden"
+                  message={masters.error.message}
+                  action={
+                    <Button
+                      variant="secondary"
+                      icon="refresh"
+                      onClick={() => void masters.refetch()}
+                    >
+                      Erneut versuchen
                     </Button>
-                  )
-                }
-              />
-            ) : visibleMasters.length === 0 ? (
-              <EmptyState
-                illustration={<MasterSpecimens />}
-                title={`Keine Treffer für „${query.trim()}“`}
-                message="Versuche einen anderen Suchbegriff."
-              />
-            ) : (
-              <MasterCollection
-                {...selectable}
-                workspaceId={workspace.id}
-                masters={visibleMasters}
-                canRename={editable}
-                onNotify={showToast}
+                  }
+                />
+              ) : visibleSliderTemplates.length > 0 && visibleMasters.length === 0 ? null : masters
+                  .data.length === 0 ? (
+                <EmptyState
+                  illustration={<MasterSpecimens />}
+                  title="Noch keine Vorlagen"
+                  message={
+                    editable
+                      ? 'Ladet euer Firmendesign als Vorlage hoch. Slider liest Master und Layouts daraus aus.'
+                      : 'Sobald jemand ein Firmendesign hochlädt, erscheinen seine Master und Layouts hier.'
+                  }
+                  action={
+                    editable && (
+                      <Button icon="upload" loading={uploadingMaster} onClick={pickMaster}>
+                        Vorlage hochladen
+                      </Button>
+                    )
+                  }
+                />
+              ) : visibleMasters.length === 0 ? (
+                <EmptyState
+                  illustration={<MasterSpecimens />}
+                  title={`Keine Treffer für „${query.trim()}“`}
+                  message="Versuche einen anderen Suchbegriff."
+                />
+              ) : (
+                <MasterCollection
+                  {...selectable}
+                  workspaceId={workspace.id}
+                  masters={visibleMasters}
+                  canRename={editable}
+                  onNotify={showToast}
+                  view={view}
+                  // Only an ODP design can be edited in Slider; the server makes nothing of a
+                  // PowerPoint one yet.
+                  createActionFor={(master) =>
+                    editable && master.format === 'odp'
+                      ? {
+                          label: 'Neue Präsentation',
+                          icon: 'add',
+                          onSelect: () => createFrom(master.id),
+                        }
+                      : null
+                  }
+                  actionsFor={(master) => [
+                    // Designed in Slider: back into the editor it was designed in.
+                    ...(editable && master.draftDeckId
+                      ? [
+                          {
+                            label: 'Bearbeiten',
+                            icon: 'slideMaster',
+                            onSelect: () => toSlider().go(routes.deck(master.draftDeckId!)),
+                          } satisfies MenuAction,
+                        ]
+                      : []),
+                    {
+                      label: 'Herunterladen',
+                      icon: 'download',
+                      onSelect: () => downloadMaster(master),
+                    },
+                    ...(canRemove
+                      ? [
+                          {
+                            label: 'Löschen',
+                            icon: 'delete',
+                            tone: 'danger',
+                            onSelect: () => askRemoveMasters([master]),
+                          } satisfies MenuAction,
+                        ]
+                      : []),
+                  ]}
+                />
+              )}
+              <SliderTemplateCollection
+                templates={visibleSliderTemplates}
                 view={view}
-                // Only an ODP design can be edited in Slider; the server makes nothing of a
-                // PowerPoint one yet.
-                createActionFor={(master) =>
-                  editable && master.format === 'odp'
-                    ? {
-                        label: 'Neue Präsentation',
-                        icon: 'add',
-                        onSelect: () =>
-                          createDeck.mutate(master.id, {
-                            onSuccess: (deck) => void navigate(routes.deck(deck.id)),
-                            onError: (error) => showToast(error.message, 'danger'),
-                          }),
-                      }
-                    : null
-                }
-                actionsFor={(master) => [
-                  // Designed in Slider: back into the editor it was designed in.
-                  ...(editable && master.draftDeckId
-                    ? [
-                        {
-                          label: 'Bearbeiten',
-                          icon: 'slideMaster',
-                          onSelect: () => void navigate(routes.deck(master.draftDeckId!)),
-                        } satisfies MenuAction,
-                      ]
-                    : []),
-                  {
-                    label: 'Herunterladen',
-                    icon: 'download',
-                    onSelect: () => downloadMaster(master),
-                  },
-                  ...(canRemove
-                    ? [
-                        {
-                          label: 'Löschen',
-                          icon: 'delete',
-                          tone: 'danger',
-                          onSelect: () => askRemoveMasters([master]),
-                        } satisfies MenuAction,
-                      ]
-                    : []),
-                ]}
+                creating={createDeck.isPending}
+                onCreate={editable ? (template) => createFrom(template.id) : null}
               />
-            )
+            </>
           ) : source === 'workspace' && fonts.isPending ? (
             <FontCollectionSkeleton view={view} />
           ) : showsOwn && fonts.isError ? (
@@ -866,7 +972,11 @@ export function Component() {
         open={removingWord !== null}
         onClose={() => setRemovingWord(null)}
         title={`„${removingWord?.word ?? ''}“ löschen?`}
-        description="Die Rechtschreibprüfung markiert es dann wieder, in allen Präsentationen des Workspaces."
+        description={
+          ownShown
+            ? 'Die Rechtschreibprüfung markiert es dann wieder, außer ein Workspace kennt es.'
+            : 'Die Rechtschreibprüfung markiert es dann wieder, für alle im Workspace.'
+        }
         confirmLabel="Löschen"
         confirmIcon="delete"
         onConfirm={() => {

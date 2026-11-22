@@ -26,7 +26,7 @@ export interface PlanLimits {
 export const GIGABYTE = 1024 ** 3;
 
 export const DEFAULT_PLAN_LIMITS: Record<PlanId, PlanLimits> = {
-  free: { maxMembers: 5, maxDecks: null, maxStorageBytes: 2 * GIGABYTE },
+  free: { maxMembers: 5, maxDecks: null, maxStorageBytes: 20 * GIGABYTE },
   paid: { maxMembers: 100, maxDecks: null, maxStorageBytes: 100 * GIGABYTE },
 };
 
@@ -61,7 +61,7 @@ export const seatsFullMessage = (max: number) =>
 export const decksFullMessage = (max: number) =>
   `Im Free-Plan ${max === 1 ? 'ist eine Präsentation' : `sind ${max} Präsentationen`} pro Workspace möglich. Lösche eine, um Platz zu schaffen.`;
 
-/** `2 GB`, `1,5 GB` – German number format. */
+/** `20 GB`, `1,5 GB` – German number format. */
 export const formatGigabytes = (bytes: number) =>
   `${(bytes / GIGABYTE).toLocaleString('de-DE', { maximumFractionDigits: 1 })} GB`;
 

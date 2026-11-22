@@ -244,6 +244,19 @@ describe('uploads before the body is read', () => {
     expect((await tus(`${unreadable}/finish`, { method: 'POST' })).status).toBe(400);
     expect((await tus(unreadable, { method: 'HEAD' })).status).toBe(404);
     expect(await readdir(path.join(dataDir, 'tmp', 'uploads'))).toEqual([]);
+    // Many begun at once: each sees the ones before it, so no more than three stay open.
+    const atOnce = await Promise.all(Array.from({ length: 8 }, () => create(file.length)));
+    const kept = await Promise.all(
+      atOnce.map(async (each) => {
+        if (each.status !== 201) return false;
+        const location = each.headers.get('location') ?? '';
+        const open = (await tus(location, { method: 'HEAD' })).status === 200;
+        if (open) await tus(location, { method: 'DELETE' });
+        return open;
+      }),
+    );
+    expect(kept.filter(Boolean)).toHaveLength(3);
+    expect(await readdir(path.join(dataDir, 'tmp', 'uploads'))).toEqual([]);
 
     // Untouched for a day: dropped with its file when the next upload begins.
     const stale = (await create(file.length)).headers.get('location') ?? '';

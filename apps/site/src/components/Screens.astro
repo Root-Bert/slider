@@ -1,0 +1,146 @@
+---
+import { Icon } from '@/ui/Icon';
+import Screen from './Screen.astro';
+import { SCREEN_WORDS } from '~/i18n/screens';
+import type { Lang } from '~/i18n';
+import { APP_NAMES, isLive, type ProductId } from '~/lib/apps';
+import { screensOf } from '~/lib/screens';
+
+/**
+ * An app's screens as one long row to walk through: each nearly as wide as the page, the next
+ * one already in sight. Swipe, scroll, use the arrows or the keyboard.
+ */
+interface Props {
+  app: ProductId;
+  lang: Lang;
+  /** Screens already shown elsewhere on the page. */
+  skip?: string[];
+}
+
+const { app, lang, skip = [] } = Astro.props;
+const words = SCREEN_WORDS[lang];
+const screens = screensOf(app).filter((screen) => !skip.includes(screen.name));
+---
+
+<section class="screens" data-section data-live="screens" data-screens>
+  <div class="screens-head">
+    <div>
+      <h2 class="exhibit-title" data-reveal>{words.title}</h2>
+      <p class="exhibit-lead screens-sub" data-reveal style="--i: 1">
+        {isLive(app) ? (words.liveOf[app] ?? words.live) : words.soon.replace('{app}', APP_NAMES[app])}
+      </p>
+    </div>
+    <div class="screens-steps" data-reveal style="--i: 2">
+      <button type="button" data-step="-1" aria-label={words.previous}><Icon name="arrowForward" size={22} /></button>
+      <button type="button" data-step="1" aria-label={words.next}><Icon name="arrowForward" size={22} /></button>
+    </div>
+  </div>
+  <ul class="screens-row" tabindex="0" aria-label={words.title} data-reveal style="--i: 2">
+    {
+      screens.map((screen) => (
+        <li>
+          <Screen app={app} name={screen.name} lang={lang} caption />
+        </li>
+      ))
+    }
+  </ul>
+</section>
+
+<script>
+  for (const section of document.querySelectorAll<HTMLElement>('[data-screens]')) {
+    const row = section.querySelector<HTMLElement>('.screens-row')!;
+    const buttons = [...section.querySelectorAll<HTMLButtonElement>('[data-step]')];
+    const sync = (): void => {
+      for (const button of buttons) {
+        button.disabled = button.dataset.step === '-1' ? row.scrollLeft < 8 : row.scrollLeft > row.scrollWidth - row.clientWidth - 8;
+      }
+    };
+    for (const button of buttons) {
+      button.addEventListener('click', () => {
+        const item = row.querySelector<HTMLElement>('li')!;
+        const gap = parseFloat(getComputedStyle(row).columnGap) || 0;
+        row.scrollBy({ left: Number(button.dataset.step) * (item.offsetWidth + gap), behavior: 'smooth' });
+      });
+    }
+    row.addEventListener('scroll', sync, { passive: true });
+    sync();
+  }
+</script>
+
+<style>
+  .screens {
+    --edge: max(32px, calc((100vw - 1440px) / 2 + 32px));
+    padding-top: clamp(150px, 22vw, 340px);
+  }
+  .screens-head {
+    display: flex;
+    align-items: flex-end;
+    justify-content: space-between;
+    gap: 32px;
+    padding-inline: var(--edge);
+  }
+  .screens-sub {
+    max-width: 30em;
+    margin-top: 24px;
+  }
+  .screens-steps {
+    display: flex;
+    flex: none;
+    gap: 10px;
+  }
+  .screens-steps button {
+    display: grid;
+    place-items: center;
+    width: 52px;
+    height: 52px;
+    border-radius: 50%;
+    color: var(--color-fg);
+    box-shadow: inset 0 0 0 1.5px var(--color-fg);
+    cursor: pointer;
+    transition:
+      background-color 200ms,
+      color 200ms,
+      opacity 200ms;
+  }
+  .screens-steps button:first-child :global(svg) {
+    rotate: 180deg;
+  }
+  .screens-steps button:hover:not(:disabled) {
+    background: var(--color-fg);
+    color: var(--color-canvas);
+  }
+  .screens-steps button:disabled {
+    opacity: 0.25;
+    cursor: default;
+  }
+  .screens-row {
+    display: flex;
+    gap: clamp(28px, 4vw, 72px);
+    margin-top: clamp(48px, 6vw, 96px);
+    /* Room for the windows' shadows, which the scroller would cut off. */
+    padding: 8px var(--edge) clamp(56px, 8vw, 120px);
+    overflow-x: auto;
+    scroll-snap-type: x mandatory;
+    scroll-padding-inline: var(--edge);
+    scrollbar-width: none;
+  }
+  .screens-row::-webkit-scrollbar {
+    display: none;
+  }
+  .screens-row li {
+    flex: none;
+    width: min(82vw, 1080px);
+    scroll-snap-align: start;
+  }
+  @media (max-width: 767px) {
+    .screens {
+      --edge: 16px;
+    }
+    .screens-steps {
+      display: none;
+    }
+    .screens-row li {
+      width: 88vw;
+    }
+  }
+</style>

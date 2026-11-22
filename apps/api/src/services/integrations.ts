@@ -2,6 +2,7 @@ import Anthropic from '@anthropic-ai/sdk';
 import { and, eq, inArray, isNull, sql } from 'drizzle-orm';
 import {
   DEFAULT_AI_NAME,
+  aiNameOf,
   INTEGRATION_KINDS,
   isSpeechKind,
   providerAddress,
@@ -70,7 +71,7 @@ const LOCKED = 'Eigene Keys dafür erlaubt der Instanz-Admin in diesem Workspace
 const NO_PICK = 'Das Modell dafür legt der Instanz-Admin fest.';
 
 const ofPlace = (place: Place) =>
-  place ? eq(integrationKeys.workspaceId, place) : isNull(integrationKeys.workspaceId);
+  place !== null ? eq(integrationKeys.workspaceId, place) : isNull(integrationKeys.workspaceId);
 
 /** A workspace's admin – and, to change a kind, one the instance lets the workspace store keys of. */
 async function allowed(
@@ -79,7 +80,9 @@ async function allowed(
   place: Place,
   kind?: IntegrationKind,
 ): Promise<void> {
-  if (!place) return; // The instance's routes check their admin.
+  // The instance's routes check their admin – only for the instance itself: an empty id is a
+  // workspace nobody is admin of, never the instance.
+  if (place === null) return;
   await requireRole(deps.db, place, viewer.author.id, 'admin', ADMINS_ONLY);
   if (kind && !ruleFor(await readPolicy(deps), kind, place).ownKeys) throw forbidden(LOCKED);
 }
@@ -172,7 +175,7 @@ async function toDto(deps: AppDeps, place: Place): Promise<Integrations> {
     place ? keyRows(deps, null) : Promise.resolve([]),
     place
       ? deps.db
-          .select({ aiName: workspaces.aiName })
+          .select({ aiName: workspaces.aiName, callNotes: workspaces.callNotes })
           .from(workspaces)
           .where(eq(workspaces.id, place))
           .then(([found]) => found)
@@ -235,7 +238,8 @@ async function toDto(deps: AppDeps, place: Place): Promise<Integrations> {
       photos: photos!,
       images: images!,
     },
-    aiName: place ? (workspace?.aiName ?? DEFAULT_AI_NAME) : null,
+    aiName: place ? aiNameOf(workspace?.aiName) : null,
+    callNotes: place ? (workspace?.callNotes ?? true) : null,
   };
 }
 
@@ -263,7 +267,7 @@ export async function getIntegrations(
   return toDto(deps, place);
 }
 
-/** Names the workspace's AI; an empty name gives it back its default. */
+/** Names the workspace's AI (an empty name gives it back its default), turns call notes on or off. */
 export async function updateWorkspaceAi(
   deps: AppDeps,
   viewer: Viewer,
@@ -271,11 +275,13 @@ export async function updateWorkspaceAi(
   input: UpdateWorkspaceAiInput,
 ): Promise<Integrations> {
   await allowed(deps, viewer, workspaceId);
-  const name = input.name.replace(/\s+/g, ' ');
-  await deps.db
-    .update(workspaces)
-    .set({ aiName: name && name !== DEFAULT_AI_NAME ? name : null })
-    .where(eq(workspaces.id, workspaceId));
+  const name = input.name?.replace(/\s+/g, ' ');
+  const changes = {
+    ...(name !== undefined && { aiName: name && name !== DEFAULT_AI_NAME ? name : null }),
+    ...(input.callNotes !== undefined && { callNotes: input.callNotes }),
+  };
+  if (Object.keys(changes).length > 0)
+    await deps.db.update(workspaces).set(changes).where(eq(workspaces.id, workspaceId));
   return toDto(deps, workspaceId);
 }
 

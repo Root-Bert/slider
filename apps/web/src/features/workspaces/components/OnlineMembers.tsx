@@ -8,7 +8,10 @@ import { useActiveWorkspace } from '../hooks/useWorkspace';
  */
 export function OnlineMembers() {
   const workspace = useActiveWorkspace();
-  const { data: people = [] } = useOnlineMembers(workspace?.id ?? null);
+  // A blocked workspace answers 403 to everything but leaving: nobody to ask about.
+  const { data: people = [] } = useOnlineMembers(
+    workspace && !workspace.blocked ? workspace.id : null,
+  );
   if (people.length === 0) return null;
   return (
     <AvatarStack

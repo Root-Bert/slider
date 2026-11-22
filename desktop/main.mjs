@@ -1,25 +1,39 @@
 // Slider desktop: runs the same API and web app as a server, for one person on this machine.
 // The API (Bun, apps/api/src/supervisor.ts) listens on 127.0.0.1 only and keeps its data in the
-// app's data folder; the window shows the web app it serves. Everything but the AI's calls works
-// offline. The secret and the data key – which encrypts files, slides and the AI keys at rest –
+// folder the family's apps share; the window shows the web app it serves. It is a service of its
+// own, started by the first app that needs it and used by every other (service.mjs). Everything
+// but the AI's calls works offline. The secret and the data key – which encrypts files, slides and the AI keys at rest –
 // live in the macOS keychain (safeStorage), not next to the data.
 import { app, Menu, dialog, ipcMain, nativeTheme, safeStorage, session, shell } from 'electron';
-import { execFileSync, spawn } from 'node:child_process';
+import { execFileSync } from 'node:child_process';
 import { createHash, createHmac, randomBytes } from 'node:crypto';
 import {
   appendFileSync,
-  createWriteStream,
   existsSync,
   mkdirSync,
   readFileSync,
+  statSync,
   writeFileSync,
 } from 'node:fs';
-import net from 'node:net';
 import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { DOWNLOAD_MB, findLibreOffice, installLibreOffice, LINUX_HINT } from './libreoffice.mjs';
+import {
+  DOWNLOAD_MB,
+  findLibreOffice,
+  installLibreOffice,
+  LINUX_HINT,
+  ownLibreOffice,
+} from './libreoffice.mjs';
 import { createReachability, flip, moveUrl } from './live.mjs';
+import {
+  leaveService,
+  serviceAnswers,
+  servicePaths,
+  serviceRuns,
+  sharedFolder,
+  useService,
+} from './service.mjs';
 import { createTabWindow } from './tabs.mjs';
 import { checkFromMenu, startUpdates } from './updates.mjs';
 
@@ -32,15 +46,18 @@ const bunBinary = path.join(resources, 'bin', 'bun');
 // Tests run on a data folder of their own (the e2e of the desktop app).
 if (process.env.SLIDER_USER_DATA) app.setPath('userData', process.env.SLIDER_USER_DATA);
 const userData = app.getPath('userData');
-const dataDir = path.join(userData, 'data');
-const logDir = path.join(userData, 'logs');
-/** The port stays the same from start to start: the page's origin – and its offline outbox – hang on it. */
-const portFile = path.join(userData, 'port');
-const keysFile = path.join(userData, 'keys.bin');
-const FIRST_PORT = 47821;
+/**
+ * What the family's apps share – the service's data, LibreOffice, logs, the port: Slider's own
+ * data folder, so it is where it has always been.
+ */
+const service = servicePaths(
+  process.env.SLIDER_USER_DATA ? userData : sharedFolder(app.getPath('appData')),
+);
+const { dataDir, logDir } = service;
+const keysFile = path.join(service.root, 'keys.bin');
 
-let api = null;
-let apiExited = false;
+/** The service answers this app (`useService` went through, and it has not gone for good since). */
+let serving = false;
 let quitting = false;
 let mainWindow = null;
 /** The window's tabs (tabs.mjs). */
@@ -57,7 +74,9 @@ let ids = { decks: {}, workspaces: {} };
 /** The API answers and the tabs started: links and files are taken from now on, else they wait. */
 let ready = false;
 
-if (!app.requestSingleInstanceLock()) app.quit();
+/** A second start hands its links and files to the first and goes – it starts nothing. */
+const firstInstance = app.requestSingleInstanceLock();
+if (!firstInstance) app.quit();
 
 app.on('second-instance', (_event, argv, workingDirectory) => {
   // Linux and Windows hand slider:// links and files over as an argument to a second start –
@@ -85,7 +104,7 @@ else app.setAsDefaultProtocolClient('slider', process.execPath, [path.resolve(pr
 const linksWaiting = [];
 
 function takeLink(url) {
-  if (ready && !apiExited) void followLink(url);
+  if (ready && serving) void followLink(url);
   else linksWaiting.push(url);
 }
 
@@ -113,7 +132,7 @@ const filesWaiting = [];
 
 function takeFiles(paths) {
   if (paths.length === 0) return;
-  if (ready && !apiExited) void openFiles(paths);
+  if (ready && serving) void openFiles(paths);
   else filesWaiting.push(...paths);
 }
 
@@ -415,7 +434,7 @@ function leaveServer(before) {
 
 /** A pass over the files on this computer now: changes come in, the last step goes out. */
 async function flushFiles() {
-  if (!origin || !api || apiExited) return;
+  if (!origin || !serving) return;
   await callApi('/desktop/files/sync', { method: 'POST', body: {}, timeout: 5000 }).catch(() => {});
 }
 
@@ -467,28 +486,74 @@ let following = null;
 /** Online or not, the tabs show the right side. Back online: the steps made offline go up first. */
 function followConnection() {
   following ??= (async () => {
-    try {
-      const up = cloudOrigin !== null && (await serverAnswers());
-      if (up === live || !tabsWindow) return;
-      logLive(`${up ? 'online' : 'offline'} (server ${cloudOrigin ?? 'none'})`);
-      if (up) {
-        await askApi('/desktop/cloud/sync', {}).catch((error) =>
-          logLive(`sync before going live failed: ${error.message}`),
-        );
-        await syncCloud();
-        if (!cloudOrigin) return logLive('signed out meanwhile, staying here');
-      }
-      const leaving = live ? cloudOrigin : origin;
-      live = up;
-      logLive(`tabs move to ${live ? cloudOrigin : origin}`);
-      tabsWindow.moveTo(live ? cloudOrigin : origin, (url) =>
-        new URL(url).origin === leaving ? toPageOrigin(url) : url,
+    const up = cloudOrigin !== null && (await serverAnswers());
+    if (up === live || !tabsWindow) return;
+    logLive(`${up ? 'online' : 'offline'} (server ${cloudOrigin ?? 'none'})`);
+    if (up) {
+      await askApi('/desktop/cloud/sync', {}).catch((error) =>
+        logLive(`sync before going live failed: ${error.message}`),
       );
-    } finally {
-      following = null;
+      await syncCloud();
+      if (!cloudOrigin) return logLive('signed out meanwhile, staying here');
     }
-  })();
+    const leaving = live ? cloudOrigin : origin;
+    live = up;
+    logLive(`tabs move to ${live ? cloudOrigin : origin}`);
+    tabsWindow.moveTo(live ? cloudOrigin : origin, (url) =>
+      new URL(url).origin === leaving ? toPageOrigin(url) : url,
+    );
+  })()
+    // Let go of only once it is kept: signed in nowhere the pass ends without waiting for
+    // anything – cleared inside it, that was before `following` held it, and it stayed there for
+    // good (no pass ever again: signed in then, the tabs never moved to the server).
+    .finally(() => {
+      following = null;
+    });
   return following;
+}
+
+/** A page the Cloud app handed over, kept until this app is signed in at its server. */
+let pageWaiting = null;
+
+/** Where „Anmelden“ goes: the server signed in to last, at first the configured one. */
+async function signInServer() {
+  try {
+    const response = await callApi('/desktop/cloud', { timeout: 5000 });
+    if (!response.ok) return null;
+    const { server } = await response.json();
+    return server ? new URL(server).origin : null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * A presentation from the Cloud app while this app is signed in nowhere. Asked, since signing in
+ * brings that account's presentations here – only for the server this app signs in to: any web
+ * page can hand over a `slider://open` link, and must not offer signing in to one of its choosing.
+ */
+async function offerSignIn(page) {
+  const server = new URL(page).origin;
+  if (server !== (await signInServer())) return void shell.openExternal(page);
+  toFront();
+  const { response } = await dialog.showMessageBox(mainWindow, {
+    type: 'question',
+    message: `Slider an ${new URL(page).host} anmelden?`,
+    detail:
+      'Die Präsentation liegt auf diesem Server. Angemeldet öffnet Slider sie hier – sonst zeigt sie der Browser.',
+    buttons: ['Anmelden', 'Im Browser öffnen'],
+    defaultId: 0,
+    cancelId: 1,
+  });
+  if (response !== 0) return void shell.openExternal(page);
+  try {
+    const { url } = await askApi('/desktop/cloud/start', { server });
+    pageWaiting = page;
+    openExternal(url);
+  } catch (error) {
+    dialog.showErrorBox('Anmelden hat nicht geklappt', error.message);
+    void shell.openExternal(page);
+  }
 }
 
 async function followLink(link) {
@@ -498,7 +563,27 @@ async function followLink(link) {
   } catch {
     return;
   }
-  if (url.protocol !== 'slider:' || url.hostname !== 'auth') return;
+  if (url.protocol !== 'slider:') return;
+  // `slider://open?url=…`: a page of Slider's from the Cloud app (a presentation opened from the
+  // files). Shown here if it is this account's server and it answers, else in the browser.
+  if (url.hostname === 'open') {
+    const page = url.searchParams.get('url');
+    if (!page || !/^https?:/i.test(page)) return;
+    let own;
+    try {
+      own = live && cloudOrigin !== null && new URL(page).origin === cloudOrigin;
+    } catch {
+      return;
+    }
+    if (own && tabsWindow) {
+      tabsWindow.show(page);
+      return toFront();
+    }
+    // Signed in nowhere: the way here is signing in at that server – offered, not taken.
+    if (cloudOrigin === null && tabsWindow) return void offerSignIn(page);
+    return void shell.openExternal(page);
+  }
+  if (url.hostname !== 'auth') return;
   const code = url.searchParams.get('code');
   const state = url.searchParams.get('state');
   if (!code || !state) return;
@@ -517,6 +602,10 @@ async function followLink(link) {
     await syncCloud({ force: true });
     // Signed in: the first pass brought the account's decks; the tabs move to the server's pages.
     await followConnection();
+    // What the Cloud app handed over before (`offerSignIn`) opens now.
+    const page = pageWaiting;
+    pageWaiting = null;
+    if (page && live && cloudOrigin === new URL(page).origin) tabsWindow?.show(page);
   } catch (error) {
     dialog.showErrorBox('Anmelden hat nicht geklappt', error.message);
   }
@@ -563,7 +652,10 @@ let pagesToken = null;
 function syncCloud(options) {
   // One after another: an answer from before signing in must not come in after the one from
   // after it and take the session away again.
-  syncing = syncing.then(() => readCloud(options)).catch(() => {});
+  syncing = syncing
+    .then(() => readCloud(options))
+    // Never silent: a failure here leaves the tabs where they are, with nothing to tell why.
+    .catch((error) => logLive(`session not taken: ${error?.stack ?? error}`));
   return syncing;
 }
 let syncing = Promise.resolve();
@@ -634,7 +726,7 @@ async function loadKeys() {
     );
   }
   const store = async (keys) => {
-    mkdirSync(userData, { recursive: true });
+    mkdirSync(service.root, { recursive: true });
     writeFileSync(keysFile, await safeStorage.encryptStringAsync(JSON.stringify(keys)), {
       mode: 0o600,
     });
@@ -655,84 +747,124 @@ async function loadKeys() {
   return keys;
 }
 
-// ── Port ──────────────────────────────────────────────────────────────────────────────────────
+// ── The service ───────────────────────────────────────────────────────────────────────────────
 
-const portFree = (port) =>
-  new Promise((resolve) => {
-    const server = net.createServer();
-    server.once('error', () => resolve(false));
-    server.listen(port, '127.0.0.1', () => server.close(() => resolve(true)));
-  });
+/** The service this app carries: started when none runs, or in place of an older one. */
+const ownService = (soffice) => ({
+  app: 'Slider',
+  // From the repo `getVersion` is Electron's own: a start from there is older than any release,
+  // and among themselves the later stage is the newer.
+  version: app.isPackaged ? app.getVersion() : '0.0.0',
+  built: app.isPackaged ? 0 : statSync(appRoot).mtimeMs,
+  packaged: app.isPackaged,
+  libreoffice: soffice ?? null,
+  appRoot,
+  bun: bunBinary,
+});
 
-async function choosePort() {
-  if (existsSync(portFile)) {
-    const port = Number(readFileSync(portFile, 'utf8'));
-    if (await portFree(port)) return port;
-    throw new Error(
-      `Port ${port} ist belegt – läuft Slider schon, oder ein anderes Programm auf diesem Port?`,
-    );
-  }
-  for (let port = FIRST_PORT; port < FIRST_PORT + 100; port++) {
-    if (await portFree(port)) {
-      mkdirSync(userData, { recursive: true });
-      writeFileSync(portFile, String(port));
-      return port;
-    }
-  }
-  throw new Error('Kein freier Port für Slider gefunden.');
+/** The environment the service starts in. */
+function serviceEnv(port, keys, soffice) {
+  const user = os.userInfo().username;
+  // A clean environment: nothing of the shell's .env or variables leaks in.
+  return {
+    HOME: os.homedir(),
+    USER: user,
+    LANG: process.env.LANG ?? 'de_DE.UTF-8',
+    TMPDIR: os.tmpdir(),
+    PATH: ['/opt/homebrew/bin', '/usr/local/bin', '/usr/bin', '/bin', '/usr/sbin', '/sbin'].join(
+      ':',
+    ),
+    NODE_ENV: 'production',
+    SLIDER_DESKTOP: 'true',
+    HOST: '127.0.0.1',
+    PORT: String(port),
+    SLIDER_URL: `http://127.0.0.1:${port}`,
+    DATA_DIR: dataDir,
+    WEB_DIST_DIR: path.join(appRoot, 'apps/web/dist'),
+    ...(soffice && { LIBREOFFICE_PATH: soffice }),
+    SLIDER_SECRET: keys.secret,
+    SLIDER_DATA_KEY: keys.dataKey,
+    DEV_OWNER_NAME: fullName(),
+    DEV_OWNER_EMAIL: 'ich@slider.desktop',
+    // The Slider server „Anmelden“ signs in to; unset: slider.bertro.dev.
+    ...(process.env.SLIDER_CLOUD_URL && { SLIDER_CLOUD_URL: process.env.SLIDER_CLOUD_URL }),
+    // The release (CI sets it from the tag); from the repo package.json's 0.1.0 would mislead.
+    ...(app.isPackaged && { SLIDER_VERSION: app.getVersion() }),
+  };
 }
 
-// ── API ───────────────────────────────────────────────────────────────────────────────────────
+/** A start or take under way (it holds the service's lock): quitting waits for it. */
+let starting = null;
 
-function startApi(port, keys, soffice) {
-  mkdirSync(dataDir, { recursive: true });
-  mkdirSync(logDir, { recursive: true });
-  const log = createWriteStream(path.join(logDir, 'api.log'), { flags: 'a' });
-  log.write(`\n── ${new Date().toISOString()} start on port ${port} ──\n`);
-  const user = os.userInfo().username;
-  const name = fullName();
-  api = spawn(bunBinary, ['apps/api/src/supervisor.ts'], {
-    cwd: appRoot,
-    // A clean environment: nothing of the shell's .env or variables leaks in.
-    env: {
-      HOME: os.homedir(),
-      USER: user,
-      LANG: process.env.LANG ?? 'de_DE.UTF-8',
-      TMPDIR: os.tmpdir(),
-      PATH: ['/opt/homebrew/bin', '/usr/local/bin', '/usr/bin', '/bin', '/usr/sbin', '/sbin'].join(
-        ':',
-      ),
-      NODE_ENV: 'production',
-      SLIDER_DESKTOP: 'true',
-      HOST: '127.0.0.1',
-      PORT: String(port),
-      SLIDER_URL: `http://127.0.0.1:${port}`,
-      DATA_DIR: dataDir,
-      WEB_DIST_DIR: path.join(appRoot, 'apps/web/dist'),
-      ...(soffice && { LIBREOFFICE_PATH: soffice }),
-      SLIDER_SECRET: keys.secret,
-      SLIDER_DATA_KEY: keys.dataKey,
-      DEV_OWNER_NAME: name,
-      DEV_OWNER_EMAIL: 'ich@slider.desktop',
-      // The Slider server „Anmelden“ signs in to; unset: slider.bertro.dev.
-      ...(process.env.SLIDER_CLOUD_URL && { SLIDER_CLOUD_URL: process.env.SLIDER_CLOUD_URL }),
-      // The release (CI sets it from the tag); from the repo package.json's 0.1.0 would mislead.
-      ...(app.isPackaged && { SLIDER_VERSION: app.getVersion() }),
-    },
-    stdio: ['ignore', 'pipe', 'pipe'],
+/**
+ * Starts the service or takes the one that runs; resolves to `{ port, started }` once it
+ * answers. `hungAfterMs`: see `useService`.
+ */
+function startService(keys, soffice, hungAfterMs) {
+  const used = useService({
+    paths: service,
+    own: ownService(soffice),
+    env: (port) => serviceEnv(port, keys, soffice),
+    hungAfterMs,
+  }).then((result) => {
+    // Quit meanwhile: the service is being left, nothing goes on with it.
+    serving = !quitting;
+    return result;
   });
-  api.stdout.pipe(log);
-  api.stderr.pipe(log);
-  api.on('exit', (code, signal) => {
-    apiExited = true;
-    log.write(`── exit ${code ?? signal} ──\n`);
-    if (quitting) return;
-    dialog.showErrorBox(
-      'Slider wurde beendet',
-      `Der lokale Dienst hat sich beendet (${code ?? signal}).\n\nProtokoll: ${path.join(logDir, 'api.log')}`,
-    );
-    app.exit(1);
-  });
+  starting = used;
+  const done = () => {
+    if (starting === used) starting = null;
+  };
+  used.then(done, done);
+  return used;
+}
+
+/** Looks without an answer before the app acts (5 s each). */
+const GONE_AFTER = 3;
+/** A service that runs but has not answered for this many looks hangs (two minutes). */
+const HUNG_AFTER = 24;
+/** Started anew this often within ten minutes, the service keeps breaking: Slider says so. */
+const MAX_STARTS = 3;
+
+/**
+ * The service is not this app's child: it may go without it – a newer app put its own in its
+ * place, or it crashed. Gone for three looks in a row, it is taken or started anew (on the same
+ * port, the pages go on). One that still runs is left alone – it may be busy starting – until
+ * it has been silent for two minutes. When it will not start, or breaks again and again, Slider
+ * says so and ends, as it did when the service was its own.
+ */
+function watchService(keys, soffice) {
+  let missed = 0;
+  let busy = false;
+  const starts = [];
+  setInterval(async () => {
+    if (quitting || busy || !serving) return;
+    busy = true;
+    try {
+      missed = (await serviceAnswers(Number(new URL(origin).port))) ? 0 : missed + 1;
+      if (missed < GONE_AFTER || quitting) return;
+      const hung = missed >= HUNG_AFTER;
+      if (serviceRuns(service) && !hung) return;
+      const { started } = await startService(keys, soffice, hung ? 0 : undefined);
+      missed = 0;
+      if (!started) return;
+      const now = Date.now();
+      starts.push(now);
+      while (starts[0] < now - 600_000) starts.shift();
+      if (starts.length >= MAX_STARTS) throw new Error('Er bricht immer wieder ab.');
+    } catch (error) {
+      if (quitting) return;
+      quitting = true;
+      dialog.showErrorBox(
+        'Slider wurde beendet',
+        `Der lokale Dienst läuft nicht mehr. ${error.message}\n\nProtokoll: ${path.join(logDir, 'api.log')}`,
+      );
+      await stopService();
+      app.exit(1);
+    } finally {
+      busy = false;
+    }
+  }, 5_000);
 }
 
 /** The full name the system knows for this account (Linux: the GECOS field), else its name. */
@@ -751,34 +883,17 @@ function fullName() {
   }
 }
 
-async function waitForApi(url, timeoutMs = 120_000) {
-  const until = Date.now() + timeoutMs;
-  while (Date.now() < until) {
-    if (apiExited) throw new Error('Der lokale Dienst ist beim Start abgebrochen.');
-    try {
-      const response = await fetch(`${url}/api/health`);
-      if (response.ok) return;
-    } catch {
-      // not listening yet
-    }
-    await new Promise((resolve) => setTimeout(resolve, 250));
+/** This app is done with the service; the last app to go ends it. */
+async function stopService() {
+  serving = false;
+  // A start under way holds the lock: let it through first, but a quit does not hang on it.
+  if (starting) {
+    await Promise.race([
+      starting.catch(() => {}),
+      new Promise((resolve) => setTimeout(resolve, 10_000)),
+    ]);
   }
-  throw new Error('Der lokale Dienst antwortet nicht.');
-}
-
-function stopApi() {
-  return new Promise((resolve) => {
-    if (!api || apiExited) return resolve();
-    const timer = setTimeout(() => {
-      api.kill('SIGKILL');
-      resolve();
-    }, 15_000);
-    api.once('exit', () => {
-      clearTimeout(timer);
-      resolve();
-    });
-    api.kill('SIGTERM');
-  });
+  await leaveService(service);
 }
 
 // ── Window ────────────────────────────────────────────────────────────────────────────────────
@@ -791,6 +906,19 @@ const isOwn = (url) => {
     return false;
   }
 };
+
+/** Cloud's pages (`appOfPath` in apps/web/src/lib/apps.ts). */
+const CLOUD_PAGE = /^\/(cloud|office|w\/[^/]+\/dateien(\/.*)?)\/?$/;
+/**
+ * The app is Slider only: a page of Cloud's on the server opens in the browser, where one moves
+ * between the apps. This computer's own pages have no browser to go to and stay.
+ */
+function inBrowser(url) {
+  const { origin: server, pathname } = new URL(url);
+  if (server !== cloudOrigin || !CLOUD_PAGE.test(pathname)) return false;
+  shell.openExternal(url);
+  return true;
+}
 
 function openExternal(url) {
   if (/^(https?|mailto):/i.test(url)) shell.openExternal(url);
@@ -875,7 +1003,7 @@ function setMenu() {
           { label: 'LibreOffice laden …', click: () => loadLibreOfficeFromMenu() },
           { label: 'Nach Updates suchen …', click: () => checkFromMenu(mainWindow) },
           { type: 'separator' },
-          { label: 'Datenordner zeigen', click: () => shell.openPath(userData) },
+          { label: 'Datenordner zeigen', click: () => shell.openPath(service.root) },
           { label: 'Protokoll zeigen', click: () => shell.openPath(path.join(logDir, 'api.log')) },
         ],
       },
@@ -911,7 +1039,7 @@ function showStatus(text) {
 /** Loads LibreOffice with its progress in the Dock (and, while starting, in the start window). */
 async function loadLibreOffice() {
   try {
-    return await installLibreOffice(userData, (phase, share) => {
+    return await installLibreOffice(service.root, (phase, share) => {
       if (phase === 'download') {
         mainWindow?.setProgressBar(share);
         showStatus(`LibreOffice wird geladen … ${Math.floor(share * 100)} %`);
@@ -966,7 +1094,7 @@ async function showLinuxHint() {
 
 /** Hilfe → LibreOffice laden: loads it while Slider runs, then starts again to use it. */
 async function loadLibreOfficeFromMenu() {
-  const found = findLibreOffice(userData, lookFor);
+  const found = findLibreOffice(service.root, lookFor);
   if (found) {
     await dialog.showMessageBox(mainWindow, {
       type: 'info',
@@ -1001,6 +1129,7 @@ async function loadLibreOfficeFromMenu() {
 // ── Lifecycle ─────────────────────────────────────────────────────────────────────────────────
 
 app.whenReady().then(async () => {
+  if (!firstInstance) return;
   // Packaged, the bundle carries the icon; from the repo (`bun run desktop`) Electron's own would show.
   if (!app.isPackaged) app.dock?.setIcon(path.join(here, 'icon.png'));
   setMenu();
@@ -1009,11 +1138,17 @@ app.whenReady().then(async () => {
   try {
     const keys = await loadKeys();
     apiSecret = keys.secret;
-    const port = await choosePort();
-    origin = `http://127.0.0.1:${port}`;
-    const soffice = findLibreOffice(userData, lookFor) ?? (await offerLibreOffice());
-    startApi(port, keys, soffice);
-    await waitForApi(origin);
+    const found = findLibreOffice(service.root, lookFor);
+    const soffice = found
+      ? await ownLibreOffice(service.root, found, () =>
+          showStatus('LibreOffice wird eingerichtet …'),
+        )
+      : await offerLibreOffice();
+    showStatus('');
+    origin = `http://127.0.0.1:${(await startService(keys, soffice)).port}`;
+    // Quit while it started: `before-quit` leaves the service and ends the app.
+    if (quitting) return;
+    watchService(keys, soffice);
     await letPagesIn(origin, keys.secret);
     // Before the tabs of last time come back: some may be on the server.
     await syncCloud();
@@ -1036,12 +1171,13 @@ app.whenReady().then(async () => {
     void openFiles(filesWaiting.splice(0));
     startUpdates({ logDir, window: () => mainWindow });
   } catch (error) {
+    if (quitting) return;
     dialog.showErrorBox(
       'Slider startet nicht',
       `${error.message}\n\nProtokoll: ${path.join(logDir, 'api.log')}`,
     );
     quitting = true;
-    await stopApi();
+    await stopService();
     app.exit(1);
   }
 });
@@ -1072,6 +1208,7 @@ function openWindow() {
     theme: startTheme(),
     isOwn,
     openExternal,
+    elsewhere: inBrowser,
   });
   mainWindow = tabsWindow.window;
   mainWindow.on('focus', () => {
@@ -1104,11 +1241,11 @@ app.on('window-all-closed', () => {
 });
 
 app.on('before-quit', (event) => {
-  if (quitting) return;
+  if (quitting || !firstInstance) return;
   quitting = true;
   event.preventDefault();
   // The last step into its file, rested or not.
   flushFiles()
-    .then(stopApi)
+    .then(stopService)
     .then(() => app.exit(0));
 });

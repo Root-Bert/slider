@@ -2,7 +2,9 @@ import type { ReactNode } from 'react';
 import type { To } from 'react-router';
 import { cn, PageHeader, Toast, type IconName, type ToastMessage } from '@/ui';
 import { LegalLinks } from '@/features/legal';
+import { appHome, useBackApp, useCurrentApp } from '@/lib/apps';
 import { routes } from '@/lib/routes';
+import { useActiveWorkspace } from '@/features/workspaces';
 import { AppHeader } from '../AppHeader';
 import { LogoHeader } from './LogoHeader';
 import { SectionNav } from './SectionNav';
@@ -16,7 +18,8 @@ export interface SettingsLayoutProps {
   /** Left of the title: avatar, workspace mark, icon. */
   leading?: ReactNode;
   /** "← Zurück zu den Projekten" above the title. */
-  back?: { to: To; label?: string };
+  /** `app`: back to the app one came from – its start in the workspace at hand. */
+  back?: 'app' | { to: To; label?: string };
   /** Right end of the title row, e.g. a link to related settings. */
   actions?: ReactNode;
   /** `wide`: a 1280px column with the reviews page's gutters (dashboards); else 720px. */
@@ -62,9 +65,16 @@ export function SettingsLayout({
   children,
 }: SettingsLayoutProps) {
   const logoOnly = header === 'logo';
+  // These pages belong to every app: the way back and the tab's name follow the one last open.
+  const app = useCurrentApp();
+  const workspace = useActiveWorkspace();
+  // Opened first, before any app: back to the start page rather than to one app.
+  const backApp = useBackApp();
+  const backLink = back === 'app' ? appHome(backApp, workspace?.id) : back;
+  const pageTitle = app === 'cloud' ? docTitle.replace(/\| Slider$/, '| Cloud') : docTitle;
   return (
     <div className={logoOnly ? 'dot-grid flex min-h-full flex-col' : 'dot-grid min-h-full'}>
-      <title>{docTitle}</title>
+      <title>{pageTitle}</title>
       {logoOnly ? (
         // Home from here too: signed out, the reviews send to the login.
         <LogoHeader logoLink={logoLink} />
@@ -75,7 +85,7 @@ export function SettingsLayout({
         className={cn(
           'flex justify-center px-4 pt-2 pb-16',
           logoOnly && 'flex-1',
-          width === 'wide' && 'md:px-14',
+          width === 'wide' && 'md:px-8',
         )}
       >
         <div
@@ -88,7 +98,7 @@ export function SettingsLayout({
             title={title}
             subtitle={subtitle}
             leading={leading}
-            back={back}
+            back={backLink}
             actions={actions}
             truncate={truncate}
           />

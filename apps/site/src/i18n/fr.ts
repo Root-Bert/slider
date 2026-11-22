@@ -5,19 +5,13 @@ export const fr: Dict = {
     title: 'Slider | Des présentations où chacun a son mot à dire',
     description:
       'Slider est l’outil de présentation où chacun a son mot à dire. Montrez vos diapositives, recueillez les avis directement dessus et faites-en ensemble une meilleure version, dans le navigateur. Open source, hébergé dans l’UE.',
-    pricingTitle: 'Tarifs',
-    pricingDescription:
-      'Un prix par espace de travail, jamais par personne : gratuit pour les petites équipes, 79 € par mois jusqu’à 100 personnes, 249 € avec l’IA incluse, gratuit sur votre propre serveur.',
     downloadTitle: 'Télécharger',
     downloadDescription:
       'Slider en application pour Mac et Linux : fonctionne hors ligne, vos présentations restent sur votre ordinateur, l’IA utilise vos propres clés.',
   },
   nav: {
-    home: 'Accueil',
-    pricing: 'Tarifs',
-    blog: 'Blog',
     login: 'Connexion',
-    start: 'Commencer gratuitement',
+    start: 'Ouvrir Slider',
     menu: 'Menu',
     skip: 'Aller au contenu',
     language: 'Langue',
@@ -197,8 +191,7 @@ export const fr: Dict = {
   photo: { by: 'Photo de', on: 'sur' },
   cta: {
     title: 'Prêt pour votre prochaine présentation.',
-    button: 'Commencer gratuitement',
-    pricing: 'Voir les tarifs',
+    button: 'Ouvrir Slider',
   },
   footer: {
     tagline: 'Faites passer vos idées.',
@@ -208,65 +201,6 @@ export const fr: Dict = {
     source: 'Code source',
     changelog: 'Nouveautés',
     contact: 'Contact',
-  },
-  pricing: {
-    title: 'Un prix par espace de travail, jamais par personne.',
-    sub: 'Les retours marchent mieux quand tout le monde peut participer. Alors venez avec toute l’équipe.',
-    monthly: 'par mois',
-    forever: 'pour toujours',
-    contract: 'sur contrat',
-    custom: 'Sur mesure',
-    soon: 'Bientôt disponible',
-    popular: 'Le plus choisi',
-    over: 'Une limite dépassée ? Rien n’est supprimé. Vous pouvez toujours lire, exporter et faire le tri, simplement plus rien créer de nouveau avant de changer d’offre.',
-    plans: {
-      free: {
-        pitch: 'Pour les petites équipes. Gratuit aussi longtemps que vous voulez, sans piège.',
-        cta: 'Commencer gratuitement',
-        note: 'Aucun moyen de paiement requis.',
-        lead: 'Tout ce qu’il vous faut :',
-        features: [
-          'Présentations illimitées',
-          'Jusqu’à 5 personnes',
-          '2 Go de stockage',
-          'Tous les outils de relecture',
-          'Collaboration en direct',
-        ],
-      },
-      team: {
-        pitch: 'Un prix fixe. À 100 personnes, c’est seulement 0,79 € par personne.',
-        note: 'Commencez avec Free, la mise à niveau arrive bientôt.',
-        lead: 'Tout de Free, plus :',
-        features: ['Jusqu’à 100 personnes', '100 Go de stockage', 'Factures pour la comptabilité'],
-      },
-      ai: {
-        pitch: 'L’IA intégrée. Pas de clé, pas de tokens à gérer, on s’occupe de tout.',
-        note: 'Commencez avec Free, la mise à niveau arrive bientôt.',
-        lead: 'Tout de Team, plus :',
-        features: [
-          'IA incluse, sans clé',
-          'Tokens à notre charge',
-          'Modèles toujours à jour',
-          'Une facture, sans frais d’IA',
-        ],
-      },
-      enterprise: {
-        pitch: 'Pour plus de 100 personnes ou des besoins spécifiques.',
-        cta: 'Nous contacter',
-        note: 'On le met en place avec vous.',
-        lead: 'Tout de Team, plus :',
-        features: [
-          'Plus de 100 personnes',
-          'Stockage adapté à l’équipe',
-          'Aide à l’auto-hébergement',
-          'Facturation sur contrat',
-        ],
-      },
-    },
-    selfTitle: 'Plutôt sur votre propre serveur ?',
-    selfBody: 'Hébergez Slider vous-même, gratuitement et sans limites. Un docker compose up.',
-    selfButton: 'Voir sur GitHub',
-    license: 'Open source sous EUPL-1.2. Besoin de support ou d’une licence commerciale ?',
   },
   /** The desktop app's download page (not linked until a release carries the files). */
   download: {
@@ -278,7 +212,7 @@ export const fr: Dict = {
     macTitle: 'Mac',
     macButton: 'Télécharger pour Mac',
     macNote:
-      'Pour les Mac avec puce Apple (M1 ou plus récente) sous macOS 12 ou plus récent, vérifiée par Apple. LibreOffice, qui permet à Slider de lire et d’écrire les fichiers de présentation, se charge au premier lancement s’il manque.',
+      'Pour les Mac avec puce Apple (M1 ou plus récente) sous macOS 12 ou plus récent. LibreOffice, qui permet à Slider de lire et d’écrire les fichiers de présentation, se charge au premier lancement s’il manque.',
     linuxTitle: 'Linux',
     linuxButton: 'Télécharger pour Linux',
     debButton: 'Télécharger pour Ubuntu et Debian',

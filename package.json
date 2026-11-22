@@ -14,6 +14,7 @@
     "node": ">=22"
   },
   "scripts": {
+    "prepare": "git config --local core.hooksPath .githooks 2>/dev/null || true",
     "dev": "bun run --filter @slider/api --filter @slider/web dev",
     "dev:site": "bun run --filter @slider/site dev",
     "desktop": "cd desktop && bun install && bun run start",

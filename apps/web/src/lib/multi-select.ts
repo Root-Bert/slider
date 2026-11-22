@@ -1,14 +1,15 @@
 import { useEffect, useEffectEvent, useMemo, useRef, useState } from 'react';
-import { isTypingTarget } from '@/lib/dom';
+import { isTextTarget } from '@/lib/dom';
 import { isModKey } from '@/lib/keyboard';
 
 const NONE: ReadonlySet<string> = new Set();
 
 /**
- * Several items selected at once (Finder-style; the decks in "Reviews", the fonts on the
- * workspace page): ⌘/Ctrl-click toggles one – and so does a plain click while some are selected,
- * instead of opening it – Shift-click selects the range from the last clicked, a selection box
- * (`useMarqueeSelect`) selects what it touches. ⌘A selects every visible item, Escape clears.
+ * Several items selected at once (Finder-style; the decks in "Präsentationen", the files in
+ * Cloud, the fonts on the workspace page): ⌘/Ctrl-click toggles one, Shift-click selects the
+ * range from the last clicked, a selection box (`useMarqueeSelect`) selects what it touches. A
+ * plain click while several are selected picks that one alone, as in the Finder; otherwise it
+ * does what the item's click does (a deck opens). ⌘A selects every visible item, Escape clears.
  * Only visible items count – filtering or searching narrows the selection.
  */
 export function useMultiSelect(visibleIds: readonly string[]) {
@@ -28,8 +29,9 @@ export function useMultiSelect(visibleIds: readonly string[]) {
     setPicked(NONE);
   };
 
-  /** Click on an item with ⌘/Ctrl (toggle) or Shift (range), or any click while some are
-   * selected (toggle); false for a plain click with nothing selected – that opens it. */
+  /** Click on an item with ⌘/Ctrl (toggle) or Shift (range), or a plain one while several are
+   * selected (that one alone); false for any other plain click – the item's own (it opens), and
+   * a single selected one is let go. */
   const onModifiedClick = (
     id: string,
     event: { metaKey: boolean; ctrlKey: boolean; shiftKey: boolean },
@@ -41,7 +43,7 @@ export function useMultiSelect(visibleIds: readonly string[]) {
       setPicked(new Set([...selectedIds, ...range]));
       return true;
     }
-    if (isModKey(event) || event.shiftKey || selectedIds.length > 0) {
+    if (isModKey(event) || event.shiftKey) {
       anchor.current = id;
       const next = new Set(selectedIds);
       if (next.has(id)) next.delete(id);
@@ -49,7 +51,26 @@ export function useMultiSelect(visibleIds: readonly string[]) {
       setPicked(next);
       return true;
     }
+    if (selectedIds.length >= 2) {
+      pickOne(id);
+      return true;
+    }
+    if (selectedIds.length > 0) clear();
     return false;
+  };
+
+  /** Only this one, and the start of a Shift range from here (Cloud: a click on a file, ↑/↓). */
+  const pickOne = (id: string) => {
+    anchor.current = id;
+    setPicked(new Set([id]));
+  };
+
+  /** From the range's start to this one, instead of what was picked (Cloud: Shift+↑/↓). */
+  const extendTo = (id: string) => {
+    const from = anchor.current ? visibleIds.indexOf(anchor.current) : -1;
+    const to = visibleIds.indexOf(id);
+    if (from < 0 || to < 0) return pickOne(id);
+    setPicked(new Set(visibleIds.slice(Math.min(from, to), Math.max(from, to) + 1)));
   };
 
   const marquee = {
@@ -66,7 +87,12 @@ export function useMultiSelect(visibleIds: readonly string[]) {
   };
 
   const onKeyDown = useEffectEvent((event: KeyboardEvent) => {
-    if (event.defaultPrevented || isTypingTarget(event.target)) return;
+    // Typing keeps its keys; a `<select>` or a checkbox has none of these (⌘A, Esc) for itself.
+    const target = event.target;
+    const ownKeys =
+      isTextTarget(target) ||
+      (target instanceof HTMLElement && target.getAttribute('role') === 'listbox');
+    if (event.defaultPrevented || ownKeys) return;
     if (document.querySelector('dialog[open], [role="menu"]')) return;
     if (event.key === 'Escape' && selectedIds.length > 0) {
       // Esc only clears the selection – the page's own Esc waits for the next press.
@@ -87,5 +113,5 @@ export function useMultiSelect(visibleIds: readonly string[]) {
     return () => window.removeEventListener('keydown', onKeyDown);
   }, []);
 
-  return { selected, selectedIds, clear, onModifiedClick, marquee };
+  return { selected, selectedIds, clear, onModifiedClick, pickOne, extendTo, marquee };
 }

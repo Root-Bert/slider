@@ -12,9 +12,18 @@ import {
   type MaterialQuestion,
 } from '@slider/shared';
 import { utils, write } from 'xlsx';
-import { workspaceMembers, workspaces } from '../src/db/schema';
+import {
+  deckBoardItems,
+  deckMaterials,
+  materialChats,
+  materialQuestions,
+  workspaceMembers,
+  workspaces,
+} from '../src/db/schema';
 import { LiveHub } from '../src/realtime/live-hub';
 import { materialsBrief } from '../src/services/ai-context';
+import { deckBoard } from '../src/services/board-owner';
+import { documentAiIdle } from '../src/services/document-ai';
 import { runMaterialTool } from '../src/services/material-tools';
 import { workspaceStorageUsage } from '../src/services/workspace-storage';
 import {
@@ -89,8 +98,12 @@ async function putDown(
     cookie,
     id = crypto.randomUUID(),
     folderId,
-  }: { cookie?: string; id?: string; folderId?: string } = {},
+    documentId,
+  }: { cookie?: string; id?: string; folderId?: string; documentId?: string } = {},
 ) {
+  // On the deck's board, or on a text document's.
+  const base = documentId ? `/api/documents/${documentId}` : `/api/decks/${deck.deckId}`;
+  const owner = documentId ? `documentId ${b64(documentId)}` : `deckId ${b64(deck.deckId)}`;
   const tus = (url: string, init: RequestInit) =>
     ctx.request(url, {
       ...init,
@@ -101,7 +114,7 @@ async function putDown(
     method: 'POST',
     headers: {
       'Upload-Length': String(bytes.length),
-      'Upload-Metadata': `filename ${b64(name)},purpose ${b64('material')},deckId ${b64(deck.deckId)}`,
+      'Upload-Metadata': `filename ${b64(name)},purpose ${b64('material')},${owner}`,
     },
   });
   if (created.status !== 201) return created;
@@ -115,13 +128,13 @@ async function putDown(
       })
     ).status,
   ).toBe(204);
-  const answer = await ctx.request(`/api/decks/${deck.deckId}/materials`, {
+  const answer = await ctx.request(`${base}/materials`, {
     method: 'POST',
     cookie,
     json: { id, upload: url.split('/').pop(), x: 10, y: 20, w: 220, h: 200, folderId },
   });
   if (answer.status === 201) {
-    const retried = await ctx.request(`/api/decks/${deck.deckId}/materials`, {
+    const retried = await ctx.request(`${base}/materials`, {
       method: 'POST',
       cookie,
       json: { id, upload: url.split('/').pop(), x: 10, y: 20, w: 220, h: 200, folderId },
@@ -460,14 +473,18 @@ describe('the material page', () => {
     ).toBe(201);
 
     // The first message names the files, not what they say.
-    const brief = await materialsBrief(ctx.deps, deck.deckId);
-    expect(brief).toMatch(/„Studie\.pdf“[^\n]*\n {2}note on this file by [^\n]*: Wachstum prüfen/);
+    const brief = await materialsBrief(ctx.deps, deckBoard(deck.deckId));
+    // What people wrote stands between tags, as content; a note is named by its id.
+    expect(brief).toMatch(/<material_list>\n[^]*<\/material_list>$/);
+    expect(brief).toMatch(
+      /„Studie\.pdf“[^\n]*\n {2}note \S+ on this file by [^\n]*: Wachstum prüfen/,
+    );
     expect(brief).toContain('„Studie.pdf“ (PDF');
     expect(brief).toContain('„Zahlen.xlsx“ (spreadsheet');
     expect(brief).toContain('Zahlen: Quartal | Umsatz | Kunden');
 
     const tool = (name: string, input: unknown) =>
-      runMaterialTool(ctx.deps, deck.deckId, name, input);
+      runMaterialTool(ctx.deps, deckBoard(deck.deckId), name, input);
     // A folder put down: its files go into it, the AI lists them with it; the folder deleted, they
     // stay as files of the board.
     const folderId = crypto.randomUUID();
@@ -509,7 +526,7 @@ describe('the material page', () => {
     expect(page?.content).not.toContain('Marktanalyse');
     expect(page?.content).toContain('Notes people put on „Studie.pdf“');
     expect((await tool('list_materials', {}))?.content).toMatch(
-      /„Studie\.pdf“[\s\S]*note on this file by .*Wachstum prüfen/,
+      /„Studie\.pdf“[\s\S]*note \S+ on this file by .*Wachstum prüfen/,
     );
     expect((await tool('search_materials', { query: 'markt prozent' }))?.content).toContain(
       'page 2',
@@ -650,6 +667,21 @@ describe('the material page', () => {
       ['reply', 'Und 2025?'],
     ]);
     const followUpId = followUp.at(-1)!.question!.id;
+    // „Nochmal fragen“ on someone else's reply would put words under their name: refused.
+    const colleague = await member('Kai', 'reviewer');
+    const forged = await ctx.request(questions, {
+      method: 'POST',
+      cookie: colleague,
+      json: {
+        id: crypto.randomUUID(),
+        noteId: market,
+        question: 'Untergeschoben',
+        kind: 'reply',
+        ask: false,
+        replaces: thanks[0]!.question!.id,
+      },
+    });
+    expect(forged.status).toBe(403);
     await ctx.request(`/api/material-questions/${followUpId}`, { method: 'DELETE' });
     expect(
       ((await (await ctx.request(questions)).json()) as MaterialQuestion[]).at(-1),
@@ -754,6 +786,215 @@ describe('the material page', () => {
     expect((await ctx.request(`${chats}/${chatId}`)).status).toBe(404);
   });
 
+  it('keeps a board for a text document too: Prüfende put down, Betrachter read, strangers see nothing, the AIs read it, and it goes with the document', async () => {
+    const made = await ctx.request('/api/documents', {
+      method: 'POST',
+      json: { workspaceId: ctx.workspaceId, title: 'Bericht', template: 'report' },
+    });
+    const documentId = ((await made.json()) as { id: string }).id;
+    const base = `/api/documents/${documentId}`;
+    // New, it lies in its maker's own files: into the workspace's area, where all see it.
+    const { areas } = (await (
+      await ctx.request(`/api/workspaces/${ctx.workspaceId}/cloud`)
+    ).json()) as { areas: { id: string; root: boolean }[] };
+    await ctx.request('/api/cloud/nodes/move', {
+      method: 'POST',
+      json: { ids: [documentId], areaId: areas.find((area) => area.root)?.id },
+    });
+    const reviewer = await member('Rolf', 'reviewer');
+    const reader = await member('Vera', 'viewer');
+    const stranger = (await signedInUser(ctx, { name: 'Fremd', email: 'fremd@anders.de' })).cookie;
+    const pdf = makeSlidesPdf([
+      { texts: [{ text: 'Der Markt waechst um 12 Prozent.', x: 40, y: 40, size: 20 }] },
+    ]);
+
+    // A file over tus names the document; one owner, not both.
+    const both = await ctx.request('/api/decks/tus', {
+      method: 'POST',
+      headers: {
+        'Tus-Resumable': '1.0.0',
+        'Upload-Length': '4',
+        'Upload-Metadata': `filename ${b64('a.pdf')},purpose ${b64('material')},deckId ${b64(deck.deckId)},documentId ${b64(documentId)}`,
+      },
+    });
+    expect(both.status).toBe(400);
+    expect((await putDown('Studie.pdf', pdf, { documentId, cookie: reader })).status).toBe(403);
+    expect((await putDown('Studie.pdf', pdf, { documentId, cookie: stranger })).status).toBe(404);
+    const report = materialSchema.parse(
+      await (await putDown('Studie.pdf', pdf, { documentId, cookie: reviewer })).json(),
+    );
+    expect(report).toMatchObject({ deckId: null, documentId, name: 'Studie.pdf' });
+    await ctx.deps.background?.idle();
+    const item = (json: object, cookie?: string) =>
+      ctx.request(`${base}/board/items`, {
+        method: 'POST',
+        cookie,
+        json: { id: crypto.randomUUID(), x: 0, y: 0, w: 200, h: 160, ...json },
+      });
+    expect((await item({ kind: 'box', text: 'Wachstum prüfen' })).status).toBe(201);
+    expect((await item({ kind: 'link', url: 'https://example.org/markt' }, reviewer)).status).toBe(
+      201,
+    );
+    expect((await item({ kind: 'box', text: 'Nein' }, reader)).status).toBe(403);
+    expect((await item({ kind: 'box', text: 'Nein' }, stranger)).status).toBe(404);
+    const questionId = crypto.randomUUID();
+    await item({ id: questionId, kind: 'question', text: 'Wie stark wächst der Markt?' });
+
+    // Who may open the document reads its board; the deck's board knows none of it.
+    expect((await ctx.request(`${base}/board`, { cookie: stranger })).status).toBe(404);
+    const seen = boardSchema.parse(
+      await (await ctx.request(`${base}/board`, { cookie: reader })).json(),
+    );
+    expect(seen.materials.map((each) => [each.name, each.readState, each.documentId])).toEqual([
+      ['Studie.pdf', 'done', documentId],
+    ]);
+    expect(seen.items.map((each) => each.kind).sort()).toEqual(['box', 'link', 'question']);
+    expect((await board()).materials).toEqual([]);
+    const file = await ctx.request(`/api/materials/${report.id}/file`, { cookie: reader });
+    expect(file.status).toBe(200);
+    expect((await file.arrayBuffer()).byteLength).toBe(pdf.length);
+    expect(
+      (await ctx.request(`/api/materials/${report.id}/file`, { cookie: stranger })).status,
+    ).toBe(404);
+    // Its bytes lie under the document's prefix and count in the workspace's storage.
+    const prefix = `documents/${documentId}/materials/`;
+    expect((await ctx.deps.media.list(prefix)).length).toBeGreaterThan(0);
+    expect(
+      (await workspaceStorageUsage(ctx.deps.db, ctx.workspaceId)).other,
+    ).toBeGreaterThanOrEqual(pdf.length);
+
+    // „Fragen“ and the chat answer from this board; the chat's note lands on it.
+    await ctx.request(`/api/workspaces/${ctx.workspaceId}/integrations/keys`, {
+      method: 'POST',
+      json: { kind: 'ai', provider: 'anthropic', apiKey: 'sk-ant-api03-good-AbCdEfGhIjKlMnOpQrSt' },
+    });
+    const heard = async (res: Response) =>
+      (await res.text())
+        .split('\n')
+        .filter((line) => line.startsWith('data:'))
+        .map((line) => JSON.parse(line.slice(5)) as { type: string; [key: string]: unknown });
+    const readsReport = aiMessage(
+      [{ type: 'tool_use', id: 'toolu_1', name: 'read_material', input: { material: report.id } }],
+      'tool_use',
+    );
+    answers.push(readsReport, (body) => {
+      expect(JSON.stringify(body.messages.at(-1))).toContain('12 Prozent');
+      expect(JSON.stringify(body)).toContain('The document: „Bericht“');
+      return aiMessage([{ type: 'text', text: 'Um 12 Prozent.', citations: null }], 'end_turn');
+    });
+    const asked = await heard(
+      await ctx.request(`${base}/material-questions`, {
+        method: 'POST',
+        json: {
+          id: crypto.randomUUID(),
+          noteId: questionId,
+          question: 'Wie stark wächst der Markt?',
+        },
+      }),
+    );
+    expect(asked.at(-1)).toMatchObject({
+      type: 'done',
+      question: { deckId: null, documentId, state: 'done', answer: 'Um 12 Prozent.' },
+    });
+    expect(await (await ctx.request(`${base}/material-questions`)).json()).toHaveLength(1);
+    answers.push(
+      aiMessage(
+        [
+          {
+            type: 'tool_use',
+            id: 'toolu_2',
+            name: 'add_note',
+            input: { text: 'Markt: plus 12 Prozent' },
+          },
+        ],
+        'tool_use',
+      ),
+      aiMessage([{ type: 'text', text: 'Notiert.', citations: null }], 'end_turn'),
+    );
+    const said = await heard(
+      await ctx.request(`${base}/material-chat`, {
+        method: 'POST',
+        json: { chatId: null, text: 'Notier das Wachstum' },
+      }),
+    );
+    expect(said.at(-1)).toMatchObject({ type: 'done' });
+    expect(await (await ctx.request(`${base}/material-chats`)).json()).toHaveLength(1);
+    expect(await (await ctx.request(`${base}/material-chats`, { cookie: reader })).json()).toEqual(
+      [],
+    );
+    const withNote = boardSchema.parse(await (await ctx.request(`${base}/board`)).json());
+    expect(withNote.items.map((each) => each.text)).toContain('Markt: plus 12 Prozent');
+
+    // A comment handed to the AI: the board is listed, the material tools stand beside
+    // edit_document, what it read goes into the text.
+    const comment = (await (
+      await ctx.request(`${base}/comments`, {
+        method: 'POST',
+        json: {
+          id: crypto.randomUUID(),
+          parentId: null,
+          body: 'Wachstum nennen',
+          anchor: { paragraphId: 'w3', start: 0, end: 2, quote: 'Oh' },
+        },
+      })
+    ).json()) as { id: string };
+    answers.push(
+      (body) => {
+        const sent = body as unknown as { tools: { name: string }[]; messages: unknown[] };
+        expect(sent.tools.map((tool) => tool.name)).toEqual(
+          expect.arrayContaining(['edit_document', 'read_material', 'search_materials']),
+        );
+        expect(JSON.stringify(sent.messages)).toMatch(/<material_list>[^]*Studie\.pdf/);
+        return readsReport;
+      },
+      (body) => {
+        expect(JSON.stringify(body.messages.at(-1))).toContain('12 Prozent');
+        return aiMessage(
+          [
+            {
+              type: 'tool_use',
+              id: 'toolu_3',
+              name: 'edit_document',
+              input: {
+                changes: [{ action: 'insert', id: 'w3', text: 'Der Markt wächst um 12 Prozent.' }],
+                summary: 'Wachstum genannt.',
+              },
+            },
+          ],
+          'tool_use',
+        );
+      },
+    );
+    expect(
+      (
+        await ctx.request(`${base}/ai-proposals`, {
+          method: 'POST',
+          json: { id: crypto.randomUUID(), commentId: comment.id },
+        })
+      ).status,
+    ).toBe(202);
+    await documentAiIdle();
+    expect(await (await ctx.request(`${base}/ai-proposals`)).json()).toMatchObject([
+      { status: 'applied', summary: 'Wachstum genannt.' },
+    ]);
+    expect(answers).toEqual([]);
+
+    // Deleted for good, the document takes its board along – rows and bytes.
+    await ctx.request('/api/cloud/nodes/trash', { method: 'POST', json: { ids: [documentId] } });
+    expect((await ctx.deps.media.list(prefix)).length).toBeGreaterThan(0);
+    const purged = await ctx.request('/api/cloud/nodes/purge', {
+      method: 'POST',
+      json: { ids: [documentId] },
+    });
+    expect(((await purged.json()) as { purged: string[] }).purged).toEqual([documentId]);
+    for (const table of [deckMaterials, deckBoardItems, materialQuestions, materialChats]) {
+      expect(
+        await ctx.deps.db.select().from(table).where(eq(table.documentId, documentId)),
+      ).toEqual([]);
+    }
+    expect(await ctx.deps.media.list(prefix)).toEqual([]);
+  });
+
   it('lets AI apps in over MCP – OAuth with PKCE or a token, held to a workspace, never the cookie', async () => {
     const origin = ctx.deps.config.webOrigin;
     const rpc = async (token: string | null, method: string, params: object = {}) => {
@@ -797,6 +1038,22 @@ describe('the material page', () => {
       `Bearer resource_metadata="${origin}/.well-known/oauth-protected-resource/api/mcp"`,
     );
     expect((await rpc('slider_at_nope', 'tools/list')).status).toBe(401);
+    // … answered before a byte of the body is read: nothing is held for a stranger.
+    let pulled = 0;
+    const endless = new ReadableStream<Uint8Array>({
+      pull(controller) {
+        pulled += 1;
+        if (pulled > 200_000) controller.close();
+        else controller.enqueue(new Uint8Array(1024));
+      },
+    });
+    const unread = await ctx.request('/api/mcp', {
+      method: 'POST',
+      body: endless,
+      duplex: 'half',
+    } as RequestInit);
+    expect(unread.status).toBe(401);
+    expect(pulled).toBeLessThan(5);
     const resource = await (
       await ctx.request('/.well-known/oauth-protected-resource/api/mcp')
     ).json();
@@ -817,6 +1074,15 @@ describe('the material page', () => {
       json: { client_name: 'Claude', redirect_uris: [redirect] },
     });
     expect(registered.status).toBe(201);
+    // These need no session: a body is not read further than they need.
+    expect(
+      (
+        await ctx.request('/api/oauth/register', {
+          method: 'POST',
+          json: { client_name: 'x'.repeat(70_000), redirect_uris: [redirect] },
+        })
+      ).status,
+    ).toBe(413);
     const { client_id } = (await registered.json()) as { client_id: string };
     const verifier = 'v'.repeat(64);
     const challenge = Buffer.from(
@@ -838,6 +1104,13 @@ describe('the material page', () => {
         )
       ).status,
     ).toBe(400);
+    // A wrong request of a registered client is shown, not sent to its address: anyone may
+    // register any address, so that would be an open redirect without sign-in.
+    const wrong = await ctx.request(
+      `/api/oauth/authorize?${new URLSearchParams({ response_type: 'token', client_id, redirect_uri: redirect })}`,
+      { redirect: 'manual' },
+    );
+    expect([wrong.status, wrong.headers.get('location')]).toEqual([400, null]);
     expect(
       await (
         await ctx.request('/api/connections/request', { method: 'POST', json: { request } })
@@ -951,33 +1224,200 @@ describe('the material page', () => {
       error: true,
       text: expect.stringMatching(/^No change "nope"/),
     });
-    // Managing: renamed into a new folder, found there again; access restricted and opened.
+    // Managing: renamed and archived; where it lies is said by moving it (below), not here.
     expect(
       (
         await call(tokens.access_token, 'update_presentation', {
           ...at,
           title: 'Quartal',
-          folder: 'Kunden',
           archived: true,
         })
       ).text,
-    ).toMatch(/^„Quartal“: renamed „Quartal“, in folder „Kunden“ \(new\), archived\./);
+    ).toMatch(/^„Quartal“: renamed „Quartal“, archived\./);
+    expect(await call(tokens.access_token, 'update_presentation', at)).toMatchObject({
+      error: true,
+      text: expect.stringMatching(/^Say what to change: `title` or `archived`\./),
+    });
+    await call(tokens.access_token, 'update_presentation', { ...at, archived: false });
+    // The files beside it (Cloud), with the same tools as the AI there: looked around, a text
+    // file written, a folder made – and the presentation put into it by its own id.
+    expect(names).toEqual(expect.arrayContaining(['list_folder', 'move_files', 'write_file']));
+    const top = (await call(tokens.access_token, 'list_folder')).text;
+    expect(top).toMatch(/^Meine Dateien:/);
+    expect(top).toContain('Areas:');
+    const wrote = await call(tokens.access_token, 'write_file', {
+      name: 'Notiz.md',
+      content: '# Notiz',
+      own: true,
+    });
+    expect(wrote.text).toMatch(/^Wrote „Notiz\.md“ \(file id \S+\): http/);
     expect(
-      (await call(tokens.access_token, 'update_presentation', { ...at, folder: 'kunden' })).text,
-    ).toMatch(/in folder „Kunden“\. /);
-    expect((await call(tokens.access_token, 'list_workspaces')).text).toMatch(
-      /- folder \S+: „Kunden“/,
+      await call(tokens.access_token, 'write_file', { name: 'a.exe', content: 'x', own: true }),
+    ).toMatchObject({ error: true, text: expect.stringMatching(/^Only text files/) });
+    const folderId = /folder id (\S+)|folder (\S+) /.exec(
+      (await call(tokens.access_token, 'create_folder', { name: 'Ablage', own: true })).text,
     );
+    const ablage = (await call(tokens.access_token, 'list_folder')).text;
+    expect(ablage).toContain('Notiz.md');
+    const ablageId = /folder (\S+) „Ablage“/.exec(ablage)?.[1] ?? folderId?.[1] ?? '';
+    // One whose file is missing says so; a new one lies in „Meine Dateien“ and moves from there.
     expect(
-      await call(tokens.access_token, 'update_presentation', { ...at, folder: 'x'.repeat(81) }),
-    ).toMatchObject({ error: true, text: expect.stringMatching(/at most 80 characters/) });
+      await call(tokens.access_token, 'move_files', { items: [deck.deckId], folder: ablageId }),
+    ).toEqual({ text: 'Die Datei der Präsentation fehlt.', error: true });
+    const newDeck = /\(id ([^)\s]+)\)/.exec(
+      (await call(tokens.access_token, 'create_presentation', { title: 'Neu aus der App' })).text,
+    )?.[1];
     expect(
-      await call(tokens.access_token, 'update_presentation', {
-        ...at,
-        folder: crypto.randomUUID(),
+      await call(tokens.access_token, 'move_files', { items: [newDeck], folder: ablageId }),
+    ).toEqual({ text: 'Moved: 1.', error: false });
+    expect((await call(tokens.access_token, 'list_folder', { folder: ablageId })).text).toContain(
+      `presentation ${newDeck}`,
+    );
+    // A whole new order in one call: folders in each other by their keys, moves into them, a
+    // name – and what is refused is left out and named while the rest is done.
+    expect(names).toEqual(expect.arrayContaining(['list_tree', 'reorganize_files']));
+    const noteId = /file id (\S+)\)/.exec(wrote.text)?.[1] ?? '';
+    expect(
+      await call(tokens.access_token, 'reorganize_files', {
+        folders: [{ key: 'n', name: 'Notizen', new: 'y' }],
       }),
-    ).toMatchObject({ error: true, text: expect.stringMatching(/^No folder /) });
-    await call(tokens.access_token, 'update_presentation', { ...at, archived: false, folder: '' });
+    ).toMatchObject({ error: true, text: expect.stringMatching(/"y".*Nothing was done\.$/) });
+    const plan = await call(tokens.access_token, 'reorganize_files', {
+      folders: [
+        { key: 'y', name: '2026', own: true },
+        { key: 'n', name: 'Notizen', new: 'y' },
+      ],
+      moves: [
+        { items: [noteId], new: 'n' },
+        { items: ['nope'], folder: ablageId },
+      ],
+      renames: [{ item: ablageId, name: 'Archiv' }],
+    });
+    expect(plan.error).toBe(false);
+    expect(plan.text).toMatch(
+      /^Plan carried out: 2 folders made, 1 moved, 1 renamed\.\nNew folder "y": id \S+\nNew folder "n": id \S+\nLeft out – everything else is done:\nNot done – the move of 1 into /,
+    );
+    const tree = (await call(tokens.access_token, 'list_tree')).text;
+    expect(tree).toMatch(/^Meine Dateien, everything below \(5 folders and files\):\n/);
+    expect(tree).toMatch(
+      /\nfolder \S+ „2026“\n {2}folder \S+ „Notizen“\n {4}file \S+ „Notiz\.md“\n/,
+    );
+    expect(tree).toContain(`„Archiv“\n  file `);
+    expect(tree).toContain(`, presentation ${newDeck}`);
+    expect((await call(tokens.access_token, 'list_tree', { files: false })).text).toMatch(
+      /everything below \(3 folders, 0 files at its top\):\nfolder \S+ „2026“ \(0 files\)\n {2}folder \S+ „Notizen“ \(1 files\)\n/,
+    );
+    expect(await call(tokens.access_token, 'list_folder', { workspace: 'nope' })).toMatchObject({
+      error: true,
+      text: expect.stringMatching(/^No workspace "nope"/),
+    });
+    // Areas and their people: one made for a team alone, then opened and renamed.
+    expect(names).toEqual(
+      expect.arrayContaining(['create_area', 'share_file', 'restore_files', 'edit_document']),
+    );
+    await member('Mona', 'reviewer');
+    // The workspace's own area, no „Entwürfe“ besides it.
+    expect((await call(tokens.access_token, 'list_areas')).text).toMatch(
+      /^(?![\s\S]*Entwürfe)area \S+ „[^“]+“ – /,
+    );
+    const team = { name: 'Vertrieb', people_only: true };
+    expect(
+      await call(tokens.access_token, 'create_area', { ...team, members: ['Niemand'] }),
+    ).toMatchObject({ error: true, text: expect.stringMatching(/^Nobody "Niemand" in the/) });
+    const areaMade = await call(tokens.access_token, 'create_area', { ...team, members: ['Mona'] });
+    expect(areaMade.text).toMatch(
+      /^Made: area \S+ „Vertrieb“ – only its people see it; people: [^;]*Mona[^;]*; 0 files; /,
+    );
+    const teamId = /^Made: area (\S+) /.exec(areaMade.text)?.[1] ?? '';
+    expect(
+      (
+        await call(tokens.access_token, 'update_area', {
+          area: teamId,
+          name: 'Sales',
+          people_only: false,
+        })
+      ).text,
+    ).toMatch(/^Now: area \S+ „Sales“ – everyone in the workspace sees it; people: [^;]*Mona/);
+    expect(await call(tokens.access_token, 'update_area', { area: teamId })).toMatchObject({
+      error: true,
+      text: expect.stringMatching(/^Say what to change/),
+    });
+    // A text document (Writer): made with its text in that area, read, changed by paragraph.
+    const docMade = await call(tokens.access_token, 'create_document', {
+      title: 'Protokoll',
+      text: '# Kickoff\nErster Absatz\n- Ein Punkt',
+      area: teamId,
+    });
+    expect(docMade.text).toMatch(
+      /^Created „Protokoll“ \(document id \S+\): http\S+\/t\/\S+\nText written: \d+ paragraphs\.\nIt lies where it was to go\.$/,
+    );
+    const docId = /document id (\S+)\)/.exec(docMade.text)?.[1] ?? '';
+    const docText = (await call(tokens.access_token, 'read_document', { document: docId })).text;
+    expect(docText).toMatch(
+      /^„Protokoll“ \(document id \S+\) in Sales: http\S+\n\n<p id="[^"]+" kind="heading" level="1">Kickoff<\/p>\n<p id="[^"]+">Erster Absatz<\/p>\n<p id="[^"]+" list="bullet">Ein Punkt<\/p>$/,
+    );
+    const paragraphId = /<p id="([^"]+)">Erster Absatz/.exec(docText)?.[1] ?? '';
+    expect(
+      await call(tokens.access_token, 'edit_document', {
+        document: docId,
+        changes: [{ action: 'replace', id: 'nope', text: 'x' }],
+      }),
+    ).toEqual({ text: 'There is no paragraph "nope".', error: true });
+    expect(
+      (
+        await call(tokens.access_token, 'edit_document', {
+          document: docId,
+          changes: [
+            { action: 'replace', id: paragraphId, text: 'Zweiter **Anlauf**' },
+            { action: 'insert', id: paragraphId, text: 'Danach' },
+          ],
+        })
+      ).text,
+    ).toMatch(/^Written into „Protokoll“: http/);
+    expect((await call(tokens.access_token, 'read_document', { document: docId })).text).toContain(
+      '>Zweiter **Anlauf**</p>\n<p id="',
+    );
+    expect((await call(tokens.access_token, 'list_documents', { query: 'proto' })).text).toMatch(
+      new RegExp(`^document ${docId} „Protokoll“ in Sales – changed \\S+: http\\S+$`),
+    );
+    // Its versions, and the one before brought back; shared with one person, and no longer.
+    const details = (await call(tokens.access_token, 'file_details', { item: docId })).text;
+    expect(details).toMatch(
+      /^file \S+ „Protokoll\.odt“ in area „Sales“ – [^\n]+\nReached there by everyone in the workspace \(\d+\)\.\nShared with: nobody besides\.\nVersions:\n- version \S+: no\. \d+, [^\n]+ \(current\)\n- version /,
+    );
+    const before = /\(current\)\n- version (\S+): /.exec(details)?.[1];
+    expect(
+      await call(tokens.access_token, 'restore_version', { item: ablageId, version: before }),
+    ).toMatchObject({ error: true });
+    expect(
+      (await call(tokens.access_token, 'restore_version', { item: docId, version: before })).text,
+    ).toBe('„Protokoll.odt“: that version is its newest again.');
+    expect((await call(tokens.access_token, 'read_document', { document: docId })).text).toContain(
+      '>Erster Absatz</p>',
+    );
+    const shareWith = { item: docId, person: 'Mona' };
+    expect(await call(tokens.access_token, 'share_file', { ...shareWith, role: 'edit' })).toEqual({
+      text: 'Shared „Protokoll.odt“ with Mona (edit).',
+      error: false,
+    });
+    expect((await call(tokens.access_token, 'file_details', { item: docId })).text).toContain(
+      'Shared with: Mona (edit).',
+    );
+    expect((await call(tokens.access_token, 'unshare_file', shareWith)).text).toBe(
+      '„Protokoll.odt“ is no longer shared with Mona.',
+    );
+    expect((await call(tokens.access_token, 'unshare_file', shareWith)).text).toBe(
+      '„Protokoll.odt“ is not shared with Mona.',
+    );
+    // Deleted is not gone: it lies in „Gelöscht“ and comes back from there.
+    await call(tokens.access_token, 'delete_files', { items: [docId] });
+    expect((await call(tokens.access_token, 'list_deleted')).text).toMatch(
+      new RegExp(`file ${docId} „Protokoll\\.odt“ – deleted \\S+ by [^,]+, \\d+ days left`),
+    );
+    expect(await call(tokens.access_token, 'restore_files', { items: [docId] })).toEqual({
+      text: 'Back: 1 („Protokoll.odt“).',
+      error: false,
+    });
     expect(
       await call(tokens.access_token, 'set_access', {
         ...at,
@@ -1041,6 +1481,33 @@ describe('the material page', () => {
     expect(await call(held, 'get_presentation', { presentation: deck.deckId })).toMatchObject({
       error: true,
     });
+    for (const [tool, args] of [
+      ['read_document', { document: docId }],
+      ['file_details', { item: docId }],
+      ['share_file', { item: docId, person: 'Mona' }],
+      ['restore_files', { items: [docId] }],
+      ['update_area', { area: teamId, name: 'Fremd' }],
+    ] as const)
+      expect(await call(held, tool, args), tool).toMatchObject({ error: true });
+    expect((await call(held, 'list_documents')).text).toBe('No documents.');
+    // … whatever is asked of it: where it lies is looked at before what the person may do.
+    expect(await call(held, 'delete_presentation', { presentation: deck.deckId })).toEqual({
+      text: `No presentation "${deck.deckId}" – list_presentations finds it.`,
+      error: true,
+    });
+    // Nor that the workspace it lies in is blocked: the same answer as for none at all.
+    await ctx.deps.db
+      .update(workspaces)
+      .set({ blockedAt: new Date() })
+      .where(eq(workspaces.id, ctx.workspaceId));
+    expect(await call(held, 'get_presentation', { presentation: deck.deckId })).toEqual({
+      text: `No presentation "${deck.deckId}" – list_presentations finds it.`,
+      error: true,
+    });
+    await ctx.deps.db
+      .update(workspaces)
+      .set({ blockedAt: null })
+      .where(eq(workspaces.id, ctx.workspaceId));
     // Nor by its title: no answer tells that a deck of that name is somewhere else.
     const { title } = (await (await ctx.request(`/api/decks/${deck.deckId}`)).json()) as {
       title: string;

@@ -39,7 +39,8 @@ import { LayoutGridLayer } from '../template/LayoutGridLayer';
 import { useLayoutGrid } from '../template/useLayoutGridLines';
 import { usePlaceAiBox } from '../voice/hooks/usePlaceAiBox';
 import { AnnotationLayer } from './AnnotationLayer';
-import { useCentreFlash } from './hooks/useCentreFlash';
+import { CentreLine } from './CentreLine';
+import { useCentreLines } from './hooks/useCentreLines';
 import { useSlideContextMenu } from './hooks/useSlideContextMenu';
 import { shapeOfBox, slideBoxAt, useSlideBoxes, type SlideBox } from './hooks/useSlideBoxes';
 import { boxAnchor, framedBoxesAnchor, toggleDraftBox } from './lib/box-anchor';
@@ -53,7 +54,6 @@ import { TemplateLayer } from '../template/TemplateLayer';
 import { useLayoutGuides } from '../template/useTemplate';
 import { RectFrame } from './RectFrame';
 import { ShapeOutline } from './ShapeOutline';
-import { SnapPulse } from './SnapPulse';
 import { TextBoxEditor } from './TextBox';
 import { slideSrcSet, THUMB_MAX_W } from './lib/slide-image';
 import { SwapImage } from './SwapImage';
@@ -95,6 +95,11 @@ interface SlideFrameProps {
   showLayoutGrid: boolean;
   /** „Ebenen“ is on: the slide shows taken apart in 3D instead of its picture. */
   layered?: boolean;
+  /**
+   * A copy to review („Varianten vergleichen“): pins, comments and stickers at any size, the
+   * editor's layers and the zoom left to the slide on its own track.
+   */
+  review?: boolean;
 }
 
 /**
@@ -129,6 +134,7 @@ export const SlideFrame = memo(function SlideFrame({
   showGuides,
   showLayoutGrid,
   layered = false,
+  review = false,
 }: SlideFrameProps) {
   const boxRef = useRef<HTMLDivElement>(null);
   const zoom = useSlideZoom(slide.id);
@@ -142,12 +148,14 @@ export const SlideFrame = memo(function SlideFrame({
   const [loaded, setLoaded] = useState<false | 'fade' | 'cached'>(false);
   const label = slideLabel(index);
   const small = w < THUMB_MAX_W;
+  // Without the editor's layers: a thumbnail, or a copy to review.
+  const lean = small || review;
   // Taken apart: only the active slide (`Track`) – eased in and out of its layers, the tools
   // over it off meanwhile.
-  const { phase, ready: stageReady } = useStagePhase(layered && !small);
+  const { phase, ready: stageReady } = useStagePhase(layered && !lean);
   const stage = phase !== null;
   const src = small ? slide.thumbnailUrl : slide.imageUrl;
-  const zoomed = zoom && !small ? zoom : null;
+  const zoomed = zoom && !lean ? zoom : null;
   // Filling a frame of another shape: cropped even unzoomed.
   const cover = coverOf(slide.aspectRatio, w / h);
   const cropped = isCropped(cover);
@@ -157,9 +165,9 @@ export const SlideFrame = memo(function SlideFrame({
     cropped || (zoomed && zoomed.scale < 1) ? 'Zoom zurücksetzen' : 'Ganze Folie zeigen';
   // Zoomed out: the whole slide shows, its corners rounded, room around it.
   const zoomedOut = !!zoomed && zoomed.scale < 1;
-  // Moved there zoomed out, caught in the middle: its frame pulses in from the sides that way.
+  // Moved zoomed out along the middle of its frame: the frame's centre line shows that way.
   // With the cover moving it reckons with (`coverIn`): none unless cropped.
-  const centreCaught = useCentreFlash(zoomed, cropped ? cover : NO_COVER);
+  const centreLines = useCentreLines(zoomed, cropped ? cover : NO_COVER);
   // That room, in the slide's coordinates: what lies off the slide shows there.
   const around = (() => {
     if (!view || !zoomedOut) return null;
@@ -182,7 +190,7 @@ export const SlideFrame = memo(function SlideFrame({
   const drawing = tool !== null;
   const textBox = draft?.textBox ?? null;
   const boxes = boxMode && !small && !stage;
-  const selecting = canSelect && !drawing && !small;
+  const selecting = canSelect && !drawing && (!small || review);
   // The slide's boxes – the same while editing (`useSlideBoxes`).
   const slideBoxes = useSlideBoxes(slide);
   const boxAt = (point: Point) => (boxes ? slideBoxAt(slide, slideBoxes, point) : null);
@@ -300,7 +308,7 @@ export const SlideFrame = memo(function SlideFrame({
   const editing = useEditing();
   // „Hilfslinien setzen“: the template's guides set on the flat slide, over its elements.
   const settingGuides =
-    editing.active && editing.tool === 'guides' && template !== null && !small && !stage;
+    editing.active && editing.tool === 'guides' && template !== null && !lean && !stage;
   // C comments on the outlined box like a click would (`useStartComment`).
   const registry = useStageRegistry();
   const outlined = trackShapes ? hoveredShape : null;
@@ -381,13 +389,25 @@ export const SlideFrame = memo(function SlideFrame({
           data-slide-box={slide.id}
           className={cn(
             view ? 'absolute' : 'relative size-full',
+            // Zoomed out, the room around it is commented on as the slide is.
+            around && 'slide-room',
             // The stage under it takes the pointer: only pins and the like keep theirs.
             stage && 'pointer-events-none',
             !drawing && pointerTarget && 'cursor-pointer',
             selecting && !boxes && 'cursor-crosshair',
           )}
           // As wide as the slide: a tilted box's perspective is in its widths (`ShapeOutline`).
-          style={{ containerType: 'inline-size', ...(view ? zoomedBox(view, w, h, cover) : {}) }}
+          style={{
+            containerType: 'inline-size',
+            ...(view ? zoomedBox(view, w, h, cover) : {}),
+            // The room around it, for the layers that take the pointer there (`slide-room`).
+            ...(around && {
+              ['--room-left' as string]: `${around.x * 100}%`,
+              ['--room-top' as string]: `${around.y * 100}%`,
+              ['--room-right' as string]: `${(1 - around.x - around.w) * 100}%`,
+              ['--room-bottom' as string]: `${(1 - around.y - around.h) * 100}%`,
+            }),
+          }}
           onClick={drawing ? undefined : activate}
           onPointerDown={onBoxPointerDown}
           onPointerMove={onBoxPointerMove}
@@ -452,18 +472,20 @@ export const SlideFrame = memo(function SlideFrame({
                 />
               )}
             </div>
-            {around && !small && !stage && <OffSlideLayer slideId={slide.id} frame={around} />}
-            {!small && !stage && (
+            {around && !lean && !stage && <OffSlideLayer slideId={slide.id} frame={around} />}
+            {!lean && !stage && (
               // Bearbeiten composes the slide per element (docs/do-not-break.md).
               <SlideCompositor
                 slideId={slide.id}
                 rounded={view && !zoomedOut ? '' : 'rounded-panel'}
+                // Zoomed out, what lies off the slide is drawn too.
+                open={zoomedOut}
               />
             )}
-            {!small && !stage && (
+            {!lean && !stage && (
               <PromptLayer slideId={slide.id} rounded={view && !zoomedOut ? '' : 'rounded-panel'} />
             )}
-            {!small && !stage && (
+            {!lean && !stage && (
               <PhotoPreviewLayer
                 slideId={slide.id}
                 src={src}
@@ -525,13 +547,13 @@ export const SlideFrame = memo(function SlideFrame({
               hoveredId={editing.active ? hoveredElement : outlined?.id}
             />
           )}
-          {showLayoutGrid && !small && !stage && (
+          {showLayoutGrid && !lean && !stage && (
             <LayoutGridLayer grid={layoutGrid} color={accentColor(color)} />
           )}
-          {showGuides && !small && !stage && !settingGuides && (
+          {showGuides && !lean && !stage && !settingGuides && (
             <GuideLayer slide={slide} guides={layoutGuides?.guides} />
           )}
-          {!small && !stage && (
+          {!lean && !stage && (
             <EditLayer
               slideId={slide.id}
               color={accentColor(color)}
@@ -554,13 +576,14 @@ export const SlideFrame = memo(function SlideFrame({
               editing={editing.active}
               passive={editing.active && editing.selection?.slideId === slide.id}
               slideBoxes={slideBoxes}
+              room={around !== null}
             />
           )}
           {/* A template being designed: its placeholders marked, its guides to drag. */}
           {/* With the guides tool, GuideEditor draws (and drags) the guides alone. */}
-          {!small && !stage && <TemplateLayer slideId={slide.id} guides={!settingGuides} />}
+          {!lean && !stage && <TemplateLayer slideId={slide.id} guides={!settingGuides} />}
           {settingGuides && <GuideEditor slideId={slide.id} />}
-          {!small && !stage && <GradientHandles slideId={slide.id} color={accentColor(color)} />}
+          {!lean && !stage && <GradientHandles slideId={slide.id} color={accentColor(color)} />}
           {dragRect && <RectFrame rect={dragRect} color={accentColor(color)} dashed />}
           {pointerTarget && (
             <ShapeOutline shape={pointerTarget} variant="target" color={accentColor(color)} />
@@ -568,7 +591,7 @@ export const SlideFrame = memo(function SlideFrame({
           {framed.map((box) => (
             <ShapeOutline key={box.id} shape={box} variant="target" color={accentColor(color)} />
           ))}
-          {!small && <FindOutline slideId={slide.id} />}
+          {!lean && <FindOutline slideId={slide.id} />}
           {drawing && !stage && (
             <DrawingSurface
               slide={slide}
@@ -585,7 +608,8 @@ export const SlideFrame = memo(function SlideFrame({
             variant="secondary"
             size="xs"
             trailingIcon="close"
-            className="absolute top-3 right-3 tabular-nums"
+            // Over the room around the slide, which takes the pointer too (`slide-room`).
+            className="absolute top-3 right-3 z-(--z-raised) tabular-nums"
             aria-label={`Zoom ${Math.round(zoomed.scale * 100)} % – ${unzoomLabel}`}
             title={unzoomLabel}
             onClick={() => dispatch({ type: 'slideZoomChanged', slideId: slide.id, zoom: null })}
@@ -594,13 +618,8 @@ export const SlideFrame = memo(function SlideFrame({
           </Button>
         )}
       </div>
-      {/* Beside the frame, not in it: zoomed, it clips – the glow reaches out around it. */}
-      {zoomedOut && centreCaught.x > 0 && (
-        <SnapPulse key={`x${centreCaught.x}`} ways="x" color={accentColor(color)} />
-      )}
-      {zoomedOut && centreCaught.y > 0 && (
-        <SnapPulse key={`y${centreCaught.y}`} ways="y" color={accentColor(color)} />
-      )}
+      {centreLines.includes('x') && <CentreLine way="x" color={accentColor(color)} />}
+      {centreLines.includes('y') && <CentreLine way="y" color={accentColor(color)} />}
       {slideMenu.contextMenu}
     </div>
   );

@@ -2,7 +2,7 @@ import type { SpellingWord } from '@slider/shared';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { api, apiRequest } from '../api-client';
 
-/** The spell check's own words: the account's („Wörterbuch“) and a workspace's („Wörter“). */
+/** The spell check's own words: the account's and a workspace's – „Wörter“ in the Bibliothek, picked at its right. */
 export const spellingKeys = {
   own: ['account', 'words'] as const,
   workspace: (workspaceId: string) => ['workspaces', workspaceId, 'words'] as const,

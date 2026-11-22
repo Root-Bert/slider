@@ -1,14 +1,6 @@
 import { useQuery } from '@tanstack/react-query';
 import { useEffect, useId, useRef, useState, type CSSProperties, type KeyboardEvent } from 'react';
-import {
-  boardSchema,
-  DECK_KINDS,
-  DEFAULT_DECK_KIND,
-  MAX_CREATED_SLIDES,
-  MAX_CREATION_PROMPT_LENGTH,
-  MIN_CREATED_SLIDES,
-  type DeckKind,
-} from '@slider/shared';
+import { boardSchema, DEFAULT_DECK_KIND, MAX_CREATION_PROMPT_LENGTH } from '@slider/shared';
 import { useHeardWords } from '../voice/hooks/useHeardWords';
 import {
   clearCreationDraft,
@@ -16,36 +8,14 @@ import {
   saveCreationDraft,
   type CreationDraft,
 } from './creation-draft';
-import { MasterChoice } from '@/features/onboarding';
+import { KindChoice, MasterChoice, PagesChoice, pagesOf } from '@/features/onboarding';
 import { api } from '@/lib/api-client';
 import { queryKeys, useDismissCreation, useStartCreation, useWorkspaceMasters } from '@/lib/api';
 import { isModEnter } from '@/lib/keyboard';
-import {
-  Button,
-  cn,
-  Icon,
-  IconButton,
-  NumberField,
-  TextLink,
-  useFocusLoop,
-  type IconName,
-} from '@/ui';
+import { Button, Icon, IconButton, TextLink, useFocusLoop } from '@/ui';
 import { useViewerDispatch } from '../state/viewer-state';
 import { useViewerData } from '../state/viewer-data';
 import { useViewerToast } from '../state/viewer-toast';
-
-const KIND_ICONS: Record<DeckKind, IconName> = {
-  school: 'article',
-  pitch: 'arrowUpward',
-  consulting: 'compareArrows',
-  brand: 'localOffer',
-  sales: 'send',
-  status: 'checkCircleOutline',
-  training: 'draw',
-  keynote: 'mic',
-};
-
-const pagesOf = (kind: DeckKind) => DECK_KINDS.find((each) => each.id === kind)?.pages ?? 10;
 
 /**
  * Folie 1 of a new deck while it is still blank: a large window on the slide to have the AI
@@ -88,8 +58,8 @@ export function CreatePrompt({
   const setDescription = (update: (now: string) => string) =>
     setDraft((now) => ({ ...now, description: update(now.description) }));
   const kind = draft.kind ?? DEFAULT_DECK_KIND;
-  // The kind's suggestion until a number is typed; „KI wählt“: as many as the content needs.
-  const byAi = draft.pages === 'ai';
+  // „Automatisch“ unless a number is set.
+  const byAi = typeof draft.pages !== 'number';
   const shownPages = typeof draft.pages === 'number' ? draft.pages : pagesOf(kind);
   // The deck's own template first; one removed meanwhile falls back to none.
   const wanted = draft.templateId ?? templateId ?? '';
@@ -252,40 +222,7 @@ export function CreatePrompt({
           </div>
 
           <div className="flex flex-col gap-5">
-            <fieldset className="flex flex-col gap-2" aria-describedby={kindsId}>
-              <legend className="mb-2 text-xs font-medium text-fg-muted">
-                Art der Präsentation
-              </legend>
-              <div className="grid grid-cols-[repeat(auto-fill,minmax(8.5rem,1fr))] gap-2">
-                {DECK_KINDS.map((each) => {
-                  const selected = each.id === kind;
-                  return (
-                    <label
-                      key={each.id}
-                      title={each.meaning}
-                      className={cn(
-                        'group relative flex h-10 cursor-pointer items-center gap-2 rounded-control bg-surface-1 px-2.5 text-body whitespace-nowrap text-fg-muted ring-2 ring-transparent transition-[box-shadow,background-color,color,scale] duration-150',
-                        'hover:bg-hover hover:text-fg has-focus-visible:ring-fg',
-                        selected && 'bg-selected! font-medium text-fg! ring-fg!',
-                      )}
-                    >
-                      <input
-                        type="radio"
-                        name={`${kindsId}-kind`}
-                        checked={selected}
-                        onChange={() => change({ kind: each.id })}
-                        className="sr-only"
-                      />
-                      <Icon name={KIND_ICONS[each.id]} size={16} className="shrink-0" />
-                      <span>{each.label}</span>
-                    </label>
-                  );
-                })}
-              </div>
-              <p id={kindsId} className="sr-only">
-                Die Art bestimmt Aufbau, Ton und Textmenge der Folien.
-              </p>
-            </fieldset>
+            <KindChoice kind={kind} onChange={(next) => change({ kind: next })} />
 
             {masters.length > 0 && (
               <MasterChoice
@@ -298,33 +235,12 @@ export function CreatePrompt({
               />
             )}
 
-            <div className="flex items-center gap-2">
-              <label className="flex items-center gap-2 text-xs font-medium text-fg-muted">
-                Seitenzahl
-                {!byAi && (
-                  <NumberField
-                    label="Seitenzahl"
-                    value={shownPages}
-                    onChange={(value) => change({ pages: Math.round(value) })}
-                    min={MIN_CREATED_SLIDES}
-                    max={MAX_CREATED_SLIDES}
-                    step={1}
-                    decimals={0}
-                    size="md"
-                  />
-                )}
-              </label>
-              <Button
-                size="sm"
-                variant={byAi ? 'secondary' : 'ghost'}
-                icon="autoAwesome"
-                aria-pressed={byAi}
-                title={`Die KI wählt ${MIN_CREATED_SLIDES}–${MAX_CREATED_SLIDES} Folien, so viele der Inhalt braucht`}
-                onClick={() => change({ pages: byAi ? null : 'ai' })}
-              >
-                KI wählt
-              </Button>
-            </div>
+            <PagesChoice
+              pages={shownPages}
+              byAi={byAi}
+              onPages={(pages) => change({ pages })}
+              onByAi={(on) => change({ pages: on ? null : pagesOf(kind) })}
+            />
           </div>
         </div>
       </div>

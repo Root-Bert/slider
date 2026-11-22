@@ -1,0 +1,45 @@
+---
+/**
+ * The line over a headline: whose it is (in the page's colour),
+ * then what it is, a bar between them.
+ */
+interface Props {
+  label: string;
+  /** What follows the label, each part after a bar. */
+  parts?: string[];
+  /** On a night-dark tile. */
+  dark?: boolean;
+}
+
+const { label, parts = [], dark = false } = Astro.props;
+---
+
+<p class:list={['kind', dark && 'is-dark']}>
+  <strong>{label}</strong>{parts.map((part) => <><i aria-hidden="true">|</i>{part}</>)}
+</p>
+
+<style>
+  .kind {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: inherit;
+    gap: 4px 14px;
+    font-size: 15px;
+    font-weight: 500;
+    color: var(--color-fg-muted);
+  }
+  .kind strong {
+    font-weight: 600;
+    color: var(--brand-line);
+  }
+  .kind i {
+    font-style: normal;
+    opacity: 0.6;
+  }
+  .kind.is-dark {
+    color: rgb(255 255 255 / 0.55);
+  }
+  .kind.is-dark strong {
+    color: #fff;
+  }
+</style>

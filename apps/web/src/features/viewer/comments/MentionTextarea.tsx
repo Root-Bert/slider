@@ -1,7 +1,7 @@
 import { useMemo, useRef, type ComponentProps } from 'react';
 import { AutosizeTextarea, cn } from '@/ui';
 import { tokenizeBody } from './lib/comment-body';
-import { useViewerData } from '../state/viewer-data';
+import { useMentionPeople } from './mention-people';
 
 /**
  * A comment field whose @mentions of people in the deck stand out while typing (BER-105). A
@@ -13,7 +13,7 @@ export function MentionTextarea({
   onScroll,
   ...props
 }: ComponentProps<typeof AutosizeTextarea>) {
-  const { participantNames } = useViewerData();
+  const { participantNames } = useMentionPeople();
   const backdropRef = useRef<HTMLDivElement>(null);
   const tokens = useMemo(() => {
     const known = new Set(participantNames.map((name) => `@${name}`));

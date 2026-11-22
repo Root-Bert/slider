@@ -9,6 +9,12 @@ import type { Clock } from '../clock';
 import type { AppDeps } from '../deps';
 import { ApiError, badRequest, fileTooLarge, notFound } from '../http/errors';
 import { deckUploadSlot, importLimit } from '../http/import-limit';
+import {
+  deckBoard,
+  documentBoard,
+  requireBoardAccess,
+  type BoardOwner,
+} from '../services/board-owner';
 import { loadComment } from '../services/comments';
 import { assertDeckSlot } from '../services/plans';
 import { resolveUploadWorkspace } from '../services/workspaces';
@@ -56,6 +62,8 @@ interface TusUpload {
   workspaceId: string | null;
   /** … or a new version of this deck (a recording: a new comment on it; a material: its board). */
   deckId: string | null;
+  /** A material for a text document's board instead of a deck's. */
+  documentId?: string | null;
   /** A recording replacing this comment's own. */
   commentId?: string | null;
   touchedAt: number;
@@ -119,10 +127,16 @@ export class TusUploads {
     await writeFile(`${this.file(upload.id)}.json`, JSON.stringify(upload));
   }
 
-  async create(upload: TusUpload): Promise<void> {
+  /**
+   * The files of an upload that already has its place in the list. `false` when a newer upload
+   * of the same person took that place meanwhile: nothing of it is left then.
+   */
+  async create(upload: TusUpload): Promise<boolean> {
     await writeFile(this.file(upload.id), new Uint8Array());
     await this.save(upload);
-    (await this.all()).set(upload.id, upload);
+    if ((await this.all()).get(upload.id) === upload) return true;
+    await this.remove(upload.id);
+    return false;
   }
 
   rememberFinished(upload: TusUpload, status: 200 | 201, body: unknown): void {
@@ -209,10 +223,15 @@ const conflict = (message: string) => new ApiError(409, 'bad_request', message);
 /** Marks a complete upload as taken; refused while it is running or bytes are missing. */
 async function claimComplete(store: TusUploads, upload: TusUpload): Promise<void> {
   if (store.busy.has(upload.id)) throw conflict('Dieser Upload läuft noch.');
-  if ((await store.offset(upload)) !== upload.size) {
-    throw conflict('Die Datei ist noch nicht vollständig hochgeladen.');
-  }
+  // Taken before the await: claimed once, even when asked twice at the same moment.
   store.busy.add(upload.id);
+  let complete = false;
+  try {
+    complete = (await store.offset(upload)) === upload.size;
+  } finally {
+    if (!complete) store.busy.delete(upload.id);
+  }
+  if (!complete) throw conflict('Die Datei ist noch nicht vollständig hochgeladen.');
 }
 
 /**
@@ -246,14 +265,15 @@ export async function takeRecordingUpload(
 }
 
 /**
- * A file for a deck's board sent over tus (`purpose material`): its bytes, its name, and
- * `done(error?)` as for a recording. Only its uploader's, only for the deck it was begun for.
+ * A file for a board sent over tus (`purpose material`): its bytes, its name, and
+ * `done(error?)` as for a recording. Only its uploader's, only for the deck or the document it
+ * was begun for.
  */
 export async function takeMaterialUpload(
   deps: AppDeps,
   id: string,
   userId: string,
-  deckId: string,
+  owner: BoardOwner,
 ): Promise<{
   bytes: Uint8Array<ArrayBuffer>;
   fileName: string;
@@ -261,8 +281,13 @@ export async function takeMaterialUpload(
 }> {
   const store = tusUploads(deps);
   const upload = await store.get(id, userId);
-  if (upload.purpose !== 'material' || upload.deckId !== deckId) {
-    throw badRequest('Dieser Upload ist kein Material dieser Präsentation.');
+  const begunFor = owner.kind === 'deck' ? upload.deckId : upload.documentId;
+  if (upload.purpose !== 'material' || begunFor !== owner.id) {
+    throw badRequest(
+      owner.kind === 'deck'
+        ? 'Dieser Upload ist kein Material dieser Präsentation.'
+        : 'Dieser Upload ist kein Material dieses Dokuments.',
+    );
   }
   await claimComplete(store, upload);
   const done = (error?: unknown) => store.release(upload, error);
@@ -312,7 +337,7 @@ export function deckTusRoutes(deps: AppDeps) {
     const size = Number(c.req.header('upload-length'));
     if (!Number.isSafeInteger(size) || size < 0) throw badRequest('Upload-Length fehlt.');
     if (size === 0) throw badRequest('Die Datei ist leer.');
-    const { filename, workspaceId, deckId, commentId } = readMetadata(
+    const { filename, workspaceId, deckId, commentId, documentId } = readMetadata(
       c.req.header('upload-metadata'),
     );
     if (purposeOf(c) === 'recording') {
@@ -324,10 +349,18 @@ export function deckTusRoutes(deps: AppDeps) {
     }
     if (purposeOf(c) === 'material') {
       if (size > maxBytes) throw fileTooLarge(maxBytes);
-      if (!deckId) throw badRequest('Zu welcher Präsentation gehört das Material?');
+      // A deck's board or a text document's – exactly one of them.
+      if (!deckId === !documentId) {
+        throw badRequest('Zu welcher Präsentation oder welchem Dokument gehört das Material?');
+      }
       if (!filename) throw badRequest('Der Dateiname fehlt.');
       // Who may comment may put material on the board.
-      await requireDeckAccess(deps, c.var.viewer, deckId, 'comment');
+      await requireBoardAccess(
+        deps,
+        c.var.viewer,
+        deckId ? deckBoard(deckId) : documentBoard(documentId!),
+        'comment',
+      );
       return next();
     }
     requireOwner(c.var.viewer);
@@ -354,24 +387,29 @@ export function deckTusRoutes(deps: AppDeps) {
 
       .post(DECK_TUS_PATH, viewer, mayCreate, deckImports, async (c) => {
         const userId = c.var.viewer.author.id;
-        const { filename, workspaceId, deckId, commentId } = readMetadata(
+        const { filename, workspaceId, deckId, commentId, documentId } = readMetadata(
           c.req.header('upload-metadata'),
         );
         const purpose = purposeOf(c);
         await store.sweep();
-        const open = [...(await store.all()).values()];
-        const mine = open.filter((upload) => upload.userId === userId);
-        if (mine.length >= TUS_UPLOADS_PER_USER) {
-          const oldest = mine.sort((a, b) => a.touchedAt - b.touchedAt)[0];
-          if (oldest && !store.busy.has(oldest.id)) await store.remove(oldest.id);
-        } else if (open.length >= TUS_UPLOADS_TOTAL) {
-          c.header('Retry-After', '60');
-          throw new ApiError(
-            429,
-            'rate_limited',
-            'Gerade werden viele Präsentationen gleichzeitig hochgeladen. Bitte versuch es gleich noch einmal.',
-          );
+        const uploads = await store.all();
+        // From here to the upload's place in the list nothing is awaited: many begun at once
+        // each see the ones before them, not the same list – and none sees an upload as idle
+        // that a part has taken since.
+        const mine = [...uploads.values()].filter((upload) => upload.userId === userId);
+        // The oldest that is not being sent makes room; while all are, no further one is begun –
+        // or uploads held open would pile up without end.
+        const idle = mine
+          .filter((each) => !store.busy.has(each.id))
+          .sort((a, b) => a.touchedAt - b.touchedAt);
+        const dropped: string[] = [];
+        while (mine.length - dropped.length >= TUS_UPLOADS_PER_USER && idle.length > 0) {
+          const { id } = idle.shift() as TusUpload;
+          uploads.delete(id);
+          dropped.push(id);
         }
+        const full =
+          mine.length - dropped.length >= TUS_UPLOADS_PER_USER || uploads.size >= TUS_UPLOADS_TOTAL;
         const upload: TusUpload = {
           id: crypto.randomUUID(),
           userId,
@@ -381,9 +419,28 @@ export function deckTusRoutes(deps: AppDeps) {
           workspaceId: deckId || purpose !== 'deck' ? null : workspaceId || null,
           deckId: purpose === 'recording' && commentId ? null : deckId || null,
           commentId: purpose === 'recording' ? commentId || null : null,
-          touchedAt: 0,
+          documentId: purpose === 'material' ? documentId || null : null,
+          touchedAt: deps.clock.now().getTime(),
         };
-        await store.create(upload);
+        if (!full) uploads.set(upload.id, upload);
+        await Promise.all(dropped.map((id) => store.remove(id)));
+        const refuse = () => {
+          c.header('Retry-After', '60');
+          return new ApiError(
+            429,
+            'rate_limited',
+            'Gerade werden viele Präsentationen gleichzeitig hochgeladen. Bitte versuch es gleich noch einmal.',
+          );
+        };
+        if (full) throw refuse();
+        let made: boolean;
+        try {
+          made = await store.create(upload);
+        } catch (error) {
+          await store.remove(upload.id);
+          throw error;
+        }
+        if (!made) throw refuse();
         c.header('Location', `${API_PREFIX}${DECK_TUS_PATH}/${upload.id}`);
         c.header('Upload-Expires', new Date(upload.touchedAt + TUS_UPLOAD_EXPIRY_MS).toUTCString());
         return c.body(null, 201);
@@ -408,18 +465,22 @@ export function deckTusRoutes(deps: AppDeps) {
           );
         }
         if (store.busy.has(upload.id)) throw conflict('Dieser Upload läuft schon.');
-        const offset = Number(c.req.header('upload-offset'));
-        const received = await store.offset(upload);
-        if (offset !== received) throw conflict(`Der Upload steht bei Byte ${received}.`);
-        const declared = Number(c.req.header('content-length'));
-        if (Number.isFinite(declared) && offset + declared > upload.size) {
-          throw badRequest('Der Teil reicht über das Ende der Datei hinaus.');
-        }
+        // Taken before anything is awaited: two parts sent at once must not both pass the check
+        // and write past the file's end.
         store.busy.add(upload.id);
-        let written = received;
+        let written: number;
         let tooLong = false;
-        const file = await open(store.file(upload.id), 'a');
+        let file: Awaited<ReturnType<typeof open>> | null = null;
         try {
+          const offset = Number(c.req.header('upload-offset'));
+          const received = await store.offset(upload);
+          if (offset !== received) throw conflict(`Der Upload steht bei Byte ${received}.`);
+          const declared = Number(c.req.header('content-length'));
+          if (Number.isFinite(declared) && offset + declared > upload.size) {
+            throw badRequest('Der Teil reicht über das Ende der Datei hinaus.');
+          }
+          written = received;
+          file = await open(store.file(upload.id), 'a');
           const reader = c.req.raw.body?.getReader();
           // Straight to disk as it comes: a part is never held whole in memory.
           for (;;) {
@@ -437,8 +498,12 @@ export function deckTusRoutes(deps: AppDeps) {
             }
           }
         } finally {
-          await file.close();
-          store.busy.delete(upload.id);
+          // Free again whatever closing the file says: an upload left taken could never go on.
+          try {
+            await file?.close();
+          } finally {
+            store.busy.delete(upload.id);
+          }
         }
         // A part cut off midway keeps what arrived: the client asks with HEAD and goes on from there.
         await store.save(upload);

@@ -1,13 +1,16 @@
 import { Link } from 'react-router';
 import type { TemplateColor, WorkspaceMaster } from '@slider/shared';
 import { pluralize } from '@/lib/format';
-import { routes } from '@/lib/routes';
+import { useLibrary } from '@/lib/apps';
 import { cn, collectionGridClass, type ShowToast } from '@/ui';
 import type { MaterialView } from '../../lib/font-families';
 
 /** A design's page, its way back leading to „Farben“ again. */
-const masterLink = (workspaceId: string, masterId: string) =>
-  `${routes.workspaceMaster(workspaceId, masterId)}?from=farben`;
+const masterLink = (
+  library: ReturnType<typeof useLibrary>,
+  workspaceId: string,
+  masterId: string,
+) => `${library.master(workspaceId, masterId)}?from=farben`;
 
 /** A colour as the pickers name it: `2563EB`. */
 const hexName = (color: string) => color.slice(1).toUpperCase();
@@ -26,6 +29,7 @@ interface ColorCollectionProps {
  * design's name opens its page. Nothing to pick or remove – they belong to their design.
  */
 export function ColorCollection({ workspaceId, masters, view, onNotify }: ColorCollectionProps) {
+  const library = useLibrary();
   const copy = ({ color, name }: TemplateColor) =>
     navigator.clipboard
       ?.writeText(`#${hexName(color)}`)
@@ -40,7 +44,7 @@ export function ColorCollection({ workspaceId, masters, view, onNotify }: ColorC
             className="flex items-center gap-4 rounded-control-sm px-3 py-2.5 transition-colors hover:bg-surface-1"
           >
             <h3 className="w-48 shrink-0 truncate text-sm font-medium text-fg max-sm:w-28">
-              <Link to={masterLink(workspaceId, master.id)}>{master.name}</Link>
+              <Link to={masterLink(library, workspaceId, master.id)}>{master.name}</Link>
             </h3>
             <div className="-m-0.5 flex min-w-0 flex-1 flex-wrap gap-2 p-0.5">
               {(master.colors ?? []).map((color) => (
@@ -59,7 +63,7 @@ export function ColorCollection({ workspaceId, masters, view, onNotify }: ColorC
           <article className="glass flex min-w-0 flex-col gap-5 rounded-panel p-5">
             <div className="flex min-w-0 items-baseline gap-2">
               <h3 className="min-w-0 flex-1 truncate text-lg font-medium text-fg">
-                <Link to={masterLink(workspaceId, master.id)}>{master.name}</Link>
+                <Link to={masterLink(library, workspaceId, master.id)}>{master.name}</Link>
               </h3>
               <span className="shrink-0 text-sm text-fg-subtle">
                 {pluralize(master.colors?.length ?? 0, 'Farbe', 'Farben')}

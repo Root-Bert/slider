@@ -4,10 +4,10 @@ import { useAccount } from '@/features/auth';
 import { WorkspaceOnboarding } from './components/WorkspaceOnboarding';
 import { pickWorkspace, readLastWorkspaceId } from './lib/last-workspace';
 
-/** `/`: opens the last used workspace; without any, the onboarding (create one or join an invite). */
+/** `/`: opens Cloud in the last used workspace; without any, the onboarding (create one or join an invite). */
 export function Component() {
   const { workspaces } = useAccount();
   const target = pickWorkspace(workspaces, readLastWorkspaceId());
-  if (target) return <Navigate to={routes.workspace(target.id)} replace />;
+  if (target) return <Navigate to={routes.cloud(target.id)} replace />;
   return <WorkspaceOnboarding />;
 }

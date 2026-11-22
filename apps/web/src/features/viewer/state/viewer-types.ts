@@ -291,4 +291,10 @@ export type ViewerAction =
   /** Comments refetched: a thread deleted meanwhile (by someone else) loses focus and panel. */
   | { type: 'threadsReplaced'; threadIds: ReadonlySet<string> }
   /** A new revision arrived: drop what points at slides that are gone (BER-107). */
-  | { type: 'slidesReplaced'; slideIds: readonly string[]; fallbackSlideId: string | null };
+  | {
+      type: 'slidesReplaced';
+      slideIds: readonly string[];
+      /** The variants beside them (not in the deck's order): still there for drafts and zooms. */
+      variantIds?: readonly string[];
+      fallbackSlideId: string | null;
+    };

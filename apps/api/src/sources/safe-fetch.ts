@@ -221,6 +221,21 @@ export async function fetchHop(
   }
 }
 
+/**
+ * Whether a redirect stays with the server first asked: the same origin, or its `https` twin
+ * (a server asked over `http` that sends everyone on to `https`, both on their usual ports).
+ */
+function sameServer(first: URL, next: URL): boolean {
+  if (next.origin === first.origin) return true;
+  return (
+    first.protocol === 'http:' &&
+    next.protocol === 'https:' &&
+    next.hostname === first.hostname &&
+    first.port === '' &&
+    next.port === ''
+  );
+}
+
 /** The redirect target of `response`, or `null` when it is not a redirect. */
 export function redirectTarget(response: Response, from: URL): URL | null {
   if (!isRedirect(response.status)) return null;
@@ -233,6 +248,9 @@ export function redirectTarget(response: Response, from: URL): URL | null {
   }
 }
 
+/** What a request still carries once a redirect leaves the server it was sent to. */
+const CROSS_ORIGIN_HEADERS = new Set(['accept', 'accept-language', 'range', 'user-agent']);
+
 /** Follows up to {@link MAX_REDIRECTS} redirects by hand, re-checking every hop. */
 export async function safeFetch(
   url: URL,
@@ -241,12 +259,24 @@ export async function safeFetch(
 ): Promise<{ response: Response; url: URL }> {
   const signal = AbortSignal.timeout(FETCH_TIMEOUT_MS);
   let current = url;
+  let sent = init;
   for (let hop = 0; ; hop++) {
-    const response = await fetchHop(current, options, { ...init, signal });
+    const response = await fetchHop(current, options, { ...sent, signal });
     const next = redirectTarget(response, current);
     if (!next) return { response, url: current };
     await response.body?.cancel();
     if (hop >= MAX_REDIRECTS) throw sourceUnreachable('Der Link leitet zu oft weiter.');
+    // Sent on to another server: what was meant for the first one (a login, a key, a body)
+    // stays behind, as a browser does.
+    if (!sameServer(url, next)) {
+      if (sent.body != null)
+        throw sourceUnreachable('Der Link leitet auf einen anderen Server weiter.');
+      const headers = new Headers();
+      for (const [name, value] of new Headers(sent.headers)) {
+        if (CROSS_ORIGIN_HEADERS.has(name.toLowerCase())) headers.set(name, value);
+      }
+      sent = { ...sent, headers };
+    }
     current = next;
   }
 }

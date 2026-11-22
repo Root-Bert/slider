@@ -14,6 +14,7 @@ import { useTrackDots } from './lib/track-dots';
 import { VariantComposer, VariantGround } from './VariantAsk';
 import {
   madeByProposal,
+  compareVariants,
   setVariantPrompt,
   useVariantPrompted,
   useVariantRequest,
@@ -59,12 +60,15 @@ const usePageOf = () => {
  */
 export const VariantBadge = memo(function VariantBadge({
   variantId,
+  slideId,
   number,
   x,
   w,
   canEdit,
 }: {
   variantId: string;
+  /** The slide it is a variant of. */
+  slideId: string;
   number: number;
   x: number;
   w: number;
@@ -98,7 +102,7 @@ export const VariantBadge = memo(function VariantBadge({
         className="glass-dark pointer-events-auto absolute top-3 z-(--z-overlay) flex items-center gap-1 rounded-chip py-0.5 pr-0.5 pl-2.5 text-xs text-fg"
         style={{ left: x + 12 }}
       >
-        <span className={cn(!canEdit && !proposal && 'pr-2')}>Variante {number}</span>
+        <span>Variante {number}</span>
         {proposal && (
           <button
             type="button"
@@ -115,6 +119,15 @@ export const VariantBadge = memo(function VariantBadge({
             <Avatar author={aiAuthor} size={18} nativeTitle={false} />
           </button>
         )}
+        <button
+          type="button"
+          onClick={() => compareVariants(slideId)}
+          aria-label="Varianten vergleichen"
+          title="Varianten vergleichen"
+          className="flex items-center rounded-badge p-1 text-fg-muted transition-colors hover:bg-hover hover:text-fg"
+        >
+          <Icon name="gridView" size="sm" />
+        </button>
         {canEdit && (
           <button
             type="button"

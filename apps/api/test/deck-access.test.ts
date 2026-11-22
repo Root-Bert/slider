@@ -284,6 +284,17 @@ describe('restricting a deck to selected accounts', () => {
       Object.fromEntries(Object.keys(OPEN).map((key) => [key, 401])),
     );
     ctx.deps.config.auth.devLogin = true;
+    // The dev login answers this machine only: not a public host name, not a remote connection.
+    const from = (remoteAddress: string, host = 'localhost:8787') =>
+      ctx.app.request(
+        '/api/decks',
+        { headers: { host } },
+        { incoming: { socket: { remoteAddress } } },
+      );
+    expect((await from('127.0.0.1')).status).toBe(200);
+    expect((await from('::1')).status).toBe(200);
+    expect((await from('203.0.113.7')).status).toBe(401);
+    expect((await from('127.0.0.1', 'slider.firma.de')).status).toBe(401);
 
     const access = await restrict(deck.deckId, [anna.user.id]);
     expect(access).toEqual({ restricted: true, userIds: [anna.user.id] });
@@ -435,7 +446,11 @@ describe('restricting a deck to selected accounts', () => {
     );
 
     await restrict(deck.deckId, [anna.user.id]);
+    // Deleted for good (out of the trash), its grants go with it.
     expect((await ctx.request(`/api/decks/${deck.deckId}`, { method: 'DELETE' })).status).toBe(204);
+    expect(
+      (await ctx.request(`/api/decks/${deck.deckId}/trash`, { method: 'DELETE' })).status,
+    ).toBe(204);
     expect(await ctx.deps.db.select().from(deckAccessGrants)).toEqual([]);
     expect(await ctx.deps.db.select().from(comments)).toEqual([]);
   });

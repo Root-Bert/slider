@@ -1,0 +1,141 @@
+<!doctype html>
+<html lang="de">
+  <head>
+    <meta charset="UTF-8" />
+    <meta
+      http-equiv="Content-Security-Policy"
+      content="default-src 'none'; style-src 'unsafe-inline'; img-src 'self'; font-src 'self'; script-src 'self'"
+    />
+    <title>Reader</title>
+    <style>
+      @font-face {
+        font-family: 'Inter Variable';
+        src: url('../tabbar/inter.woff2') format('woff2');
+        font-weight: 100 900;
+      }
+      :root {
+        color-scheme: dark;
+        --canvas: #000;
+        --surface: rgb(255 255 255 / 0.06);
+        --border: rgb(255 255 255 / 0.12);
+        --fg: rgb(255 255 255 / 0.9);
+        --fg-subtle: rgb(255 255 255 / 0.5);
+        --primary: #fff;
+        --on-primary: #000;
+      }
+      @media (prefers-color-scheme: light) {
+        :root {
+          color-scheme: light;
+          --canvas: #f4f4f5;
+          --surface: rgb(0 0 0 / 0.04);
+          --border: rgb(0 0 0 / 0.12);
+          --fg: rgb(0 0 0 / 0.88);
+          --fg-subtle: rgb(0 0 0 / 0.5);
+          --primary: #000;
+          --on-primary: #fff;
+        }
+      }
+      html,
+      body {
+        height: 100%;
+        margin: 0;
+        background: var(--canvas);
+        color: var(--fg);
+        font-family:
+          'Inter Variable',
+          -apple-system,
+          BlinkMacSystemFont,
+          sans-serif;
+        font-feature-settings: 'cv11', 'ss01';
+        -webkit-font-smoothing: antialiased;
+      }
+      body {
+        display: grid;
+        place-items: center;
+      }
+      main {
+        display: grid;
+        justify-items: center;
+        gap: 24px;
+        width: 320px;
+      }
+      .logo {
+        display: inline-flex;
+        align-items: center;
+        gap: 14px;
+        font-size: 44px;
+        font-weight: 600;
+        letter-spacing: -0.02em;
+      }
+      .logo img {
+        width: 52px;
+        height: 57px;
+      }
+      p {
+        margin: 0;
+        text-align: center;
+        font-size: 14px;
+        line-height: 1.5;
+        color: var(--fg-subtle);
+      }
+      form {
+        display: grid;
+        gap: 12px;
+        width: 100%;
+      }
+      label {
+        display: grid;
+        gap: 6px;
+        font-size: 12px;
+        font-weight: 500;
+        color: var(--fg-subtle);
+      }
+      input {
+        height: 40px;
+        padding: 0 12px;
+        border: 1px solid var(--border);
+        border-radius: 10px;
+        background: var(--surface);
+        color: var(--fg);
+        font: inherit;
+        font-size: 14px;
+        outline: none;
+      }
+      input:focus-visible,
+      button:focus-visible {
+        outline: 2px solid var(--fg);
+        outline-offset: 2px;
+      }
+      button {
+        height: 44px;
+        border: 0;
+        border-radius: 999px;
+        background: var(--primary);
+        color: var(--on-primary);
+        font: inherit;
+        font-size: 15px;
+        font-weight: 600;
+        cursor: pointer;
+      }
+      #message {
+        min-height: 21px;
+        color: var(--fg);
+      }
+    </style>
+  </head>
+  <body>
+    <main>
+      <div class="logo"><img src="./mark.svg" alt="" />Reader</div>
+      <p>Deine PDFs als App. Melde dich an deinem Server an.</p>
+      <form id="form">
+        <label>
+          Server
+          <input id="server" name="server" autocomplete="url" spellcheck="false" />
+        </label>
+        <button type="submit">Anmelden</button>
+      </form>
+      <p id="message" role="status"></p>
+    </main>
+    <script src="./start.js"></script>
+  </body>
+</html>

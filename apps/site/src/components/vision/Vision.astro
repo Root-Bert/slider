@@ -1,0 +1,662 @@
+---
+import { Avatar } from '@/ui/Avatar';
+import { FOUNDER } from '../blog/posts';
+import Button from '../Button.astro';
+import EndSlide from '../EndSlide.astro';
+import Highlight from '../Highlight.astro';
+import Mark from '../Mark.astro';
+import SectionMark from '../SectionMark.astro';
+import Chapter from './Chapter.astro';
+import { appPage, s, type Lang } from '~/i18n';
+import { SCREEN_WORDS } from '~/i18n/screens';
+import { VISION } from '~/i18n/vision';
+import { APP_NAMES, PRODUCTS, isLive } from '~/lib/apps';
+import { APP_URL } from '~/lib/links';
+import { screenOf } from '~/lib/screens';
+
+/**
+ * The vision page: the founder's letter. A night-dark tile with the mission, then eight chapters
+ * down one line (what a slower future is, why everyone wants a say, why shared work matters and
+ * what the office does about it), signed, and where each app stands.
+ */
+interface Props {
+  lang: Lang;
+}
+
+const { lang } = Astro.props;
+const w = s(lang);
+const v = VISION[lang];
+const together = screenOf('slider', 'discuss');
+const agent = screenOf('slider', 'ai-changed');
+const captions = SCREEN_WORDS[lang].captions.slider;
+---
+
+<section class="vi-hero" data-section data-live="hero">
+  <div class="vi-tile">
+    <p class="vi-eyebrow" data-reveal><i></i>{v.eyebrow}</p>
+    <h1>
+      <span data-reveal style="--i: 1">{v.title[0]}</span>
+      <span data-reveal style="--i: 2">{v.title[1]}</span>
+    </h1>
+    <p class="vi-sub" data-reveal style="--i: 3">{v.sub}</p>
+  </div>
+</section>
+
+<div class="vi-letter">
+  <Chapter n={1} {...v.future}>
+    <div class="vi-compare">
+      <p class="vi-mono">{v.future.from}</p>
+      <p class="vi-mono is-to">{v.future.to}</p>
+      {
+        v.future.rows.map(([from, to], i) => (
+          <>
+            <p class="vi-old">{from}</p>
+            <p class:list={['vi-new', i === v.future.rows.length - 1 && 'is-last']}>
+              <i />
+              {to}
+            </p>
+          </>
+        ))
+      }
+    </div>
+    <p class="vi-mono vi-note">{v.future.note}</p>
+  </Chapter>
+
+  <Chapter n={2} {...v.ours} by="Lara">
+    <ul class="vi-voices">
+      {
+        v.ours.voices.map(([name, text], i) => (
+          <li style={`--c: var(--color-accent-${['blue', 'violet', 'red', 'cyan', 'yellow', 'green'][i]})`} class:list={[i === v.ours.voices.length - 1 && 'is-you']}>
+            <i />
+            <strong>{name}</strong>
+            {text}
+          </li>
+        ))
+      }
+    </ul>
+  </Chapter>
+
+  <Chapter n={3} {...v.matters}>
+    <ol class="vi-chain">
+      {
+        v.matters.chain.map((step, i) => (
+          <li class:list={[i === v.matters.chain.length - 1 && 'is-last']}>{step}</li>
+        ))
+      }
+    </ol>
+    <p class="vi-mono vi-note">{v.matters.note}</p>
+  </Chapter>
+
+  <Chapter n={4} {...v.evil}>
+    <ul class="vi-chat">
+      {
+        v.evil.chat.map(([time, text]) => (
+          <li>
+            <p class="vi-chat-by">
+              <strong>{v.evil.you}</strong>
+              <span class="vi-mono">{time}</span>
+            </p>
+            <p>{text}</p>
+          </li>
+        ))
+      }
+    </ul>
+  </Chapter>
+
+  <Chapter n={5} {...v.need} by="Rose">
+    <ul class="vi-cards">
+      {
+        PRODUCTS.map((id, i) => (
+          <li>
+            <a href={appPage(id, lang)}>
+              <p class="vi-card-app">
+                <Mark app={id} size={24} />
+                {APP_NAMES[id]}
+              </p>
+              <h3>{v.need.cards[i]?.[0]}</h3>
+              <p>{v.need.cards[i]?.[1]}</p>
+            </a>
+          </li>
+        ))
+      }
+    </ul>
+    <p class="vi-say">{v.need.say} <Highlight>{v.need.sayMark}</Highlight></p>
+    <p class="vi-mono vi-note">{v.need.note}</p>
+  </Chapter>
+
+  <Chapter n={6} {...v.together} by="Gesa">
+    <div class="vi-shot">
+      <img src={together.image.src} width={together.image.width} height={together.image.height} alt={captions.discuss ?? ''} loading="lazy" decoding="async" />
+    </div>
+  </Chapter>
+
+  <Chapter n={7} {...v.ai}>
+    <div class="vi-versus">
+      <div>
+        <p class="vi-mono">{v.ai.elsewhere[0]}</p>
+        <p>{v.ai.elsewhere[1]}</p>
+      </div>
+      <div class="is-here">
+        <p class="vi-mono">{v.ai.here[0]}</p>
+        <p>{v.ai.here[1]}</p>
+      </div>
+    </div>
+    <div class="vi-shot">
+      <img src={agent.image.src} width={agent.image.width} height={agent.image.height} alt={captions['ai-changed'] ?? ''} loading="lazy" decoding="async" />
+    </div>
+  </Chapter>
+
+  <section class="ch-end" data-section data-live="chapter-8">
+    <p class="ch-end-n" aria-hidden="true">08</p>
+    <div>
+      <div data-reveal><SectionMark label={v.short.label} /></div>
+      <p class="vi-lines">
+        {v.short.lines.map((line, i) => <span data-reveal style={`--i: ${i + 1}`}>{line}</span>)}
+        <strong data-reveal style="--i: 4">{v.short.last} <Highlight by="Anna">{v.short.mark}</Highlight></strong>
+      </p>
+      <p class="vi-sign" data-reveal style="--i: 5">
+        <Avatar author={FOUNDER} size={28} nativeTitle={false} />
+        <span class="vi-mono">Robert  |  {v.short.sign}</span>
+      </p>
+    </div>
+  </section>
+</div>
+
+<section class="vi-road" data-section data-live="road">
+  <div data-reveal><SectionMark label={v.road.label} /></div>
+  <h2 class="exhibit-title vi-road-title" data-reveal style="--i: 1">{v.road.title}</h2>
+  <p class="exhibit-lead vi-road-sub" data-reveal style="--i: 2">{v.road.sub}</p>
+  <ul>
+    {
+      PRODUCTS.map((id, i) => (
+        <li data-reveal style={`--i: ${3 + i * 0.5}`}>
+          <a href={appPage(id, lang)}>
+            <Mark app={id} size={40} />
+            <span class="vi-road-name">
+              <strong>{APP_NAMES[id]}</strong>
+              <span>{w.apps[id].tagline}</span>
+            </span>
+            <small class:list={[isLive(id) && 'is-live']}>{isLive(id) ? w.status.live : w.status.soon}</small>
+          </a>
+        </li>
+      ))
+    }
+  </ul>
+</section>
+
+<EndSlide title={w.office.end.title} sub={w.office.end.sub}>
+  <Button href={`${APP_URL}/`} variant="inverse">{w.office.end.cta}</Button>
+</EndSlide>
+
+<style>
+  .vi-hero {
+    max-width: 1680px;
+    margin: 0 auto;
+    padding: clamp(12px, 1.6vw, 24px) clamp(12px, 1.6vw, 24px) 0;
+  }
+  /* Night-dark in both themes, the apps' colours glowing from above. */
+  .vi-tile {
+    --app-writer: #3f6fe0;
+    --ground: #0b0b0d;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    padding: clamp(96px, 12vw, 220px) clamp(20px, 4vw, 64px);
+    border-radius: clamp(24px, 3vw, 44px);
+    background:
+      radial-gradient(46% 62% at 16% 0%, color-mix(in srgb, var(--app-slider) 46%, transparent), transparent 100%),
+      radial-gradient(50% 70% at 50% 0%, color-mix(in srgb, var(--app-writer) 55%, transparent), transparent 100%),
+      radial-gradient(46% 62% at 84% 0%, color-mix(in srgb, var(--app-solver) 44%, transparent), transparent 100%),
+      var(--ground);
+    color: #fff;
+    text-align: center;
+  }
+  .vi-eyebrow {
+    display: flex;
+    align-items: center;
+    gap: 9px;
+    padding: 7px 14px 7px 12px;
+    border-radius: 999px;
+    box-shadow: inset 0 0 0 1px rgb(255 255 255 / 0.22);
+    font-size: 14px;
+    font-weight: 500;
+    color: rgb(255 255 255 / 0.86);
+  }
+  .vi-eyebrow i {
+    width: 7px;
+    height: 7px;
+    border-radius: 50%;
+    background: var(--color-accent-green);
+  }
+  .vi-tile h1 {
+    margin-top: clamp(24px, 2.6vw, 40px);
+    font-size: clamp(38px, 7vw, 120px);
+    font-weight: 700;
+    line-height: 1.04;
+    letter-spacing: -0.03em;
+    text-wrap: balance;
+  }
+  .vi-tile h1 span {
+    display: block;
+  }
+  .vi-sub {
+    max-width: 34em;
+    margin-top: clamp(24px, 2.6vw, 40px);
+    font-size: clamp(17px, 1.5vw, 22px);
+    line-height: 1.55;
+    color: rgb(255 255 255 / 0.72);
+    text-wrap: pretty;
+  }
+
+  /* The letter: one line down the page, each chapter's number on it. */
+  .vi-letter {
+    --rail: clamp(72px, 9vw, 150px);
+    --line: clamp(36px, 4.4vw, 72px);
+    position: relative;
+    max-width: 1440px;
+    margin: 0 auto;
+    padding: 0 32px;
+  }
+  .vi-letter::before {
+    content: '';
+    position: absolute;
+    top: clamp(48px, 6vw, 96px);
+    bottom: 0;
+    left: calc(32px + var(--line));
+    width: 2px;
+    background: linear-gradient(var(--color-accent-blue) 0 calc(100% - 160px), transparent);
+  }
+  .vi-mono {
+    font-family: var(--font-mono);
+    font-size: 12px;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    color: var(--color-fg-subtle);
+  }
+  .vi-note {
+    margin-top: 24px;
+  }
+
+  /* 01: what goes, struck through, and what comes in its place. */
+  .vi-compare {
+    display: grid;
+    grid-template-columns: minmax(0, 5fr) minmax(0, 6fr);
+    align-items: center;
+    gap: 14px clamp(24px, 5vw, 96px);
+    max-width: 980px;
+  }
+  .vi-compare .is-to {
+    color: var(--color-accent-blue);
+  }
+  .vi-old {
+    font-size: clamp(16px, 1.5vw, 21px);
+    color: var(--color-fg-subtle);
+    text-decoration: line-through;
+  }
+  .vi-new {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    justify-self: start;
+    padding: 12px 22px 12px 18px;
+    border-radius: 999px;
+    box-shadow: inset 0 0 0 1px var(--color-hairline-strong);
+    font-size: clamp(16px, 1.5vw, 21px);
+    font-weight: 600;
+    color: var(--color-fg);
+  }
+  .vi-new i {
+    flex: none;
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    background: var(--color-accent-blue);
+  }
+  .vi-new.is-last {
+    background: var(--color-accent-blue);
+    color: #fff;
+    box-shadow: none;
+  }
+  .vi-new.is-last i {
+    background: #fff;
+  }
+
+  /* 02: everyone's voice, each in their colour. */
+  .vi-voices {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 12px;
+    max-width: 900px;
+  }
+  .vi-voices li {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 12px 20px 12px 16px;
+    border-radius: 6px 22px 22px 22px;
+    background: var(--color-surface-1);
+    box-shadow: inset 0 0 0 1px var(--color-hairline);
+    font-size: clamp(15px, 1.3vw, 19px);
+    color: var(--color-fg-muted);
+  }
+  .vi-voices i {
+    flex: none;
+    width: 10px;
+    height: 10px;
+    border-radius: 50%;
+    background: var(--c);
+  }
+  .vi-voices strong {
+    font-weight: 600;
+    color: var(--color-fg);
+  }
+  .vi-voices .is-you {
+    box-shadow: inset 0 0 0 2px var(--c);
+  }
+
+  /* 03: from an idea to change. */
+  .vi-chain {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 12px;
+  }
+  .vi-chain li {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 12px 22px;
+    border-radius: 999px;
+    box-shadow: inset 0 0 0 1px var(--color-hairline-strong);
+    font-size: clamp(16px, 1.5vw, 21px);
+    font-weight: 600;
+    color: var(--color-fg);
+  }
+  .vi-chain li:not(:first-child) {
+    margin-left: clamp(28px, 3.4vw, 52px);
+  }
+  .vi-chain li:not(:first-child)::before {
+    content: '→';
+    position: absolute;
+    translate: calc(-22px - clamp(28px, 3.4vw, 52px) / 2 - 0.5em) 0;
+    font-weight: 400;
+    color: var(--color-fg-subtle);
+  }
+  .vi-chain .is-last {
+    background: var(--color-accent-blue);
+    color: #fff;
+    box-shadow: none;
+  }
+
+  /* 04: late at night, talking to yourself. */
+  .vi-chat {
+    display: flex;
+    flex-direction: column;
+    gap: 14px;
+    max-width: 520px;
+  }
+  .vi-chat li {
+    padding: 16px 20px 18px;
+    border-radius: 6px 22px 22px 22px;
+    background: var(--color-surface-1);
+    box-shadow: inset 0 0 0 1px var(--color-hairline);
+    font-size: clamp(16px, 1.3vw, 19px);
+    line-height: 1.5;
+    color: var(--color-fg);
+  }
+  .vi-chat li:last-child {
+    margin-left: clamp(24px, 6vw, 96px);
+    color: var(--color-fg-muted);
+  }
+  .vi-chat-by {
+    display: flex;
+    align-items: baseline;
+    gap: 10px;
+    margin-bottom: 6px;
+    font-size: 14px;
+  }
+  .vi-chat-by .vi-mono {
+    text-transform: none;
+    letter-spacing: 0;
+  }
+
+  /* 05: what each app is for. */
+  .vi-cards {
+    display: grid;
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    gap: clamp(12px, 1.4vw, 20px);
+  }
+  .vi-cards a {
+    display: flex;
+    flex-direction: column;
+    height: 100%;
+    padding: clamp(20px, 2vw, 28px);
+    border-radius: 24px;
+    background: var(--color-surface-1);
+    box-shadow: inset 0 0 0 1px var(--color-hairline);
+    transition: box-shadow 200ms;
+  }
+  .vi-cards a:hover {
+    box-shadow: inset 0 0 0 1px var(--color-fg);
+  }
+  .vi-card-app {
+    display: flex;
+    align-items: center;
+    gap: 9px;
+    font-size: 14px;
+    font-weight: 500;
+    color: var(--color-fg-muted);
+  }
+  .vi-cards h3 {
+    margin-top: clamp(28px, 3.4vw, 56px);
+    font-size: clamp(22px, 2vw, 28px);
+    font-weight: 600;
+    letter-spacing: -0.02em;
+    color: var(--color-fg);
+  }
+  .vi-cards a > p:last-child {
+    margin-top: 8px;
+    font-size: 15px;
+    line-height: 1.5;
+    color: var(--color-fg-muted);
+  }
+  .vi-say {
+    margin-top: clamp(48px, 5.4vw, 88px);
+    font-size: clamp(26px, 3.4vw, 50px);
+    font-weight: 700;
+    line-height: 1.15;
+    letter-spacing: -0.03em;
+    color: var(--color-fg-subtle);
+  }
+
+  /* 06, 07: the app itself. */
+  .vi-shot {
+    overflow: hidden;
+    border-radius: clamp(10px, 1.3vw, 20px);
+    box-shadow:
+      0 0 0 1px var(--color-hairline-strong),
+      0 40px 80px -40px rgb(0 0 0 / 0.35);
+  }
+  .vi-shot img {
+    display: block;
+    width: 100%;
+    height: auto;
+  }
+  .vi-versus {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: clamp(12px, 1.4vw, 20px);
+    max-width: 900px;
+    margin-bottom: clamp(24px, 2.6vw, 40px);
+  }
+  .vi-versus div {
+    padding: clamp(20px, 2vw, 28px);
+    border: 1px dashed var(--color-hairline-strong);
+    border-radius: 24px;
+  }
+  .vi-versus div p:last-child {
+    margin-top: 12px;
+    font-size: clamp(18px, 1.7vw, 24px);
+    font-weight: 600;
+    letter-spacing: -0.02em;
+    color: var(--color-fg-subtle);
+  }
+  .vi-versus .is-here {
+    border: 0;
+    background: var(--color-surface-1);
+    box-shadow: inset 0 0 0 2px var(--color-accent-blue);
+  }
+  .vi-versus .is-here .vi-mono {
+    color: var(--color-accent-blue);
+  }
+  .vi-versus .is-here p:last-child {
+    color: var(--color-fg);
+  }
+
+  /* 08: the letter in four lines, signed. */
+  .ch-end {
+    position: relative;
+    display: grid;
+    grid-template-columns: var(--rail) minmax(0, 1fr);
+    padding-top: clamp(110px, 13vw, 220px);
+  }
+  .ch-end-n {
+    position: relative;
+    padding-top: 2px;
+    font-family: var(--font-mono);
+    font-size: 13px;
+    color: var(--color-accent-blue);
+  }
+  .ch-end-n::after {
+    content: '';
+    position: absolute;
+    top: 3px;
+    left: calc(var(--line) - 6px);
+    width: 14px;
+    height: 14px;
+    border-radius: 50%;
+    background: var(--color-accent-blue);
+  }
+  .vi-lines {
+    display: flex;
+    flex-direction: column;
+    gap: 0.12em;
+    margin-top: clamp(24px, 2.6vw, 40px);
+    font-size: clamp(30px, 5.4vw, 84px);
+    font-weight: 700;
+    line-height: 1.1;
+    letter-spacing: -0.03em;
+    color: var(--color-fg-subtle);
+  }
+  .vi-lines strong {
+    font-weight: 700;
+    color: var(--color-fg);
+  }
+  .vi-sign {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    margin-top: clamp(40px, 4.4vw, 72px);
+  }
+  .vi-sign .vi-mono {
+    white-space: pre;
+    text-transform: none;
+    letter-spacing: 0;
+    font-size: 13px;
+  }
+
+  /* Where each app stands: four rows, each a way to its page. */
+  .vi-road {
+    max-width: 1240px;
+    margin: 0 auto;
+    padding: clamp(140px, 20vw, 300px) 32px 0;
+  }
+  .vi-road-title {
+    margin-top: 24px;
+  }
+  .vi-road-sub {
+    margin-top: 28px;
+  }
+  .vi-road ul {
+    margin-top: clamp(48px, 6vw, 88px);
+    border-top: 1px solid var(--color-hairline-strong);
+  }
+  .vi-road a {
+    display: flex;
+    align-items: center;
+    gap: clamp(16px, 2vw, 28px);
+    padding: clamp(22px, 2.6vw, 36px) 0;
+    border-bottom: 1px solid var(--color-hairline-strong);
+    color: var(--color-fg);
+  }
+  .vi-road-name {
+    display: flex;
+    flex: 1;
+    flex-wrap: wrap;
+    align-items: baseline;
+    gap: 4px clamp(16px, 2vw, 32px);
+    font-size: clamp(17px, 1.5vw, 21px);
+    color: var(--color-fg-muted);
+  }
+  .vi-road-name strong {
+    min-width: 4.2em;
+    font-size: clamp(26px, 3vw, 44px);
+    font-weight: 700;
+    letter-spacing: -0.03em;
+    color: var(--color-fg);
+    transition: translate 300ms var(--ease-emphasized);
+  }
+  .vi-road a:hover strong {
+    translate: 6px 0;
+  }
+  .vi-road small {
+    flex: none;
+    font-size: 14px;
+    font-weight: 500;
+    color: var(--color-fg-subtle);
+  }
+  .vi-road small.is-live {
+    color: var(--color-accent-green);
+  }
+  @media (max-width: 1023px) {
+    .vi-cards {
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+  }
+  @media (max-width: 767px) {
+    .vi-letter,
+    .vi-road {
+      padding-inline: 16px;
+    }
+    .vi-letter::before,
+    .ch-end-n::after {
+      display: none;
+    }
+    .ch-end {
+      grid-template-columns: minmax(0, 1fr);
+    }
+    .ch-end-n {
+      margin-bottom: 14px;
+    }
+    .vi-compare {
+      grid-template-columns: minmax(0, 1fr);
+      gap: 8px;
+    }
+    .vi-compare > .vi-mono:first-child,
+    .vi-old {
+      margin-top: 14px;
+    }
+    .vi-compare > .vi-mono {
+      display: none;
+    }
+    .vi-chain li:not(:first-child) {
+      margin-left: 22px;
+    }
+    .vi-chain li:not(:first-child)::before {
+      translate: -40px 0;
+    }
+    .vi-versus {
+      grid-template-columns: minmax(0, 1fr);
+    }
+  }
+</style>

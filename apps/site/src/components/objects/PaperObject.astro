@@ -1,0 +1,232 @@
+---
+import { s, type Lang } from '~/i18n';
+
+/**
+ * Writer as one object: a real page on its copy in Writer's colour, a figure in it marked by the
+ * AI, and the AI's note in the margin beside it. A colleague's bubble sits at the end of the
+ * line they are writing.
+ */
+interface Props {
+  lang: Lang;
+}
+
+const w = s(Astro.props.lang).objects.writer;
+---
+
+<div class="object paper-object" data-tilt>
+  <div class="object-stage">
+    <div class="po-copy" data-deal></div>
+    <div class="po-page" data-deal style="--i: 1">
+      <p class="po-heading">{w.heading}</p>
+      <p class="po-text">{w.before} <mark>{w.mark}</mark>, {w.after}</p>
+      <div class="po-lines">
+        <span style="width: 100%"></span>
+        <span style="width: 94%"></span>
+        <span style="width: 62%"></span>
+      </div>
+      <div class="po-chart">
+        <p>{w.chart}</p>
+        <div>
+          <i style="height: 42%"></i>
+          <i style="height: 58%"></i>
+          <i style="height: 52%"></i>
+          <i style="height: 92%" class="is-last"></i>
+        </div>
+      </div>
+      <div class="po-lines">
+        <span style="width: 96%"></span>
+        <span style="width: 100%"></span>
+        <span style="width: 88%"></span>
+        <span style="width: 40%"></span>
+      </div>
+    </div>
+    <div class="po-note" data-deal style="--i: 3">
+      <p class="po-note-head">
+        <span class="po-ai" aria-hidden="true">
+          <svg viewBox="0 0 24 24"><path d="M12 2l2.4 6.6L21 11l-6.6 2.4L12 20l-2.4-6.6L3 11l6.600-2.400z"></path></svg>
+        </span>
+        <b>{w.ai}</b>
+      </p>
+      <p class="po-note-text">{w.aiText}</p>
+      <p class="po-note-done">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12.5l4.500 4.500L19 7.500"></path></svg>
+        {w.done}
+      </p>
+    </div>
+    <span class="bub-cursor po-bubble" data-drift style="--c: var(--color-accent-yellow); --ink: #000; --drift-x: 0.8cqw; --drift-y: 0.5cqw">
+      <span>{w.by}</span>
+    </span>
+  </div>
+</div>
+
+<style>
+  .paper-object {
+    --c: var(--app-writer);
+    --ai: var(--color-sage);
+    aspect-ratio: 10 / 8.6;
+  }
+  .po-copy,
+  .po-page {
+    position: absolute;
+    top: 2cqw;
+    left: 8cqw;
+    width: 60cqw;
+    height: 78cqw;
+    border-radius: 1.6cqw;
+  }
+  .po-copy {
+    translate: -4.5cqw 4.5cqw;
+    background: var(--c);
+  }
+  :global(.js) .po-copy[data-deal] {
+    translate: 10cqw -8cqw;
+  }
+  :global(.js .is-in) .po-copy[data-deal] {
+    translate: -4.5cqw 4.5cqw;
+  }
+  .po-page {
+    display: flex;
+    flex-direction: column;
+    gap: 3cqw;
+    padding: 6.4cqw 6cqw;
+    background: #fff;
+    color: #1c1c1e;
+    box-shadow: 0 3cqw 6cqw -2cqw rgb(0 0 0 / 0.26);
+    font-family: 'Iowan Old Style', 'Palatino Linotype', Palatino, Georgia, serif;
+  }
+  .po-heading {
+    font-family: var(--font-sans, Inter, sans-serif);
+    font-size: 3.6cqw;
+    font-weight: 700;
+    line-height: 1.1;
+    letter-spacing: -0.03em;
+  }
+  .po-text {
+    padding-right: 4cqw;
+    font-size: 2.2cqw;
+    line-height: 1.55;
+  }
+  .po-text mark {
+    padding: 0.2cqw 0.5cqw;
+    border-radius: 0.6cqw;
+    background: color-mix(in srgb, var(--ai) 45%, #fff);
+    box-shadow: 0 0.3cqw 0 var(--ai);
+    color: inherit;
+  }
+  .po-lines {
+    display: flex;
+    flex-direction: column;
+    gap: 1.7cqw;
+  }
+  .po-lines span {
+    height: 1.1cqw;
+    border-radius: 1cqw;
+    background: #e8e8ec;
+  }
+  .po-chart {
+    padding: 3cqw 3.4cqw 0;
+    border: 0.25cqw solid #e5e5ea;
+    border-radius: 1.4cqw;
+  }
+  .po-chart p {
+    font-family: var(--font-sans, Inter, sans-serif);
+    font-size: 2.1cqw;
+    font-weight: 700;
+    letter-spacing: -0.02em;
+  }
+  .po-chart div {
+    display: flex;
+    align-items: flex-end;
+    gap: 3cqw;
+    height: 17cqw;
+    padding: 0 2cqw;
+  }
+  .po-chart i {
+    flex: 1;
+    border-radius: 0.8cqw 0.8cqw 0 0;
+    background: color-mix(in srgb, var(--app-slider) 45%, #fff);
+    transform-origin: bottom;
+  }
+  .po-chart i.is-last {
+    background: var(--app-slider);
+  }
+  :global(.js) .po-chart i {
+    scale: 1 0;
+    transition: scale 900ms var(--ease-emphasized);
+    transition-delay: 900ms;
+  }
+  :global(.js .is-in) .po-chart i {
+    scale: 1;
+  }
+  .po-note {
+    position: absolute;
+    top: 22cqw;
+    right: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 1.6cqw;
+    width: 36cqw;
+    padding: 3cqw;
+    border-radius: 3cqw;
+    background: color-mix(in srgb, var(--ai) 16%, var(--color-glass-solid));
+    box-shadow:
+      inset 0 0 0 0.3cqw color-mix(in srgb, var(--ai) 70%, transparent),
+      0 3cqw 6cqw -2cqw rgb(0 0 0 / 0.3);
+    color: var(--color-fg);
+  }
+  :global([data-theme='light']) .po-note {
+    background: color-mix(in srgb, var(--ai) 18%, #fff);
+  }
+  .po-note-head {
+    display: flex;
+    align-items: center;
+    gap: 1.4cqw;
+    font-size: 2.3cqw;
+  }
+  .po-ai {
+    display: grid;
+    place-items: center;
+    width: 4.6cqw;
+    height: 4.6cqw;
+    border-radius: 50%;
+    background: var(--ai);
+  }
+  .po-ai svg {
+    width: 62%;
+    fill: #0b2a14;
+  }
+  .po-note-text {
+    font-size: 2.3cqw;
+    line-height: 1.4;
+  }
+  .po-note-done {
+    display: inline-flex;
+    align-items: center;
+    align-self: flex-start;
+    gap: 1cqw;
+    padding: 0.8cqw 1.8cqw 0.8cqw 1.2cqw;
+    border-radius: 3cqw;
+    background: color-mix(in srgb, var(--ai) 35%, transparent);
+    font-size: 2cqw;
+    font-weight: 600;
+  }
+  .po-note-done svg {
+    width: 2.6cqw;
+    fill: none;
+    stroke: currentColor;
+    stroke-width: 2.6;
+    stroke-linecap: round;
+    stroke-linejoin: round;
+  }
+  .po-bubble {
+    top: 71cqw;
+    left: 34cqw;
+  }
+  .paper-object .bub-cursor > span {
+    height: auto;
+    padding: 0.6cqw 1.5cqw;
+    border-radius: 0.5cqw 1.8cqw 1.8cqw 1.8cqw;
+    font-size: 1.9cqw;
+    line-height: 1.3;
+  }
+</style>

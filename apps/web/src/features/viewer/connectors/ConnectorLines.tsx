@@ -18,6 +18,7 @@ import {
   type Thread,
 } from '../comments/lib/comment-selectors';
 import { useMarkPreview } from '../state/stage-registry';
+import { columnSlides, type TrackStack } from '../timeline/lib/timeline-layout';
 import { useViewerData } from '../state/viewer-data';
 import { useHoveredThreadId, useViewerState } from '../state/viewer-state';
 
@@ -29,6 +30,9 @@ interface ConnectorLinesProps {
    * lines' SVG is portalled into it, so they scroll sideways together with slides and cards.
    */
   layer: HTMLElement | null;
+  /** The track the band shows: lines from the frames on it to their cards (`columnSlides`). */
+  track: number;
+  stack: TrackStack;
 }
 
 /**
@@ -44,8 +48,10 @@ interface ConnectorLinesProps {
 export const ConnectorLines = memo(function ConnectorLines({
   wrapperRef,
   layer,
+  track,
+  stack,
 }: ConnectorLinesProps) {
-  const { slides } = useViewerData();
+  const { slides, variantsOf } = useViewerData();
   const { focusedThreadId, draft, threadPanelOpen, statusFilter } = useViewerState();
   const hoveredThreadId = useHoveredThreadId();
   const { bySlide, byGap } = useCommentThreads();
@@ -58,56 +64,62 @@ export const ConnectorLines = memo(function ConnectorLines({
   const { routes, threadMap } = useMemo(() => {
     const byId = new Map<string, Thread>();
     const result: ConnectorRoute[] = [];
-    for (const [index, slide] of slides.entries()) {
-      const nextGapKey = gapKey(slide.id, slides[index + 1]?.id ?? null);
+    for (const [index, main] of slides.entries()) {
+      const nextGapKey = gapKey(main.id, slides[index + 1]?.id ?? null);
       const prev = slides[index - 1];
-      const items: ConnectorItem[] = [];
-      const threads = sortThreadsClockwise(
-        threadsOf(bySlide, slide.id),
-        slide.shapes,
-        slide.aspectRatio,
-      );
-      const roots = threads.map((thread) => {
-        byId.set(thread.id, thread);
-        return preview?.threadId === thread.id
-          ? {
-              ...thread.root,
-              anchor: { type: 'rect' as const, rect: preview.rect, shapeRef: null },
-            }
-          : thread.root;
-      });
-      const marks = connectorAnchors(roots, slide.shapes, slide.aspectRatio);
-      const exits = connectorExits(marks, slide.aspectRatio);
-      threads.forEach((thread, markIndex) => {
-        const mark = marks[markIndex];
-        const exit = exits[markIndex];
-        if (mark && exit)
-          items.push({
-            threadId: thread.id,
-            color: accentColor(thread.root.author.color),
-            source: { kind: 'mark', anchor: mark, exit },
-          });
-      });
-      const gap = byGap.get(nextGapKey);
-      const first = gap?.[0];
-      if (first) {
-        for (const thread of gap) byId.set(thread.id, thread);
-        items.push({
-          threadId: first.id,
-          color: accentColor(first.root.author.color),
-          source: { kind: 'gap', gapKey: nextGapKey },
+      const prevGapKey = prev ? gapKey(prev.id, main.id) : null;
+      const entries = columnSlides(main, variantsOf.get(main.id) ?? [], track, stack);
+      entries.forEach((slide, entryIndex) => {
+        const items: ConnectorItem[] = [];
+        const threads = sortThreadsClockwise(
+          threadsOf(bySlide, slide.id),
+          slide.shapes,
+          slide.aspectRatio,
+        );
+        const roots = threads.map((thread) => {
+          byId.set(thread.id, thread);
+          return preview?.threadId === thread.id
+            ? {
+                ...thread.root,
+                anchor: { type: 'rect' as const, rect: preview.rect, shapeRef: null },
+              }
+            : thread.root;
         });
-      }
-      if (items.length === 0) continue;
-      result.push({
-        slideId: slide.id,
-        prevGapKey: prev ? gapKey(prev.id, slide.id) : null,
-        nextGapKey,
-        items,
+        const marks = connectorAnchors(roots, slide.shapes, slide.aspectRatio);
+        const exits = connectorExits(marks, slide.aspectRatio);
+        threads.forEach((thread, markIndex) => {
+          const mark = marks[markIndex];
+          const exit = exits[markIndex];
+          if (mark && exit)
+            items.push({
+              threadId: thread.id,
+              color: accentColor(thread.root.author.color),
+              source: { kind: 'mark', anchor: mark, exit },
+            });
+        });
+        // The gap's comments: with the slide's own, on its track (and the notes').
+        const gap = track >= 0 && entryIndex === 0 ? byGap.get(nextGapKey) : undefined;
+        const first = gap?.[0];
+        if (gap && first) {
+          for (const thread of gap) byId.set(thread.id, thread);
+          items.push({
+            threadId: first.id,
+            color: accentColor(first.root.author.color),
+            source: { kind: 'gap', gapKey: nextGapKey },
+          });
+        }
+        if (items.length === 0) return;
+        result.push({
+          slideId: slide.id,
+          columnId: slide.id === main.id ? undefined : main.id,
+          prevGapKey,
+          nextGapKey,
+          items,
+        });
       });
     }
     return { routes: result, threadMap: byId };
-  }, [slides, bySlide, byGap, preview]);
+  }, [slides, variantsOf, track, stack, bySlide, byGap, preview]);
 
   const panelThreadId = threadPanelOpen ? focusedThreadId : null;
   const [svg, setSvg] = useState<SVGSVGElement | null>(null);

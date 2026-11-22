@@ -83,6 +83,8 @@ export function quickPrompt(input: {
   page: { width: number; height: number };
   design: DeckDesign;
   thread: string;
+  /** Today as the people see it (YYYY-MM-DD): „heute“, „Stand“, a date to write. */
+  today?: string;
   /** The deck's slides, in order. */
   slides?: readonly { title: string; hidden: boolean }[];
   /** The layouts a new slide can take, a line each. */
@@ -128,6 +130,7 @@ export function quickPrompt(input: {
     `Slide ${input.number}, its elements (id „name“ (kind): text; box x, y, w, h in % of the slide; looks):`,
     ...elements.map((line) => `- ${line}`),
     '',
+    ...(input.today ? [`Today is ${input.today}.`, ''] : []),
     'The comment thread (its last message asks):',
     input.thread,
   ].join('\n');

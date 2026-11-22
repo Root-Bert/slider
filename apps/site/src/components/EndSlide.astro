@@ -1,0 +1,74 @@
+---
+/**
+ * The end of a page: one big night-dark tile with a glow in the page's colour from above, with the one
+ * thing to do next. Actions go into the default slot, a line under them into `note`.
+ */
+interface Props {
+  title: string;
+  sub?: string;
+}
+
+const { title, sub } = Astro.props;
+---
+
+<section class="end" data-section data-live="end">
+  <div class="end-slide canvas-dots" data-reveal>
+    <h2>{title}</h2>
+    {sub && <p class="end-sub">{sub}</p>}
+    <div class="end-actions"><slot /></div>
+    <slot name="note" />
+  </div>
+</section>
+
+<style>
+  .end {
+    max-width: 1440px;
+    margin: 0 auto;
+    padding: clamp(120px, 18vw, 260px) 32px 0;
+  }
+  /* Night-dark in both themes like the apps' tiles, glowing in the page's colour from above. */
+  .end-slide {
+    --ground: #0b0b0d;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    padding: clamp(72px, 11vw, 160px) 24px clamp(56px, 7vw, 96px);
+    border-radius: clamp(24px, 3vw, 44px);
+    background: var(--brand-aura);
+    color: #fff;
+    text-align: center;
+  }
+  .end h2 {
+    max-width: 11em;
+    font-size: clamp(32px, 4.6vw, 72px);
+    font-weight: 700;
+    line-height: 1.06;
+    letter-spacing: -0.03em;
+    text-wrap: balance;
+  }
+  .end-sub {
+    max-width: 30em;
+    margin-top: 24px;
+    font-size: clamp(16px, 1.35vw, 19px);
+    line-height: 1.45;
+    color: rgb(255 255 255 / 0.8);
+  }
+  .end-actions {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: center;
+    gap: 12px;
+    margin-top: 44px;
+  }
+  .end-actions :global(.site-btn-ghost) {
+    color: rgb(255 255 255 / 0.8);
+  }
+  .end-actions :global(.site-btn-ghost:hover) {
+    color: #fff;
+  }
+  @media (max-width: 767px) {
+    .end {
+      padding-inline: 16px;
+    }
+  }
+</style>

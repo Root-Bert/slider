@@ -25,3 +25,12 @@ export function useActiveWorkspace(): Workspace | null {
   const wanted = workspaceId ?? searchParams.get('workspace') ?? readLastWorkspaceId();
   return pickWorkspace(workspaces, wanted);
 }
+
+/**
+ * The workspace an app's start (`/cloud`, `/sender` …) opens: the active one, never a blocked
+ * one – the blocked page's way back would lead into it again. `null`: the start page.
+ */
+export function useStartWorkspace(): Workspace | null {
+  const workspace = useActiveWorkspace();
+  return workspace && !workspace.blocked ? workspace : null;
+}

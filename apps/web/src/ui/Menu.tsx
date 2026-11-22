@@ -23,6 +23,8 @@ import { usePopover } from './hooks/usePopover';
 
 export interface MenuAction {
   label: string;
+  /** Tells apart actions with the same label (two agents of one name); the label by default. */
+  key?: string;
   /** An icon name or any node, e.g. a brand mark. */
   icon: IconName | ReactNode;
   onSelect: () => void;
@@ -51,8 +53,10 @@ interface MenuProps {
    * only names the menu. A node may hide its text on narrow screens (`max-sm:sr-only`).
    */
   triggerText?: ReactNode;
-  /** The text trigger's leading icon, e.g. `add` for "Hinzufügen". */
+  /** The text trigger's leading icon, e.g. `add` for "Hinzufügen" – the icon trigger's in place of "…". */
   triggerIcon?: IconName;
+  /** The icon trigger's shape – `round` among a call's buttons. */
+  triggerShape?: 'square' | 'round';
   /** The text trigger's size: `sm` (default), `toolbar` next to a filter. */
   triggerTextSize?: ButtonSize;
   /** The text trigger shows a spinner and can't be opened, e.g. while an upload runs. */
@@ -72,6 +76,7 @@ export function Menu({
   triggerClassName,
   triggerText,
   triggerIcon,
+  triggerShape,
   triggerTextSize = 'sm',
   triggerLoading,
 }: MenuProps) {
@@ -120,8 +125,9 @@ export function Menu({
       ) : (
         <IconButton
           ref={triggerRef}
-          icon="moreHoriz"
+          icon={triggerIcon ?? 'moreHoriz'}
           label={label}
+          shape={triggerShape}
           size={triggerSize}
           variant={triggerVariant}
           {...triggerProps}
@@ -203,6 +209,7 @@ function AnchoredMenu({
         // Counts as inside for `useDismiss`, although it is no longer in the wrapper.
         panelRef.current = element;
       }}
+      data-floating-menu
       className="fixed z-(--z-popover)"
       style={position}
     >
@@ -231,6 +238,17 @@ export function ContextMenu({ label, actions, at, onClose }: ContextMenuProps) {
 
   useDismiss({ open: true, onDismiss: onClose, refs: [ref] });
 
+  // Closed, the focus is back where it was – unless the pick took it on (a dialog, a field).
+  useEffect(() => {
+    const before = document.activeElement;
+    return () => {
+      setTimeout(() => {
+        const lost = !document.activeElement || document.activeElement === document.body;
+        if (lost && before instanceof HTMLElement && before.isConnected) before.focus();
+      });
+    };
+  }, []);
+
   useLayoutEffect(() => {
     const menu = ref.current;
     if (!menu) return;
@@ -258,6 +276,7 @@ export function ContextMenu({ label, actions, at, onClose }: ContextMenuProps) {
   return createPortal(
     <div
       ref={ref}
+      data-floating-menu
       className="fixed z-(--z-popover)"
       style={position}
       onClick={stop}
@@ -351,7 +370,7 @@ function MenuList({
     >
       {actions.map((action, index) => (
         <MenuItem
-          key={action.label}
+          key={action.key ?? action.label}
           ref={(element: HTMLButtonElement | null) => {
             itemRefs.current[index] = element;
           }}

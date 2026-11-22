@@ -1,12 +1,13 @@
 /**
- * The AI runs on three models of the same key: one for everything it does in a deck (`review`), a
- * stronger one to create a deck (`create`), a fast one for quick requests (`quick`). Other kinds
- * have one model, just „Modell“.
+ * The AI runs on three models of the same key: one for everything it does in a deck and the other
+ * apps' agents and chats (`review`, `runTurn`), a stronger one to create a deck (`create`), a fast
+ * one for quick requests and the mail's AI (`quick`, `runToolCall`). Other kinds have one model,
+ * just „Modell“.
  */
 export const AI_MODEL_ROLES = {
   review: {
     label: 'Review, Kommentar, Anpassung',
-    hint: 'Prüft Folien, antwortet in Kommentaren und ändert, worum ihr bittet.',
+    hint: 'Prüft Folien, antwortet in Kommentaren und ändert, worum ihr bittet. Auch die Agenten und Chats in Cloud, Writer und Reader.',
   },
   create: {
     label: 'Präsentation erstellen',
@@ -14,7 +15,7 @@ export const AI_MODEL_ROLES = {
   },
   quick: {
     label: 'Schnelle Aufträge',
-    hint: 'Teilt im Sprachmodus das Gesagte in Aufträge, macht einfache Änderungen sofort und fasst lange Kommentare zusammen. Am besten ein schnelles Modell.',
+    hint: 'Teilt im Sprachmodus das Gesagte in Aufträge, macht einfache Änderungen sofort und fasst lange Kommentare zusammen. Auch „KI zur Mail“, Spam und „Neues“ in Sender und die Notizen nach einem Anruf. Am besten ein schnelles Modell.',
   },
 } as const;
 

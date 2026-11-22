@@ -9,9 +9,11 @@ import { playTransition } from '../editing/transition/transition-frames';
 import { useRestoreFocus } from '../hooks/useRestoreFocus';
 import { slideSrcSet } from '../stage/lib/slide-image';
 import { useViewerData } from '../state/viewer-data';
+import { entrancePlan, type EntrancePlan } from './lib/entrances';
 import { morphPictures, morphPlan, type MorphPlan } from './lib/morph';
 import { presentationStart, presentedSlides } from './lib/presentation';
 import { atIndex, atMessage, FULLSCREEN_MESSAGE } from './lib/show-sync';
+import { EntranceStage } from './EntranceStage';
 import { MorphStage } from './MorphStage';
 import { useBoxColor, useShowBoxes } from './show-boxes';
 import { ShowBoxLayer } from './ShowBoxLayer';
@@ -73,10 +75,16 @@ export function PresentationMode({
   const transitionFor = (slide: Slide) => transitionOf(slide.id) ?? slide.transition ?? 'none';
   // The slide being left while the next one comes in with its transition.
   const [leaving, setLeaving] = useState<string | null>(null);
-  const pictures = useRef(new Map<string, HTMLImageElement>());
+  const pictures = useRef(new Map<string, HTMLElement>());
   const morph = useMorph(slides, index, transitionFor);
   // The morph playing (it stands for the transition then).
   const [morphing, setMorphing] = useState<MorphPlan | null>(null);
+  // The slide's elements coming in (after the transition): stepped on to it, its pictures there.
+  const [entering, setEntering] = useState<{
+    slideId: string;
+    plan: EntrancePlan;
+    after: number;
+  } | null>(null);
   // When the mouse last moved: the controls and the pointer show until it rests.
   const [movedAt, setMovedAt] = useState<number | null>(null);
   const controlsShown = movedAt !== null;
@@ -110,6 +118,16 @@ export function PresentationMode({
         : null;
     setMorphing(plan);
     setLeaving(transition && transition !== 'none' && !plan ? (slides[index]?.id ?? null) : null);
+    const entrances = incoming && to === index + 1 ? morph.entrances(incoming.id) : null;
+    setEntering(
+      incoming && entrances
+        ? {
+            slideId: incoming.id,
+            plan: entrances,
+            after: plan ? MORPH_MS : transition && transition !== 'none' ? TRANSITION_MS : 0,
+          }
+        : null,
+    );
     setIndex(to);
   };
 
@@ -298,23 +316,35 @@ export function PresentationMode({
       }}
     >
       {mounted.map(({ slide, at }) => (
-        <img
+        <div
           key={slide.id}
           ref={(element) => {
             if (element) pictures.current.set(slide.id, element);
             else pictures.current.delete(slide.id);
           }}
-          src={slide.imageUrl}
-          {...slideSrcSet(slide, 'screen')}
-          alt={at === index ? `Folie ${at + 1}` : ''}
           aria-hidden={at !== index}
-          draggable={false}
           className={cn(
-            'absolute inset-0 size-full object-contain',
+            'absolute inset-0',
             at === index && 'z-1',
             ((at !== index && slide.id !== leaving) || black) && 'invisible',
           )}
-        />
+        >
+          <img
+            src={slide.imageUrl}
+            {...slideSrcSet(slide, 'screen')}
+            alt={at === index ? `Folie ${at + 1}` : ''}
+            draggable={false}
+            className="absolute inset-0 size-full object-contain"
+          />
+          {at === index && entering?.slideId === slide.id && (
+            <EntranceStage
+              plan={entering.plan}
+              aspect={morph.aspect}
+              after={entering.after}
+              onDone={() => setEntering(null)}
+            />
+          )}
+        </div>
       ))}
 
       {morphing && !black && (
@@ -419,10 +449,16 @@ function useMorph(
   const deckId = useViewerData().deck.id;
   const ready = useRef(new Map<string, SlideLayers>());
   const next = slides[index + 1];
+  const comesIn = (slide: Slide) =>
+    editing.elementsOf(slide.id).some((element) => element.entrance);
   const wanted =
-    seq !== undefined && next && transitionFor(next) === 'morph' && !reducedMotion()
-      ? [slides[index]!.id, next.id]
-      : [];
+    seq === undefined || !next || reducedMotion()
+      ? []
+      : transitionFor(next) === 'morph'
+        ? [slides[index]!.id, next.id]
+        : comesIn(next)
+          ? [next.id]
+          : [];
   const key = wanted.join(' ');
   useEffect(() => {
     if (seq === undefined || !key) return;
@@ -451,9 +487,21 @@ function useMorph(
     const from = ready.current.get(`${fromId}@${seq}`);
     const to = ready.current.get(`${toId}@${seq}`);
     if (!from || !to) return null;
-    const made = morphPlan(from, editing.elementsOf(fromId), to, editing.elementsOf(toId));
+    const toElements = editing.elementsOf(toId);
+    const made = morphPlan(from, editing.elementsOf(fromId), to, toElements);
+    // What comes in by an entrance waits for it instead of fading in with the morph.
+    const later = new Set(
+      toElements.flatMap((element) => (element.entrance ? [element.morphKey ?? element.id] : [])),
+    );
+    made.coming = made.coming.filter((part) => part.from || !later.has(part.key));
     return morphPictures(made).length > 0 ? made : null;
   };
+  /** The slide's entrances, once its pictures are in – `null` before, or with reduced motion. */
+  const entrances = (slideId: string): EntrancePlan | null => {
+    if (seq === undefined || reducedMotion()) return null;
+    const layers = ready.current.get(`${slideId}@${seq}`);
+    return layers ? entrancePlan(layers, editing.elementsOf(slideId)) : null;
+  };
   const { width, height } = editing.pageSize;
-  return { plan, aspect: height > 0 ? width / height : 16 / 9 };
+  return { plan, entrances, aspect: height > 0 ? width / height : 16 / 9 };
 }

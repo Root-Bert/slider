@@ -1,5 +1,5 @@
 # The product website (apps/site) next to Slider, served by Slider's own Caddy at
-# https://${WEBSITE_DOMAIN}/slider/ – only for the server that hosts it, a self-hosted Slider
+# https://${WEBSITE_DOMAIN}/ (office, slider, writer, solver, cloud, me) – only for the server that hosts it, a self-hosted Slider
 # needs none of this. Enable it in deploy/.env:
 #
 #   COMPOSE_FILE=docker-compose.yml:docker-compose.website.yml

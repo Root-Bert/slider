@@ -57,13 +57,8 @@ export function DraftMark({
   const [pinShift, setPinShift] = useState<{ dx: number; dy: number } | null>(null);
   // The pin moves; the composer next to it follows live.
   const pinDrag = usePointDrag({
-    clamp: (dx, dy) =>
-      point
-        ? {
-            dx: Math.min(1 - point.x, Math.max(-point.x, dx)),
-            dy: Math.min(1 - point.y, Math.max(-point.y, dy)),
-          }
-        : { dx: 0, dy: 0 },
+    // As far as it is dragged – off the slide too, as an element.
+    clamp: (dx, dy) => (point ? { dx, dy } : { dx: 0, dy: 0 }),
     onPreview: (shift) => {
       setPinShift(shift);
       registry.setMarkPreview(
@@ -138,6 +133,7 @@ export function DraftMark({
           // Placed freely: its line runs out around its corners; bound to a box, none to pull.
           elementEdge={!box.shapeRef}
           handles={!box.shapeRef}
+          offSlide
           className="bg-surface-1"
           title="Ziehen zum Verschieben, Ecken zum Ändern der Größe, Tippen schreibt hinein, ↵ zum Kommentar"
           onDoubleClick={() => {

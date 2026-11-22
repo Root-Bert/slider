@@ -18,10 +18,16 @@ function createWindows(deps: AppDeps) {
     materialQuestions: perMinute(10),
     // Every search reads and decrypts the text of all decks: typing pauses ask, a loop does not.
     searches: perMinute(SEARCHES_PER_MINUTE),
+    // Cloud's search reads every name of the workspace: a budget of its own beside the decks'.
+    fileSearches: perMinute(120),
     // A PDF or slide picture is drawn by LibreOffice, which only draws a few files at once.
     pdfs: perMinute(5),
     // Everything a KI-App asks over MCP, whatever the tool.
     mcpCalls: perMinute(120),
+    // An agent's calls to an API on „Verbindungen“: a server outside, on the person's key.
+    apiCalls: perMinute(60),
+    // Connecting or checking a service asks a server outside (and its sign-in) each time.
+    connectionChecks: perMinute(20),
   };
 }
 

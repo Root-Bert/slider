@@ -1,5 +1,5 @@
 import type { Workspace } from '@slider/shared';
-import { routes } from '@/lib/routes';
+import { appStart, useBackApp } from '@/lib/apps';
 import { SettingsLayout } from '@/shell/layouts/SettingsLayout';
 import { Notice } from '@/ui';
 import { LeaveSection } from './WorkspaceSections';
@@ -10,17 +10,19 @@ import { WorkspaceMark } from './WorkspaceMark';
  * one thing left – leaving it. Its reviews stay where they are; nothing was deleted.
  */
 export function BlockedWorkspace({ workspace, userId }: { workspace: Workspace; userId: string }) {
+  // Back to the start of the app it was opened in (Cloud's files, Sender…), as „not found“ does.
+  const back = appStart(useBackApp());
   return (
     <SettingsLayout
       docTitle={`${workspace.name} | Slider`}
       title={workspace.name}
       leading={<WorkspaceMark name={workspace.name} logoUrl={workspace.logoUrl} size={40} />}
-      back={{ to: routes.reviews(), label: 'Zu den Präsentationen' }}
+      back={back}
     >
       <Notice tone="warning" variant="tinted" icon="lock" title="Dieser Workspace ist gesperrt">
-        Die Person, die Slider hier betreibt, hat ihn gesperrt. Seine Präsentationen lassen sich
-        gerade nicht öffnen, gelöscht wurde nichts. Wende dich an sie, wenn du glaubst, dass das ein
-        Irrtum ist.
+        Die Person, die Slider hier betreibt, hat ihn gesperrt. Was darin liegt, lässt sich gerade
+        nicht öffnen, gelöscht wurde nichts. Wende dich an sie, wenn du glaubst, dass das ein Irrtum
+        ist.
       </Notice>
       <LeaveSection workspace={workspace} userId={userId} />
     </SettingsLayout>

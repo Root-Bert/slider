@@ -96,11 +96,12 @@ export function newReviewBlockedMessage(
 /** "Nutzung": the bar's parts, in the order of `STORAGE_CATEGORIES`. */
 const STORAGE_LABELS: Record<StorageCategory, string> = {
   originals: 'Originaldateien',
-  slideImages: 'Folien-Renderings',
+  slideImages: 'Folienbilder',
   images: 'Bilder',
   videos: 'Videos',
   audio: 'Sprachaufnahmen',
-  other: 'Sonstiges',
+  files: 'Dateien',
+  other: 'Andere',
 };
 
 /** Design-token colours of the bar's parts (theme variables, so Tailwind emits them). */
@@ -110,6 +111,7 @@ const STORAGE_COLORS: Record<StorageCategory, string> = {
   images: 'bg-accent-violet',
   videos: 'bg-accent-cyan',
   audio: 'bg-accent-green',
+  files: 'bg-accent-yellow',
   other: 'bg-fg-faint',
 };
 

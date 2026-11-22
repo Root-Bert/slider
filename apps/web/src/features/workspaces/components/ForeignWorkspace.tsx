@@ -1,5 +1,6 @@
 import { Navigate } from 'react-router';
 import { useOtherAccounts } from '@/lib/api';
+import { appStart, useBackApp } from '@/lib/apps';
 import { routes } from '@/lib/routes';
 import { CenteredMessage } from '@/shell/CenteredMessage';
 import { TextLink } from '@/ui';
@@ -11,11 +12,12 @@ import { OtherAccounts } from './OtherAccounts';
  */
 export function ForeignWorkspace({ workspaceId }: { workspaceId: string }) {
   const others = useOtherAccounts();
+  const start = appStart(useBackApp());
   if (others.isPending) return null;
   const owner = others.data?.find((other) =>
     other.workspaces.some((workspace) => workspace.id === workspaceId),
   );
-  if (!owner) return <Navigate to={routes.reviews()} replace />;
+  if (!owner) return <Navigate to={routes.home()} replace />;
   const name = owner.workspaces.find((workspace) => workspace.id === workspaceId)?.name ?? '';
   return (
     <CenteredMessage
@@ -27,8 +29,8 @@ export function ForeignWorkspace({ workspaceId }: { workspaceId: string }) {
         only={owner.user.email}
         label={(email) => `Zu ${email} wechseln`}
       />
-      <TextLink to={routes.reviews()} variant="underline" size="sm">
-        Zu den Präsentationen
+      <TextLink to={start.to} variant="underline" size="sm">
+        {start.label}
       </TextLink>
     </CenteredMessage>
   );

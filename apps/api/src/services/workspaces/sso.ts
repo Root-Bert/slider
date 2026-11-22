@@ -214,7 +214,31 @@ export async function findSsoForEmail(deps: SsoDeps, email: string): Promise<Act
   return isActive(deps, workspace, sso) ? { workspace, sso } : null;
 }
 
-/** The workspace's company login, if active. */
+/** How long a DNS proof is trusted before a login looks for the TXT record again. */
+export const SSO_PROOF_RECHECK_MS = 7 * 24 * 60 * 60 * 1000;
+
+/**
+ * Whether the domain still carries the TXT record, looked at again once the proof is a week
+ * old: a domain that lapses or changes hands no longer vouches for this provider. While it is
+ * missing the login is off (the proof stays, so it works again once the record is back).
+ */
+async function proofHolds(deps: SsoDeps, sso: WorkspaceSsoRow, domain: string): Promise<boolean> {
+  const now = deps.clock.now();
+  if (sso.verifiedAt && now.getTime() - sso.verifiedAt.getTime() < SSO_PROOF_RECHECK_MS) {
+    return true;
+  }
+  if (!(await hasSsoTxtRecord(deps.ssoNetwork ?? {}, domain, sso.verifyToken))) {
+    deps.log.warn(`SSO of workspace ${sso.workspaceId}: TXT record at ${ssoDnsName(domain)} gone`);
+    return false;
+  }
+  await deps.db
+    .update(workspaceSso)
+    .set({ verifiedAt: now })
+    .where(eq(workspaceSso.workspaceId, sso.workspaceId));
+  return true;
+}
+
+/** The workspace's company login, if active (its DNS proof re-checked when a week old). */
 export async function findSsoForWorkspace(
   deps: SsoDeps,
   workspaceId: string,
@@ -226,7 +250,8 @@ export async function findSsoForWorkspace(
     .where(and(eq(workspaces.id, workspaceId), isNull(workspaces.blockedAt)));
   if (!workspace) return null;
   const sso = await ssoRow(deps, workspaceId);
-  return isActive(deps, workspace, sso) ? { workspace, sso } : null;
+  if (!isActive(deps, workspace, sso)) return null;
+  return (await proofHolds(deps, sso, sso.verifiedDomain!)) ? { workspace, sso } : null;
 }
 
 /** Whether the login page offers "Mit Firmen-Login": some workspace proved its domain. */

@@ -1,4 +1,4 @@
-import { useEffect, useEffectEvent, useState } from 'react';
+import { useEffect, useEffectEvent, useRef, useState } from 'react';
 import { useAiProposals, useCreateProposal } from '@/lib/api';
 import { useEditing } from '../../editing/editing-context';
 import { newEditId } from '../../editing/new-id';
@@ -9,6 +9,7 @@ import { useViewerToast } from '../../state/viewer-toast';
 import {
   openVariantWhenThere,
   setVariantAsker,
+  setVariantComparer,
   setVariantPrompt,
   setVariantRequest,
   setVariantSheet,
@@ -81,9 +82,16 @@ export function useVariantAsk(slideId: string) {
  * - a copy just made: shown on its track, the active slide, in „Bearbeiten“ – to work on by hand
  *   (a phone has no variant track: only the toast);
  * - the AI done with a variant: a toast, and its note open on the variant (`VariantBadge`) – or
- *   the toast says why not.
+ *   the toast says why not;
+ * - „Varianten vergleichen“: the overview track (`overviewTrack`) shown, the slide active – and
+ *   kept shown when a variant comes (the AI's mix) and it moves up a track.
  */
-export function useVariantFlow(go: (track: number) => void, tracks: boolean): void {
+export function useVariantFlow(
+  go: (track: number) => void,
+  tracks: boolean,
+  overviewTrack: number | null,
+  track: number,
+): void {
   const { deck, variantsOf } = useViewerData();
   const editing = useEditing();
   const dispatch = useViewerDispatch();
@@ -100,6 +108,24 @@ export function useVariantFlow(go: (track: number) => void, tracks: boolean): vo
     () => setVariantAsker((slideId) => (tracks ? ask(slideId) : setVariantSheet(slideId))),
     [tracks],
   );
+
+  const compare = useEffectEvent((slideId: string) => {
+    if (overviewTrack === null) return;
+    dispatch({ type: 'activeSlideChanged', slideId });
+    registry.revealSlide(slideId);
+    go(overviewTrack);
+  });
+  const overview = overviewTrack !== null;
+  useEffect(() => (overview ? setVariantComparer(compare) : undefined), [overview]);
+  const lastOverview = useRef(overviewTrack);
+  const follow = useEffectEvent((was: number | null) => {
+    if (was !== null && overviewTrack !== null && track === was) go(overviewTrack);
+  });
+  useEffect(() => {
+    const was = lastOverview.current;
+    lastOverview.current = overviewTrack;
+    if (was !== overviewTrack) follow(was);
+  }, [overviewTrack]);
 
   const opening = useOpeningVariant();
   const open = useEffectEvent((pageId: string) => {

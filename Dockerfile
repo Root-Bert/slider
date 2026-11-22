@@ -27,6 +27,9 @@ COPY apps/site/package.json apps/site/
 COPY packages/shared/package.json packages/shared/
 COPY packages/pptx/package.json packages/pptx/
 COPY packages/odp/package.json packages/odp/
+COPY packages/odt/package.json packages/odt/
+# The template library is built ahead and copied below; bun.lock lists it as a workspace.
+COPY packages/templates/package.json packages/templates/
 
 # ── Build the web app (tsc + Vite run on Node, like in CI) ───────────────────────────────────
 FROM --platform=$BUILDPLATFORM oven/bun:${BUN_VERSION}-slim AS web
@@ -38,6 +41,7 @@ COPY tsconfig.base.json ./
 COPY packages/shared packages/shared
 COPY packages/pptx packages/pptx
 COPY packages/odp packages/odp
+COPY packages/odt packages/odt
 COPY apps/web apps/web
 RUN cd apps/web && bun run build
 
@@ -84,10 +88,16 @@ COPY packages/pptx/src packages/pptx/src
 COPY packages/pptx/tsconfig.json packages/pptx/
 COPY packages/odp/src packages/odp/src
 COPY packages/odp/tsconfig.json packages/odp/
+COPY packages/odt/src packages/odt/src
+COPY packages/odt/tsconfig.json packages/odt/
 COPY apps/api/tsconfig.json apps/api/
 COPY apps/api/drizzle apps/api/drizzle
 COPY apps/api/src apps/api/src
 COPY --from=web /app/apps/web/dist apps/web/dist
+# Slider's symbols, which the AI searches and draws too (services/icons.ts).
+COPY apps/web/src/features/icons/sets apps/web/src/features/icons/sets
+# The templates Slider brings along (services/slider-templates.ts).
+COPY packages/templates/library packages/templates/library
 
 # Blobs, recordings, the generated secret and – without DATABASE_URL – the PGlite database.
 RUN mkdir -p /data && chown bun:bun /data

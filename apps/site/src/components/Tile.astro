@@ -1,0 +1,161 @@
+---
+import { SCREEN_WORDS } from '~/i18n/screens';
+import type { Lang } from '~/i18n';
+import type { ProductId } from '~/lib/apps';
+import { screenOf } from '~/lib/screens';
+
+/**
+ * A tile of a page's grid: night-dark in both themes, a glow in the app's colour from above, a
+ * few centred words and the app's screen rising out of its lower edge. `wide` spans the grid and
+ * shows the whole screen, `half` shows its left part larger. Words go in the slot and use
+ * `.tile-eyebrow`, `.tile-title`, `.tile-lead` and `.tile-links`.
+ */
+interface Props {
+  app: ProductId;
+  /** The screen's name (`lib/screens.ts`). */
+  screen: string;
+  lang: Lang;
+  size?: 'wide' | 'half';
+  class?: string;
+}
+
+const { app, screen, lang, size = 'wide', class: className } = Astro.props;
+const { image } = screenOf(app, screen);
+const alt = SCREEN_WORDS[lang].captions[app][screen] ?? '';
+---
+
+<article class:list={['tile canvas-dots', `tile-${size}`, className]} style={`--app: var(--app-${app})`} data-reveal>
+  <div class="tile-text"><slot /></div>
+  <div class="tile-shot">
+    <img src={image.src} width={image.width} height={image.height} alt={alt} loading="lazy" decoding="async" />
+  </div>
+</article>
+
+<style>
+  .tile {
+    --ground: #0b0b0d;
+    position: relative;
+    display: flex;
+    flex-direction: column;
+    grid-column: 1 / -1;
+    overflow: hidden;
+    border-radius: clamp(24px, 3vw, 44px);
+    background: radial-gradient(110% 62% at 50% 0%, color-mix(in srgb, var(--app) 42%, var(--ground)), var(--ground) 70%), var(--ground);
+    color: #fff;
+    text-align: center;
+  }
+  .tile-half {
+    grid-column: span 1;
+  }
+  .tile-text {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    padding: clamp(44px, 5.4vw, 96px) clamp(24px, 4vw, 64px) 0;
+  }
+  .tile :global(.tile-eyebrow) {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: center;
+    gap: 10px;
+    font-size: clamp(16px, 1.3vw, 19px);
+    font-weight: 600;
+    letter-spacing: -0.02em;
+  }
+  .tile :global(.tile-eyebrow .mark) {
+    --m-ground: var(--ground);
+  }
+  .tile :global(.tile-eyebrow small) {
+    font-size: 13px;
+    font-weight: 500;
+    letter-spacing: 0;
+    color: rgb(255 255 255 / 0.55);
+  }
+  .tile :global(.tile-eyebrow small.is-live) {
+    color: var(--color-accent-green);
+  }
+  .tile :global(.tile-title) {
+    max-width: 13em;
+    margin-top: clamp(14px, 1.6vw, 24px);
+    font-size: clamp(28px, 3.4vw, 52px);
+    font-weight: 700;
+    line-height: 1.05;
+    letter-spacing: -0.03em;
+    text-wrap: balance;
+  }
+  .tile-half :global(.tile-title) {
+    font-size: clamp(24px, 2.5vw, 38px);
+  }
+  .tile :global(.tile-lead) {
+    max-width: 30em;
+    margin-top: clamp(14px, 1.6vw, 24px);
+    font-size: clamp(15px, 1.25vw, 18px);
+    line-height: 1.5;
+    color: rgb(255 255 255 / 0.68);
+    text-wrap: pretty;
+  }
+  .tile :global(.tile-links) {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: center;
+    gap: 12px 28px;
+    margin-top: clamp(22px, 2.4vw, 36px);
+  }
+  .tile :global(.tile-link) {
+    font-size: clamp(15px, 1.2vw, 17px);
+    font-weight: 500;
+    color: #fff;
+  }
+  .tile :global(.tile-link)::after {
+    content: ' ›';
+  }
+  .tile :global(.tile-link:hover) {
+    text-decoration: underline;
+    text-underline-offset: 4px;
+  }
+
+  /* The screen stands in the tile's lower edge and is cut off by it. */
+  .tile-shot {
+    aspect-ratio: 16 / 8.6;
+    margin: clamp(36px, 4.4vw, 72px) 8% 0;
+    overflow: hidden;
+    border-radius: clamp(8px, 1.1vw, 18px) clamp(8px, 1.1vw, 18px) 0 0;
+    box-shadow:
+      0 0 0 1px rgb(255 255 255 / 0.14),
+      0 -3vw 9vw -3vw color-mix(in srgb, var(--app) 60%, transparent);
+    transition: translate 700ms var(--ease-emphasized);
+  }
+  .tile:hover .tile-shot {
+    translate: 0 -1.2%;
+  }
+  .tile-half .tile-shot {
+    aspect-ratio: 16 / 12;
+    margin-right: 0;
+    margin-left: 10%;
+    border-radius: clamp(8px, 1.1vw, 18px) 0 0 0;
+  }
+  .tile-shot img {
+    display: block;
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    object-position: left top;
+  }
+  .tile-half .tile-shot img {
+    width: 150%;
+    max-width: none;
+    height: auto;
+  }
+  @media (max-width: 767px) {
+    .tile-half {
+      grid-column: 1 / -1;
+    }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .tile-shot {
+      transition: none;
+    }
+  }
+</style>

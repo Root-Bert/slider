@@ -73,5 +73,47 @@ describe('login by mail (BER-168)', () => {
     // Two tries were made above.
     expect(tries).toEqual([400, 400, 400, 400, 400, 400, 400, 400, 429]);
     expect((await typed(next, asked)).status).toBe(400);
+
+    // A new link each hour gives ten tries more – but past thirty a day no code counts for the
+    // address, the right one neither; the link in the mail still signs in.
+    const hourLater = async () => {
+      ctx.clock.advance(61 * 60_000);
+      const start = await ctx.request('/api/auth/email/start', {
+        method: 'POST',
+        json: { email: 'anna@firma.de' },
+        cookie: asked,
+      });
+      expect(start.status).toBe(204);
+      const text = mailer.sent.at(-1)?.text ?? '';
+      return {
+        token: /anmelden\/([\w-]+)/.exec(text)?.[1] ?? '',
+        code: /ein: (\d{6})/.exec(text)?.[1] ?? '',
+      };
+    };
+    const missing = async (code: string, times: number) => {
+      const statuses: number[] = [];
+      const guess = code === '000000' ? '000001' : '000000';
+      for (let i = 0; i < times; i += 1) statuses.push((await typed(guess, asked)).status);
+      return statuses;
+    };
+    // Eleven tries so far today: ten more, then the hour's limit.
+    const second = await hourLater();
+    expect(await missing(second.code, 11)).toEqual([...Array<number>(10).fill(400), 429]);
+    // Eight more make thirty: the next is refused for the day, its link kept.
+    const third = await hourLater();
+    const refused = await missing(third.code, 9);
+    expect(refused).toEqual([...Array<number>(8).fill(400), 429]);
+    const right = await typed(third.code, asked);
+    expect(right.status).toBe(429);
+    expect(await right.json()).toMatchObject({
+      error: { message: expect.stringContaining('Link in der Mail') },
+    });
+    const byLink = await ctx.request('/api/auth/email/confirm', {
+      method: 'POST',
+      json: { token: third.token },
+      cookie: asked,
+    });
+    expect(byLink.status).toBe(200);
+    expect(sessionCookieFrom(byLink)).toBeTruthy();
   });
 });

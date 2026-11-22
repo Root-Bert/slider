@@ -31,7 +31,10 @@ const options = {
   suppressBooleanAttributes: false,
 } as const;
 
-const parser = new XMLParser(options);
+const CDATA = '#cdata';
+// A CDATA section is kept apart while parsing: folded into the text as it stands, its `<` and
+// `&` would be written back as markup – a file could smuggle elements past every check.
+const parser = new XMLParser({ ...options, cdataPropName: CDATA });
 const builder = new XMLBuilder(options);
 
 /** A parsed XML part: its declaration and its nodes. */
@@ -42,6 +45,22 @@ export interface XmlPart {
 
 const DECLARATION = /^\s*<\?xml[^>]*\?>\s*/;
 
+/** CDATA sections become plain text nodes, encoded as all text here is. */
+function plainCdata(nodes: XmlNode[]): void {
+  for (const node of nodes) {
+    for (const key of Object.keys(node)) {
+      if (key === ATTRIBUTES || key === TEXT) continue;
+      const children = node[key];
+      if (!Array.isArray(children)) continue;
+      if (key === CDATA) {
+        const raw = children.map((child) => String(child[TEXT] ?? '')).join('');
+        delete node[key];
+        node[TEXT] = raw.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+      } else plainCdata(children);
+    }
+  }
+}
+
 export function parsePart(source: string, name: string): XmlPart {
   const validation = XMLValidator.validate(source);
   if (validation !== true) {
@@ -49,7 +68,9 @@ export function parsePart(source: string, name: string): XmlPart {
   }
   const declaration = DECLARATION.exec(source)?.[0] ?? '';
   try {
-    return { declaration, nodes: parser.parse(source.slice(declaration.length)) as XmlNode[] };
+    const nodes = parser.parse(source.slice(declaration.length)) as XmlNode[];
+    if (source.includes('<![CDATA[')) plainCdata(nodes);
+    return { declaration, nodes };
   } catch (error) {
     throw new OdpError(
       'corrupt',
@@ -96,6 +117,13 @@ function attributesOf(node: XmlNode): Record<string, string> {
 }
 
 /** An attribute's value, decoded. */
+/**
+ * The spaces a `text:s` stands for. Its count comes from the file: capped, or a few bytes of an
+ * upload become gigabytes of text.
+ */
+export const spaceRun = (count: string | undefined): string =>
+  ' '.repeat(Math.min(Math.max(1, Math.floor(Number(count ?? 1)) || 1), 10_000));
+
 export function attr(node: XmlNode, name: string): string | undefined {
   const raw = (node[ATTRIBUTES] as Record<string, string> | undefined)?.[name];
   return raw === undefined ? undefined : decode(raw);

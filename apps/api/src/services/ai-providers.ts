@@ -1,5 +1,6 @@
 import Anthropic from '@anthropic-ai/sdk';
-import { createCanvas, loadImage } from '@napi-rs/canvas';
+import { createCanvas } from '@napi-rs/canvas';
+import { loadImage } from '../import/load-image';
 import { imageSize } from '@slider/odp';
 import {
   PROVIDER_BASE_URLS,
@@ -7,6 +8,7 @@ import {
   SERVER_PROVIDER,
   defaultQuickModel,
   type AiFeature,
+  type CallVoice,
   type ModelProvider,
 } from '@slider/shared';
 import { z } from 'zod';
@@ -46,6 +48,8 @@ export interface AiConnection {
   instance?: boolean;
   /** Told what each request used (`ai-usage`) – a workspace's connections only, not key checks. */
   meter?: AiMeter;
+  /** Speech (`speechStream`): the voice it reads with; unset: {@link automaticVoice}. */
+  speechVoice?: string | null;
 }
 
 /** What one request used, as the service's answer tells it. */
@@ -296,14 +300,17 @@ async function readLimited(response: Response): Promise<string> {
   return text + decoder.decode();
 }
 
-async function requestJson<S extends z.ZodType>(
+/**
+ * A request to the service, its answer unread – a refusal thrown as the service's error
+ * ({@link ProviderHttpError}), the way there failing as {@link ProviderUnreachable}. For answers
+ * read as they come (`stream: true`) and, through {@link requestJson}, for whole ones.
+ */
+async function fetchService(
   deps: Pick<AppDeps, 'config' | 'aiFetch'>,
   connection: Pick<AiConnection, 'provider' | 'baseUrl' | 'apiKey' | 'instance'>,
   path: string,
-  /** `body`: sent as JSON – or as it is, a form (a recording to transcribe). */
   init: { method: 'GET' | 'POST'; body?: unknown; signal: AbortSignal },
-  schema: S,
-): Promise<z.infer<S>> {
+): Promise<Response> {
   const { aiFetch } = deps;
   const form = init.body instanceof FormData ? init.body : null;
   const fetchImpl: FetchLike = aiFetch
@@ -331,26 +338,19 @@ async function requestJson<S extends z.ZodType>(
     },
     fetchImpl,
   );
-  // A cancelled request stays cancelled; anything else on the way – the time limit too – is unreachable.
-  const unreachable = (error: unknown) => {
-    if (
-      error instanceof ProviderHttpError ||
-      (init.signal.aborted &&
-        !(init.signal.reason instanceof DOMException && init.signal.reason.name === 'TimeoutError'))
-    ) {
-      return error;
-    }
-    return new ProviderUnreachable(error instanceof Error ? error.message : String(error));
-  };
   let response: Response;
-  let text: string;
   try {
     response = await fetchImpl(request.url.toString(), request.init);
-    text = await readLimited(response);
   } catch (error) {
-    throw unreachable(error);
+    throw unreachableFor(init.signal)(error);
   }
   if (!response.ok) {
+    let text = '';
+    try {
+      text = await readLimited(response);
+    } catch {
+      // Its reason is lost: the status says it.
+    }
     let message = text.slice(0, 500) || response.statusText;
     let code: string | null = null;
     try {
@@ -371,6 +371,36 @@ async function requestJson<S extends z.ZodType>(
       // Not JSON: its text says it.
     }
     throw new ProviderHttpError(response.status, message, code);
+  }
+  return response;
+}
+
+/** A cancelled request stays cancelled; anything else on the way – the time limit too – is unreachable. */
+const unreachableFor = (signal: AbortSignal) => (error: unknown) => {
+  if (
+    error instanceof ProviderHttpError ||
+    (signal.aborted &&
+      !(signal.reason instanceof DOMException && signal.reason.name === 'TimeoutError'))
+  ) {
+    return error;
+  }
+  return new ProviderUnreachable(error instanceof Error ? error.message : String(error));
+};
+
+async function requestJson<S extends z.ZodType>(
+  deps: Pick<AppDeps, 'config' | 'aiFetch'>,
+  connection: Pick<AiConnection, 'provider' | 'baseUrl' | 'apiKey' | 'instance'>,
+  path: string,
+  /** `body`: sent as JSON – or as it is, a form (a recording to transcribe). */
+  init: { method: 'GET' | 'POST'; body?: unknown; signal: AbortSignal },
+  schema: S,
+): Promise<z.infer<S>> {
+  const response = await fetchService(deps, connection, path, init);
+  let text: string;
+  try {
+    text = await readLimited(response);
+  } catch (error) {
+    throw unreachableFor(init.signal)(error);
   }
   let json: unknown;
   try {
@@ -570,6 +600,293 @@ export async function liveTranscriptionToken(
   };
 }
 
+/** Mistral's voice (Voxtral TTS) – an agent's answers read out in a call. */
+export const SPEECH_OUT_MODEL = 'voxtral-mini-tts-3-0';
+const SPEECH_OUT_TIMEOUT_MS = 30_000;
+/** Per key: the voices of its account (presets and its own), asked once. */
+const speechVoiceLists = new Map<string, Promise<CallVoice[]>>();
+
+const isGerman = (voice: CallVoice) =>
+  voice.language !== null && /^de([_-]|$)|german|deutsch/i.test(voice.language);
+
+/**
+ * The voices the key's account speaks with – Mistral's presets and the account's own – German
+ * ones first. Each speaks German, the others with their accent.
+ */
+export function speechVoices(
+  deps: Pick<AppDeps, 'config' | 'aiFetch'>,
+  connection: AiConnection,
+): Promise<CallVoice[]> {
+  const key = `${connection.baseUrl ?? ''}|${connection.apiKey}`;
+  let found = speechVoiceLists.get(key);
+  if (!found) {
+    found = requestJson(
+      deps,
+      connection,
+      '/audio/voices?limit=100',
+      { method: 'GET', signal: AbortSignal.timeout(SPEECH_OUT_TIMEOUT_MS) },
+      z.object({
+        items: z
+          .array(
+            z.object({
+              id: z.string(),
+              slug: z.string().nullish(),
+              name: z.string().nullish(),
+              languages: z.array(z.string()).nullish(),
+              gender: z.string().nullish(),
+            }),
+          )
+          .default([]),
+      }),
+    ).then(
+      ({ items }) => {
+        const voices = items.map((item): CallVoice => ({
+          id: item.slug ?? item.id,
+          name: item.name?.trim() || item.slug || item.id,
+          language: item.languages?.[0] ?? null,
+          gender: item.gender === 'female' || item.gender === 'male' ? item.gender : null,
+        }));
+        // German first; else the service's order (its presets by language).
+        return [...voices.filter(isGerman), ...voices.filter((voice) => !isGerman(voice))];
+      },
+      (error: unknown) => {
+        // Asked again next time – the service may have been away.
+        speechVoiceLists.delete(key);
+        throw error;
+      },
+    );
+    speechVoiceLists.set(key, found);
+  }
+  return found;
+}
+
+/** The voice a key speaks with where none is picked: its first German one, else its first. */
+export const automaticVoice = (voices: readonly CallVoice[]): string | null =>
+  voices[0]?.id ?? null;
+
+/** The voice to speak with: the one picked, else the automatic one (`null`: the service's). */
+async function speechVoice(
+  deps: Pick<AppDeps, 'config' | 'aiFetch'>,
+  connection: AiConnection,
+): Promise<string | null> {
+  if (connection.speechVoice) return connection.speechVoice;
+  return speechVoices(deps, connection).then(automaticVoice, () => null);
+}
+
+/** Asks for the voice ahead (a call begins): the first words then need one request less. */
+export async function prepareSpeech(
+  deps: Pick<AppDeps, 'config' | 'aiFetch'>,
+  connection: AiConnection,
+): Promise<void> {
+  await speechVoices(deps, connection).catch(() => null);
+}
+
+/** `text` read out once in `voice`, the whole WAV at once – a sample in the settings. */
+export async function speechOnce(
+  deps: Pick<AppDeps, 'config' | 'aiFetch'>,
+  connection: AiConnection,
+  text: string,
+  voice: string,
+): Promise<Uint8Array<ArrayBuffer>> {
+  const { audio_data } = await requestJson(
+    deps,
+    connection,
+    '/audio/speech',
+    {
+      method: 'POST',
+      body: { model: SPEECH_OUT_MODEL, input: text, response_format: 'wav', voice_id: voice },
+      signal: AbortSignal.timeout(SPEECH_OUT_TIMEOUT_MS),
+    },
+    z.object({ audio_data: z.string().min(1) }),
+  );
+  connection.meter?.({
+    feature: 'voice',
+    model: SPEECH_OUT_MODEL,
+    inputTokens: Math.ceil(text.length / 4),
+  });
+  return Uint8Array.from(Buffer.from(audio_data, 'base64'));
+}
+
+/** The `data:` of each server-sent event, as it comes. */
+async function* serverEvents(response: Response): AsyncGenerator<string> {
+  if (!response.body) return;
+  const reader = response.body.getReader();
+  const decoder = new TextDecoder();
+  let buffer = '';
+  try {
+    for (;;) {
+      const { value, done } = await reader.read();
+      if (done) break;
+      buffer += decoder.decode(value, { stream: true }).replace(/\r\n/g, '\n');
+      let end = buffer.indexOf('\n\n');
+      while (end >= 0) {
+        const data = buffer
+          .slice(0, end)
+          .split('\n')
+          .filter((line) => line.startsWith('data:'))
+          .map((line) => line.slice(5).trimStart())
+          .join('\n');
+        buffer = buffer.slice(end + 2);
+        if (data) yield data;
+        end = buffer.indexOf('\n\n');
+      }
+    }
+  } finally {
+    reader.releaseLock();
+  }
+}
+
+/** A function the model may call, OpenAI's way (JSON Schema parameters). */
+export interface StreamTool {
+  name: string;
+  description: string;
+  parameters: Record<string, unknown>;
+}
+
+const streamChunkSchema = z.object({
+  choices: z
+    .array(
+      z.object({
+        delta: z
+          .object({
+            content: z.string().nullish(),
+            tool_calls: z
+              .array(
+                z.object({
+                  index: z.number().int().nullish(),
+                  function: z
+                    .object({ name: z.string().nullish(), arguments: z.string().nullish() })
+                    .nullish(),
+                }),
+              )
+              .nullish(),
+          })
+          .nullish(),
+      }),
+    )
+    .nullish(),
+  usage: z
+    .object({ prompt_tokens: z.number().nullish(), completion_tokens: z.number().nullish() })
+    .nullish(),
+});
+
+/**
+ * A chat answer read as it is written (`/chat/completions`, `stream: true`) – each piece of text
+ * to `onText` at once, the tools it called at the end. For talking (a call's voice): one short
+ * answer, no rounds; Mistral's and OpenAI's chunks alike. Metered as `live`.
+ */
+export async function streamChat(
+  deps: Pick<AppDeps, 'config' | 'aiFetch'>,
+  connection: AiConnection,
+  input: {
+    model: string;
+    system: string;
+    messages: { role: 'user' | 'assistant'; content: string }[];
+    tools?: StreamTool[];
+    maxTokens: number;
+  },
+  signal: AbortSignal,
+  onText: (piece: string) => void,
+): Promise<{ text: string; calls: { name: string; args: string }[] }> {
+  const response = await fetchService(deps, connection, '/chat/completions', {
+    method: 'POST',
+    body: {
+      model: input.model,
+      stream: true,
+      max_tokens: input.maxTokens,
+      messages: [{ role: 'system', content: input.system }, ...input.messages],
+      ...(input.tools?.length && {
+        tools: input.tools.map((tool) => ({ type: 'function', function: tool })),
+        tool_choice: 'auto',
+      }),
+    },
+    signal,
+  });
+  let text = '';
+  const calls: { name: string; args: string }[] = [];
+  let usage: z.infer<typeof streamChunkSchema>['usage'] = null;
+  try {
+    for await (const data of serverEvents(response)) {
+      if (data === '[DONE]') break;
+      let json: unknown;
+      try {
+        json = JSON.parse(data);
+      } catch {
+        continue;
+      }
+      const chunk = streamChunkSchema.safeParse(json);
+      if (!chunk.success) continue;
+      usage = chunk.data.usage ?? usage;
+      const delta = chunk.data.choices?.[0]?.delta;
+      if (delta?.content) {
+        text += delta.content;
+        onText(delta.content);
+      }
+      for (const [at, call] of (delta?.tool_calls ?? []).entries()) {
+        const index = call.index ?? at;
+        const into = (calls[index] ??= { name: '', args: '' });
+        into.name += call.function?.name ?? '';
+        into.args += call.function?.arguments ?? '';
+      }
+    }
+  } catch (error) {
+    throw unreachableFor(signal)(error);
+  }
+  connection.meter?.({
+    feature: 'live',
+    model: input.model,
+    inputTokens: usage?.prompt_tokens ?? undefined,
+    outputTokens: usage?.completion_tokens ?? undefined,
+  });
+  return { text, calls: calls.filter((call) => call.name) };
+}
+
+/**
+ * Speech in the workspace's voice as it is made (Mistral's `stream: true`): WAV, 16 bit mono –
+ * its header in the first bytes – each piece of audio to `onAudio` as it comes.
+ */
+export async function speechStream(
+  deps: Pick<AppDeps, 'config' | 'aiFetch'>,
+  connection: AiConnection,
+  text: string,
+  signal: AbortSignal,
+  onAudio: (bytes: Uint8Array<ArrayBuffer>) => void,
+): Promise<void> {
+  const voice = await speechVoice(deps, connection);
+  const response = await fetchService(deps, connection, '/audio/speech', {
+    method: 'POST',
+    body: {
+      model: SPEECH_OUT_MODEL,
+      input: text,
+      response_format: 'wav',
+      stream: true,
+      ...(voice && { voice_id: voice }),
+    },
+    signal: AbortSignal.any([signal, AbortSignal.timeout(SPEECH_OUT_TIMEOUT_MS)]),
+  });
+  try {
+    for await (const data of serverEvents(response)) {
+      let json: unknown;
+      try {
+        json = JSON.parse(data);
+      } catch {
+        continue;
+      }
+      const audio = (json as { audio_data?: unknown }).audio_data;
+      if (typeof audio === 'string' && audio)
+        onAudio(Uint8Array.from(Buffer.from(audio, 'base64')));
+    }
+  } catch (error) {
+    throw unreachableFor(signal)(error);
+  }
+  // Billed by the character: about four to a token.
+  connection.meter?.({
+    feature: 'voice',
+    model: SPEECH_OUT_MODEL,
+    inputTokens: Math.ceil(text.length / 4),
+  });
+}
+
 /** A recording of an hour, on the server's own CPU, may take this long. */
 const TRANSCRIBE_TIMEOUT_MS = 30 * 60_000;
 
@@ -605,8 +922,10 @@ export async function transcribe(
   if (options.language) form.set('language', options.language);
   if (connection.provider === 'mistral') {
     const terms = options.terms ?? options.prompt?.split(/[,.]/) ?? [];
-    const unique = [...new Set(terms.map((term) => term.replace(/\s+/g, ' ').trim()))].filter(
-      (term) => term && term.length <= MAX_TERM_CHARS,
+    // Mistral takes single words only (no spaces, no commas): „Robert Hofmann“ goes as two.
+    const words = terms.flatMap((term) => term.split(/[\s,]+/));
+    const unique = [...new Set(words.map((word) => word.trim()))].filter(
+      (word) => word.length >= 2 && word.length <= MAX_TERM_CHARS,
     );
     for (const term of unique.slice(0, MAX_CONTEXT_BIAS)) form.append('context_bias', term);
   } else if (options.prompt) {
@@ -958,7 +1277,7 @@ async function maxTokens(client: Anthropic, model: string): Promise<number> {
  * `output_config` – without losing the prompt cache. Others refuse the message: it is left out.
  */
 const TURN_EFFORT_MODELS =
-  /claude-(fable-5-1|mythos-5-1|opus-5-5|opus-5(?!-\d)|sonnet-5-5|haiku-5-5)/;
+  /claude-(fable-5-[12]|mythos-5-[12]|opus-5-5|opus-5(?!-\d)|sonnet-5-5|haiku-5-5)/;
 /** Models with a fast mode (more tokens a second, at twice the price) – on Anthropic's own API. */
 const FAST_MODELS = /claude-(opus-5-5|opus-5(?!-\d)|opus-4-8)/;
 /** Keys and models whose fast mode was refused (not open to the key): asked no more. */
@@ -1563,7 +1882,8 @@ async function generatePicture(
           'Der Inhaltsfilter des Dienstes hat das Bild abgelehnt – bitte die Beschreibung ändern.',
         );
       }
-      if (result.status !== 'Pending') {
+      // Pending, Reasoning, Generating (FLUX 3) and whatever comes next are asked about again.
+      if (/^(error|task not found|no card generated)$/i.test(result.status)) {
         throw new ProviderHttpError(502, `Das Bild ging nicht: ${result.status}`, null);
       }
     }

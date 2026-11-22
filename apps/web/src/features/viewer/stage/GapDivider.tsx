@@ -6,9 +6,8 @@ import { useTransitionOf } from '../editing/transition/picked-transitions';
 import { SlideTransitionPicker } from '../editing/transition/SlideTransitionPicker';
 import { transitionLabel } from '../editing/transition/transition-frames';
 import { useViewerDispatch } from '../state/viewer-state';
-import { trackDotsHeight, useTrackDots } from '../timeline/lib/track-dots';
 import { TrackDots } from '../timeline/TrackDots';
-import { gapButtons, gapDotsLift } from './lib/gap-buttons';
+import { gapButtons } from './lib/gap-buttons';
 
 interface GapDividerProps {
   gapKey: string;
@@ -30,30 +29,7 @@ interface GapDividerProps {
 }
 
 /**
- * Short hairline: fades out towards both ends and pauses 8px around the ⊕. Literal for Tailwind.
- * `#000` is mask paint (opaque keeps, transparent cuts), not a visible colour.
- */
-const HAIRLINE_MASK =
-  '[mask-image:linear-gradient(transparent,#000_30%,#000_calc(50%-20px),transparent_calc(50%-20px),transparent_calc(50%+20px),#000_calc(50%+20px),#000_70%,transparent)]';
-/** With two buttons (insert, comment) the pause is taller. */
-const HAIRLINE_MASK_PAIR =
-  '[mask-image:linear-gradient(transparent,#000_30%,#000_calc(50%-32px),transparent_calc(50%-32px),transparent_calc(50%+32px),#000_calc(50%+32px),#000_70%,transparent)]';
-/** With three (insert, transition, comment) taller still. */
-const HAIRLINE_MASK_TRIPLE =
-  '[mask-image:linear-gradient(transparent,#000_25%,#000_calc(50%-48px),transparent_calc(50%-48px),transparent_calc(50%+48px),#000_calc(50%+48px),#000_75%,transparent)]';
-/** Without buttons the line runs through, still fading towards both ends. */
-const HAIRLINE_FADE = '[mask-image:linear-gradient(transparent,#000_30%,#000_70%,transparent)]';
-/** By the number of buttons in the pause. */
-const HAIRLINE_MASKS = [HAIRLINE_FADE, HAIRLINE_MASK, HAIRLINE_MASK_PAIR, HAIRLINE_MASK_TRIPLE];
-/** Half the pause by the number of buttons (as in the masks above); none: a little round the dots. */
-const HAIRLINE_PAUSES = [6, 20, 32, 48];
-
-/** The pause reaching further up, over the track dots over the buttons (`below` + `above` px). */
-const hairlineMaskAround = (below: number, above: number) =>
-  `linear-gradient(transparent,#000 25%,#000 calc(50% - ${above}px),transparent calc(50% - ${above}px),transparent calc(50% + ${below}px),#000 calc(50% + ${below}px),#000 75%,transparent)`;
-
-/**
- * A short hairline between two slides with always-visible buttons in its pause: on an editable
+ * Between two slides, always-visible buttons (no line – they set the slides apart): on an editable
  * deck a ⊕ that inserts a slide there (its picker opens beside it) and the transition of the
  * slide after it (likewise), and the comment button that
  * starts a "hier fehlt eine Folie" comment (BER-103). Existing gap comments show as a marker
@@ -77,16 +53,12 @@ export const GapDivider = memo(function GapDivider({
   const first = threads?.[0];
   // Narrow gaps (small slides) get a smaller button.
   const tight = width < 32;
-  const {
-    canInsert,
-    canComment,
-    canTransition,
-    count: buttons,
-  } = gapButtons({ afterSlideId, beforeSlideId, canInsert: insertable, canComment: commentable });
-  // The band's tracks (variants, notes): their dots sit over the buttons.
-  const dots = trackDotsHeight(useTrackDots()?.stack);
-  const pause = HAIRLINE_PAUSES[buttons] ?? 0;
-  const lift = gapDotsLift(buttons, width);
+  const { canInsert, canComment, canTransition } = gapButtons({
+    afterSlideId,
+    beforeSlideId,
+    canInsert: insertable,
+    canComment: commentable,
+  });
 
   return (
     <div
@@ -94,18 +66,9 @@ export const GapDivider = memo(function GapDivider({
       className="absolute flex justify-center"
       style={{ left: x, top, width, height }}
     >
-      <span
-        aria-hidden
-        className={cn(
-          'absolute top-1/5 h-3/5 w-px transition-colors',
-          isDrafting ? 'bg-fg' : 'bg-fg-subtle',
-          !dots && HAIRLINE_MASKS[buttons],
-        )}
-        style={dots ? { maskImage: hairlineMaskAround(pause, lift + dots + 6) } : undefined}
-      />
       {/* Above the slides' elements: one reaching past its slide would cover the buttons. */}
       {/* The buttons centred; the track dots over them and the comments' marker under them lie
-          outside, so neither moves them (nor the hairline's pause). */}
+          outside, so neither moves them. */}
       <div className="absolute top-1/2 left-1/2 z-(--z-overlay) flex -translate-x-1/2 -translate-y-1/2 flex-col items-center gap-2">
         <TrackDots className="absolute bottom-full left-1/2 mb-2 -translate-x-1/2" />
         {canInsert && afterSlideId && (
@@ -116,7 +79,7 @@ export const GapDivider = memo(function GapDivider({
         )}
         {canComment && (
           // A mark on the track rather than a toolbar control (like pins): no hover fill, so not
-          // an IconButton. Sits in the hairline's pause.
+          // an IconButton.
           <button
             type="button"
             aria-label="Kommentar zwischen den Folien – hier fehlt etwas"

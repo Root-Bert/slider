@@ -34,23 +34,34 @@ import { moved } from '../live/model';
  * nothing waits for a picture. Until every picture it needs is decoded (and the fonts are in), the
  * slide is LibreOffice's picture alone and Bearbeiten does not work on it yet (`useComposed`).
  */
-export function SlideCompositor({ slideId, rounded }: { slideId: string; rounded: string }) {
+export function SlideCompositor({
+  slideId,
+  rounded,
+  open = false,
+}: {
+  slideId: string;
+  rounded: string;
+  /** The slide zoomed out: its elements show whole, off the slide too – only its ground is cut. */
+  open?: boolean;
+}) {
   const editing = useEditing();
   const { deck } = useViewerData();
   // The slide taken apart in 3D („Ebenen“) is the stage's, not mounted here.
   const enabled = editing.active;
   const parts = useComposedLayers(deck.id, slideId, editing.state?.seq, enabled).data;
   if (!enabled || !parts) return null;
-  return <Composed slideId={slideId} rounded={rounded} parts={parts} />;
+  return <Composed slideId={slideId} rounded={rounded} open={open} parts={parts} />;
 }
 
 function Composed({
   slideId,
   rounded,
+  open,
   parts,
 }: {
   slideId: string;
   rounded: string;
+  open: boolean;
   parts: SlideLayers;
 }) {
   const editing = useEditing();
@@ -177,43 +188,53 @@ function Composed({
         data-compose-layer={slideId}
         data-compose-shown={shown || undefined}
         aria-hidden
-        className={cn('pointer-events-none absolute inset-0 overflow-hidden select-none', rounded)}
+        className={cn(
+          'pointer-events-none absolute inset-0 select-none',
+          !open && 'overflow-hidden',
+          !open && rounded,
+        )}
         style={{ ...pageStyle, visibility: shown ? undefined : 'hidden' }}
       >
-        {drawsGround && masterShapes ? (
-          <>
-            {masterGround ? (
-              <SwapImage src={masterGround} alt="" draggable={false} />
-            ) : (
-              <SlideGround
-                fills={ground}
-                aspect={
-                  editing.pageSize.height > 0
-                    ? editing.pageSize.width / editing.pageSize.height
-                    : 16 / 9
-                }
-                pictureUrl={(path) => pictureUrl(deck.id, path)}
-              />
-            )}
-            {masterShapes.url && masterShapes.box && (
-              <SwapImage
-                src={masterShapes.url}
-                alt=""
-                draggable={false}
-                className="absolute max-w-none"
-                style={{
-                  left: `${masterShapes.box.x * 100}%`,
-                  top: `${masterShapes.box.y * 100}%`,
-                  width: `${masterShapes.box.w * 100}%`,
-                  height: `${masterShapes.box.h * 100}%`,
-                }}
-              />
-            )}
-            {settledGround && <SwapImage src={parts.background} alt="" draggable={false} />}
-          </>
-        ) : (
-          <SwapImage src={parts.background} alt="" draggable={false} />
-        )}
+        <div className={cn('absolute inset-0 overflow-hidden', rounded)}>
+          {drawsGround && masterShapes ? (
+            <>
+              {/* The master's ground lies under the slide's own all along: „Wie im Master“ just
+                  drops the own one over it. Put in only then, its `<img>` took a few frames to
+                  load (decoded ahead or not), the slide's own showing meanwhile. */}
+              {parts.masterGround && (
+                <SwapImage src={parts.masterGround} alt="" draggable={false} />
+              )}
+              {!masterGround && (
+                <SlideGround
+                  fills={ground}
+                  aspect={
+                    editing.pageSize.height > 0
+                      ? editing.pageSize.width / editing.pageSize.height
+                      : 16 / 9
+                  }
+                  pictureUrl={(path) => pictureUrl(deck.id, path)}
+                />
+              )}
+              {masterShapes.url && masterShapes.box && (
+                <SwapImage
+                  src={masterShapes.url}
+                  alt=""
+                  draggable={false}
+                  className="absolute max-w-none"
+                  style={{
+                    left: `${masterShapes.box.x * 100}%`,
+                    top: `${masterShapes.box.y * 100}%`,
+                    width: `${masterShapes.box.w * 100}%`,
+                    height: `${masterShapes.box.h * 100}%`,
+                  }}
+                />
+              )}
+              {settledGround && <SwapImage src={parts.background} alt="" draggable={false} />}
+            </>
+          ) : (
+            <SwapImage src={parts.background} alt="" draggable={false} />
+          )}
+        </div>
         {elements.map((element) => {
           const frame = shownFrame(element, preview, peers.drags.get(element.id));
           const typing = editing.textEditing === element.id;
@@ -299,6 +320,7 @@ function Composed({
             />
           );
         })}
+        {open && rounded && CORNERS.map((corner) => <CornerCover key={corner} corner={corner} />)}
         {peers.picks.map((pick) => {
           // A group picked: framed round its parts.
           const element =
@@ -310,6 +332,29 @@ function Composed({
         })}
       </div>
     </>
+  );
+}
+
+const CORNERS = ['top left', 'top right', 'bottom left', 'bottom right'] as const;
+
+/**
+ * Zoomed out, the elements are not cut at the slide's edge – one reaching into a corner would
+ * square it: the bit outside the rounded corner is the canvas again, as in Prüfen.
+ */
+function CornerCover({ corner }: { corner: (typeof CORNERS)[number] }) {
+  const [down, across] = corner.split(' ') as ['top' | 'bottom', 'left' | 'right'];
+  // The circle's middle: the cover's corner that points into the slide.
+  const middle = `${across === 'left' ? '100%' : '0'} ${down === 'top' ? '100%' : '0'}`;
+  return (
+    <span
+      aria-hidden
+      className="absolute size-(--radius-panel)"
+      style={{
+        [down]: 0,
+        [across]: 0,
+        background: `radial-gradient(circle at ${middle}, transparent calc(var(--radius-panel) - 0.5px), var(--color-canvas) var(--radius-panel))`,
+      }}
+    />
   );
 }
 

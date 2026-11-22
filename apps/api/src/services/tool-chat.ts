@@ -1,0 +1,238 @@
+import type Anthropic from '@anthropic-ai/sdk';
+import { ZodError } from 'zod';
+import type { CloudChatEvent, MaterialChatAnswerState } from '@slider/shared';
+import type { AppDeps } from '../deps';
+import { ApiError } from '../http/errors';
+import { failureMessage, keyProblem, refusesKey, runTurn, type AiConnection } from './ai-providers';
+import { markKeyRefused } from './integration-keys';
+
+/*
+ * One person's chat with the workspace's AI that works with tools – beside the files in Cloud
+ * (`cloud-chat.ts`), on Slider's start (`home-chat.ts`). The loop is the same: the talk so far,
+ * turn after turn the AI's words streamed and its tools run, until it answers. What the tools
+ * are and do is each chat's own.
+ */
+
+type Message = Anthropic.Beta.BetaMessageParam;
+type ToolResult = Anthropic.Beta.BetaToolResultBlockParam;
+
+/** Turns before it must answer: a listing, some reading, a few changes. */
+const MAX_TURNS = 40;
+/** Tokens one answer may take, all its turns. */
+const TASK_BUDGET_TOKENS = 600_000;
+
+/** A mistake the AI can fix by calling again – told as the tool's error. */
+export class ToolChatError extends Error {}
+
+/** What an answer runs with. */
+export interface ToolChat {
+  /** For the log: „Cloud chat“. */
+  name: string;
+  connection: AiConnection;
+  keyId: string;
+  controller: AbortController;
+  /** The talk so far, oldest first, and the new message. */
+  history: readonly { role: 'user' | 'assistant'; text: string }[];
+  text: string;
+  /** Asked once – and again whenever the tools changed (`tools` as a function). */
+  system: () => string | Promise<string>;
+  /** As a function asked each turn: what it may do can change while it works. */
+  tools: Anthropic.Beta.BetaTool[] | (() => Anthropic.Beta.BetaTool[]);
+  /** Runs one tool as the person; `changed`: something was touched. Throws what went wrong. */
+  run: (
+    name: string,
+    input: unknown,
+  ) => Promise<{ content: string; changed: boolean; isError?: boolean }>;
+  /** What the AI does now, for the person. */
+  label: (name: string, input: unknown) => string | null;
+  /** The app a tool works in when not this one: its mark stands beside the label. */
+  app?: (name: string) => 'slider' | undefined;
+  /**
+   * What the person wrote while it worked, handed over once: told to the AI before its next
+   * turn, so it goes on with that in mind – and instead of ending, when it would have.
+   */
+  more?: () => string | null;
+  /** Said when an answer is cut short: what is already changed („Bis hierhin: …“). */
+  doneSoFar?: () => string;
+  /** The answer is over: its slot is free again. */
+  release: () => void;
+}
+
+/**
+ * Writes the answer, telling `emit` its words as they come, what the AI does, and `changed`
+ * whenever a tool changed something; `signal`: the person went or stopped it.
+ */
+export async function answerToolChat(
+  deps: AppDeps,
+  chat: ToolChat,
+  emit: (event: CloudChatEvent) => void,
+  signal: AbortSignal,
+): Promise<void> {
+  const { connection, controller } = chat;
+  const stop = () => controller.abort();
+  if (signal.aborted) stop();
+  else signal.addEventListener('abort', stop, { once: true });
+  let state: MaterialChatAnswerState = 'done';
+  let wrote = false;
+  let streamed = false;
+  try {
+    const messages: Message[] = [];
+    const say = (role: 'user' | 'assistant', text: string) => {
+      if (!text.trim()) return;
+      const last = messages.at(-1);
+      if (last?.role === role && Array.isArray(last.content))
+        last.content.push({ type: 'text', text });
+      else messages.push({ role, content: [{ type: 'text', text }] });
+    };
+    for (const each of chat.history) say(each.role, each.text);
+    say('user', chat.text);
+    // The talk begins with the person (a history cut at its start may not).
+    while (messages[0]?.role === 'assistant') messages.shift();
+    const toolsNow = () => (typeof chat.tools === 'function' ? chat.tools() : chat.tools);
+    const namesOf = (list: readonly Anthropic.Beta.BetaTool[]) =>
+      list.map((tool) => tool.name).join(' ');
+    let tools = toolsNow();
+    let prompt = await chat.system();
+    for (let turn = 0; ; turn += 1) {
+      let turnText = '';
+      const now = toolsNow();
+      if (namesOf(now) !== namesOf(tools)) {
+        tools = now;
+        prompt = await chat.system();
+      }
+      const result = await runTurn(deps, connection, {
+        system: prompt,
+        // The last turn may only answer.
+        tools: turn < MAX_TURNS - 1 ? tools : [],
+        messages,
+        taskBudgetTokens: TASK_BUDGET_TOKENS,
+        effort: 'medium',
+        feature: 'office',
+        fast: true,
+        signal: controller.signal,
+        clearToolResults: { trigger: 120_000, keep: 6, clearAtLeast: 30_000, exclude: [] },
+        onText: (text) => {
+          // A turn's text after an earlier one's is its own paragraph.
+          if (!turnText && streamed) emit({ type: 'text', text: '\n\n' });
+          turnText += text;
+          streamed = true;
+          emit({ type: 'text', text });
+        },
+      });
+      // What did not stream (another provider tells it whole) is sent now.
+      const written = result.content
+        .flatMap((block) => (block.type === 'text' ? [block.text] : []))
+        .join('');
+      if (written.trim()) {
+        if (!turnText) {
+          emit({ type: 'text', text: (streamed ? '\n\n' : '') + written });
+          streamed = true;
+        } else if (written.startsWith(turnText) && written.length > turnText.length)
+          emit({ type: 'text', text: written.slice(turnText.length) });
+        wrote = true;
+      }
+      messages.push({ role: 'assistant', content: result.content });
+      if (result.stop === 'refusal') {
+        state = 'failed';
+        emit({ type: 'error', message: 'Die KI hat das nicht beantwortet.' });
+        break;
+      }
+      if (result.stop === 'max_tokens') {
+        // Not a finished answer: say so instead of leaving half a sentence as the last word.
+        emit({ type: 'text', text: `${streamed ? '\n\n' : ''}(Antwort wurde abgeschnitten)` });
+        streamed = true;
+        break;
+      }
+      if (result.stop !== 'tool_use') {
+        // Written to meanwhile: that is answered too – while it may still use its tools.
+        const more = turn < MAX_TURNS - 1 ? chat.more?.() : null;
+        if (!more) break;
+        say('user', more);
+        continue;
+      }
+      const results: ToolResult[] = [];
+      for (const block of result.content) {
+        if (block.type !== 'tool_use') continue;
+        if (result.unreadable?.includes(block.id)) {
+          results.push({
+            type: 'tool_result',
+            tool_use_id: block.id,
+            content: 'Your input was not readable JSON – send the call again.',
+            is_error: true,
+          });
+          continue;
+        }
+        const label = chat.label(block.name, block.input);
+        const app = chat.app?.(block.name);
+        if (label) emit({ type: 'reading', label, ...(app ? { app } : {}) });
+        try {
+          const ran = await chat.run(block.name, block.input ?? {});
+          if (ran.changed) emit({ type: 'changed' });
+          results.push({
+            type: 'tool_result',
+            tool_use_id: block.id,
+            content: ran.content,
+            ...(ran.isError ? { is_error: true } : {}),
+          });
+        } catch (caught) {
+          // What the page would say to the person (no right, name taken, gone) the AI is told.
+          // Anything else (the storage, the database) is told too, without its words: the answer
+          // goes on and says what is done, instead of ending with half of it moved.
+          const expected =
+            caught instanceof ToolChatError ||
+            caught instanceof ZodError ||
+            caught instanceof ApiError;
+          if (!expected) {
+            if (controller.signal.aborted) throw caught;
+            deps.log.warn(`${chat.name} tool ${block.name} failed: ${String(caught)}`);
+          }
+          results.push({
+            type: 'tool_result',
+            tool_use_id: block.id,
+            content: !expected
+              ? 'That did not work – a problem on the server.'
+              : caught instanceof ZodError
+                ? `Invalid input: ${caught.message}`
+                : caught.message,
+            is_error: true,
+          });
+        }
+        if (controller.signal.aborted) break;
+      }
+      if (controller.signal.aborted) {
+        state = 'stopped';
+        break;
+      }
+      const more = chat.more?.();
+      messages.push({
+        role: 'user',
+        content: more ? [...results, { type: 'text', text: more }] : results,
+      });
+    }
+    if (state === 'done' && !wrote) {
+      state = 'failed';
+      emit({
+        type: 'error',
+        message: 'Die KI hat keine Antwort geschrieben. Bitte nochmal fragen.',
+      });
+    }
+  } catch (caught) {
+    if (controller.signal.aborted) state = 'stopped';
+    else {
+      state = 'failed';
+      emit({ type: 'error', message: failureMessage(caught, connection) });
+      const problem = keyProblem(caught, connection);
+      if (problem && refusesKey(caught)) await markKeyRefused(deps, chat.keyId, problem);
+      if (!(caught instanceof ApiError) && !problem)
+        deps.log.warn(`${chat.name} failed: ${String(caught)}`);
+    }
+  } finally {
+    chat.release();
+    signal.removeEventListener('abort', stop);
+  }
+  // Cut short: what is already changed is said, so the person – and the next message, which
+  // gets the talk as text – knows where things stand.
+  const done = state === 'done' ? '' : (chat.doneSoFar?.() ?? '');
+  if (done) emit({ type: 'text', text: `${streamed ? '\n\n' : ''}${done}` });
+  emit({ type: 'done', state });
+}

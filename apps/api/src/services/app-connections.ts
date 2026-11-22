@@ -273,8 +273,9 @@ function decodeRequest(deps: AppDeps, value: string): SignedRequest {
 
 /**
  * `GET /api/oauth/authorize`: checks what the app asks for and sends the browser to the
- * consent page. A wrong client or redirect is shown, never followed (an open redirect); other
- * mistakes go back to the app as OAuth errors.
+ * consent page. Every mistake is shown, never followed: anyone may register a client with any
+ * https address, so an error sent straight back to it would make a Slider link land anywhere
+ * without a sign-in or a click (an open redirect). Real apps always ask with a code and PKCE.
  */
 export async function authorizeRedirect(
   deps: AppDeps,
@@ -289,20 +290,14 @@ export async function authorizeRedirect(
       problem:
         'Die App will nach dem Anmelden an eine Adresse zurück, die sie nicht angemeldet hat.',
     };
-  const back = (error: string, description: string) => {
-    const url = new URL(redirectUri);
-    url.searchParams.set('error', error);
-    url.searchParams.set('error_description', description);
-    if (query.state) url.searchParams.set('state', query.state);
-    url.searchParams.set('iss', issuerOf(deps));
-    return { to: url.toString() };
-  };
-  if (query.response_type !== 'code')
-    return back('unsupported_response_type', 'Only response_type=code.');
+  const refused = (detail: string) => ({
+    problem: `Die App fragt nicht so, wie Slider es braucht (${detail}). Starte die Verbindung in der App neu.`,
+  });
+  if (query.response_type !== 'code') return refused('only response_type=code');
   if (!query.code_challenge || query.code_challenge_method !== 'S256')
-    return back('invalid_request', 'PKCE with code_challenge_method=S256 is required.');
+    return refused('PKCE with code_challenge_method=S256');
   if (!/^[A-Za-z0-9_-]{43,128}$/.test(query.code_challenge))
-    return back('invalid_request', 'code_challenge is not a base64url SHA-256.');
+    return refused('code_challenge is no base64url SHA-256');
   const request = encodeRequest(deps, {
     clientId: client.id,
     redirectUri,

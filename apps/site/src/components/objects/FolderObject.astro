@@ -1,0 +1,258 @@
+---
+import { s, type Lang } from '~/i18n';
+
+/**
+ * Cloud as one object: an area as a folder you can see into. A presentation, a document and a
+ * table stand in it, each in its app's colour, behind a frosted front that carries the area's
+ * name and its people. Hovering lifts the files; the question above is answered from them.
+ */
+interface Props {
+  lang: Lang;
+}
+
+const w = s(Astro.props.lang).objects.cloud;
+---
+
+<div class="object folder-object" data-tilt>
+  <div class="object-stage">
+    <div class="fo-ask" data-deal style="--i: 4">
+      <svg class="fo-spark" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 2l2.4 6.6L21 11l-6.6 2.4L12 20l-2.4-6.6L3 11l6.600-2.400z"></path></svg>
+      <span>{w.ask}</span>
+    </div>
+    <div class="fo-answer" data-deal style="--i: 5">
+      <b>{w.answer}</b>
+      <span>{w.source}</span>
+    </div>
+    <div class="fo-folder">
+      <svg class="fo-back" viewBox="0 0 100 74" preserveAspectRatio="none" aria-hidden="true" data-deal>
+        <path d="M0 15a6 6 0 0 1 6-6h36c4 0 5.500-2 8-5s4-4 8-4h36a6 6 0 0 1 6 6v62a6 6 0 0 1-6 6H6a6 6 0 0 1-6-6Z"></path>
+      </svg>
+      <div class="fo-file fo-file-1" data-deal style="--i: 1">
+        <span class="fo-kind" style="--k: var(--app-slider)"></span><i class="fo-title" style="--k: var(--app-slider); width: 34%"></i>
+        <div class="fo-bars"><i style="height: 40%"></i><i style="height: 62%"></i><i style="height: 54%"></i><i style="height: 96%"></i></div>
+      </div>
+      <div class="fo-file fo-file-2" data-deal style="--i: 2">
+        <span class="fo-kind" style="--k: var(--app-writer)"></span><i class="fo-title" style="--k: var(--app-writer); width: 46%"></i>
+        <div class="fo-text"><i style="width: 70%"></i><i></i><i></i><i style="width: 84%"></i><i style="width: 46%"></i></div>
+      </div>
+      <div class="fo-file fo-file-3" data-deal style="--i: 3">
+        <span class="fo-kind" style="--k: var(--app-solver)"></span><i class="fo-title" style="--k: var(--app-solver); width: 28%"></i>
+        <div class="fo-grid"><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i></div>
+      </div>
+      <div class="fo-front">
+        <p class="fo-name">{w.area}</p>
+        <p class="fo-count">{w.count}</p>
+        <p class="fo-people" aria-hidden="true">
+          <span style="--p: var(--color-accent-yellow)">L</span>
+          <span style="--p: var(--color-accent-cyan)">B</span>
+          <span style="--p: var(--color-accent-violet); color: #fff">A</span>
+        </p>
+      </div>
+    </div>
+  </div>
+</div>
+
+<style>
+  .folder-object {
+    --c: var(--app-cloud);
+    aspect-ratio: 10 / 9;
+  }
+  .fo-folder {
+    position: absolute;
+    bottom: 4cqw;
+    left: 10cqw;
+    width: 80cqw;
+    height: 59cqw;
+  }
+  .fo-back {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    fill: var(--c);
+    filter: drop-shadow(0 4cqw 5cqw color-mix(in srgb, var(--c) 55%, transparent));
+  }
+  .fo-file {
+    position: absolute;
+    left: 8cqw;
+    right: 8cqw;
+    height: 40cqw;
+    padding: 2.2cqw 3.4cqw;
+    border-radius: 3.4cqw;
+    background: #fff;
+    box-shadow: 0 1cqw 3cqw rgb(0 0 0 / 0.16);
+    transition: translate 600ms var(--ease-overshoot);
+  }
+  .fo-file-1 {
+    top: 3.4cqw;
+    left: 12cqw;
+    right: 12cqw;
+  }
+  .fo-file-2 {
+    top: 9.6cqw;
+    left: 10cqw;
+    right: 10cqw;
+  }
+  .fo-file-3 {
+    top: 15.8cqw;
+  }
+  .folder-object:hover .fo-file-1 {
+    translate: 0 -11cqw;
+  }
+  .folder-object:hover .fo-file-2 {
+    translate: 0 -7cqw;
+  }
+  .folder-object:hover .fo-file-3 {
+    translate: 0 -3.5cqw;
+  }
+  .fo-kind {
+    position: absolute;
+    top: 1.7cqw;
+    right: 3cqw;
+    width: 3.6cqw;
+    height: 2.6cqw;
+    border-radius: 1cqw 1cqw 1cqw 0.3cqw;
+    background: var(--k);
+  }
+  .fo-title {
+    display: block;
+    height: 1.6cqw;
+    margin-bottom: 2.4cqw;
+    border-radius: 1cqw;
+    background: color-mix(in srgb, var(--k) 75%, #fff);
+  }
+  .fo-bars {
+    display: flex;
+    align-items: flex-end;
+    gap: 2.4cqw;
+    width: 46%;
+    height: 9cqw;
+  }
+  .fo-bars i {
+    flex: 1;
+    border-radius: 0.6cqw 0.6cqw 0 0;
+    background: color-mix(in srgb, var(--app-slider) 50%, #fff);
+  }
+  .fo-bars i:last-child {
+    background: var(--app-slider);
+  }
+  .fo-text,
+  .fo-grid {
+    width: 70%;
+  }
+  .fo-text {
+    display: flex;
+    flex-direction: column;
+    gap: 1.3cqw;
+  }
+  .fo-text i {
+    height: 1.1cqw;
+    border-radius: 1cqw;
+    background: #e3e3e8;
+  }
+  .fo-grid {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 0.8cqw;
+  }
+  .fo-grid i {
+    height: 2.2cqw;
+    border-radius: 0.5cqw;
+    background: color-mix(in srgb, var(--app-solver) 16%, #fff);
+  }
+  .fo-grid i:nth-child(-n + 3) {
+    background: color-mix(in srgb, var(--app-solver) 60%, #fff);
+  }
+  /* The frosted front: what stands in the folder shows through it. */
+  .fo-front {
+    position: absolute;
+    right: 0;
+    bottom: 0;
+    left: 0;
+    display: flex;
+    flex-direction: column;
+    justify-content: flex-end;
+    height: 29cqw;
+    padding: 4cqw 5cqw;
+    border: 0.4cqw solid rgb(255 255 255 / 0.85);
+    border-radius: 6cqw;
+    background: linear-gradient(180deg, color-mix(in srgb, var(--c) 62%, transparent), rgb(255 255 255 / 0.82) 92%);
+    box-shadow: 0 2cqw 4cqw -1cqw rgb(0 0 0 / 0.16);
+    -webkit-backdrop-filter: blur(1.6cqw) saturate(1.4);
+    backdrop-filter: blur(1.6cqw) saturate(1.4);
+    color: #16233a;
+  }
+  .fo-name {
+    font-size: 8cqw;
+    font-weight: 800;
+    line-height: 1;
+    letter-spacing: -0.05em;
+  }
+  .fo-count {
+    margin-top: 1cqw;
+    font-size: 2.6cqw;
+    color: rgb(22 35 58 / 0.6);
+  }
+  .fo-people {
+    position: absolute;
+    right: 5cqw;
+    bottom: 4.6cqw;
+    display: flex;
+  }
+  .fo-people span {
+    display: grid;
+    place-items: center;
+    width: 6.4cqw;
+    height: 6.4cqw;
+    margin-left: -1.6cqw;
+    border: 0.5cqw solid #fff;
+    border-radius: 50%;
+    background: var(--p);
+    color: #000;
+    font-size: 2.6cqw;
+    font-weight: 700;
+  }
+  .fo-ask,
+  .fo-answer {
+    position: absolute;
+    display: flex;
+    align-items: center;
+    background: #fff;
+    color: #1c1c1e;
+    box-shadow: 0 2cqw 5cqw -1.5cqw rgb(0 0 0 / 0.28);
+  }
+  .fo-ask {
+    top: 2cqw;
+    left: 0;
+    gap: 1.6cqw;
+    padding: 2.2cqw 3.2cqw 2.2cqw 2.6cqw;
+    border-radius: 5cqw;
+    font-size: 2.6cqw;
+    font-weight: 500;
+  }
+  .fo-spark {
+    width: 3.4cqw;
+    fill: var(--color-sage);
+  }
+  .fo-answer {
+    top: 11.4cqw;
+    left: 9cqw;
+    gap: 1.8cqw;
+    padding: 1.6cqw 1.8cqw 1.6cqw 3cqw;
+    border-radius: 1.2cqw 5cqw 5cqw 5cqw;
+    font-size: 2.4cqw;
+  }
+  .fo-answer span {
+    padding: 0.8cqw 1.8cqw;
+    border-radius: 4cqw;
+    background: color-mix(in srgb, var(--color-sage) 40%, #fff);
+    font-size: 2cqw;
+    font-weight: 600;
+    white-space: nowrap;
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .fo-file {
+      transition: none;
+    }
+  }
+</style>

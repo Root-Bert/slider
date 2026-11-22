@@ -292,6 +292,9 @@ function EditLayerView({ slideId, color, boxes, onHover }: EditLayerProps) {
       data-live-host=""
       className={cn(
         'absolute inset-0 z-(--z-raised) cursor-default',
+        // Zoomed out, the room around the slide is its too (`slide-room`, set by `SlideFrame`):
+        // a frame drawn there, an element let go of by a click.
+        'slide-room',
         // ⇧ held (`data-adding`, `useInsertFrame`): a drag on an element adds too – its body says
         // so, its handles stay.
         'data-[adding]:cursor-crosshair [&[data-adding]_[data-edit-element]]:cursor-crosshair!',

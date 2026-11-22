@@ -106,10 +106,15 @@ export function imageBox(
   return centredBox(at, (width * scale) / page.width, (height * scale) / page.height);
 }
 
-/** A box `w` × `h` (of the slide) centred on `at`, pushed inside the slide. */
+/**
+ * A box `w` × `h` (of the slide) centred on `at`, pushed inside the slide – unless `at` lies off
+ * it (dropped beside the slide): then it stays where it was put.
+ */
 export function centredBox(at: Point, w: number, h: number): Rect {
   const inside = (centre: number, size: number) =>
-    Math.min(1 - size, Math.max(0, centre - size / 2));
+    centre < 0 || centre > 1
+      ? centre - size / 2
+      : Math.min(1 - size, Math.max(0, centre - size / 2));
   return { x: inside(at.x, w), y: inside(at.y, h), w, h };
 }
 

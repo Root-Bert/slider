@@ -1,4 +1,4 @@
-import type { HTMLAttributes, ReactNode } from 'react';
+import type { HTMLAttributes, MouseEvent, ReactNode } from 'react';
 import { cn } from './cn';
 
 export type ListRowVariant = 'divided' | 'hover' | 'flush';
@@ -83,6 +83,8 @@ export interface ListRowProps {
   as?: 'li' | 'div';
   /** Layout only; the look comes from the props. */
   className?: string;
+  /** Right click: the row's menu at the pointer (`ContextMenu`), as its `trailing` one. */
+  onContextMenu?: (event: MouseEvent<HTMLElement>) => void;
 }
 
 /** A row in a settings list: leading tile or avatar, title + subtitle, trailing controls. */
@@ -103,6 +105,7 @@ export function ListRow({
   dimmed = false,
   as: Tag = 'li',
   className,
+  onContextMenu,
 }: ListRowProps) {
   const titleClasses = cn(
     'truncate',
@@ -112,6 +115,7 @@ export function ListRow({
   );
   return (
     <Tag
+      onContextMenu={onContextMenu}
       className={cn(
         'flex items-center gap-3',
         ROW_VARIANTS[variant],

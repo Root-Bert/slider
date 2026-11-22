@@ -2,6 +2,7 @@ import { readFile } from 'node:fs/promises';
 import { existsSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { eq } from 'drizzle-orm';
+import JSZip from 'jszip';
 import { afterEach, describe, expect, it } from 'vitest';
 import { commentSchema, deckSchema, slideSchema, type Deck } from '@slider/shared';
 import { PptxError, type ParsedComment } from '@slider/pptx';
@@ -17,7 +18,8 @@ import { deband } from '../src/import/deband';
 import { backfillFileAuthors } from '../src/import/file-author-backfill';
 import { findInterruptedImports, importDeck } from '../src/import/import-deck';
 import { findRerenderCandidates } from '../src/import/rerender';
-import { ConversionAborted, type PptxToPdf } from '../src/import/libreoffice';
+import { ConversionAborted, deckFonts, type PptxToPdf } from '../src/import/libreoffice';
+import { loadImage } from '../src/import/load-image';
 import type { OpenPptx } from '../src/import/pptx';
 import { toAnchor, upsertPptxComments } from '../src/import/pptx-comments';
 import { silentLogger } from '../src/logger';
@@ -123,6 +125,27 @@ describe('import pipeline', () => {
       const deck = await upload(ctx);
       expect(deck.import, message).toEqual({ status: 'failed', error: message });
     }
+    // What a file brings is read within limits: a picture whose header claims 30 000 × 30 000
+    // pixels is not decoded, and font names come from a file's parts tag by tag, in no time
+    // however many attributes a font face has.
+    const header = new Uint8Array(64);
+    header.set([
+      0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0, 0, 0, 13, 0x49, 0x48, 0x44, 0x52,
+    ]);
+    new DataView(header.buffer).setUint32(16, 30_000);
+    new DataView(header.buffer).setUint32(20, 30_000);
+    await expect(loadImage(header)).rejects.toThrow('too many pixels');
+    const odp = new JSZip();
+    odp.file('mimetype', 'application/vnd.oasis.opendocument.presentation');
+    const noise = Array.from({ length: 20_000 }, (_, at) => `a${at}-svg:font-family="x"`).join(' ');
+    odp.file(
+      'styles.xml',
+      `<style:font-face ${noise} style:name="Brand" svg:font-family="&apos;Brand Sans&apos;"><svg:font-face-src></svg:font-face-src></style:font-face><style:font-face svg:font-family="Other"/>`,
+    );
+    const started = Date.now();
+    const packed = await odp.generateAsync({ type: 'uint8array' });
+    expect(await deckFonts(packed)).toEqual(expect.arrayContaining(['x', 'Brand Sans', 'Other']));
+    expect(Date.now() - started).toBeLessThan(2000);
   });
 
   it('imports PowerPoint comments with replies and anchors; duplicate sldIds give them to the first slide', async () => {

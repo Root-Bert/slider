@@ -4,6 +4,8 @@ import {
   freeFontName,
   lineBetween,
   NEW_LINE_STROKE,
+  ELEMENT_ENTRANCES,
+  ENTRANCE_SIDES,
   NO_EFFECTS,
   slideTransitionSchema,
 } from '@slider/shared';
@@ -63,7 +65,12 @@ export const NEW_KINDS = [
   'line',
   'arrow',
 ] as const;
-export type NewKind = (typeof NEW_KINDS)[number];
+/**
+ * What the AI's `change_elements` adds beyond them: a picture frame showing a picture it has (a
+ * photo, a generated picture, one of Slider's symbols) – by its key in `QuickOptions.pictures`.
+ */
+export const ADD_KINDS = [...NEW_KINDS, 'picture'] as const;
+export type NewKind = (typeof ADD_KINDS)[number];
 export const NEXT_TO_SIDES = ['right', 'left', 'below', 'above'] as const;
 const reference = z.string().min(1).max(200);
 /** One end of a new line: an element (its edge facing the other end), or a point (%). */
@@ -73,7 +80,12 @@ export const quickEditSchema = z.object({
   /** The element changed – its id, or the `name` of one added before in the same edits. */
   element: reference.nullish(),
   /** A new element of this kind instead – on top, as the editor adds it. */
-  add: z.enum(NEW_KINDS).nullish(),
+  add: z.enum(ADD_KINDS).nullish(),
+  /**
+   * A picture it has (its key in `QuickOptions.pictures`): what a new `picture` shows, or what a
+   * shape or text frame is filled with (cut to its proportions, as the editor's „Füllen“).
+   */
+  image: reference.nullish(),
   /** A new copy of this element instead (look, text, size) – the editor's ⌘D. */
   copy_of: reference.nullish(),
   /** What later edits call the new element (`element`, `align_with`, `next_to`, …). */
@@ -117,6 +129,20 @@ export const quickEditSchema = z.object({
   box: z.object({ x: percent, y: percent, w: percent.positive(), h: percent.positive() }).nullish(),
   /** `none`: no fill. */
   fill: z.union([hex, z.literal('none')]).nullish(),
+  /** A gradient fill instead: its colours evenly along it (each one see-through as given). */
+  gradient: z
+    .object({
+      kind: z.enum(['linear', 'radial']).nullish(),
+      /** The way it runs, as CSS: 90 left to right, 180 top to bottom (a linear one). */
+      angle: z.number().min(0).max(360).nullish(),
+      stops: z
+        .array(
+          z.union([hex, z.object({ color: hex, opacity: z.number().min(0).max(1).nullish() })]),
+        )
+        .min(2)
+        .max(6),
+    })
+    .nullish(),
   /** `none`: no border; width in pt. */
   border: z
     .union([z.object({ color: hex, width: z.number().min(0).max(50) }), z.literal('none')])
@@ -142,6 +168,17 @@ export const quickEditSchema = z.object({
   /** A group taken apart (⇧⌘G). */
   ungroup: z.boolean().nullish(),
   locked: z.boolean().nullish(),
+  /** How it comes in when presenting – after the one before (`with`: together with it); `none`. */
+  entrance: z
+    .union([
+      z.literal('none'),
+      z.object({
+        effect: z.enum(ELEMENT_ENTRANCES),
+        with: z.boolean().nullish(),
+        from: z.enum(ENTRANCE_SIDES).nullish(),
+      }),
+    ])
+    .nullish(),
   /** Effects as the editor's „Effekte“ make them: on (its default look) or off. */
   shadow: z.boolean().nullish(),
   /** On, off, or on in this colour. */
@@ -460,6 +497,8 @@ export interface QuickOptions {
   layouts?: readonly QuickLayout[];
   /** Kinds of edits refused, and why – e.g. the slide tools the full AI has for them. */
   refuse?: (edit: QuickEdit) => string | null;
+  /** Pictures the edits may show (`image`), by key: their size in pixels. */
+  pictures?: ReadonlyMap<string, { width: number; height: number }>;
 }
 
 /**
@@ -565,6 +604,7 @@ export function quickPlan(
         area,
         page,
         alike: (other) => !!edit.add && kinds.get(other) === edit.add,
+        pictures: options.pictures ?? new Map(),
       });
       if ('problem' in made) return fail(made.problem);
       operations.push(...made.operations);
@@ -597,6 +637,13 @@ export function quickPlan(
       movedBy.set(operation.elementId, operation.box);
     }
     operations.push(...made);
+  }
+  // A picture fill is cut to its shape as the edits leave it.
+  for (const operation of operations) {
+    if (operation.type !== 'setShapeStyle' || operation.composite?.aspect !== 0) continue;
+    const box = boxOf.get(operation.elementId);
+    if (!box || box.w <= 0 || box.h <= 0) return { problem: 'the shape has no size', index: -1 };
+    operation.composite.aspect = (box.w * page.width) / (box.h * page.height);
   }
   return operations.length > 0
     ? { operations, added, fills }
@@ -891,6 +938,8 @@ interface NewPlace {
   page: { width: number; height: number };
   /** Whether an element is one of the same kind added by the edits before. */
   alike?: (id: string) => boolean;
+  /** Pictures the edits may show, by key: their size in pixels. */
+  pictures?: ReadonlyMap<string, { width: number; height: number }>;
 }
 
 /** The operations that add an element as the edit asks, and the element as the editor sees it. */
@@ -967,6 +1016,7 @@ function newElementOperations(
     };
     return { operations: [operation, ...orderOperations(edit, id)], element };
   }
+  if (kind === 'picture') return newPictureOperations(edit, place);
   const text = kind === 'text';
   const base = textStyleOn(place.elements);
   const style: LiveTextStyle = {
@@ -1049,8 +1099,10 @@ function newElementOperations(
     tilt: null,
     flip: text ? null : { x: false, y: false },
   };
-  // Effects, corners, a turn asked with it: as of any element.
+  // Effects, corners, a turn, a gradient or picture fill asked with it: as of any element.
   const extra = {
+    gradient: edit.gradient,
+    image: edit.image,
     shadow: edit.shadow,
     glow: edit.glow,
     soft_edge: edit.soft_edge,
@@ -1059,6 +1111,7 @@ function newElementOperations(
     rotation: edit.rotation,
     mirror: edit.mirror,
     locked: edit.locked,
+    entrance: edit.entrance,
   };
   if (Object.values(extra).some(given)) {
     const rest = elementOperations(extra, element, place.elements.length + 1, boxes, place.area);
@@ -1066,6 +1119,109 @@ function newElementOperations(
     operations.push(...rest);
   }
   return { operations, element };
+}
+
+/**
+ * A new picture frame showing picture `image` whole: as wide as asked (its height by its
+ * proportions), else a third of the slide; effects, a turn and corners as of any element.
+ */
+function newPictureOperations(
+  edit: QuickEdit,
+  place: NewPlace,
+): { operations: SlideOperation[]; element: EditableElement } | QuickProblem {
+  const problem = (text: string): QuickProblem => ({ problem: text, index: -1 });
+  const { id, pageId, page } = place;
+  const picture = edit.image ? place.pictures?.get(edit.image) : undefined;
+  if (!picture) return problem('a picture needs `picture` (or an icon) to show');
+  // Its proportions, in shares of the slide.
+  const ratio = picture.width / picture.height / (page.width / page.height);
+  // A box given: the picture whole inside it, in its middle (never stretched). Else a width or a
+  // height (the other by its proportions), else a third of the slide wide; nowhere said: in the
+  // middle of the slide, as the editor puts a new picture.
+  const fit = edit.box && !edit.next_to && !edit.place ? fraction(edit.box) : null;
+  const inside = fit && Math.min(fit.w, fit.h * ratio);
+  const where = edit.box || edit.next_to || edit.place ? {} : { place: 'center' as const };
+  const box =
+    fit && inside
+      ? {
+          x: fit.x + (fit.w - inside) / 2,
+          y: fit.y + (fit.h - inside / ratio) / 2,
+          w: inside,
+          h: inside / ratio,
+        }
+      : newBox(
+          {
+            ...edit,
+            ...where,
+            box: null,
+            size: edit.size && given(edit.size.w) ? { w: edit.size.w } : edit.size,
+          },
+          { w: 0.33, h: 0.33 / ratio },
+          place,
+          null,
+        );
+  if ('problem' in box) return box;
+  const operations: SlideOperation[] = [
+    { type: 'addImage', pageId, elementId: id, box, imageId: edit.image! },
+    ...orderOperations(edit, id),
+  ];
+  const element: EditableElement = {
+    id,
+    kind: 'image',
+    name: 'Bild',
+    role: null,
+    bbox: box,
+    rotation: 0,
+    paragraphs: null,
+    movable: true,
+    resizable: true,
+    live: null,
+    credit: null,
+    look: null,
+    tilt: null,
+    flip: { x: false, y: false },
+  };
+  const extra = {
+    shadow: edit.shadow,
+    glow: edit.glow,
+    soft_edge: edit.soft_edge,
+    rotation: edit.rotation,
+    mirror: edit.mirror,
+    locked: edit.locked,
+    entrance: edit.entrance,
+  };
+  if (Object.values(extra).some(given)) {
+    const rest = elementOperations(
+      extra,
+      element,
+      place.elements.length + 1,
+      place.boxes,
+      place.area,
+    );
+    if (!rest) return problem('the new picture cannot be changed so');
+    operations.push(...rest);
+  }
+  return { operations, element };
+}
+
+/** A gradient fill's one layer, its colours evenly along it. */
+function gradientLayer(gradient: NonNullable<QuickEdit['gradient']>): FillLayer {
+  const last = gradient.stops.length - 1;
+  return {
+    type: 'gradient',
+    kind: gradient.kind ?? 'linear',
+    angle: gradient.angle ?? 180,
+    stops: gradient.stops.map((stop, at) => {
+      const { color, opacity } = typeof stop === 'string' ? { color: stop, opacity: null } : stop;
+      return {
+        color: color.toLowerCase(),
+        at: at / last,
+        ...(given(opacity) && opacity < 1 ? { opacity } : {}),
+      };
+    }),
+    opacity: 1,
+    visible: true,
+  };
 }
 
 /** A new element sent to the back (it comes on top). */
@@ -1305,6 +1461,22 @@ function elementOperations(
     if (moved) Object.assign(moved, turned);
     else operations.push({ type: 'setBox', elementId: id, box: { ...element.bbox }, ...turned });
   }
+  if (given(edit.gradient) || given(edit.image)) {
+    // A gradient or a picture as the fill – of shapes and text frames, as the editor's „Füllung“.
+    if (!element.look || element.kind === 'line' || element.kind === 'image') return null;
+    if (given(edit.gradient) && given(edit.image)) return null;
+    operations.push(
+      given(edit.gradient)
+        ? { type: 'setShapeStyle', elementId: id, fills: [gradientLayer(edit.gradient)] }
+        : {
+            type: 'setShapeStyle',
+            elementId: id,
+            fills: [{ type: 'image', src: edit.image!, fit: 'fill', opacity: 1, visible: true }],
+            // Its proportions once the edits have placed it (`quickPlan`): cut to them.
+            composite: { imageId: edit.image!, aspect: 0 },
+          },
+    );
+  }
   if (given(edit.fill) || given(edit.border) || given(edit.vertical_align)) {
     // Fill and border only where the editor sets them; the text's place in a text frame too.
     if ((given(edit.fill) || given(edit.border)) && !element.look) return null;
@@ -1367,6 +1539,21 @@ function elementOperations(
   }
   if (given(edit.locked))
     operations.push({ type: 'setLocked', elementId: id, locked: edit.locked });
+  if (given(edit.entrance))
+    operations.push({
+      type: 'setEntrance',
+      elementId: id,
+      entrance:
+        edit.entrance === 'none'
+          ? null
+          : {
+              effect: edit.entrance.effect,
+              start: edit.entrance.with ? 'with' : 'after',
+              ...(edit.entrance.effect === 'fly' && edit.entrance.from
+                ? { from: edit.entrance.from }
+                : {}),
+            },
+    });
   if (edit.ungroup) {
     if (element.kind !== 'group') return null;
     operations.push({ type: 'ungroupElements', elementId: id });
@@ -1519,6 +1706,7 @@ const NEW_NAMES: Record<NewKind | 'copy', [string, string]> = {
   star5: ['Stern', 'Sterne'],
   line: ['Linie', 'Linien'],
   arrow: ['Pfeil', 'Pfeile'],
+  picture: ['Bild', 'Bilder'],
   copy: ['Kopie', 'Kopien'],
 };
 
@@ -1575,6 +1763,7 @@ export function quickSummary(edits: readonly QuickEdit[]): string {
     if (given(edit.heads)) did.add('Pfeilspitzen geändert');
     if (given(edit.picture_fit)) did.add('Bildeinpassung geändert');
     if (given(edit.locked)) did.add(edit.locked ? 'gesperrt' : 'entsperrt');
+    if (given(edit.entrance)) did.add('Animation gesetzt');
     if (edit.ungroup) did.add('Gruppierung aufgehoben');
   }
   const list = [

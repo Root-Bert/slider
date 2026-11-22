@@ -2,7 +2,7 @@ import type { NotesParagraph, NotesRun, TextList } from '@slider/shared';
 import { newListStyle, type StyleSink } from './live-write';
 import type { StyleIndex } from './styles';
 import { inlineNodes } from './text';
-import { attr, childrenOf, element, tagOf, textOf, type XmlNode } from './xml';
+import { attr, childrenOf, element, spaceRun, tagOf, textOf, type XmlNode } from './xml';
 
 /*
  * Speaker notes with their formatting: bold, italic, underlined, struck through, in lists. Read
@@ -63,8 +63,7 @@ function runsOf(index: StyleIndex, paragraph: XmlNode): NotesRun[] {
       }
       const tag = tagOf(child);
       if (!tag || NO_TEXT.has(tag) || !tag.startsWith('text:')) continue;
-      if (tag === 'text:s')
-        add(' '.repeat(Math.max(1, Number(attr(child, 'text:c') ?? 1) || 1)), look);
+      if (tag === 'text:s') add(spaceRun(attr(child, 'text:c')), look);
       else if (tag === 'text:tab') add('\t', look);
       else if (tag === 'text:line-break') add('\n', look);
       else if (tag === 'text:span')

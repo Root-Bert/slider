@@ -14,6 +14,8 @@ interface ViewToolbarProps {
   sort: ReactNode;
   view: CollectionView;
   onViewChange: (view: CollectionView) => void;
+  /** What is shown is a list whatever the choice (a trash): the choice waits, greyed. */
+  listOnly?: boolean;
 }
 
 /** 0 all labels, 1 the filter's icons only, 2 the action's icon only too. */
@@ -49,6 +51,7 @@ export function ViewToolbar({
   sort,
   view,
   onViewChange,
+  listOnly = false,
 }: ViewToolbarProps) {
   const rootRef = useRef<HTMLDivElement>(null);
   const rightRef = useRef<HTMLDivElement>(null);
@@ -125,7 +128,8 @@ export function ViewToolbar({
             label="Kachelansicht"
             size="sm"
             iconSize={18}
-            active={view === 'grid'}
+            active={!listOnly && view === 'grid'}
+            disabled={listOnly}
             onClick={() => onViewChange('grid')}
           />
           <IconButton
@@ -133,7 +137,8 @@ export function ViewToolbar({
             label="Listenansicht"
             size="sm"
             iconSize={18}
-            active={view === 'list'}
+            active={listOnly || view === 'list'}
+            disabled={listOnly}
             onClick={() => onViewChange('list')}
           />
         </Toolbar>

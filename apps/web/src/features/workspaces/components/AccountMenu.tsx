@@ -48,7 +48,7 @@ const THEMES: readonly Segment<ThemePreference>[] = [
 /**
  * Header avatar with the account menu: who is signed in, "Konto & Anmeldung", "Nutzung" (plan
  * and storage of the workspaces), "Einstellungen" (its own page, kept apart from the
- * account), "Wörterbuch" (the words one taught the spell check), the theme (Hell, System, Dunkel), for the instance admin "Instanz" (dashboard and setup, BER-167), sign out – and once,
+ * account), the theme (Hell, System, Dunkel), for the instance admin "Instanz" (dashboard and setup, BER-167), sign out – and once,
  * until dismissed, a nudge to add a passkey. Signing out waits a moment for edits still on their
  * way; any left unsent would go with it, so it asks first. Logins and connections live on "Konto & Anmeldung".
  * The panel unfolds out of the avatar: it stays where it is, in the panel's top-right corner.
@@ -221,7 +221,10 @@ export function AccountMenu() {
                     )}
                   </div>
                 ))}
-                {bridge && !bridge.addAccount ? null : others.length < MAX_OTHER_ACCOUNTS ? (
+                {/* Cloud's app (`window.cloudDesktop`) is one account's, as its place in the
+                    Finder: no second one there. */}
+                {(bridge && !bridge.addAccount) || window.cloudDesktop ? null : others.length <
+                  MAX_OTHER_ACCOUNTS ? (
                   <MenuItem
                     icon="personAdd"
                     disabled={accounts.busy}
@@ -279,15 +282,6 @@ export function AccountMenu() {
               }}
             >
               Einstellungen
-            </MenuItem>
-            <MenuItem
-              icon="spellcheck"
-              onClick={() => {
-                close();
-                void navigate(routes.dictionary());
-              }}
-            >
-              Wörterbuch
             </MenuItem>
             <div className="px-1.5 pt-1 pb-1.5">
               <SegmentedControl
@@ -458,7 +452,8 @@ export function AccountMenu() {
             // What this browser session kept for the account (stored answers, the edits not sent)
             // goes first, as on signing out in the browser – the app then moves the tabs to this
             // computer's pages, this one with them.
-            void forgetOffline()
+            // Every account of the app's pages signs out (`desktop:signOut`), their drafts too.
+            void forgetOffline('everyone')
               .then(() => bridge.signOut())
               .then(
                 (done) => setBridgeSignOutFailed(!done),

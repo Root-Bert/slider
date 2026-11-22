@@ -1,0 +1,224 @@
+---
+import { Icon } from '@/ui/Icon';
+import Button from './Button.astro';
+import Kind from './Kind.astro';
+import Mark from './Mark.astro';
+import Phrase from './Phrase.astro';
+import { s, type Lang } from '~/i18n';
+import { APP_NAMES, PRODUCTS } from '~/lib/apps';
+import { APP_URL, REPO_URL } from '~/lib/links';
+
+/**
+ * Plans: a plan covers the whole office, whether you use one app or all five – so every plan
+ * shows all five marks. Free is what there is today; Team and Pro are announced without a price.
+ * Each plan is a night-dark tile like the apps' (`Tile.astro`), Free with the glow in the page's colour.
+ */
+interface Props {
+  lang: Lang;
+}
+
+const { lang } = Astro.props;
+const p = s(lang).plans;
+const plans = [
+  { name: 'Free', price: '€0', unit: p.forever, copy: p.free, featured: true },
+  { name: 'Team', copy: p.team },
+  { name: 'Pro', copy: p.pro },
+];
+---
+
+<section class="plans" id="plans" data-section data-live="plans">
+  <div data-reveal><Kind label="Office" parts={[s(lang).nav.plans]} /></div>
+  <h2 class="exhibit-title plans-title" data-reveal><Phrase text={p.title} /></h2>
+  <p class="exhibit-lead plans-sub" data-reveal style="--i: 1">{p.sub}</p>
+
+  <div class="plans-row">
+    {
+      plans.map((plan, i) => (
+        <div class:list={['plan canvas-dots', plan.featured && 'is-featured']} data-reveal style={`--i: ${1.5 + i * 0.5}`}>
+          <h3>{plan.name}</h3>
+          <p class="plan-price">
+            {plan.price ? (
+              <>
+                <span>{plan.price}</span>
+                <small>{plan.unit}</small>
+              </>
+            ) : (
+              <span class="is-word">{p.soon}</span>
+            )}
+          </p>
+          <p class="plan-pitch">{plan.copy.pitch}</p>
+          <div class="plan-apps">
+            <p>{p.includes}</p>
+            <ul>
+              {PRODUCTS.map((id) => (
+                <li>
+                  <Mark app={id} size={26} class="plan-mark" />
+                  {APP_NAMES[id]}
+                </li>
+              ))}
+            </ul>
+          </div>
+          <ul class="plan-features">
+            {plan.copy.features.map((feature) => (
+              <li>
+                <Icon name="check" size={18} />
+                {feature}
+              </li>
+            ))}
+          </ul>
+          {plan.featured && (
+            <div class="plan-cta">
+              <Button href={`${APP_URL}/`} variant="primary" class="w-full">
+                {p.free.cta}
+              </Button>
+            </div>
+          )}
+        </div>
+      ))
+    }
+  </div>
+
+  <p class="plans-self" data-reveal style="--i: 3">
+    {p.self}
+    <a href={REPO_URL} rel="noopener">{p.selfButton}</a>
+  </p>
+</section>
+
+<style>
+  .plans {
+    max-width: 1440px;
+    margin: 0 auto;
+    padding: clamp(140px, 20vw, 300px) 32px 0;
+  }
+  .plans-title {
+    margin-top: 24px;
+  }
+  .plans-sub {
+    max-width: 34em;
+    margin-top: 28px;
+  }
+  .plans-row {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: clamp(16px, 1.6vw, 24px);
+    margin-top: clamp(56px, 7vw, 104px);
+  }
+  /* Night-dark in both themes, like the apps' tiles; Free glows in the page's colour from above. */
+  .plan {
+    --ground: #0b0b0d;
+    --glow: rgb(255 255 255 / 0.5);
+    display: flex;
+    flex-direction: column;
+    padding: clamp(32px, 3vw, 48px) clamp(24px, 2.6vw, 40px) clamp(28px, 2.6vw, 40px);
+    border-radius: clamp(24px, 3vw, 44px);
+    background: radial-gradient(120% 46% at 50% 0%, color-mix(in srgb, var(--glow) 9%, var(--ground)), var(--ground) 72%), var(--ground);
+    color: #fff;
+  }
+  .plan.is-featured {
+    background: var(--brand-aura);
+  }
+  .plan :global(.mark) {
+    --m-ground: var(--ground);
+  }
+  .plan h3 {
+    font-size: 22px;
+    font-weight: 700;
+    letter-spacing: -0.02em;
+  }
+  .plan-price {
+    display: flex;
+    align-items: baseline;
+    gap: 10px;
+    margin-top: 28px;
+  }
+  .plan-price span {
+    font-size: clamp(44px, 4.4vw, 64px);
+    font-weight: 700;
+    line-height: 1.02;
+    letter-spacing: -0.03em;
+  }
+  .plan-price span.is-word {
+    font-size: clamp(26px, 2.5vw, 36px);
+    line-height: 1.2;
+    color: rgb(255 255 255 / 0.5);
+  }
+  .plan-price small {
+    font-size: 15px;
+    opacity: 0.7;
+  }
+  .plan-pitch {
+    min-height: 3em;
+    margin-top: 20px;
+    font-size: 16px;
+    line-height: 1.5;
+    opacity: 0.8;
+  }
+  /* The point of it all: the same five apps in every plan. */
+  .plan-apps {
+    margin-top: 28px;
+    padding: 20px 0;
+    border-block: 1px solid rgb(255 255 255 / 0.14);
+  }
+  .plan-apps p {
+    font-size: 13px;
+    font-weight: 600;
+    opacity: 0.6;
+  }
+  .plan-apps ul {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 14px 12px;
+    margin-top: 14px;
+  }
+  .plan-apps li {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    font-size: 16px;
+    font-weight: 600;
+    letter-spacing: -0.01em;
+  }
+  .plan-features {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    margin-top: 22px;
+    font-size: 15px;
+  }
+  .plan-features li {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    opacity: 0.85;
+  }
+  .plan-cta {
+    margin-top: auto;
+    padding-top: 28px;
+  }
+  .plans-self {
+    margin-top: 56px;
+    font-size: 16px;
+    color: var(--color-fg-muted);
+  }
+  .plans-self a {
+    margin-left: 6px;
+    font-weight: 600;
+    color: var(--color-fg);
+    text-decoration: underline;
+    text-underline-offset: 4px;
+  }
+  @media (max-width: 1023px) {
+    .plans-row {
+      grid-template-columns: 1fr;
+      max-width: 520px;
+    }
+    .plan-pitch {
+      min-height: 0;
+    }
+  }
+  @media (max-width: 767px) {
+    .plans {
+      padding-inline: 16px;
+    }
+  }
+</style>

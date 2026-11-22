@@ -63,6 +63,7 @@ import {
 } from './image-fit';
 import { readTiltMark, writeTiltMark } from './tilt';
 import { readTransition, writeTransitionFilters, writeTransitionProperties } from './transition';
+import { readEntrances, writeEntrance } from './entrance';
 import {
   LOEXT_NS,
   SLIDER_NS,
@@ -346,6 +347,41 @@ const isEmbeddedPart = (path: string): boolean =>
   path.includes('/') && !path.startsWith('META-INF/') && /\/(content|styles)\.xml$/.test(path);
 
 /** A relative path inside the package – everything else is a link out. */
+/**
+ * The names the link rules know, by namespace: a file may bind any prefix to them (`x:href` for
+ * `xlink:href`), and LibreOffice reads the namespace, not the prefix.
+ */
+const LINK_NAMESPACES: Readonly<Record<string, string>> = {
+  'http://www.w3.org/1999/xlink': 'xlink',
+  'urn:oasis:names:tc:opendocument:xmlns:office:1.0': 'office',
+  'urn:oasis:names:tc:opendocument:xmlns:table:1.0': 'table',
+  'urn:oasis:names:tc:opendocument:xmlns:text:1.0': 'text',
+  'urn:oasis:names:tc:opendocument:xmlns:drawing:1.0': 'draw',
+  'urn:oasis:names:tc:opendocument:xmlns:presentation:1.0': 'presentation',
+};
+type Prefixes = ReadonlyMap<string, string>;
+/** The prefixes in force inside `node`: its parent's and what it declares itself. */
+function prefixesIn(node: XmlNode, outer: Prefixes): Prefixes {
+  let own: Map<string, string> | null = null;
+  for (const name of attributeNames(node)) {
+    if (name !== 'xmlns' && !name.startsWith('xmlns:')) continue;
+    own ??= new Map(outer);
+    own.set(name === 'xmlns' ? '' : name.slice('xmlns:'.length), (attr(node, name) ?? '').trim());
+  }
+  return own ?? outer;
+}
+/** `name` under the prefix the rules use; as it is where its namespace is none of theirs. */
+function linkName(name: string, prefixes: Prefixes, element: boolean): string {
+  const colon = name.indexOf(':');
+  // An attribute without a prefix is in no namespace; an element then in the default one.
+  if (colon < 0 && !element) return name;
+  const uri = prefixes.get(colon < 0 ? '' : name.slice(0, colon));
+  if (uri === undefined) return name;
+  const known = LINK_NAMESPACES[uri];
+  // A known prefix bound to something else is not that name.
+  return known ? `${known}:${name.slice(colon + 1)}` : `-:${name}`;
+}
+
 export const isPackagePath = (href: string): boolean =>
   // Blanks or control characters around it could hide a scheme (" http://…") – a link out then.
   href.trim() === href &&
@@ -624,7 +660,7 @@ const pageHash = (page: XmlNode, ...also: string[]): string => {
     .replace(/ xml:id="[^"]*"/g, '')
     .replace(/ slider:variant-of="[^"]*"/g, '')
     .replace(
-      /<presentation:notes\b[^>]*\/>|<presentation:notes\b[\s\S]*?<\/presentation:notes>/g,
+      /<presentation:notes(?=[\s/>])[^>]*\/>|<presentation:notes(?=[\s>])[\s\S]*?<\/presentation:notes>/g,
       '',
     );
   const hash = createHash('sha256').update(xml);
@@ -700,7 +736,7 @@ function notesBoxOf(page: XmlNode): XmlNode | undefined {
 
 function notesOf(page: XmlNode): string {
   const box = notesBoxOf(page);
-  return box ? readParagraphs(box).join('\n').replace(/\s+$/, '') : '';
+  return box ? readParagraphs(box).join('\n').trimEnd() : '';
 }
 
 /**
@@ -1123,6 +1159,7 @@ export class OdpDocument {
     return this.pages().map((page, index) => {
       const pictures = this.tiltPicturesOf(page);
       const asked = prompts.get(attr(page, 'draw:master-page-name') ?? '');
+      const entrances = readEntrances(page);
       const elements = this.shapesOf(page, pictures).map((node) => {
         const picture = pictures.get(attr(node, 'xml:id') ?? '');
         const item = this.describe(
@@ -1134,9 +1171,11 @@ export class OdpDocument {
         // Its own (a slide made since each has its own), else the first of its kind's.
         const own = attr(node, ASKS_MARK);
         const prompt = own !== undefined ? own : item.role ? asked?.get(item.role) : undefined;
-        return prompt && item.live?.placeholder
-          ? { ...item, live: { ...item.live, prompt } }
-          : item;
+        const entrance = entrances.get(item.id) ?? entrances.get(attr(node, 'draw:id') ?? '\u0000');
+        const described = entrance ? { ...item, entrance } : item;
+        return prompt && described.live?.placeholder
+          ? { ...described, live: { ...described.live, prompt } }
+          : described;
       });
       const title = elements
         .find((item) => item.role === 'title')
@@ -1459,36 +1498,39 @@ export class OdpDocument {
     let removed = 0;
     const clean = (part: XmlPart): boolean => {
       let changed = false;
-      const walk = (node: XmlNode) => {
+      const walk = (node: XmlNode, outer: Prefixes) => {
         const children = childrenOf(node);
         for (let i = children.length - 1; i >= 0; i -= 1) {
           const child = children[i] as XmlNode;
-          const tag = tagOf(child);
-          if (!tag) continue;
+          const rawTag = tagOf(child);
+          if (!rawTag) continue;
+          // By namespace, not by prefix: `x:href` with `xmlns:x` bound to xlink is a link too.
+          const prefixes = prefixesIn(child, outer);
+          const tag = linkName(rawTag, prefixes, true);
+          const named = (wanted: string) =>
+            attributeNames(child).filter((name) => linkName(name, prefixes, false) === wanted);
           if (
             LINK_ELEMENTS_TO_DROP.has(tag) ||
             (tag === 'presentation:event-listener' &&
-              attr(child, 'presentation:action') === 'execute')
+              named('presentation:action').some((name) => attr(child, name) === 'execute'))
           ) {
             children.splice(i, 1);
             removed += 1;
             changed = true;
             continue;
           }
-          const href = attr(child, 'xlink:href');
-          if (
-            href !== undefined &&
-            !isPackagePath(href) &&
-            !(KEEPS_EXTERNAL_LINK.has(tag) && SAFE_LINK.test(href.trim()))
-          ) {
-            removeAttr(child, 'xlink:href');
+          for (const name of named('xlink:href')) {
+            const href = attr(child, name) ?? '';
+            if (isPackagePath(href)) continue;
+            if (KEEPS_EXTERNAL_LINK.has(tag) && SAFE_LINK.test(href.trim())) continue;
+            removeAttr(child, name);
             removed += 1;
             changed = true;
           }
-          walk(child);
+          walk(child, prefixes);
         }
       };
-      for (const root of part.nodes) walk(root);
+      for (const root of part.nodes) walk(root, prefixesIn(root, new Map()));
       return changed;
     };
     if (clean(this.content)) this.dirty.content = true;
@@ -1934,6 +1976,16 @@ export class OdpDocument {
         case 'setLocked':
           writeLock(this.styleSink(), this.styleIndex(), target.node, operation.locked);
           break;
+        case 'setEntrance': {
+          // Of an element on the slide itself (a group comes in whole).
+          if (target.parent !== target.page)
+            throw new OdpError('operation', 'Nur ganze Elemente der Folie kommen herein.');
+          const id = attr(target.node, 'xml:id');
+          if (!id) throw new OdpError('operation', 'Dieses Element gibt es nicht mehr.');
+          if (operation.entrance) this.declareAnimations();
+          writeEntrance(target.page, id, operation.entrance);
+          break;
+        }
         case 'setImageFit': {
           const frame = this.kindOf(target.node) === 'image' && frameOf(target.node);
           if (!frame) throw new OdpError('operation', 'Dieses Element ist kein Bild.');
@@ -2899,19 +2951,44 @@ export class OdpDocument {
     );
   }
 
-  /** The styles a slide names (not its master page and layout), in order of first use. */
+  /**
+   * The styles a slide names (not its master page and layout), in order of first use – and what
+   * those draw with: a shape's gradient, transparency, fill picture, hatch, marker or dash.
+   */
   styleNamesOf(index: number): string[] {
     const page = this.page(index);
-    return [
-      ...new Set(
-        [page, ...descendants(page)].flatMap((node) =>
-          attributeNames(node)
-            .filter((name) => name.endsWith('style-name'))
-            .map((name) => attr(node, name) ?? '')
-            .filter(Boolean),
-        ),
+    const names = new Set(
+      [page, ...descendants(page)].flatMap((node) =>
+        attributeNames(node)
+          .filter((name) => name.endsWith('style-name'))
+          .map((name) => attr(node, name) ?? '')
+          .filter(Boolean),
       ),
-    ];
+    );
+    const byName = new Map<string, XmlNode[]>();
+    for (const style of this.namedStyles()) {
+      byName.set(style.name, [...(byName.get(style.name) ?? []), style.node]);
+    }
+    // What a shape's style draws with – not its parent styles or fonts.
+    const drawn = new Set([
+      'draw:fill-gradient-name',
+      'draw:fill-image-name',
+      'draw:opacity-name',
+      'draw:fill-hatch-name',
+      'draw:marker-start',
+      'draw:marker-end',
+      'draw:stroke-dash',
+    ]);
+    for (const name of [...names]) {
+      for (const style of byName.get(name) ?? []) {
+        for (const node of [style, ...descendants(style)]) {
+          for (const { attribute, name: named } of styleReferencesOf(node)) {
+            if (drawn.has(attribute)) names.add(named);
+          }
+        }
+      }
+    }
+    return [...names];
   }
 
   /** The styles with these names (all families) as XML, and the names not found. */
@@ -4491,6 +4568,19 @@ export class OdpDocument {
     writeTransitionFilters(page, transition);
   }
 
+  /** The namespaces entrance effects are written in (`entrance.ts`). */
+  private declareAnimations(): void {
+    const root = this.root(this.content, 'office:document-content');
+    if (!root) return;
+    const spaces = {
+      'xmlns:smil': 'urn:oasis:names:tc:opendocument:xmlns:smil-compatible:1.0',
+      'xmlns:anim': 'urn:oasis:names:tc:opendocument:xmlns:animation:1.0',
+      'xmlns:presentation': 'urn:oasis:names:tc:opendocument:xmlns:presentation:1.0',
+    };
+    for (const [name, uri] of Object.entries(spaces))
+      if (attr(root, name) === undefined) setAttr(root, name, uri);
+  }
+
   /** The page's transition (see {@link readTransition}). */
   private pageTransition(page: XmlNode): SlideTransition | null {
     const style = this.pageStyle(attr(page, 'draw:style-name'));
@@ -4704,6 +4794,11 @@ export class OdpDocument {
         if (prefix === 'loext' && !prefixes.has(prefix)) {
           this.declareLoext();
           prefixes.add(prefix);
+        }
+        // An entrance's timing (`setEntrance` declares them; a page carried from a copy that did).
+        if ((prefix === 'smil' || prefix === 'anim') && !prefixes.has(prefix)) {
+          this.declareAnimations();
+          for (const known of ['smil', 'anim', 'presentation']) prefixes.add(known);
         }
         if (!prefix || !prefixes.has(prefix)) problems.add(`Unknown namespace in ${name}.`);
       }

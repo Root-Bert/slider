@@ -8,6 +8,7 @@ import {
   MAX_MEDIA_BYTES,
   MAX_UPLOAD_BYTES,
   SIGNUP_MODES,
+  type CallIceServer,
   type PlanId,
   type SignupMode,
 } from '@slider/shared';
@@ -49,6 +50,14 @@ export interface Config {
   webOrigin: string;
   maxUploadBytes: number;
   /**
+   * Cloud (the workspace's files): the largest file one upload may bring (`CLOUD_MAX_FILE_BYTES`,
+   * 5 GB when unset), and whether files can be opened to people outside by a link
+   * (`CLOUD_PUBLIC_LINKS=true`) or shared with a person by hand (`CLOUD_SHARING=true`) – both off
+   * unless said: who sees what follows from the workspace's roles and areas. Absent in tests
+   * that don't care.
+   */
+  cloud?: { maxFileBytes?: number; publicLinks?: boolean; sharing?: boolean };
+  /**
    * With `auth.devLogin`, every request without a session cookie acts as this person. Whoever
    * claims the instance with the setup token takes over its decks – see `services/accounts`.
    */
@@ -70,6 +79,16 @@ export interface Config {
   /** Voice and video comments (BER-116). */
   media: MediaConfig;
   /**
+   * Calls (`services/calls.ts`): `CALL_ICE_SERVERS`, a JSON list of STUN/TURN servers the
+   * browsers find each other through (`[{"urls":"stun:turn.example.org:3478"},{"urls":
+   * "turn:turn.example.org:3478","username":"…","credential":"…"}]`). Empty: browsers reach
+   * each other only directly (same network) – across the internet a TURN server is needed.
+   * `CALL_TURN_SECRET`: coturn's `static-auth-secret` (`use-auth-secret`) – then each one who
+   * joins a call gets their own TURN password for a few hours, instead of the list's static one.
+   * Absent in tests that don't care.
+   */
+  calls?: { iceServers: CallIceServer[]; turnSecret?: string | null };
+  /**
    * Whether this instance limits its users at all: the hosted demo does (plans, one own
    * workspace per account, storage), a self-hosted instance doesn't. See
    * {@link isLimitedInstance}.
@@ -89,6 +108,11 @@ export interface Config {
    * Unset → looked up on the PATH and in /Applications; not installed → SVG previews.
    */
   libreOfficePath?: string | null;
+  /**
+   * `SLIDER_TEMPLATES_DIR`: the templates Slider brings along, as `packages/templates` builds
+   * them (`index.json`, `<slug>.otp`, `<slug>/<n>.jpg`). Unset → that package's `library`.
+   */
+  sliderTemplatesDir?: string;
   /**
    * `LIBREOFFICE_TIMEOUT_MS`: how long one conversion may take before the deck falls back to SVG
    * previews. Big decks with many pictures on a small server need more than the default.
@@ -122,6 +146,11 @@ export interface Config {
   bflApiKey?: string | null;
   /** The AI cuts pictures out (rembg); `null` (or absent) until REMBG_URL is set. */
   rembg?: RembgConfig | null;
+  /**
+   * `RSPAMD_URL`: an Rspamd (its normal worker, e.g. `http://rspamd:11333`) that checks the mails
+   * the mailboxes bring as well; `null` (or absent) – the provider's spam folder and the AI.
+   */
+  rspamdUrl?: string | null;
   /**
    * Speech to text on the server itself (deploy/stt); `null` (or absent) until SPEECH_URL is set.
    * Taken over once as a self-hosted key of the instance (`integration-keys`).
@@ -215,6 +244,12 @@ export interface OidcConfig {
   issuerAliases?: string[];
   /** Extra authorize parameters, e.g. `prompt=select_account`. */
   authorizeParams?: Record<string, string>;
+  /**
+   * The browser is only sent to an https authorization endpoint on the issuer's host – for
+   * issuers someone other than the operator typed (a workspace's company login), so Slider's
+   * login link can't be turned into a redirect anywhere.
+   */
+  authorizeOnIssuerHost?: boolean;
 }
 
 export const GOOGLE_ISSUER = 'https://accounts.google.com';
@@ -301,6 +336,9 @@ const envSchema = z.object({
   SLIDER_URL: z.url().optional(),
   WEB_ORIGIN: z.url().optional(),
   MAX_UPLOAD_BYTES: z.coerce.number().int().positive().default(MAX_UPLOAD_BYTES),
+  CLOUD_MAX_FILE_BYTES: z.coerce.number().int().positive().optional(),
+  CLOUD_PUBLIC_LINKS: z.enum(['true', 'false']).optional(),
+  CLOUD_SHARING: z.enum(['true', 'false']).optional(),
   DEV_OWNER_NAME: z.string().min(1).default('Robert Hofmann'),
   DEV_OWNER_EMAIL: z.email().default('robert@example.org'),
   INVITE_RATE_LIMIT: z.coerce.number().int().positive().default(30),
@@ -345,6 +383,7 @@ const envSchema = z.object({
   STRIPE_WEBHOOK_SECRET: z.string().optional(),
   STRIPE_PRICE_ID: z.string().optional(),
   LIBREOFFICE_PATH: z.string().min(1).optional(),
+  SLIDER_TEMPLATES_DIR: z.string().min(1).optional(),
   LIBREOFFICE_TIMEOUT_MS: z.coerce.number().int().min(10_000).default(LIBREOFFICE_TIMEOUT_MS),
   LIBREOFFICE_WORKERS: z.coerce.number().int().min(0).max(32).default(2),
   PDF_TIMEOUT_MS: z.coerce.number().int().min(10_000).default(PDF_TIMEOUT_MS),
@@ -355,9 +394,12 @@ const envSchema = z.object({
   BFL_API_KEY: z.string().min(10).optional(),
   REMBG_URL: z.url().optional(),
   REMBG_MODEL: z.string().min(1).default('isnet-general-use'),
+  RSPAMD_URL: z.url().optional(),
   SPEECH_URL: z.url().optional(),
   SPEECH_MODEL: z.string().min(1).default('whisper-large-v3-turbo'),
   AI_ALLOW_INTERNAL_URLS: booleanEnv.optional(),
+  CALL_ICE_SERVERS: z.string().optional(),
+  CALL_TURN_SECRET: z.string().min(16).optional(),
 });
 
 /** Env value → limit: unset keeps the default, `0` means unlimited (`null`). */
@@ -557,6 +599,11 @@ export function loadConfig(
     secret: secret ?? DEV_SECRET,
     webOrigin,
     maxUploadBytes: parsed.MAX_UPLOAD_BYTES,
+    cloud: {
+      ...(parsed.CLOUD_MAX_FILE_BYTES ? { maxFileBytes: parsed.CLOUD_MAX_FILE_BYTES } : {}),
+      publicLinks: parsed.CLOUD_PUBLIC_LINKS === 'true',
+      sharing: parsed.CLOUD_SHARING === 'true',
+    },
     devOwner: { name: parsed.DEV_OWNER_NAME, email: parsed.DEV_OWNER_EMAIL },
     auth: {
       devLogin,
@@ -600,6 +647,9 @@ export function loadConfig(
     libreOfficePath: parsed.LIBREOFFICE_PATH
       ? path.resolve(REPO_ROOT, expandHome(parsed.LIBREOFFICE_PATH))
       : null,
+    ...(parsed.SLIDER_TEMPLATES_DIR && {
+      sliderTemplatesDir: path.resolve(REPO_ROOT, expandHome(parsed.SLIDER_TEMPLATES_DIR)),
+    }),
     libreOfficeTimeoutMs: parsed.LIBREOFFICE_TIMEOUT_MS,
     libreOfficeWorkers: parsed.LIBREOFFICE_WORKERS,
     pdfTimeoutMs: parsed.PDF_TIMEOUT_MS,
@@ -609,8 +659,13 @@ export function loadConfig(
     mistralApiKey: parsed.MISTRAL_API_KEY ?? null,
     bflApiKey: parsed.BFL_API_KEY ?? null,
     rembg: parsed.REMBG_URL ? { url: parsed.REMBG_URL, model: parsed.REMBG_MODEL } : null,
+    rspamdUrl: parsed.RSPAMD_URL ?? null,
     speech: parsed.SPEECH_URL ? { url: parsed.SPEECH_URL, model: parsed.SPEECH_MODEL } : null,
     aiAllowInternalUrls: parsed.AI_ALLOW_INTERNAL_URLS ?? false,
+    calls: {
+      iceServers: parseIceServers(parsed.CALL_ICE_SERVERS),
+      turnSecret: parsed.CALL_TURN_SECRET ?? null,
+    },
   };
 }
 
@@ -690,4 +745,26 @@ function loadHostingConfig(env: NodeJS.ProcessEnv, nodeEnv: Config['env']): Host
     webDistDir: webDist ? path.resolve(REPO_ROOT, webDist) : null,
     trustProxy: parsed.TRUST_PROXY ?? false,
   };
+}
+
+/** `CALL_ICE_SERVERS`: a JSON list of STUN/TURN servers (`RTCIceServer`), checked loosely. */
+export function parseIceServers(raw: string | undefined): CallIceServer[] {
+  if (!raw?.trim()) return [];
+  const parsed: unknown = JSON.parse(raw);
+  if (!Array.isArray(parsed)) throw new Error('CALL_ICE_SERVERS muss eine JSON-Liste sein.');
+  return parsed.map((entry) => {
+    const server = entry as Partial<CallIceServer>;
+    const urls = server.urls;
+    const valid =
+      (typeof urls === 'string' && /^(stuns?|turns?):/.test(urls)) ||
+      (Array.isArray(urls) &&
+        urls.every((url) => typeof url === 'string' && /^(stuns?|turns?):/.test(url)));
+    if (!valid)
+      throw new Error('CALL_ICE_SERVERS: jeder Eintrag braucht stun:/turn:-Adressen in „urls“.');
+    return {
+      urls,
+      ...(typeof server.username === 'string' ? { username: server.username } : {}),
+      ...(typeof server.credential === 'string' ? { credential: server.credential } : {}),
+    } as CallIceServer;
+  });
 }

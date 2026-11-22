@@ -1,3 +1,4 @@
+import { Fragment, type ReactNode } from 'react';
 import {
   PROVIDER_LABELS,
   SERVER_PROVIDER,
@@ -8,9 +9,14 @@ import {
 import { useInheritedModels, useSetInheritedModel, useUpdateIntegrationKey } from '@/lib/api';
 import { Badge, Button, ErrorText, Select, Spinner, type ShowToast } from '@/ui';
 import { AI_MODEL_ROLES } from '../lib/ai-models';
+import { AppModels } from './AppModels';
 import { ModelLine } from './ModelLine';
 import { ProviderLogo } from './ProviderLogo';
 import { RoleModelSelect } from './RoleModelSelect';
+
+const SliderModels = ({ children }: { children: ReactNode }) => (
+  <AppModels app="slider">{children}</AppModels>
+);
 
 /**
  * The instance's default as a row beside the workspace's own keys, laid out like one of them and
@@ -72,6 +78,8 @@ export function InstanceRow({
     inherited.defaultQuickModel ?? defaultQuickModel(inherited.provider, inherited.model);
   const quickModel = inherited.quickModel ?? quickStandard;
 
+  const ModelsBox = isAi && inherited.model ? SliderModels : Fragment;
+
   return (
     <li className="flex flex-col gap-2 py-3 first:pt-0 last:pb-0">
       <div className="flex flex-wrap items-center gap-2">
@@ -96,107 +104,109 @@ export function InstanceRow({
           </Button>
         )}
       </div>
-      {inherited.model && (
-        <ModelLine role={isAi ? 'review' : null}>
-          {pickModel ? (
-            <>
-              <Select
-                aria-label={
-                  isAi
-                    ? `Modell für ${AI_MODEL_ROLES.review.label} mit dem Key der Instanz`
-                    : 'Modell für den Key der Instanz'
+      <ModelsBox>
+        {inherited.model && (
+          <ModelLine role={isAi ? 'review' : null}>
+            {pickModel ? (
+              <>
+                <Select
+                  aria-label={
+                    isAi
+                      ? `Modell für ${AI_MODEL_ROLES.review.label} mit dem Key der Instanz`
+                      : 'Modell für den Key der Instanz'
+                  }
+                  size="sm"
+                  value={inherited.model === inherited.defaultModel ? '' : inherited.model}
+                  disabled={setModel.isPending}
+                  options={options}
+                  onChange={(model) =>
+                    setModel.mutate(
+                      { kind, model: model || null },
+                      {
+                        onSuccess: () =>
+                          onNotify(
+                            `Der Key der Instanz nutzt hier jetzt ${model || inherited.defaultModel}`,
+                          ),
+                      },
+                    )
+                  }
+                />
+                {models.isFetching && !models.data && (
+                  <Spinner size="sm" label="Modelle werden geladen" />
+                )}
+              </>
+            ) : (
+              <span className="text-fg">{inherited.model}</span>
+            )}
+          </ModelLine>
+        )}
+        {isAi && inherited.model && (
+          <ModelLine role="create">
+            {pickModel ? (
+              <RoleModelSelect
+                role="create"
+                where="mit dem Key der Instanz"
+                offered={offered}
+                standard={createStandard}
+                standardLabel={
+                  inherited.defaultCreateModel
+                    ? `${nameOf(inherited.defaultCreateModel)} (Standard der Instanz)`
+                    : `Wie oben (${nameOf(inherited.model)})`
                 }
-                size="sm"
-                value={inherited.model === inherited.defaultModel ? '' : inherited.model}
+                current={createModel === createStandard ? null : createModel}
                 disabled={setModel.isPending}
-                options={options}
-                onChange={(model) =>
+                onPick={(model) =>
                   setModel.mutate(
-                    { kind, model: model || null },
+                    { kind, createModel: model },
                     {
                       onSuccess: () =>
                         onNotify(
-                          `Der Key der Instanz nutzt hier jetzt ${model || inherited.defaultModel}`,
+                          `${AI_MODEL_ROLES.create.label} nutzt hier jetzt ${nameOf(model ?? createStandard)}`,
                         ),
                     },
                   )
                 }
               />
-              {models.isFetching && !models.data && (
-                <Spinner size="sm" label="Modelle werden geladen" />
-              )}
-            </>
-          ) : (
-            <span className="text-fg">{inherited.model}</span>
-          )}
-        </ModelLine>
-      )}
-      {isAi && inherited.model && (
-        <ModelLine role="create">
-          {pickModel ? (
-            <RoleModelSelect
-              role="create"
-              where="mit dem Key der Instanz"
-              offered={offered}
-              standard={createStandard}
-              standardLabel={
-                inherited.defaultCreateModel
-                  ? `${nameOf(inherited.defaultCreateModel)} (Standard der Instanz)`
-                  : `Wie oben (${nameOf(inherited.model)})`
-              }
-              current={createModel === createStandard ? null : createModel}
-              disabled={setModel.isPending}
-              onPick={(model) =>
-                setModel.mutate(
-                  { kind, createModel: model },
-                  {
-                    onSuccess: () =>
-                      onNotify(
-                        `${AI_MODEL_ROLES.create.label} nutzt hier jetzt ${nameOf(model ?? createStandard)}`,
-                      ),
-                  },
-                )
-              }
-            />
-          ) : (
-            <span className="text-fg">{createModel}</span>
-          )}
-        </ModelLine>
-      )}
-      {isAi && inherited.model && (
-        <ModelLine role="quick">
-          {pickModel ? (
-            <RoleModelSelect
-              role="quick"
-              where="mit dem Key der Instanz"
-              offered={offered}
-              standard={quickStandard}
-              standardLabel={
-                inherited.defaultQuickModel
-                  ? `${nameOf(inherited.defaultQuickModel)} (Standard der Instanz)`
-                  : quickStandard === inherited.model
-                    ? `Wie oben (${nameOf(inherited.model)})`
-                    : `${nameOf(quickStandard)} (Standard)`
-              }
-              current={quickModel === quickStandard ? null : quickModel}
-              disabled={setModel.isPending}
-              onPick={(model) =>
-                setModel.mutate(
-                  { kind, quickModel: model },
-                  {
-                    onSuccess: () =>
-                      onNotify(
-                        `${AI_MODEL_ROLES.quick.label} nutzen hier jetzt ${nameOf(model ?? quickStandard)}`,
-                      ),
-                  },
-                )
-              }
-            />
-          ) : (
-            <span className="text-fg">{quickModel}</span>
-          )}
-        </ModelLine>
-      )}
+            ) : (
+              <span className="text-fg">{createModel}</span>
+            )}
+          </ModelLine>
+        )}
+        {isAi && inherited.model && (
+          <ModelLine role="quick">
+            {pickModel ? (
+              <RoleModelSelect
+                role="quick"
+                where="mit dem Key der Instanz"
+                offered={offered}
+                standard={quickStandard}
+                standardLabel={
+                  inherited.defaultQuickModel
+                    ? `${nameOf(inherited.defaultQuickModel)} (Standard der Instanz)`
+                    : quickStandard === inherited.model
+                      ? `Wie oben (${nameOf(inherited.model)})`
+                      : `${nameOf(quickStandard)} (Standard)`
+                }
+                current={quickModel === quickStandard ? null : quickModel}
+                disabled={setModel.isPending}
+                onPick={(model) =>
+                  setModel.mutate(
+                    { kind, quickModel: model },
+                    {
+                      onSuccess: () =>
+                        onNotify(
+                          `${AI_MODEL_ROLES.quick.label} nutzen hier jetzt ${nameOf(model ?? quickStandard)}`,
+                        ),
+                    },
+                  )
+                }
+              />
+            ) : (
+              <span className="text-fg">{quickModel}</span>
+            )}
+          </ModelLine>
+        )}
+      </ModelsBox>
       {error && <ErrorText>{error.message}</ErrorText>}
       {models.isError && (
         <ErrorText>Die Modelle ließen sich nicht laden: {models.error.message}</ErrorText>

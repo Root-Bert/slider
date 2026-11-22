@@ -1,7 +1,14 @@
-import { useLayoutEffect, useMemo, useState, type ReactNode, type RefObject } from 'react';
+import {
+  Fragment,
+  useLayoutEffect,
+  useMemo,
+  useState,
+  type ReactNode,
+  type RefObject,
+} from 'react';
 import { createPortal } from 'react-dom';
 import type { SlideOperation, WorkspaceMaster } from '@slider/shared';
-import { useDeckLayouts, useWorkspaceMasters } from '@/lib/api';
+import { useDeckLayouts, useSliderTemplates, useWorkspaceMasters } from '@/lib/api';
 import { pluralize } from '@/lib/format';
 import { Button, cn, EmptyState, Icon, IconButton, SegmentedControl } from '@/ui';
 import { placePopover, type Placement } from '../lib/geometry';
@@ -41,8 +48,9 @@ const MARGIN = 12;
  * master pages in its file); in the template editor first „Neue Folie“, a layout to design from
  * scratch – an empty slide on the background of the slide before the gap, none of its master's
  * decoration. „Vorlagen“: the layouts of the workspace's templates, by template – one the deck lacks comes
- * in with the slide; templates of another page shape, and PowerPoint ones, cannot. Slider's own
- * slides follow later. Rendered into the body: the track's scroller would clip it.
+ * in with the slide; templates of another page shape, and PowerPoint ones, cannot. „Slider“: the
+ * templates Slider brings along, by what they are („Kunststil“, „Plakat“ …), taken in the same
+ * way. Rendered into the body: the track's scroller would clip it.
  */
 export function SlideInsertPicker({
   anchorRef,
@@ -230,12 +238,20 @@ export function SlideInsertPicker({
             }}
           />
         ) : (
-          <div className="col-span-full flex min-h-48 items-center justify-center">
-            <EmptyState
-              title="Vorlagen von Slider"
-              message="Hier findest du bald fertige Folien von Slider für jeden Anlass."
-            />
-          </div>
+          <SliderLayouts
+            aspectRatio={aspectRatio}
+            tile={tile}
+            onPick={(id, index) => {
+              // Its tile shows sample content, the slide comes with its placeholders to fill.
+              insert(null, (after, newPageId) => ({
+                type: 'addSlide',
+                like: after,
+                newPageId,
+                after,
+                design: { id, layout: index },
+              }));
+            }}
+          />
         )}
       </div>
     </section>,
@@ -335,6 +351,97 @@ function TemplateLayouts({
       )}
     </>
   );
+}
+
+/**
+ * The templates Slider brings along, under what they are, each by its cover (its first layout);
+ * one opened shows its layouts to pick from, as the workspace's do. Only those of the deck's
+ * page shape are listed.
+ */
+function SliderLayouts({
+  aspectRatio,
+  tile,
+  onPick,
+}: {
+  aspectRatio: number;
+  tile: () => Omit<Parameters<typeof Tile>[0], 'picture' | 'label' | 'onPick'>;
+  onPick: (id: string, index: number) => void;
+}) {
+  const templates = useSliderTemplates();
+  const [openId, setOpenId] = useState<string | null>(null);
+  const usable = useMemo(
+    () =>
+      (templates.data ?? []).filter(
+        (template) => Math.abs(template.aspectRatio - aspectRatio) < SAME_SHAPE,
+      ),
+    [templates.data, aspectRatio],
+  );
+  /** By group, groups and templates in the catalogue's order. */
+  const groups = useMemo(() => {
+    const byGroup = new Map<string, typeof usable>();
+    for (const template of usable) {
+      byGroup.set(template.group, [...(byGroup.get(template.group) ?? []), template]);
+    }
+    return [...byGroup];
+  }, [usable]);
+  if (templates.isPending) return <TileShapes count={3} aspectRatio={aspectRatio} />;
+  if (usable.length === 0) {
+    return (
+      <div className="col-span-full flex min-h-48 items-center justify-center">
+        <EmptyState
+          title="Keine passende Vorlage"
+          message="Für das Format dieser Präsentation hat Slider noch keine Vorlagen."
+        />
+      </div>
+    );
+  }
+  const open = usable.find((template) => template.id === openId);
+  if (open) {
+    return (
+      <>
+        <div className="col-span-full flex min-w-0 items-center gap-2">
+          <Button
+            variant="ghost"
+            size="xs"
+            icon="arrowBack"
+            onClick={() => setOpenId(null)}
+            className="shrink-0"
+          >
+            Vorlagen
+          </Button>
+          <h3 className="min-w-0 truncate text-caption font-medium text-fg">{open.name}</h3>
+        </div>
+        {open.layouts.map((layout, index) => (
+          <Tile
+            key={`slider:${open.id}:${index}`}
+            {...tile()}
+            label={layout.name}
+            ariaLabel={`Folie mit Layout „${layout.name}“ aus „${open.name}“ einfügen`}
+            onPick={() => onPick(open.id, index)}
+            picture={<SlidePicture src={layout.thumbnailUrl} />}
+          />
+        ))}
+      </>
+    );
+  }
+  return groups.map(([group, list]) => (
+    <Fragment key={group}>
+      <h3 className="col-span-full px-1 pt-1 text-caption font-medium text-fg-muted">{group}</h3>
+      {list.map((template) => (
+        <Tile
+          key={template.id}
+          {...tile()}
+          label={template.name}
+          meta={pluralize(template.layouts.length, 'Layout', 'Layouts')}
+          ariaLabel={`Vorlage „${template.name}“ öffnen`}
+          onPick={() => setOpenId(template.id)}
+          picture={
+            template.layouts[0] ? <SlidePicture src={template.layouts[0].thumbnailUrl} /> : null
+          }
+        />
+      ))}
+    </Fragment>
+  ));
 }
 
 /** Where tiles come once they are there (asked for ahead, so rarely seen): their shapes, still. */

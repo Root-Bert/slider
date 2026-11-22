@@ -1,7 +1,7 @@
-import { useLayoutEffect } from 'react';
 import { Link } from 'react-router';
 import { routes } from '@/lib/routes';
 import { cn } from '@/ui';
+import { startViewSwitch, useViewSwitchTop, VIEW_LINK_CLASS } from './viewSwitch';
 
 const VIEWS = [
   // Written out in full so Tailwind finds the classes; the names are styled in index.css.
@@ -19,41 +19,80 @@ const VIEWS = [
   },
 ] as const;
 
+/** An area's second view in Cloud, its agents (`AreaViews`) – written out in full for Tailwind. */
+const AGENTS_NAME = '[view-transition-name:workspace-view-agents]';
+const TODOS_NAME = '[view-transition-name:workspace-view-todos]';
+
+/** Cloud's two: its start and the same library, beside the files – its agents are in its side bar. */
+const CLOUD_VIEWS = [
+  { ...VIEWS[0], label: 'Zuletzt', to: routes.cloud },
+  { ...VIEWS[1], to: (workspaceId: string) => routes.cloudLibrary(workspaceId) },
+] as const;
+
+/** Writer's two: its documents and the same library, beside them. */
+const WRITER_VIEWS = [
+  { ...VIEWS[0], label: 'Dokumente', to: routes.documents },
+  { ...VIEWS[1], to: (workspaceId: string) => routes.writerLibrary(workspaceId) },
+] as const;
+
 export type WorkspaceView = (typeof VIEWS)[number]['key'];
 
-/** Longer than the switch's view transition (see `styles/index.css`), so it isn't cut short. */
-const SWITCH_MS = 600;
-
-/** Set by a click on the other view, taken by the view that mounts next. */
-let switching = false;
-/** Clears `data-transition` after the last switch – one timer, so a quick second switch keeps it. */
-let transitionReset: ReturnType<typeof setTimeout> | undefined;
-
 /**
- * The page title of a workspace's views, "Projekte  Bibliothek": the open one in full size and
- * colour, the other smaller and lighter, a link to it. Switching morphs the two labels into
+ * The page title of a workspace's views, „Präsentationen  Bibliothek“: the open one in
+ * full size and colour, the others smaller and lighter, links to them. Switching morphs the two labels into
  * each other (view transition) while the page below crossfades. Meant as `PageHeader`'s title
  * with `titleRow`.
  */
 export function WorkspaceViews({
   workspaceId,
   current,
+  app = 'slider',
 }: {
   workspaceId: string;
   current: WorkspaceView;
+  /** Whose pages these are – Cloud's start is „Zuletzt“, Writer's „Dokumente“. */
+  app?: 'slider' | 'cloud' | 'writer';
 }) {
-  // The other view starts at the top. Without this it kept the scroll offset (a trackpad nudge
-  // of 1px is enough): on a view too short to scroll, Safari only clamps it to 0 a moment after
-  // the switch, and the whole page dropped by that much. Before paint – and inside the view
-  // transition's update, so its new snapshot already shows the page at the top.
-  useLayoutEffect(() => {
-    if (!switching) return;
-    switching = false;
-    window.scrollTo(0, 0);
-  }, []);
+  return (
+    <ViewTitles
+      views={(app === 'cloud' ? CLOUD_VIEWS : app === 'writer' ? WRITER_VIEWS : VIEWS).map(
+        (view) => ({
+          ...view,
+          to: view.to(workspaceId),
+        }),
+      )}
+      current={current}
+    />
+  );
+}
+
+/** A view's name in the title, where it leads, and the name its label morphs under. */
+export interface ViewTitle {
+  key: string;
+  label: string;
+  to: string;
+  name: string;
+}
+/**
+ * The names the labels morph under (`styles/index.css`): the first view's, the second's (an
+ * area's „Chat“ takes the library's), an area's to-dos, and the agents'.
+ */
+export const VIEW_NAMES = {
+  first: VIEWS[0].name,
+  second: VIEWS[1].name,
+  agents: AGENTS_NAME,
+  todos: TODOS_NAME,
+} as const;
+
+/**
+ * Views as a page's title – the open one large, the others links beside it. A workspace's
+ * (`WorkspaceViews`), and an area's in Cloud: its files and its agents.
+ */
+export function ViewTitles({ views, current }: { views: readonly ViewTitle[]; current: string }) {
+  useViewSwitchTop(current);
   return (
     <span className="flex min-w-0 items-baseline gap-5">
-      {VIEWS.map((view) =>
+      {views.map((view) =>
         view.key === current ? (
           <span key={view.key} aria-current="page" className={view.name}>
             {view.label}
@@ -61,22 +100,10 @@ export function WorkspaceViews({
         ) : (
           <Link
             key={view.key}
-            to={view.to(workspaceId)}
+            to={view.to}
             viewTransition
-            onClick={() => {
-              switching = true;
-              // Picks the light switch transition instead of the import stage's (index.css).
-              const root = document.documentElement;
-              root.dataset.transition = 'workspace-view';
-              // An earlier click's timer would clear it in the middle of this switch: the page
-              // then fell back to the import stage's blur and the header to the crossfade.
-              clearTimeout(transitionReset);
-              transitionReset = setTimeout(() => delete root.dataset.transition, SWITCH_MS);
-            }}
-            className={cn(
-              view.name,
-              'text-xl font-medium text-fg-subtle transition-colors duration-200 hover:text-fg',
-            )}
+            onClick={startViewSwitch}
+            className={cn(view.name, VIEW_LINK_CLASS)}
           >
             {view.label}
           </Link>

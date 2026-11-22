@@ -68,17 +68,23 @@
       .logo-text > span {
         display: inline-block;
       }
-      .fill-logo-back {
-        fill: var(--color-logo-back);
+      .fill-logo-roll {
+        fill: var(--color-logo-roll);
       }
-      .fill-logo-front {
-        fill: var(--color-logo-front);
+      .stroke-logo-legs {
+        stroke: var(--color-logo-legs);
+      }
+      .fill-logo-screen {
+        fill: var(--color-logo-screen);
+      }
+      .fill-logo-bars {
+        fill: var(--color-logo-bars);
       }
       .fill-logo {
         fill: var(--color-logo);
       }
-      .stroke-logo-lines {
-        stroke: var(--color-logo-lines);
+      .stroke-logo-title {
+        stroke: var(--color-logo-title);
       }
       .stroke-logo-outline {
         stroke: var(--color-logo-outline);
@@ -105,19 +111,43 @@
           data-logo-part="icon"
         >
           <g data-logo-part="back">
-            <rect x=".2315" y=".2315" width="20" height="11.25" rx="3" class="fill-logo-back" />
-            <path d="M3.1435 2.1065h7.6389" class="stroke-logo-lines" stroke-width=".75" />
+            <path
+              d="M10.3774 12.6131L6.0917 21.6607M10.3774 12.6131L14.6631 21.6607M10.3774 12.6131L10.3774 20.7083"
+              class="stroke-logo-legs"
+              stroke-width=".8333"
+              stroke-linecap="round"
+            />
+            <rect
+              x="1.3298"
+              y="1.4226"
+              width="18.0952"
+              height="18.3333"
+              rx="1.1905"
+              class="fill-logo-screen"
+            />
+            <path
+              d="M2.5202 4.0417h1.4286"
+              class="stroke-logo-title"
+              stroke-width=".7143"
+              stroke-linecap="round"
+            />
+            <path
+              d="M2.5202 13.0893h1.9048v5.4762H2.5202ZM5.1393 16.4226h1.9048v2.1429H5.1393ZM7.7583 10.9464h1.9048v7.619H7.7583ZM10.3774 15.2321h1.9048v3.3333h-1.9048ZM12.9964 17.1369h1.9048v1.4286h-1.9048ZM15.6155 9.5179h1.9048v9.0476h-1.9048Z"
+              class="fill-logo-bars"
+            />
           </g>
           <g data-logo-part="front">
-            <rect x="2.537" y="9.9769" width="20" height="12.0139" rx="3" class="fill-logo-front" />
-            <path
-              d="M5.412 17.1852h.5787M7.787 17.1852h9.4907M5.412 19.4545h.5787M7.787 19.4545h6.25"
-              class="stroke-logo-lines"
-              stroke-width=".75"
+            <rect
+              x=".3774"
+              y=".2321"
+              width="20"
+              height="1.6667"
+              rx=".8333"
+              class="fill-logo-roll"
             />
           </g>
           <path
-            d="M10.037 3.4861h10a4 4 0 0 1 4 4v3.25a4 4 0 0 1-4 4H7.037a1 1 0 0 1-1-1V7.4861a4 4 0 0 1 4-4Z"
+            d="M9.2726 2.6274h10.2857a4.1143 4.1143 0 0 1 4.1143 4.1143v3.3429a4.1143 4.1143 0 0 1-4.1143 4.1143H6.1869a1.0286 1.0286 0 0 1-1.0286-1.0286V6.7417a4.1143 4.1143 0 0 1 4.1143-4.1143Z"
             class="fill-logo stroke-logo-outline"
             stroke-width=".46"
             data-logo-part="bubble"

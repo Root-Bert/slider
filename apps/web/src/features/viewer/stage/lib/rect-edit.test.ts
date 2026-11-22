@@ -430,6 +430,26 @@ describe('snappedToLines', () => {
     const edge = drawnRect({ x: 0.8, y: 0.5 }, { x: 1, y: 1 }, null, tolerance, true, aspect);
     expect(edge.rect.x + edge.rect.w).toBeCloseTo(1);
     expect(edge.rect.h).toBeCloseTo(0.2 * aspect);
+    // Zoomed out, the room around the slide is drawn in too: a frame begun beside the slide stays
+    // there, a square one goes on up to the room's edge.
+    const room = { x: -0.5, y: -0.5, w: 2, h: 2 };
+    expect(drawnRect({ x: -0.3, y: 1.1 }, { x: -0.1, y: 1.4 }, null, tolerance).rect).toEqual({
+      x: -0.3,
+      y: 1.1,
+      w: expect.closeTo(0.2),
+      h: expect.closeTo(0.3),
+    });
+    const out = drawnRect(
+      { x: 0.8, y: 0.5 },
+      { x: 1.4, y: 1 },
+      null,
+      tolerance,
+      true,
+      aspect,
+      room,
+    );
+    expect(out.rect.y + out.rect.h).toBeCloseTo(1.5);
+    expect(out.rect.x + out.rect.w).toBeGreaterThan(1);
 
     // Grown to the next lines (Anordnen): each side out to the nearest line beyond it – one on a
     // line goes on to the following one, at the slide's edge it stays; the other way as it is.

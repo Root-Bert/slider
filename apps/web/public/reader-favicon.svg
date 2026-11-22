@@ -1,0 +1,12 @@
+<svg width="208" height="191" viewBox="0 0 208 191" fill="none" xmlns="http://www.w3.org/2000/svg">
+<g transform="translate(-26 -33)">
+<path d="M80 34H150.7C163.57 34 174 44.43 174 57.3V199.7C174 212.57 163.57 223 150.7 223H51.3C38.43 223 28 212.57 28 199.7V86L80 34Z" fill="#B3261E"/>
+<path d="M80 34H150.7C163.57 34 174 44.43 174 57.3V199.7C174 212.57 163.57 223 150.7 223H51.3C38.43 223 28 212.57 28 199.7V86L80 34Z" fill="white" fill-opacity="0.45"/>
+<path d="M80 34V65.72C80 76.92 70.92 86 59.72 86H28L80 34Z" fill="#B3261E"/>
+<path d="M80 34V65.72C80 76.92 70.92 86 59.72 86H28L80 34Z" fill="white" fill-opacity="0.2"/>
+<rect x="44" y="165" width="38" height="38" rx="7" fill="#B3261E" fill-opacity="0.9"/>
+<path d="M48 196L59.54 178L67.62 189.57L72.23 183.14L78 196Z" fill="#F3D4D2" stroke="#F3D4D2" stroke-width="2.3" stroke-linejoin="round"/>
+<path d="M94 173H152M94 187H144M94 201H128" stroke="#B3261E" stroke-width="6" stroke-linecap="round"/>
+<path d="M76.16 96.68C76.16 77.5931 91.633 62.12 110.72 62.12H197.12C216.207 62.12 231.68 77.593 231.68 96.68V124.76C231.68 143.847 216.207 159.32 197.12 159.32H84.8C80.0283 159.32 76.16 155.452 76.16 150.68V96.68Z" fill="#B3261E"/>
+</g>
+</svg>

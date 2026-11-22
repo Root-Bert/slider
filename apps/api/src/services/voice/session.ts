@@ -361,12 +361,25 @@ export async function liveVoiceToken(
 ): Promise<VoiceLive> {
   const session = await usableSessionOf(deps, viewer, sessionId);
   if (session.ended) return null;
-  const live = await workspaceLiveConnection(deps, session.deck.workspaceId);
-  if (!live || live.connection.provider !== 'mistral') return null;
   const slides = await listSlides(deps.db, session.deck);
+  return liveTokenFor(deps, session.deck.workspaceId, [
+    ...VOCABULARY,
+    session.deck.title,
+    ...slides.map((slide) => slide.title ?? ''),
+  ]);
+}
+
+/** A token for a workspace's live stream, told the words to listen for – a deck's or a document's. */
+export async function liveTokenFor(
+  deps: AppDeps,
+  workspaceId: string,
+  words: readonly string[],
+): Promise<VoiceLive> {
+  const live = await workspaceLiveConnection(deps, workspaceId);
+  if (!live || live.connection.provider !== 'mistral') return null;
   const terms = [
     ...new Set(
-      [...VOCABULARY, session.deck.title, ...slides.map((slide) => slide.title ?? '')]
+      words
         .map((term) => term.replace(/\s+/g, ' ').trim())
         .filter((term) => term && term.length <= 100),
     ),
@@ -574,9 +587,6 @@ async function hear(
   meta: VoiceSegmentMeta,
   audio: Uint8Array,
 ): Promise<string> {
-  const speech = await workspaceVoiceConnection(deps, session.deck.workspaceId);
-  if (!speech.connection) throw new ApiError(409, 'speech_not_configured', speech.error);
-  session.speechService = providerName(speech.connection);
   const slides = await listSlides(deps.db, session.deck);
   const inFront = new Set(meta.context.slides.map((entry) => entry.slideId));
   const titles = slides
@@ -586,11 +596,35 @@ async function hear(
   const before = session.segments
     .filter((segment) => segment.seq < meta.seq && segment.status === 'done')
     .at(-1)?.text;
+  return transcribePiece(
+    deps,
+    session.deck.workspaceId,
+    { seq: meta.seq, audio },
+    { vocabulary: VOCABULARY, names: [session.deck.title, ...titles], before },
+    (service) => {
+      session.speechService = service;
+    },
+  );
+}
+
+/**
+ * A piece's text by a workspace's speech to text – a deck's or a document's –, told the words to
+ * expect: the kind of words (`vocabulary`), the names in front, what was said just before.
+ */
+export async function transcribePiece(
+  deps: AppDeps,
+  workspaceId: string,
+  piece: { seq: number; audio: Uint8Array },
+  words: { vocabulary: readonly string[]; names: readonly string[]; before?: string },
+  heardBy: (service: string) => void,
+): Promise<string> {
+  const speech = await workspaceVoiceConnection(deps, workspaceId);
+  if (!speech.connection) throw new ApiError(409, 'speech_not_configured', speech.error);
+  heardBy(providerName(speech.connection));
   const prompt = [
-    `${VOCABULARY.join(', ')}.`,
-    session.deck.title,
-    ...titles,
-    before ? before.slice(-200) : '',
+    `${words.vocabulary.join(', ')}.`,
+    ...words.names,
+    words.before ? words.before.slice(-200) : '',
   ]
     .filter(Boolean)
     .join(' ')
@@ -599,10 +633,10 @@ async function hear(
     return await transcribe(
       deps,
       speech.connection,
-      { bytes: audio, name: `speech-${meta.seq}.wav`, type: 'audio/wav' },
+      { bytes: piece.audio, name: `speech-${piece.seq}.wav`, type: 'audio/wav' },
       {
         prompt,
-        terms: [...VOCABULARY, session.deck.title, ...titles],
+        terms: [...words.vocabulary, ...words.names],
         signal: AbortSignal.timeout(TRANSCRIBE_TIMEOUT_MS),
         feature: 'voice',
       },
@@ -616,7 +650,7 @@ async function hear(
 }
 
 /** Speech to text failed: said so, with the service's name. */
-class SpeechProblem extends Error {
+export class SpeechProblem extends Error {
   constructor(
     override readonly cause: unknown,
     readonly connection: AiConnection,
@@ -626,14 +660,24 @@ class SpeechProblem extends Error {
 }
 
 /** Why a piece came to nothing, for the person – in German. */
-async function problemOf(deps: AppDeps, session: Session, error: unknown): Promise<string> {
+function problemOf(deps: AppDeps, session: Session, error: unknown): Promise<string> {
+  return voiceProblem(deps, session.id, session.deck.workspaceId, error);
+}
+
+/** The same for any session of a workspace – a deck's or a document's. */
+export async function voiceProblem(
+  deps: AppDeps,
+  sessionId: string,
+  workspaceId: string,
+  error: unknown,
+): Promise<string> {
   if (error instanceof SpeechProblem) {
     if (!isProviderError(error.cause)) deps.log.warn('Voice: piece not transcribed', error.cause);
     return `Nicht verstanden: ${failureMessage(error.cause, error.connection)}`;
   }
   if (error instanceof ApiError) return error.message;
-  if (!isProviderError(error)) deps.log.warn(`Voice session ${session.id}: piece failed`, error);
-  const ai = await workspaceAiConnection(deps, session.deck.workspaceId);
+  if (!isProviderError(error)) deps.log.warn(`Voice session ${sessionId}: piece failed`, error);
+  const ai = await workspaceAiConnection(deps, workspaceId);
   return ai.connection
     ? failureMessage(error, ai.connection)
     : 'Da ist etwas schiefgelaufen. Bitte nochmal sagen.';
@@ -1539,7 +1583,7 @@ async function toDto(deps: AppDeps, session: Session): Promise<VoiceSession> {
  * The samples of the WAV the browser makes of a piece (`RIFF….WAVE`, 16-bit PCM, mono) and its
  * rate – `null` for anything else.
  */
-function pcmOf(bytes: Uint8Array): { rate: number; data: Uint8Array } | null {
+export function pcmOf(bytes: Uint8Array): { rate: number; data: Uint8Array } | null {
   const text = (offset: number, value: string) =>
     [...value].every((char, index) => bytes[offset + index] === char.charCodeAt(0));
   if (bytes.byteLength < 44 || !text(0, 'RIFF') || !text(8, 'WAVE')) return null;
@@ -1566,7 +1610,7 @@ function pcmOf(bytes: Uint8Array): { rate: number; data: Uint8Array } | null {
 }
 
 /** Pieces as one WAV, a short silence between them. */
-function joinedWav(pieces: readonly Uint8Array[]): Uint8Array {
+export function joinedWav(pieces: readonly Uint8Array[]): Uint8Array {
   if (pieces.length === 1) return pieces[0]!;
   const parts = pieces.map((piece) => pcmOf(piece)!);
   const rate = parts[0]!.rate;

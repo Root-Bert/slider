@@ -56,6 +56,14 @@ export class OidcClient {
     if (doc.issuer.replace(/\/+$/, '') !== this.config.issuer) {
       throw new OidcError(`OIDC issuer mismatch: ${doc.issuer} ≠ ${this.config.issuer}`);
     }
+    if (
+      this.config.authorizeOnIssuerHost &&
+      !onHostOf(doc.authorization_endpoint, this.config.issuer)
+    ) {
+      throw new OidcError(
+        `OIDC authorization endpoint ${doc.authorization_endpoint} is not https on the issuer's host`,
+      );
+    }
     const value = {
       issuer: doc.issuer,
       authorization_endpoint: doc.authorization_endpoint,
@@ -121,6 +129,16 @@ export class OidcClient {
       nonce,
       now: this.clock.now(),
     });
+  }
+}
+
+/** Whether `url` is https on the same host (and port) as `issuer`. */
+function onHostOf(url: string, issuer: string): boolean {
+  try {
+    const target = new URL(url);
+    return target.protocol === 'https:' && target.host === new URL(issuer).host;
+  } catch {
+    return false;
   }
 }
 

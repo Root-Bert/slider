@@ -71,10 +71,15 @@ function useSettle(workspaceId: string | null) {
 /** Names the workspace's AI; open decks show the new name once they load again. */
 export function useUpdateWorkspaceAi(workspaceId: string) {
   const settle = useSettle(workspaceId);
+  const queryClient = useQueryClient();
   return useMutation({
     mutationFn: (input: UpdateWorkspaceAiInput) =>
       api.patch<Integrations>(`/workspaces/${workspaceId}/ai`, input),
-    onSuccess: settle,
+    onSuccess: (integrations, input) => {
+      settle(integrations);
+      // The workspace carries the name too (Cloud's chat).
+      if (input.name !== undefined) void queryClient.invalidateQueries({ queryKey: queryKeys.me });
+    },
   });
 }
 

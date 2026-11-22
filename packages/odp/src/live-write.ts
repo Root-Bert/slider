@@ -9,7 +9,13 @@ import type {
   TextAlign,
   TextList,
 } from '@slider/shared';
-import { LIST_INDENT, LIST_LABEL_WIDTH, listBullet, listOf } from '@slider/shared/live-text';
+import {
+  LIST_INDENT,
+  LIST_LABEL_WIDTH,
+  listBullet,
+  listBulletFont,
+  listOf,
+} from '@slider/shared/live-text';
 import { OdpError } from './errors';
 import type { CmBox } from './geometry';
 import {
@@ -246,17 +252,33 @@ function dropText(container: XmlNode): void {
 
 const TEXT_BLOCKS = ['text:p', 'text:h', 'text:list'];
 
-/** Whether a list style draws lists of that kind at that level. */
-function draws(list: XmlNode | undefined, wanted: TextList): boolean {
+/**
+ * Whether a list style draws lists of that kind at that level – with the bullet or numbering
+ * asked for; without one: any bullet, numbers as 1, 2, 3 (`any`: however they count).
+ */
+function draws(list: XmlNode | undefined, wanted: TextList, any = false): boolean {
   const level = levelStyle(list, wanted.level);
   if (!level) return false;
-  return wanted.kind === 'bullet'
-    ? tagOf(level) === 'text:list-level-style-bullet' && !!attr(level, 'text:bullet-char')
-    : tagOf(level) === 'text:list-level-style-number' && attr(level, 'style:num-format') === '1';
+  if (wanted.kind === 'bullet') {
+    const char = attr(level, 'text:bullet-char');
+    return (
+      tagOf(level) === 'text:list-level-style-bullet' &&
+      !!char &&
+      (!wanted.char || char === wanted.char)
+    );
+  }
+  const format = attr(level, 'style:num-format') ?? '';
+  return (
+    tagOf(level) === 'text:list-level-style-number' &&
+    (wanted.number ? format === wanted.number : any ? format !== '' : format === '1')
+  );
 }
 
 /** A list style of Slider's own for lists of a kind: bullets or numbers, nine levels deep. */
-export function newListStyle(sink: StyleSink, kind: TextList['kind']): string {
+export const newListStyle = (sink: StyleSink, kind: TextList['kind']): string =>
+  sink.add(ownListStyle(kind));
+
+function ownListStyle(kind: TextList['kind']): XmlNode {
   const levels = Array.from({ length: 9 }, (_, i) => {
     const level = i + 1;
     const properties = element('style:list-level-properties', {
@@ -281,7 +303,36 @@ export function newListStyle(sink: StyleSink, kind: TextList['kind']): string {
           [properties, size],
         );
   });
-  return sink.add(element('text:list-style', {}, levels));
+  return element('text:list-style', {}, levels);
+}
+
+/**
+ * A copy of a list style that draws `wanted`'s level with the bullet or numbering asked for, the
+ * rest as it is (where the bullet sits, its colour, the other levels). A bullet is as large as
+ * the text and in the font Slider draws it in – the list's own may be a symbol font, at half size.
+ */
+function signedListStyle(index: StyleIndex, base: XmlNode, wanted: TextList): XmlNode {
+  const list = cloneNode(base);
+  removeAttr(list, 'style:name');
+  removeAttr(list, 'style:display-name');
+  const level = levelStyle(list, wanted.level) as XmlNode;
+  if (wanted.kind === 'number') {
+    setAttr(level, 'style:num-format', wanted.number as string);
+    return list;
+  }
+  const char = wanted.char as string;
+  setAttr(level, 'text:bullet-char', char);
+  setAttr(level, 'text:bullet-relative-size', '100%');
+  const properties = setProperties(level, 'style:text-properties', { 'fo:font-size': '100%' });
+  for (const name of attributeNames(properties)) {
+    if (/:font-(name|family|charset|pitch|style-name)/.test(name)) removeAttr(properties, name);
+  }
+  const font = listBulletFont(char);
+  if (font) {
+    const face = index.fontFaceFor(font);
+    setAttr(properties, face ? 'style:font-name' : 'fo:font-family', face ?? font);
+  }
+  return list;
 }
 
 /**
@@ -309,6 +360,13 @@ function writeLists(
     // The shape's own list style needs no name: a list in it draws so.
     if (found && found === ctx.shapeList) return null;
     if (found) return attr(found, 'style:name') as string;
+    // A bullet or numbering none of them draws: the list as that level is drawn (else Slider's),
+    // with it.
+    if (wanted.kind === 'bullet' ? wanted.char : wanted.number) {
+      const plain: TextList = { kind: wanted.kind, level: wanted.level };
+      const base = [own, ...known].find((list) => draws(list, plain, true));
+      return sink.add(signedListStyle(sink.index, base ?? ownListStyle(wanted.kind), wanted));
+    }
     const name = written.get(wanted.kind) ?? newListStyle(sink, wanted.kind);
     written.set(wanted.kind, name);
     return name;
@@ -352,8 +410,15 @@ function writeLists(
   childrenOf(container).splice(kept, 0, ...blocks);
 }
 
-const sameList = (a: TextList | null, b: TextList | null) =>
-  a === b || (!!a && !!b && a.kind === b.kind && a.level === b.level);
+/** Whether a paragraph in list `was` is in the one `wanted`, with the bullet or numbering asked for. */
+const sameList = (wanted: TextList | null, was: TextList | null) =>
+  wanted === was ||
+  (!!wanted &&
+    !!was &&
+    wanted.kind === was.kind &&
+    wanted.level === was.level &&
+    (!wanted.char || wanted.char === was.char) &&
+    (!wanted.number || wanted.number === was.number));
 
 /** Replaces a live element's text by formatted paragraphs. */
 export function writeRichText(

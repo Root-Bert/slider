@@ -1,4 +1,4 @@
-import { clampPoint, type Point, type Rect } from '@slider/shared';
+import { clampPointIn, SLIDE_RECT, type Point, type Rect } from '@slider/shared';
 
 /** The subset of `DOMRect` we need – keeps the pure helpers testable without a DOM. */
 export interface ClientRect {
@@ -8,18 +8,57 @@ export interface ClientRect {
   height: number;
 }
 
-/** Converts a viewport position into normalised slide coordinates (clamped to 0–1). */
-export function normalizeClientPoint(clientX: number, clientY: number, box: ClientRect): Point {
+/**
+ * Converts a viewport position into normalised slide coordinates, kept inside `room` (the slide,
+ * 0–1, unless there is room around it: `slideRoom`).
+ */
+export function normalizeClientPoint(
+  clientX: number,
+  clientY: number,
+  box: ClientRect,
+  room: Rect = SLIDE_RECT,
+): Point {
   if (box.width === 0 || box.height === 0) return { x: 0, y: 0 };
-  return clampPoint({ x: (clientX - box.left) / box.width, y: (clientY - box.top) / box.height });
+  return clampPointIn(
+    { x: (clientX - box.left) / box.width, y: (clientY - box.top) / box.height },
+    room,
+  );
 }
 
-/** The one place that turns a pointer event into slide coordinates (BER-96, BER-98). */
+/**
+ * Where things may lie on and around a slide, in its coordinates: the slide itself, and – zoomed
+ * out – what its frame (`data-slide-frame`) shows around it, as Figma's canvas round a frame.
+ * `slideElement`: the slide's box or a layer as large as it.
+ */
+export function slideRoom(slideElement: Element): Rect {
+  const frame = slideElement.closest('[data-slide-frame]');
+  const box = slideElement.getBoundingClientRect();
+  if (!frame || box.width === 0 || box.height === 0) return SLIDE_RECT;
+  const around = frame.getBoundingClientRect();
+  // A rounding error over the slide's edge is no room.
+  const before = (edge: number) => (edge < -1e-3 ? edge : 0);
+  const after = (edge: number) => (edge > 1 + 1e-3 ? edge : 1);
+  const left = before((around.left - box.left) / box.width);
+  const top = before((around.top - box.top) / box.height);
+  const right = after((around.right - box.left) / box.width);
+  const bottom = after((around.bottom - box.top) / box.height);
+  return { x: left, y: top, w: right - left, h: bottom - top };
+}
+
+/**
+ * The one place that turns a pointer event into slide coordinates (BER-96, BER-98): on the slide,
+ * or – zoomed out – in the room around it (`slideRoom`).
+ */
 export const toSlidePoint = (
   event: { clientX: number; clientY: number },
   slideElement: Element,
 ): Point =>
-  normalizeClientPoint(event.clientX, event.clientY, slideElement.getBoundingClientRect());
+  normalizeClientPoint(
+    event.clientX,
+    event.clientY,
+    slideElement.getBoundingClientRect(),
+    slideRoom(slideElement),
+  );
 
 /** Inverse: a normalised rect on a slide to a viewport box. */
 export function denormalizeRect(rect: Rect, box: ClientRect) {

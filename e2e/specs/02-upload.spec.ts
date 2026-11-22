@@ -1,15 +1,27 @@
 import { expect, sampleDeckFile, SAMPLE_SLIDES, shot, test } from '../support';
 
 test('uploading a PPTX imports it and opens the viewer', async ({ page }) => {
-  await page.goto('/');
-  // The toolbar button; the empty list offers a second one.
+  await page.goto('/slider');
+  // „Neue Präsentation“ starts new ones, on a template; a file is dropped on the presentations.
   await page.getByRole('button', { name: 'Neue Präsentation' }).first().click();
   await expect(page).toHaveURL(/\/neu/);
   await expect(page.getByRole('heading', { level: 1, name: 'Neue Präsentation' })).toBeVisible();
+  await expect(page.getByRole('radio', { name: 'Ohne Vorlage' })).toBeChecked();
+  await expect(page.getByRole('radio', { name: 'Pop Art' })).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Datei auswählen' })).toHaveCount(0);
+  await page.goBack();
 
-  const chooser = page.waitForEvent('filechooser');
-  await page.getByRole('button', { name: 'Datei auswählen' }).click();
-  await (await chooser).setFiles(sampleDeckFile());
+  const sample = sampleDeckFile();
+  const dataTransfer = await page.evaluateHandle(
+    ({ name, mimeType, base64 }) => {
+      const bytes = Uint8Array.from(atob(base64), (char) => char.charCodeAt(0));
+      const transfer = new DataTransfer();
+      transfer.items.add(new File([bytes], name, { type: mimeType }));
+      return transfer;
+    },
+    { name: sample.name, mimeType: sample.mimeType, base64: sample.buffer.toString('base64') },
+  );
+  await page.getByRole('main').dispatchEvent('drop', { dataTransfer });
 
   // The deck page shows the import, then the slides.
   await expect(page).toHaveURL(/\/d\/[0-9a-f-]{36}/);

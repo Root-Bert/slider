@@ -1,6 +1,7 @@
-import { lineBetween, lineEnds } from '@slider/shared';
+import { lineBetween, lineEnds, LIST_BULLETS } from '@slider/shared';
 import type {
   LineHeads,
+  ListNumber,
   EditableElement,
   ElementLook,
   ElementStroke,
@@ -11,8 +12,23 @@ import type {
   StrokeDash,
   VerticalAlign,
 } from '@slider/shared';
-import { useLayoutEffect, useRef, useState, type ReactNode } from 'react';
-import { Icon, IconButton, NumberField, ScrubHandle, useScrub, type IconName } from '@/ui';
+import {
+  useLayoutEffect,
+  useRef,
+  useState,
+  type MouseEvent as ReactMouseEvent,
+  type ReactNode,
+} from 'react';
+import {
+  ContextMenu,
+  Icon,
+  IconButton,
+  NumberField,
+  ScrubHandle,
+  useScrub,
+  type IconName,
+  type MenuAction,
+} from '@/ui';
 import { ColorField } from './colors/ColorPalette';
 import { EffectControls } from './fills/EffectControls';
 import { useEditing } from './editing-context';
@@ -25,6 +41,7 @@ import {
   commonLineSpacing,
   commonList,
   commonOf,
+  commonSign,
   commonValue,
   DEFAULT_STYLE,
   formatRange,
@@ -38,7 +55,7 @@ import {
 
 /*
  * The formatting in the floating panel beside the picked element, one part per tab: the text –
- * font, size, colour, bold, italic, underline, strike, alignment, lists, line spacing and
+ * font, size, colour, bold, italic, underline, strike, alignment, lists (and their bullets), line spacing and
  * capitals –, the border and the fill. While one
  * types on the slide the text's formats the selection (a caret: its word), else the whole
  * element. Buttons keep the focus in the text; fields take it and give it back.
@@ -62,6 +79,33 @@ const CAPS: { value: Caps; label: string; shown: string }[] = [
 ];
 
 const LINE_SPACINGS = [1, 1.15, 1.5, 2, 2.5, 3];
+
+/** The bullets a list can take, each named after what it shows. */
+const BULLET_NAMES: Record<(typeof LIST_BULLETS)[number], string> = {
+  '•': 'Punkt',
+  '–': 'Strich',
+  '○': 'Kreis',
+  '■': 'Quadrat',
+  '◆': 'Raute',
+  '→': 'Pfeil',
+  '✓': 'Haken',
+  '★': 'Stern',
+};
+/** A bullet or a numbering's first number as a menu row's icon. */
+const sign = (shown: string) => (
+  <span aria-hidden className="w-[18px] text-center text-body tabular-nums">
+    {shown}
+  </span>
+);
+
+/** How a list counts, each named and with its first number. */
+const NUMBERINGS: { value: ListNumber; label: string; shown: string }[] = [
+  { value: '1', label: 'Zahlen', shown: '1.' },
+  { value: 'a', label: 'Kleinbuchstaben', shown: 'a.' },
+  { value: 'A', label: 'Großbuchstaben', shown: 'A.' },
+  { value: 'i', label: 'Römisch klein', shown: 'i.' },
+  { value: 'I', label: 'Römisch groß', shown: 'I.' },
+];
 
 /** The capitals every run (and empty line) has, else `null`. */
 function capsOf(paragraphs: readonly LiveParagraph[]): Caps | null {
@@ -123,6 +167,7 @@ function TextFormat({ element, live }: { element: EditableElement; live: LiveEle
   const color = value('color') ?? DEFAULT_STYLE.color;
   const align = typing ? typing.align : commonOf(live.paragraphs, (paragraph) => paragraph.align);
   const list = typing ? typing.list : commonList(live.paragraphs);
+  const listSign = typing ? typing.listSign : commonSign(live.paragraphs);
   const lineSpacing = typing ? typing.lineSpacing : commonLineSpacing(live.paragraphs);
   // Plain text has no capitals set: that reads as „none“.
   const caps = typing ? (typing.style.caps ?? 'none') : capsOf(live.paragraphs);
@@ -191,6 +236,30 @@ function TextFormat({ element, live }: { element: EditableElement; live: LiveEle
   // Again on the list the lines are in: out of it.
   const listTo = (kind: 'bullet' | 'number') => shape({ list: list === kind ? null : kind });
   const listed = list === 'bullet' || list === 'number';
+  // Right click on a list's button: its bullets, or the ways it counts, at the pointer – the
+  // one the lines have left out.
+  const [signsAt, setSignsAt] = useState<{
+    kind: 'bullet' | 'number';
+    x: number;
+    y: number;
+  } | null>(null);
+  const signsOf = (kind: 'bullet' | 'number') => (event: ReactMouseEvent) => {
+    event.preventDefault();
+    setSignsAt({ kind, x: event.clientX, y: event.clientY });
+  };
+  const has = (kind: 'bullet' | 'number', value: string) => list === kind && listSign === value;
+  const signs: MenuAction[] =
+    signsAt?.kind === 'bullet'
+      ? LIST_BULLETS.filter((char) => !has('bullet', char)).map((char) => ({
+          label: BULLET_NAMES[char],
+          icon: sign(char),
+          onSelect: () => shape({ list: 'bullet', char }),
+        }))
+      : NUMBERINGS.filter((item) => !has('number', item.value)).map((item) => ({
+          label: item.label,
+          icon: sign(item.shown),
+          onSelect: () => shape({ list: 'number', number: item.value }),
+        }));
   // A cell of the grid: the lines' alignment and the box's at once – one step (typed in: the
   // lines as the typing formats them, the box beside).
   const place = (across: Across, down: VerticalAlign) => {
@@ -293,15 +362,19 @@ function TextFormat({ element, live }: { element: EditableElement; live: LiveEle
               icon="formatListBulleted"
               label="Aufzählung (⌘⇧8)"
               size="compact"
+              title="Aufzählung (⌘⇧8), Rechtsklick für andere Punkte"
               active={list === 'bullet'}
               onClick={() => listTo('bullet')}
+              onContextMenu={signsOf('bullet')}
             />
             <IconButton
               icon="formatListNumbered"
               label="Nummerierung (⌘⇧7)"
               size="compact"
+              title="Nummerierung (⌘⇧7), Rechtsklick für andere Zählweisen"
               active={list === 'number'}
               onClick={() => listTo('number')}
+              onContextMenu={signsOf('number')}
             />
             <IconButton
               icon="formatIndentDecrease"
@@ -346,6 +419,18 @@ function TextFormat({ element, live }: { element: EditableElement; live: LiveEle
         </div>
         <TextAlignGrid across={align} down={live.verticalAlign} onPick={place} />
       </div>
+      {signsAt && (
+        <ContextMenu
+          label={signsAt.kind === 'bullet' ? 'Punkte der Aufzählung' : 'Zählweise der Nummerierung'}
+          actions={signs}
+          at={signsAt}
+          // Back in the text typed in: the keys are its again.
+          onClose={() => {
+            setSignsAt(null);
+            typing?.focus();
+          }}
+        />
+      )}
     </div>
   );
 }
@@ -354,7 +439,7 @@ function TextFormat({ element, live }: { element: EditableElement; live: LiveEle
  * A small field showing what is set, the system's list of the choices under it: compact where a
  * whole select would not fit the row.
  */
-function PickField({
+export function PickField({
   label,
   shown,
   value,
@@ -399,7 +484,7 @@ const sizeText = (size: number) => String(Number(size.toFixed(1)));
  * sizes), or picked from them in the list the arrow opens – hovered or stepped through, the
  * text shows each at once, like the font beside it (`useTryList`).
  */
-function SizeField({
+export function SizeField({
   size,
   onChange,
   onTry,

@@ -251,6 +251,8 @@ describe('sessions', () => {
         route,
       ) ||
       (method === 'GET' && route === '/api/legal') ||
+      // Cloud: what a link shows – read only, to whoever holds its token (`cloud.test.ts`).
+      (method === 'GET' && route.startsWith('/api/cloud/public/:token')) ||
       (method === 'POST' &&
         /^\/api\/live\/:key(?:\/leave|\/text\/:elementId(?:\/leave)?)?$/.test(route));
     const privateRoutes = new Map(
@@ -268,13 +270,16 @@ describe('sessions', () => {
       const url = route.path.replace(
         /:([A-Za-z0-9_]+)(?:\{([^}]+)\})?/g,
         (_match, name: string, pattern: string | undefined) =>
-          pattern
+          // A list of words stands for its first; a real pattern (a picture's number) for a sample.
+          pattern && /^[\w.|-]+$/.test(pattern)
             ? pattern.split('|')[0]!
-            : name === 'deckId'
-              ? deckId
-              : name === 'part'
-                ? 'file'
-                : '00000000-0000-4000-8000-000000000001',
+            : name === 'picture'
+              ? '1.jpg'
+              : name === 'deckId'
+                ? deckId
+                : name === 'part'
+                  ? 'file'
+                  : '00000000-0000-4000-8000-000000000001',
       );
       const response = await ctx.request(url, {
         method: route.method,
@@ -1197,6 +1202,25 @@ describe('Microsoft login', () => {
     expect((await redirectLogin('microsoft', idp)).headers.get('location')).toMatch(
       /error=email_unverified/,
     );
+    // Microsoft's `xms_edov` decides where it comes along: false refuses even a UPN (a guest's,
+    // an unconfirmed address), true vouches for the e-mail claim.
+    idp.claims = {
+      ...idp.claims,
+      oid: 'oid-y',
+      preferred_username: 'mallory@firma.de',
+      xms_edov: false,
+    };
+    expect((await redirectLogin('microsoft', idp)).headers.get('location')).toMatch(
+      /error=email_unverified/,
+    );
+    idp.claims = {
+      ...idp.claims,
+      oid: 'oid-z',
+      preferred_username: undefined,
+      email: 'neu@example.org',
+      xms_edov: 'true',
+    };
+    expect((await redirectLogin('microsoft', idp)).headers.get('location')).not.toMatch(/error=/);
   });
 });
 

@@ -39,21 +39,12 @@ export function DeckTitleInput({
   };
 
   const save = () => {
-    if (settled.current || update.isPending) return;
+    if (settled.current) return;
     const trimmed = title.trim();
     if (trimmed === '' || trimmed === deck.title) return finish();
-    update.mutate(
-      { title: trimmed },
-      {
-        onSuccess: () => {
-          finish();
-        },
-        onError: (error) => {
-          onNotify(error.message, 'danger');
-          ref.current?.focus();
-        },
-      },
-    );
+    // The list shows the new name at once; a refusal puts the old one back and says why.
+    update.mutate({ title: trimmed }, { onError: (error) => onNotify(error.message, 'danger') });
+    finish();
   };
 
   return (
@@ -74,7 +65,6 @@ export function DeckTitleInput({
       }}
       // The browser's own menu (paste …) instead of the deck actions.
       onContextMenu={(event) => event.stopPropagation()}
-      readOnly={update.isPending}
       maxLength={MAX_TITLE_LENGTH}
       aria-label="Name der Präsentation"
       className={cn(

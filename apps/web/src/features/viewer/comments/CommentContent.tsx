@@ -1,5 +1,6 @@
 import type { Comment } from '@slider/shared';
-import { isStrokeOnly, strokeOnlyLabel } from './lib/comment-selectors';
+import { isStrokeOnly } from './lib/comment-selectors';
+import { CommentPreview } from './CommentPreview';
 import { CommentImagesView } from '../media/CommentImageView';
 import { CommentMediaView } from '../media/MediaPlayer';
 import { CommentBody } from './CommentBody';
@@ -26,7 +27,11 @@ export function CommentContent({
       {hasText || (!hasMedia && !isStrokeOnly(comment)) ? (
         <CommentBody body={comment.body} className={bodyClassName} />
       ) : (
-        !hasMedia && <p className="text-body text-fg-muted">{strokeOnlyLabel(comment)}</p>
+        !hasMedia && (
+          <p className="text-body text-fg-muted">
+            <CommentPreview comment={comment} />
+          </p>
+        )
       )}
     </>
   );

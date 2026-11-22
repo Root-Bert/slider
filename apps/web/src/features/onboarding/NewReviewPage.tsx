@@ -19,7 +19,7 @@ import { noCreateMessage } from './lib/no-create';
  */
 export function Component() {
   const workspace = useActiveWorkspace();
-  if (!workspace) return <Navigate to={routes.reviews()} replace />;
+  if (!workspace) return <Navigate to={routes.home()} replace />;
   if (!canCreateDecks(workspace.role)) {
     return (
       <CenteredMessage title="Keine Berechtigung zum Anlegen" message={noCreateMessage(workspace)}>

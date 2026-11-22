@@ -10,4 +10,12 @@ contextBridge.exposeInMainWorld('tabs', {
   /** A name is being typed: the keys come here, not to the page in front. */
   typing: () => ipcRenderer.send('tabs:typing'),
   deckAction: (action) => ipcRenderer.send('tabs:deckAction', action),
+  /** „+“: a new tab at the app's start. */
+  fresh: () => ipcRenderer.send('tabs:new'),
+  /** The arrow beside it: what a new tab can start on, as a menu at that place of the bar. */
+  freshMenu: (x, y) => ipcRenderer.send('tabs:newMenu', x, y),
+  /** „Nebeneinander“ on or off. */
+  split: () => ipcRenderer.send('tabs:split'),
+  /** Files dragged out of a page were dropped onto a tab: `carried` is what the drag said. */
+  drop: (id, carried) => ipcRenderer.send('tabs:drop', id, carried),
 });

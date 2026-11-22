@@ -341,7 +341,7 @@ export function viewerReducer(state: ViewerState, action: ViewerAction): ViewerS
       };
     }
     case 'slidesReplaced': {
-      const ids = new Set(action.slideIds);
+      const ids = new Set([...action.slideIds, ...(action.variantIds ?? [])]);
       const gone = [...next.slideZooms.keys()].some((id) => !ids.has(id));
       const slideZooms = gone
         ? new Map([...next.slideZooms].filter(([id]) => ids.has(id)))

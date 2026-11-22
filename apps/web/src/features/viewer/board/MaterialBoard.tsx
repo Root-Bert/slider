@@ -48,8 +48,7 @@ import {
   Toolbar,
   ToolbarDivider,
 } from '@/ui';
-import { useViewerData } from '../state/viewer-data';
-import { useViewerDispatch, useViewerState } from '../state/viewer-state';
+import { ownerIds, useBoardOwner } from './board-owner';
 import {
   BOX_GAP,
   BOX_PAD,
@@ -200,7 +199,7 @@ const frameOf = ({ x, y, width, height }: ResizeParams): BoardFrame => ({
 export const MaterialBoard = memo(function MaterialBoard(props: {
   w: number;
   h: number;
-  /** „Präsentation →“: back to the presentation beside the material page. */
+  /** „Präsentation →“ („Dokument →“): back to what lies beside the material page. */
   onLeave: () => void;
 }) {
   return (
@@ -211,7 +210,8 @@ export const MaterialBoard = memo(function MaterialBoard(props: {
 });
 
 function Board({ w, h, onLeave }: { w: number; h: number; onLeave: () => void }) {
-  const { deck, canComment, canManage, viewer, aiAuthor } = useViewerData();
+  const owner = useBoardOwner();
+  const { canComment, canManage, aiAuthor, wording, viewer: me } = owner;
   const {
     board,
     loading,
@@ -345,7 +345,7 @@ function Board({ w, h, onLeave }: { w: number; h: number; onLeave: () => void })
     () => notesBeside(draft?.kind === 'note' ? [...board.items, draft] : board.items),
     [board.items, draft],
   );
-  const own = (item: BoardEntry) => item.author.id === viewer.author.id;
+  const own = (item: BoardEntry) => item.author.id === me.id;
   const mayDelete = (item: BoardEntry) => canManage || (canComment && own(item));
 
   /** Board units under a point on screen. */
@@ -599,7 +599,7 @@ function Board({ w, h, onLeave }: { w: number; h: number; onLeave: () => void })
     }
   };
 
-  const ownItem = (item: BoardItem) => canComment && item.author.id === viewer.author.id;
+  const ownItem = (item: BoardItem) => canComment && item.author.id === me.id;
   /** Its text may be handed to the AI (⌘↵, „KI fragen“) – anyone's note, by whoever may comment. */
   const askable = (item: BoardItem) => canComment && isNote(item) && item.text.trim() !== '';
   /** A folder's files laid out where it lay, its folder deleted alone (they stay on the board). */
@@ -677,7 +677,7 @@ function Board({ w, h, onLeave }: { w: number; h: number; onLeave: () => void })
       const at = { x: event.clientX, y: event.clientY };
       setCarrying({ file, folder, start: at, at, origin: { x: box.left, y: box.top } });
     },
-    color: accentColor(viewer.author.color),
+    color: accentColor(me.color),
     resizable: (id) => canComment && selected.size === 1 && selected.has(id),
     canDraw: canComment,
     mayMove: canComment,
@@ -727,7 +727,7 @@ function Board({ w, h, onLeave }: { w: number; h: number; onLeave: () => void })
     threadOf: (noteId) => answers.byNote.get(noteId) ?? NO_THREAD,
     answers: {
       ai: aiAuthor,
-      me: viewer.author.id,
+      me: me.id,
       byId: fileById,
       canComment,
       streaming: answers.streaming,
@@ -826,8 +826,8 @@ function Board({ w, h, onLeave }: { w: number; h: number; onLeave: () => void })
       : takenIn(rect, things);
     const note: BoardItem = {
       id: crypto.randomUUID(),
-      deckId: '',
-      author: viewer.author,
+      ...ownerIds(owner),
+      author: me,
       kind: beside ? 'note' : 'box',
       text: '',
       url: null,
@@ -949,8 +949,6 @@ function Board({ w, h, onLeave }: { w: number; h: number; onLeave: () => void })
 
   // ── Its side panel ────────────────────────────────────────────────────────
 
-  const viewerState = useViewerState();
-  const dispatch = useViewerDispatch();
   const picked = selected.size === 1 ? items.find((item) => selected.has(item.id)) : undefined;
   // Only files, links and folders have a side panel; boxes keep their bar and right click.
   const panelItem =
@@ -970,14 +968,15 @@ function Board({ w, h, onLeave }: { w: number; h: number; onLeave: () => void })
   };
   // One of the deck's side panels, floating over the board as over the slides: open while one
   // thing is picked (gone with it), or the chat or the apps' panel.
+  const { panelOpen, setPanelOpen } = owner;
   useEffect(() => {
-    dispatch({ type: 'boardPanelSet', open: !!panelItem || side !== null });
-  }, [dispatch, panelItem, side]);
-  useEffect(() => () => dispatch({ type: 'boardPanelSet', open: false }), [dispatch]);
+    setPanelOpen(!!panelItem || side !== null);
+  }, [setPanelOpen, panelItem, side]);
+  useEffect(() => () => setPanelOpen(false), [setPanelOpen]);
   // Closed elsewhere (Esc, leaving the material page): what was picked is let go.
   const [panelShown, setPanelShown] = useState(false);
-  if (viewerState.boardPanelOpen !== panelShown) {
-    setPanelShown(viewerState.boardPanelOpen);
+  if (panelOpen !== panelShown) {
+    setPanelShown(panelOpen);
     if (panelShown && panelItem) setSelected(new Set());
     if (panelShown && side) setSideView(null);
   }
@@ -1015,7 +1014,7 @@ function Board({ w, h, onLeave }: { w: number; h: number; onLeave: () => void })
 
           dropping && 'ring-hairline-strong',
         )}
-        style={selectionStyle(viewer.author.color)}
+        style={selectionStyle(me.color)}
         // React Flow's pane takes the press for itself: the board gets the focus for its keys – not
         // from a note being typed by its own bars (format bar, „Senden“ beside it).
         onPointerDownCapture={(event) => {
@@ -1196,11 +1195,7 @@ function Board({ w, h, onLeave }: { w: number; h: number; onLeave: () => void })
         {drawn && (
           // The box drawn on a slide in Besprechen: `RectFrame` dashed, over its whole area.
           <div aria-hidden className="pointer-events-none absolute z-(--z-raised)" style={drawn}>
-            <RectFrame
-              rect={{ x: 0, y: 0, w: 1, h: 1 }}
-              color={accentColor(viewer.author.color)}
-              dashed
-            />
+            <RectFrame rect={{ x: 0, y: 0, w: 1, h: 1 }} color={accentColor(me.color)} dashed />
           </div>
         )}
 
@@ -1308,11 +1303,11 @@ function Board({ w, h, onLeave }: { w: number; h: number; onLeave: () => void })
               variant="ghost"
               trailingIcon="arrowForward"
               className="rounded-control"
-              aria-label="Zur Präsentation"
-              title="Zur Präsentation (M)"
+              aria-label={wording.leave}
+              title={`${wording.leave} (M)`}
               onClick={onLeave}
             >
-              <span className={giveWay.leave}>Präsentation</span>
+              <span className={giveWay.leave}>{wording.thing}</span>
             </Button>
           </Toolbar>
         </div>
@@ -1328,9 +1323,7 @@ function Board({ w, h, onLeave }: { w: number; h: number; onLeave: () => void })
                 className="shrink-0 text-fg-faint [@container(max-height:12rem)]:hidden"
               />
               <p className="max-w-80 text-sm text-fg-muted">
-                {canComment
-                  ? 'Dateien, Bilder und Links für diese Präsentation hierher ziehen oder einfügen, mit einem Rahmen eine Notiz schreiben'
-                  : 'Hier liegt noch kein Material'}
+                {canComment ? wording.hint : 'Hier liegt noch kein Material'}
               </p>
               {canComment && (
                 <p className="text-xs text-fg-subtle [@container(max-height:9rem)]:hidden">
@@ -1343,7 +1336,6 @@ function Board({ w, h, onLeave }: { w: number; h: number; onLeave: () => void })
       </div>
       {side === 'chat' && (
         <MaterialChat
-          deckId={deck.id}
           ai={aiAuthor}
           byId={fileById}
           openSource={context.answers.openSource}

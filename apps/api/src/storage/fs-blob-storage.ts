@@ -18,6 +18,29 @@ export class FsBlobStorage implements BlobStorage {
     });
   }
 
+  async putStream(key: string, data: AsyncIterable<Uint8Array>): Promise<number> {
+    const file = this.resolve(key);
+    return locks.hold(file, async () => {
+      await mkdir(path.dirname(file), { recursive: true });
+      const partial = `${file}.${crypto.randomUUID()}.partial`;
+      const handle = await open(partial, 'w');
+      let written = 0;
+      try {
+        for await (const chunk of data) {
+          await handle.write(chunk);
+          written += chunk.byteLength;
+        }
+        await handle.close();
+        await rename(partial, file);
+        return written;
+      } catch (error) {
+        await handle.close().catch(() => {});
+        await rm(partial, { force: true });
+        throw error;
+      }
+    });
+  }
+
   /**
    * Replaces a blob with `transform` of its content – only while it is still the same file: one
    * deleted (or written anew) meanwhile is left alone, never brought back. `false` then, and when

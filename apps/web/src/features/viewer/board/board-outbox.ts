@@ -5,12 +5,13 @@ import type {
   CreateBoardItemInput,
   UpdateBoardItemInput,
 } from '@slider/shared';
+import { boardPath, type BoardRef } from '@/lib/api/board-owner';
 import { api } from '@/lib/api-client';
 import { OUTBOX_TAB, retryDelay, sendOutcome, type QueuedEntry } from '@/lib/outbox';
 import { BOARD_STORE, browserQueue } from '../editing/outbox';
 
 /*
- * Changes to a deck's board (the material page) without a connection, like comments (`comment-outbox.ts`):
+ * Changes to a board (the material page of a deck or a text document) without a connection, like comments (`comment-outbox.ts`):
  * a note or link put down, its text changed, things moved or deleted – shown at once over the
  * server's board (`withQueued`), sent one after the other in the order made, kept in the browser
  * (IndexedDB, beside the editor's edits and comments) until the server took them – a reload
@@ -32,7 +33,12 @@ export type BoardAction =
   | { type: 'move'; frames: (BoardFrame & { id: string })[] }
   | { type: 'delete'; itemId: string };
 
+/**
+ * `deckId` is the id of what the board belongs to – a deck's, or a document's with `kind` saying
+ * so (an entry kept before documents had a board has none: a deck's).
+ */
 export interface BoardEntry extends QueuedEntry {
+  kind?: BoardRef['kind'];
   action: BoardAction;
 }
 
@@ -97,8 +103,8 @@ function unbound(items: BoardItem[], goneId: string): BoardItem[] {
   return gone.reduce(unbound, left);
 }
 
-async function send(deckId: string, action: BoardAction): Promise<void> {
-  const base = `/decks/${encodeURIComponent(deckId)}/board`;
+async function send(owner: BoardRef, action: BoardAction): Promise<void> {
+  const base = boardPath(owner, '/board');
   if (action.type === 'create') await api.post(`${base}/items`, action.input);
   else if (action.type === 'update')
     await api.patch(`${base}/items/${encodeURIComponent(action.itemId)}`, action.input);
@@ -107,7 +113,8 @@ async function send(deckId: string, action: BoardAction): Promise<void> {
 }
 
 export interface BoardOutbox {
-  enqueue(deckId: string, userId: string, action: BoardAction): void;
+  /** `kind`: what `deckId` names – a deck (as ever) or a text document. */
+  enqueue(deckId: string, userId: string, action: BoardAction, kind?: BoardRef['kind']): void;
   /** The deck's actions not taken yet, in order (one array while they stay the same). */
   queued(deckId: string): readonly BoardAction[];
   subscribe(listener: () => void): () => void;
@@ -182,7 +189,7 @@ export function createBoardOutbox(
         item.attempts += 1;
         let refused: unknown = null;
         try {
-          await send(deckId, item.entry.action);
+          await send({ kind: item.entry.kind ?? 'deck', id: deckId }, item.entry.action);
         } catch (error) {
           const outcome = sendOutcome(error, item.attempts);
           if (outcome !== 'refused') {
@@ -218,7 +225,7 @@ export function createBoardOutbox(
   }
 
   return {
-    enqueue(deckId, userId, action) {
+    enqueue(deckId, userId, action, kind = 'deck') {
       const deck = deckOf(deckId);
       // A note not sent yet and deleted: it never goes out, nor do its changes.
       if (action.type === 'delete') {
@@ -255,6 +262,7 @@ export function createBoardOutbox(
         userId,
         tab: OUTBOX_TAB,
         at: Date.now(),
+        ...(kind !== 'deck' && { kind }),
         action,
       };
       deck.items.push({ entry, attempted: false, attempts: 0 });

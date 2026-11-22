@@ -15,17 +15,17 @@ export function LogoHeader({
   end?: ReactNode;
 }) {
   return (
-    <header className="flex h-[88px] shrink-0 items-center justify-between px-6 md:px-14">
+    <header className="flex h-[88px] shrink-0 items-center justify-between px-6 md:px-8">
       {logoLink ? (
         <Link
           to={logoLink.to}
           aria-label={logoLink.label}
           className="transition-opacity hover:opacity-80"
         >
-          <Logo tone="mono" />
+          <Logo tone="brand" />
         </Link>
       ) : (
-        <Logo tone="mono" />
+        <Logo tone="brand" />
       )}
       {end}
     </header>

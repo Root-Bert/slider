@@ -3,7 +3,7 @@ import { existsSync, lstatSync, readlinkSync, watch, type FSWatcher } from 'node
 import { chmod, lstat, readdir, readFile, rename, stat, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { promisify } from 'node:util';
-import { and, eq, inArray } from 'drizzle-orm';
+import { and, eq, inArray, isNull } from 'drizzle-orm';
 import type { LocalFiles } from '@slider/shared';
 import { decks, revisions } from '../db/schema';
 import type { AppDeps } from '../deps';
@@ -356,7 +356,8 @@ export class LocalFilesSync {
       })
       .from(decks)
       .leftJoin(revisions, eq(revisions.id, decks.currentRevisionId))
-      .where(inArray(decks.id, ids));
+      // One in „Gelöscht“ counts as gone: its file is let go, not written or read any more.
+      .where(and(inArray(decks.id, ids), isNull(decks.deletedAt)));
     const pending = new Set(
       (
         await this.deps.db

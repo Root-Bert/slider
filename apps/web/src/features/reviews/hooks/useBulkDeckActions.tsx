@@ -1,7 +1,13 @@
 import { useEffect, useRef, useState } from 'react';
 import type { Deck } from '@slider/shared';
 import { pluralize, withCount } from '@/lib/format';
-import { useDeckStatuses, useInvalidateDecks, useRerenderDecks, useUpdateDecks } from '@/lib/api';
+import {
+  useDesktopState,
+  useDeckStatuses,
+  useInvalidateDecks,
+  useRerenderDecks,
+  useUpdateDecks,
+} from '@/lib/api';
 import type { MenuAction, ShowToast } from '@/ui';
 import { DeleteDeckDialog } from '../components/DeleteDeckDialog';
 import { MoveDecksDialog } from '../components/MoveDecksDialog';
@@ -91,6 +97,8 @@ export function useBulkDeckActions(
   const update = useUpdateDecks();
   const rerender = useBulkRerender(onNotify);
   const pins = usePinnedDecks(workspaceId);
+  // The desktop app: which of them are files on this computer (they stay when deleted).
+  const desktop = useDesktopState();
 
   const count = decks.length;
   const managed = decks.filter((deck) => deck.permissions.canManage);
@@ -110,7 +118,7 @@ export function useBulkDeckActions(
       const left = unpinned.filter((deck) => !pins.pin(deck.id)).length;
       if (left > 0) {
         onNotify(
-          `Höchstens ${MAX_PINNED} Präsentationen angepinnt – ${reviews(left)} nicht angepinnt.`,
+          `Höchstens ${MAX_PINNED} Präsentationen angepinnt, ${reviews(left)} nicht angepinnt.`,
         );
       }
     }
@@ -137,12 +145,24 @@ export function useBulkDeckActions(
   const someUnmanaged = (applies: number) => (applies < count ? NOT_MANAGED : undefined);
 
   const actions: MenuAction[] = [
+    // An archived presentation's pin would be gone with the next look at the list.
+    ...(decks.every(isArchived) && !allPinned
+      ? []
+      : [
+          {
+            label: allPinned ? 'Lösen' : 'Anpinnen',
+            icon: 'pushPin',
+            onSelect: togglePinned,
+            disabled: !allPinned && pins.full,
+            title: !allPinned && pins.full ? pins.limitMessage() : undefined,
+          } satisfies MenuAction,
+        ]),
     {
-      label: allPinned ? 'Lösen' : 'Anpinnen',
-      icon: 'pushPin',
-      onSelect: togglePinned,
-      disabled: !allPinned && pins.full,
-      title: !allPinned && pins.full ? pins.limitMessage() : undefined,
+      label: withCount('Verschieben …', managed.length, count),
+      icon: 'folder',
+      onSelect: () => setMoving(managed),
+      disabled: managed.length === 0,
+      title: someUnmanaged(managed.length),
     },
     {
       label: rerender.busy ? rerender.label : withCount('Neu rendern', renderable.length, count),
@@ -159,13 +179,6 @@ export function useBulkDeckActions(
       title: someUnmanaged(toArchive.length),
     },
     {
-      label: withCount('Verschieben …', managed.length, count),
-      icon: 'folder',
-      onSelect: () => setMoving(managed),
-      disabled: managed.length === 0,
-      title: someUnmanaged(managed.length),
-    },
-    {
       label: withCount('Löschen', managed.length, count),
       icon: 'delete',
       tone: 'danger',
@@ -178,6 +191,7 @@ export function useBulkDeckActions(
   const dialog = deleting && (
     <DeleteDeckDialog
       decks={deleting}
+      filesStay={deleting.some((deck) => desktop?.files[deck.id])}
       onClose={() => setDeleting(null)}
       onDeleted={(result) => {
         result.done.forEach((entry) => pins.unpin(entry.deckId));
@@ -200,9 +214,9 @@ export function useBulkDeckActions(
       decks={moving}
       workspaceId={moving[0]!.workspaceId}
       onClose={() => setMoving(null)}
-      onMoved={(result, folderName) => {
+      onMoved={(result, placeName) => {
         setMoving(null);
-        const message = movedMessage(result, folderName);
+        const message = movedMessage(result, placeName);
         onNotify(message.text, message.tone);
         onDone();
       }}
@@ -211,6 +225,8 @@ export function useBulkDeckActions(
 
   return {
     actions,
+    /** „Löschen“ for the keyboard: there only when every picked one is the caller's to delete. */
+    remove: count > 0 && managed.length === count ? () => setDeleting(managed) : undefined,
     dialog: (
       <>
         {dialog}

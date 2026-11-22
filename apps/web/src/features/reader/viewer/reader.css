@@ -1,0 +1,247 @@
+/*
+ * The PDF's pages and what lies on them. A PDF's paper and colours are its own – none of this
+ * follows the app's theme.
+ */
+
+.reader-page {
+  position: relative;
+  flex: none;
+  background: #fff;
+  border-radius: 2px;
+  box-shadow:
+    0 0 0 1px rgb(0 0 0 / 0.08),
+    0 8px 30px rgb(0 0 0 / 0.35);
+  --scale-round-x: 1px;
+  --scale-round-y: 1px;
+}
+.reader-page > canvas {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  border-radius: inherit;
+}
+
+/* pdf.js's words over the page, invisible: picked, copied, found (its own `.textLayer`). */
+.reader-page .textLayer {
+  color-scheme: only light;
+  position: absolute;
+  text-align: initial;
+  inset: 0;
+  overflow: clip;
+  line-height: 1;
+  letter-spacing: normal;
+  word-spacing: normal;
+  text-size-adjust: none;
+  forced-color-adjust: none;
+  transform-origin: 0 0;
+  z-index: 1;
+  --min-font-size: 1;
+  --text-scale-factor: calc(var(--total-scale-factor) * var(--min-font-size));
+  --min-font-size-inv: calc(1 / var(--min-font-size));
+}
+.reader-page .textLayer :is(span, br) {
+  color: transparent;
+  position: absolute;
+  white-space: pre;
+  cursor: text;
+  transform-origin: 0% 0%;
+  user-select: text;
+}
+.reader-page .textLayer > :not(.markedContent),
+.reader-page .textLayer .markedContent span:not(.markedContent) {
+  z-index: 1;
+  --font-height: 0;
+  font-size: calc(var(--text-scale-factor) * var(--font-height));
+  --scale-x: 1;
+  --rotate: 0deg;
+  transform: rotate(var(--rotate)) scaleX(var(--scale-x)) scale(var(--min-font-size-inv));
+}
+.reader-page .textLayer .markedContent {
+  display: contents;
+}
+.reader-page .textLayer ::selection {
+  background: color-mix(in srgb, var(--selection, #3b82f6) 35%, transparent);
+  color: transparent;
+}
+.reader-page .textLayer br::selection {
+  background: transparent;
+}
+.reader-page .textLayer .endOfContent {
+  display: block;
+  position: absolute;
+  inset: 100% 0 0;
+  z-index: 0;
+  cursor: default;
+  user-select: none;
+}
+.reader-page .textLayer:active .endOfContent {
+  top: 0;
+}
+
+/* Comments' places and the search's hits, behind the fields. */
+.reader-marks {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  z-index: 2;
+}
+.reader-marks > span {
+  position: absolute;
+  border-radius: 2px;
+  mix-blend-mode: multiply;
+}
+
+/* The file's own form fields, typed into where they stand. */
+.reader-field {
+  position: absolute;
+  z-index: 3;
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0 0.25em;
+  border: 0;
+  border-radius: 1px;
+  background: rgb(59 130 246 / 0.1);
+  color: #000;
+  font-family: Helvetica, Arial, sans-serif;
+  outline: none;
+  resize: none;
+  line-height: 1.15;
+}
+.reader-field:hover {
+  background: rgb(59 130 246 / 0.16);
+}
+.reader-field:focus {
+  background: rgb(59 130 246 / 0.06);
+  box-shadow: inset 0 0 0 1.5px var(--selection, #3b82f6);
+}
+.reader-field[data-filled] {
+  background: rgb(59 130 246 / 0.05);
+}
+.reader-field:disabled {
+  background: transparent;
+  cursor: default;
+}
+.reader-field[data-kind='check'] {
+  appearance: none;
+  display: grid;
+  place-items: center;
+  padding: 0;
+  cursor: pointer;
+}
+.reader-field[data-kind='check']::after {
+  content: '';
+  width: 62%;
+  height: 62%;
+  background: currentColor;
+  mask: url('data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M3 12.5l6 6L21 6" fill="none" stroke="black" stroke-width="3.2" stroke-linecap="round" stroke-linejoin="round"/></svg>')
+    center / contain no-repeat;
+  opacity: 0;
+}
+.reader-field[data-kind='check'][data-round] {
+  border-radius: 50%;
+}
+.reader-field[data-kind='check'][data-round]::after {
+  mask: none;
+  border-radius: 50%;
+  width: 50%;
+  height: 50%;
+}
+.reader-field[data-kind='check']:checked::after {
+  opacity: 1;
+}
+select.reader-field {
+  appearance: none;
+  cursor: pointer;
+}
+
+/* Words, ticks and signatures put onto the page. */
+.reader-item {
+  position: absolute;
+  z-index: 4;
+  box-sizing: border-box;
+  touch-action: none;
+}
+.reader-item[data-movable] {
+  cursor: move;
+}
+.reader-item[data-picked] {
+  outline: 1.5px solid var(--selection, #3b82f6);
+  outline-offset: 1px;
+}
+.reader-item[data-movable]:not([data-picked]):hover {
+  outline: 1px dashed color-mix(in srgb, var(--selection, #3b82f6) 70%, transparent);
+  outline-offset: 1px;
+}
+.reader-item > img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  pointer-events: none;
+  user-select: none;
+}
+.reader-item > svg {
+  display: block;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+}
+.reader-words {
+  display: block;
+  width: 100%;
+  min-height: 100%;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: #000;
+  font-family: Helvetica, Arial, sans-serif;
+  line-height: 1.2;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  outline: none;
+  resize: none;
+  overflow: hidden;
+}
+.reader-handle {
+  position: absolute;
+  width: 10px;
+  height: 10px;
+  margin: -5px 0 0 -5px;
+  border: 1.5px solid var(--selection, #3b82f6);
+  border-radius: 2px;
+  background: #fff;
+  z-index: 5;
+}
+
+/* A tool picked: the page takes the click. */
+.reader-catch {
+  position: absolute;
+  inset: 0;
+  z-index: 6;
+}
+.reader-lasso {
+  position: absolute;
+  border: 1.5px dashed var(--selection, #3b82f6);
+  background: color-mix(in srgb, var(--selection, #3b82f6) 10%, transparent);
+  pointer-events: none;
+}
+
+/* Printed: only the pages, each its own sheet. */
+.reader-print {
+  display: none;
+}
+@media print {
+  body > *:not(.reader-print-host) {
+    display: none !important;
+  }
+  .reader-print {
+    display: block;
+  }
+  .reader-print img {
+    display: block;
+    width: 100%;
+    break-after: page;
+  }
+}

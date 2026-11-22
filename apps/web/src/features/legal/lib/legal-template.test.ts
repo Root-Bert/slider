@@ -31,6 +31,7 @@ describe('legal templates', () => {
     const off = fillTemplate(privacyTemplate, allValues, allOptions(false));
     for (const word of [
       'Unsplash',
+      'Pexels',
       'Stripe',
       'Cloudflare',
       'Microsoft',
@@ -43,6 +44,7 @@ describe('legal templates', () => {
     const on = fillTemplate(privacyTemplate, allValues, allOptions(true));
     for (const word of [
       'Unsplash',
+      'Pexels',
       'Stripe',
       'Cloudflare',
       'Microsoft',

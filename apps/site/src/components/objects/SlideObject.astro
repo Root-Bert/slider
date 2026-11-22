@@ -1,0 +1,154 @@
+---
+import { s, type Lang } from '~/i18n';
+
+/**
+ * Slider as one object: a slide on its two copies (the logo's stack, in Slider's colour), with
+ * what people say about it sitting right on it as speech bubbles.
+ */
+interface Props {
+  lang: Lang;
+}
+
+const w = s(Astro.props.lang).objects.slider;
+---
+
+<div class="object slide-object" data-tilt>
+  <div class="object-stage">
+    <div class="so-copy so-copy-2" data-deal></div>
+    <div class="so-copy so-copy-1" data-deal style="--i: 1"></div>
+    <div class="so-slide" data-deal style="--i: 2">
+      <p class="so-kicker">{w.kicker}</p>
+      <p class="so-title">{w.title}</p>
+      <div class="so-body">
+        <div class="so-lines">
+          <span style="width: 96%"></span>
+          <span style="width: 88%"></span>
+          <span style="width: 92%"></span>
+          <span style="width: 70%"></span>
+          <span style="width: 84%"></span>
+          <span style="width: 52%"></span>
+          <div class="mark-box so-mark" style="--c: var(--color-accent-yellow); --ink: #000">
+            <span class="mark-tag"><b>{w.a.by}</b> {w.a.text}</span>
+          </div>
+        </div>
+        <div class="so-gap"></div>
+      </div>
+    </div>
+    <span class="bub-cursor so-bubble" data-drift style="--c: var(--color-accent-cyan); --ink: #000; --drift-x: 1.2cqw; --drift-y: -0.8cqw">
+      <span><b>{w.b.by}</b>&nbsp;{w.b.text}</span>
+    </span>
+    <span class="bub-cursor so-you" data-drift style="--c: var(--color-accent-blue); --drift-x: -1cqw; --drift-y: 0.7cqw; --drift-d: -2s">
+      <span>{w.you}</span>
+    </span>
+  </div>
+</div>
+
+<style>
+  .slide-object {
+    --c: var(--app-slider);
+    aspect-ratio: 16 / 10.8;
+  }
+  .so-copy,
+  .so-slide {
+    position: absolute;
+    top: 4cqw;
+    right: 2cqw;
+    width: 86cqw;
+    aspect-ratio: 16 / 9;
+    border-radius: 2.4cqw;
+  }
+  .so-copy-2 {
+    translate: -7cqw 7cqw;
+    background: color-mix(in srgb, var(--c) 45%, var(--color-canvas));
+  }
+  .so-copy-1 {
+    translate: -3.5cqw 3.5cqw;
+    background: var(--c);
+  }
+  /* The stack's offsets and the deal's flight both use `translate`: the flight comes from further out. */
+  :global(.js) .so-copy-2[data-deal] {
+    translate: 9cqw -7cqw;
+  }
+  :global(.js) .so-copy-1[data-deal] {
+    translate: 12cqw -10cqw;
+  }
+  :global(.js .is-in) .so-copy-2[data-deal] {
+    translate: -7cqw 7cqw;
+  }
+  :global(.js .is-in) .so-copy-1[data-deal] {
+    translate: -3.5cqw 3.5cqw;
+  }
+  .so-slide {
+    display: flex;
+    flex-direction: column;
+    padding: 4.4cqw 4.6cqw;
+    background: #fff;
+    color: #111;
+    box-shadow: 0 3cqw 6cqw -2cqw rgb(0 0 0 / 0.28);
+  }
+  .so-kicker {
+    font-size: 1.5cqw;
+    font-weight: 600;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--c);
+  }
+  .so-title {
+    margin-top: 0.8cqw;
+    font-size: 4.4cqw;
+    font-weight: 800;
+    line-height: 1.02;
+    letter-spacing: -0.04em;
+  }
+  .so-body {
+    display: grid;
+    flex: 1;
+    grid-template-columns: 1.15fr 1fr;
+    gap: 4cqw;
+    margin-top: 6.4cqw;
+  }
+  .so-lines {
+    position: relative;
+    display: flex;
+    flex-direction: column;
+    justify-content: space-between;
+    padding: 1cqw 0;
+  }
+  .so-lines > span {
+    height: 1.5cqw;
+    border-radius: 1cqw;
+    background: #e3e3e6;
+  }
+  /* Where the dog is missing. */
+  .so-gap {
+    border: 0.35cqw dashed #d0d0d5;
+    border-radius: 1.8cqw;
+  }
+  .so-mark {
+    inset: -1cqw -1.6cqw;
+    border-width: 0.3cqw;
+    border-radius: 0.8cqw;
+  }
+  .slide-object :global(.mark-tag),
+  .slide-object .bub-cursor > span {
+    height: auto;
+    padding: 0.7cqw 1.5cqw;
+    font-size: 1.9cqw;
+    line-height: 1.3;
+  }
+  .slide-object :global(.mark-tag) {
+    bottom: calc(100% + 1cqw);
+    border-radius: 1.8cqw 1.8cqw 1.8cqw 0.5cqw;
+  }
+  .slide-object .bub-cursor > span {
+    border-radius: 0.5cqw 1.8cqw 1.8cqw 1.8cqw;
+  }
+  .so-bubble {
+    top: 36cqw;
+    left: 62cqw;
+  }
+  .so-you {
+    top: 54cqw;
+    left: 30cqw;
+  }
+</style>

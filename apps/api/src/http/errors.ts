@@ -12,7 +12,7 @@ export class ApiError extends Error {
     readonly code: ErrorCode,
     message: string,
     /** Extra fields for the client, e.g. `nextcloudServer` with `nextcloud_login_required`. */
-    readonly extra: Pick<ApiErrorBody['error'], 'nextcloudServer'> = {},
+    readonly extra: Pick<ApiErrorBody['error'], 'nextcloudServer' | 'mailCheck'> = {},
   ) {
     super(message);
     this.name = 'ApiError';
@@ -76,6 +76,9 @@ export function describeZodError(error: ZodError): string {
   }
 }
 
+/** The path for the log: a public link's token is its key, so it never lands there. */
+const loggedPath = (path: string) => path.replace(/(\/cloud\/public\/)[^/]+/, '$1…');
+
 export function errorHandler(log: Logger): ErrorHandler {
   return (err, c) => {
     if (err instanceof ApiError) return c.json(err.toBody(), err.status);
@@ -88,7 +91,7 @@ export function errorHandler(log: Logger): ErrorHandler {
     }
     if (isUniqueViolation(err)) {
       // Two requests raced for the same row (e.g. the same name at once): nothing was written.
-      log.warn(`Unique violation on ${c.req.method} ${c.req.path}`, err);
+      log.warn(`Unique violation on ${c.req.method} ${loggedPath(c.req.path)}`, err);
       return c.json(
         new ApiError(
           409,
@@ -98,7 +101,7 @@ export function errorHandler(log: Logger): ErrorHandler {
         409,
       );
     }
-    log.error(`Unhandled error on ${c.req.method} ${c.req.path}`, err);
+    log.error(`Unhandled error on ${c.req.method} ${loggedPath(c.req.path)}`, err);
     const internal = new ApiError(
       500,
       'internal',

@@ -2,7 +2,7 @@ import { isSealedBlobV1, openBlobV1 } from '../crypto/legacy-v1';
 import type { DataKey } from '../crypto/data-key';
 import { sodium } from '../crypto/sodium';
 import type { Logger } from '../logger';
-import type { BlobStorage } from './blob-storage';
+import { putBlobStream, type BlobStorage } from './blob-storage';
 
 /**
  * Encrypts every blob at rest (BER-149) around another store: callers keep seeing plaintext,
@@ -66,6 +66,19 @@ export class EncryptedBlobStorage implements BlobStorage {
 
   async put(key: string, data: Uint8Array): Promise<void> {
     await this.inner.put(key, sealBlob(data, this.key, key));
+  }
+
+  /** Sealed chunk by chunk as it comes in: the same file `put` writes, never held whole. */
+  async putStream(key: string, data: AsyncIterable<Uint8Array>): Promise<number> {
+    let plain = 0;
+    const counted = (async function* () {
+      for await (const chunk of data) {
+        plain += chunk.byteLength;
+        yield chunk;
+      }
+    })();
+    await putBlobStream(this.inner, key, sealStream(counted, this.key, key));
+    return plain;
   }
 
   async get(key: string): Promise<Uint8Array<ArrayBuffer> | null> {
@@ -221,6 +234,38 @@ export function sealBlob(data: Uint8Array, key: DataKey, blobKey: string): Uint8
     written += sealed.length;
   }
   return out;
+}
+
+/**
+ * `sealBlob` for bytes that come in pieces: the prefix, then every 64 KiB of plaintext as one
+ * sealed chunk – the last one (also of an empty file) tagged final.
+ */
+export async function* sealStream(
+  data: AsyncIterable<Uint8Array>,
+  key: DataKey,
+  blobKey: string,
+): AsyncGenerator<Uint8Array> {
+  const { state, header } = sodium.crypto_secretstream_xchacha20poly1305_init_push(key.blobKey);
+  yield Buffer.concat([MAGIC, header]);
+  const push = (chunk: Uint8Array, last: boolean) =>
+    sodium.crypto_secretstream_xchacha20poly1305_push(
+      state,
+      chunk,
+      blobKey,
+      last
+        ? sodium.crypto_secretstream_xchacha20poly1305_TAG_FINAL
+        : sodium.crypto_secretstream_xchacha20poly1305_TAG_MESSAGE,
+    );
+  // One chunk is held back: only the end of the stream tells which one is the last.
+  let pending: Buffer = Buffer.alloc(0);
+  for await (const piece of data) {
+    pending = pending.length === 0 ? Buffer.from(piece) : Buffer.concat([pending, piece]);
+    while (pending.length > CHUNK_BYTES) {
+      yield push(pending.subarray(0, CHUNK_BYTES), false);
+      pending = pending.subarray(CHUNK_BYTES);
+    }
+  }
+  yield push(pending, true);
 }
 
 /** `blobKey` as sealed with, or `null` for the `SLS1` format. */

@@ -79,6 +79,8 @@ export const instanceOverviewSchema = z.object({
   }),
   /** Reviews, archived ones included. */
   decks: z.number().int(),
+  /** Cloud: files of every workspace, folders and deleted ones not counted. */
+  files: z.number().int().default(0),
   /** The workspaces taking up the most storage – name and size only. */
   largest: z.array(
     z.object({
@@ -156,6 +158,9 @@ export const instanceWorkspaceSchema = z.object({
   subscribed: z.boolean(),
   memberCount: z.number().int(),
   deckCount: z.number().int(),
+  /** Cloud: its files (folders and deleted ones not counted), and what they take of the storage. */
+  fileCount: z.number().int().default(0),
+  fileBytes: z.number().int().default(0),
   storageBytes: z.number().int(),
   blockedAt: z.iso.datetime().nullable(),
 });

@@ -1,13 +1,30 @@
-import { routes } from '@/lib/routes';
 import { SettingsLayout } from '@/shell/layouts/SettingsLayout';
 import { useAccount } from '@/features/auth';
-import { Icon, Section, useToast } from '@/ui';
-import { ColorPicker, WorkSection } from './components/PreferenceSections';
+import { canPlaceApps, FilesPreferences } from '@/features/cloud';
+import { MailPreferences, NotifyPreferences } from '@/features/sender';
+import { Icon, Section, useToast, type IconName } from '@/ui';
+import { CallVoiceSection } from './components/CallVoiceSection';
+import { AppsSection, ColorPicker, WorkSection } from './components/PreferenceSections';
+
+/** The page's sections, in order, for the nav at the side. */
+const NAV = [
+  { id: 'darstellung', title: 'Darstellung', icon: 'palette' },
+  { id: 'anrufe', title: 'Anrufe', icon: 'call' },
+  { id: 'benachrichtigungen', title: 'Benachrichtigungen', icon: 'notifications' },
+  // Cloud's app only: where each app's pages open.
+  ...(canPlaceApps() ? ([{ id: 'apps', title: 'Apps', icon: 'apps' }] as const) : []),
+  { id: 'dateien', title: 'Dateien', icon: 'folder' },
+  { id: 'arbeiten', title: 'Präsentationen', icon: 'slideshow' },
+  { id: 'mail', title: 'Post', icon: 'mail' },
+  { id: 'version', title: 'Version', icon: 'info' },
+] as const satisfies readonly { id: string; title: string; icon: IconName }[];
 
 /**
- * `/einstellungen` – "Einstellungen": your colour and how decks open. Kept apart from
- * "Konto & Anmeldung" (`/konto`), which is only about who you are and how you sign in, and from
- * the instance's own pages (`/instanz`, `/einrichtung`), reached by the account menu.
+ * `/einstellungen` – "Einstellungen": one page for all your own, whichever app you came from –
+ * your colour first (every app), the voice agents speak with in your calls, then each app's part,
+ * marked with its sign: how the files open (Cloud), how presentations open (Slider), how the mail list looks (Sender). Kept apart from "Konto & Anmeldung" (`/konto`), which
+ * is only about who you are and how you sign in, and from the instance's own pages (`/instanz`,
+ * `/einrichtung`), reached by the account menu.
  */
 export function Component() {
   const { user, version } = useAccount();
@@ -18,17 +35,21 @@ export function Component() {
       docTitle="Einstellungen | Slider"
       title="Einstellungen"
       leading={<Icon name="settings" size={32} className="text-fg-muted" />}
-      back={{ to: routes.reviews() }}
+      back="app"
+      nav={NAV}
       toast={toast}
     >
-      <Section title="Darstellung" description="Gilt für alle deine Präsentationen.">
+      <Section id="darstellung" title="Darstellung" description="Gilt überall, in jeder App.">
         <ColorPicker color={user.color} onNotify={showToast} />
       </Section>
-
+      <CallVoiceSection onNotify={showToast} />
+      <NotifyPreferences />
+      <AppsSection />
+      <FilesPreferences />
       <WorkSection />
-
-      <Section title="Version">
-        <p className="text-sm text-fg">{version ? `Slider ${version}` : 'Entwicklungsversion'}</p>
+      <MailPreferences />
+      <Section id="version" title="Version">
+        <p className="text-sm text-fg">{version ? `Version ${version}` : 'Entwicklungsversion'}</p>
       </Section>
     </SettingsLayout>
   );

@@ -1,7 +1,9 @@
 import type { ReactNode } from 'react';
+import { Link } from 'react-router';
 import type { Deck, DeckSource } from '@slider/shared';
 import { Badge, cn, Icon, NextcloudMark, ProgressBar, Tooltip } from '@/ui';
 import { useDesktopDeck } from '@/lib/api';
+import { routes } from '@/lib/routes';
 import { importActivityLabel, importFraction, isImporting, slidesLabel } from '@/lib/deck-labels';
 
 /** Right-hand status badge next to the title. Import state wins over the version. */
@@ -159,5 +161,33 @@ export function ImportOverlay({ deck, compact = false }: { deck: Deck; compact?:
         </>
       )}
     </div>
+  );
+}
+
+/**
+ * Where the presentation lies in the files, small under its title: the folder path, opening that
+ * folder. Nothing where it has no place the person sees.
+ */
+export function DeckPlaceLine({ deck, className }: { deck: Deck; className?: string }) {
+  const place = deck.place;
+  if (!place) return null;
+  const to = place.folderId
+    ? routes.cloudFolder(deck.workspaceId, place.folderId)
+    : place.areaId
+      ? routes.cloudArea(deck.workspaceId, place.areaId)
+      : routes.cloudOwn(deck.workspaceId);
+  return (
+    <Link
+      to={to}
+      title={`Liegt in ${place.words}`}
+      // Above the card's stretched title link.
+      className={cn(
+        'relative z-(--z-raised) flex max-w-full min-w-0 items-center gap-1 self-start text-xs text-fg-subtle transition-colors hover:text-fg focus-visible:ring-2 focus-visible:ring-focus focus-visible:outline-none',
+        className,
+      )}
+    >
+      <Icon name="folder" size={12} className="shrink-0" />
+      <span className="truncate">{place.words}</span>
+    </Link>
   );
 }

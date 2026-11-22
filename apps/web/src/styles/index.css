@@ -29,7 +29,7 @@
   /* Backgrounds of the `glass-panel`, `glass-control` and `glass-elevated` utilities. */
   --color-glass-panel: rgb(30 30 30 / 0.5);
   --color-glass-control: rgb(40 40 40 / 0.25);
-  --color-glass-elevated: rgb(20 20 20 / 0.86);
+  --color-glass-elevated: rgb(20 20 20 / 0.62);
 
   /* White overlay ladder – every fill and state tint is one of these steps, nothing in between. */
   --color-surface-1: rgb(255 255 255 / 0.05);
@@ -56,7 +56,6 @@
   --color-well-dark: rgb(0 0 0 / 0.25);
   --color-scrim: rgb(0 0 0 / 0.6);
   --color-scrim-strong: rgb(0 0 0 / 0.75);
-  --color-scrim-max: rgb(0 0 0 / 0.9);
 
   /* Foreground (white at fixed opacities, as in the design) */
   --color-fg: rgb(255 255 255 / 0.9);
@@ -74,21 +73,17 @@
   --color-danger: #ff3b30;
   --color-mention: #ffffff;
 
-  /* Slider's own orange and its mark (`ui/Logo.tsx`): the slides are the orange laid over the
-     ground (back 69 %, front 53 % over black; 30 % / 50 % over white in the light theme), their
-     lines in the ground's colour, the comment box solid orange. */
+  /* Slider's own orange and its mark (`ui/Logo.tsx`): the tripod's legs, the screen, its bars and
+     the roll are the orange laid over the ground (69 %, 53 %, 80 %, 90 % over black; 30 % / 50 % /
+     65 % / 90 % over white in the light theme), the title line and the comment box solid orange. */
   --color-logo: #e3583d;
-  --color-logo-back: #9d3d2a;
-  --color-logo-front: #782f20;
-  --color-logo-lines: #000000;
+  --color-logo-legs: #9d3d2a;
+  --color-logo-roll: #cc4f37;
+  --color-logo-screen: #782f20;
+  --color-logo-bars: #b64631;
+  --color-logo-title: #e3583d;
   /* The comment box's outline: none in the word mark, the ground's colour in the icon forms. */
   --color-logo-outline: transparent;
-  /* The mark in greys (the app's own header, `Logo tone="mono"`), as the brand guide's
-     monochrome icons: dark here, light in the light theme. */
-  --color-logo-mono-back: #7a7a7a;
-  --color-logo-mono-front: #525252;
-  --color-logo-mono-lines: #ebebeb;
-  --color-logo-mono-bubble: #f5f5f5;
   /* The AI's avatar (`Logo tone="onGrey"`): the mark in those greys on this circle, both themes. */
   --color-logo-grey: #525252;
 
@@ -171,6 +166,8 @@
   --shadow-pin: 0 0 6px rgb(0 0 0 / 0.45);
   /* Live cursors and their name labels. */
   --shadow-lift: 0 4px 12px rgb(0 0 0 / 0.4);
+  /* A picture lying on its card (an agent's face): there, but quiet. */
+  --shadow-soft: 0 4px 16px rgb(0 0 0 / 0.3);
   /* Soft white halo around the one primary button of a standalone page (login), and on hover. */
   --shadow-glow: 0 0 20px rgb(255 255 255 / 0.14), 0 0 56px rgb(255 255 255 / 0.07);
   --shadow-glow-hover: 0 0 24px rgb(255 255 255 / 0.24), 0 0 72px rgb(255 255 255 / 0.12);
@@ -205,8 +202,13 @@
 
   --animate-fade-in: fade-in 160ms ease-out;
   --animate-pop-in: pop-in 180ms var(--ease-overshoot);
+  /* A file being fetched (Cloud's `Fetching`): the arrow falls through, the tick lands. */
+  --animate-fetch-drop: fetch-drop 900ms var(--ease-symmetric) infinite;
+  --animate-fetch-tick: fetch-tick 320ms var(--ease-overshoot) backwards;
   --animate-shimmer: shimmer 1.6s linear infinite;
   --animate-slide-in-x: slide-in-x 220ms var(--ease-settle);
+  /* A pane opening beside a list (a mail beside the inbox): in from the right, settling. */
+  --animate-pane-in: pane-in 260ms var(--ease-settle);
   /* Content coming back after something gave it room (e.g. the Nextcloud picker closing). */
   --animate-rise-in: rise-in 320ms var(--ease-settle) backwards;
   /* Friendly little jump, e.g. the logo when clicked while already home. */
@@ -223,10 +225,6 @@
   /* An export card at work (the PDF being made): a light sweeping across it, its pages breathing. */
   --animate-export-sweep: export-sweep 1.8s var(--ease-symmetric) infinite;
   --animate-export-breathe: export-breathe 1.8s var(--ease-symmetric) infinite;
-  /* A font card's satellite drifting to and fro on its orbit, slowly (duration and delay are
-     set per card); its halo breathing. */
-  --animate-orbit-drift: orbit-drift 28s ease-in-out infinite alternate;
-  --animate-halo-breathe: halo-breathe 7s ease-in-out infinite;
   /* Picking a reaction (👍 / 👎 / egal), calm and once: the thumb lifts with sparks, the thumb
      down sinks a little, „egal“ (abstaining) breathes in while its bar draws level; a soft ring
      in its colour goes out. */
@@ -250,6 +248,24 @@
   @keyframes fade-in {
     from {
       opacity: 0;
+    }
+  }
+  @keyframes fetch-drop {
+    0% {
+      transform: translateY(-110%);
+    }
+    45%,
+    55% {
+      transform: translateY(0);
+    }
+    100% {
+      transform: translateY(110%);
+    }
+  }
+  @keyframes fetch-tick {
+    from {
+      opacity: 0;
+      transform: scale(0.4);
     }
   }
   @keyframes pop-in {
@@ -300,6 +316,12 @@
     from {
       opacity: 0;
       transform: translateX(-8px);
+    }
+  }
+  @keyframes pane-in {
+    from {
+      opacity: 0;
+      transform: translateX(24px);
     }
   }
   @keyframes hop {
@@ -421,25 +443,6 @@
       transform: scale(1.6);
     }
   }
-  @keyframes orbit-drift {
-    from {
-      rotate: -6deg;
-    }
-    to {
-      rotate: 6deg;
-    }
-  }
-  @keyframes halo-breathe {
-    0%,
-    100% {
-      opacity: 0.12;
-      scale: 1;
-    }
-    50% {
-      opacity: 0.22;
-      scale: 1.35;
-    }
-  }
   @keyframes twinkle {
     0%,
     100% {
@@ -486,6 +489,54 @@
   backdrop-filter: blur(24px) saturate(140%);
 }
 
+/* A block of a chat leaving its list at the top: it shrinks to half towards its own side (the
+   AI's left, a person's right – `--roll-from`), blurs lightly and fades out, the last 120px of its
+   way out (scroll-driven, so nothing runs where the browser can't – there it just scrolls out).
+   One lower than that (a mail row) starts once its top reaches the edge – never at rest – and
+   shrinks less (`--roll-scale` on its list), so it leaves as slowly. Fills forwards only: at rest
+   no transform and no filter lie on the text. */
+@keyframes roll-away {
+  to {
+    opacity: 0;
+    filter: blur(2px);
+    transform: scale(var(--roll-scale, 0.5));
+  }
+}
+@utility roll-away {
+  @supports (animation-timeline: view()) {
+    @media (prefers-reduced-motion: no-preference) {
+      transform-origin: var(--roll-from, 0 0);
+      animation: roll-away linear forwards;
+      animation-timeline: view();
+      animation-range: exit max(0%, calc(100% - 120px)) exit 100%;
+    }
+  }
+}
+
+/* The list those blocks scroll in: once scrolled, its top 120px fade out too – a block too tall
+   to shrink (a long message of one's own, one bubble) would otherwise just be cut off there. At
+   the top of the list nothing fades: the band grows with the first 120px scrolled. */
+@property --roll-fade {
+  syntax: '<length>';
+  inherits: false;
+  initial-value: 0px;
+}
+@keyframes roll-fade {
+  to {
+    --roll-fade: 120px;
+  }
+}
+@utility roll-away-list {
+  @supports (animation-timeline: scroll()) {
+    @media (prefers-reduced-motion: no-preference) {
+      mask-image: linear-gradient(to bottom, transparent 0, #000 var(--roll-fade));
+      animation: roll-fade linear both;
+      animation-timeline: scroll(self);
+      animation-range: 0 120px;
+    }
+  }
+}
+
 /* `glass-panel` lifted off the stage: hairline edge and float shadow (thread, deleted slides). */
 @utility glass-floating {
   background-color: var(--color-glass-panel);
@@ -503,13 +554,31 @@
   box-shadow: inset 0 0 0 1px var(--color-hairline);
 }
 
-/* Opaque variant for overlays that sit above busy content (dialogs, popovers, panels). */
+/* Every overlay (menus, popovers, dialogs, toasts): see-through like the side panel, blurred
+   so its text stays readable over busy content. */
 @utility glass-elevated {
   background-color: var(--color-glass-elevated);
-  backdrop-filter: blur(32px) saturate(140%);
+  backdrop-filter: blur(24px) saturate(160%);
   box-shadow:
     inset 0 0 0 1px var(--color-hairline-strong),
     var(--shadow-float);
+}
+
+/* A glass surface is a backdrop root: a menu or popover open in it (`data-popover-panel`) blurred
+   nothing outside it – the page's text showed sharp through the menu (the mail's „Weitere“ in its
+   folder pill, the @ list over a composer). While one is open in it, the surface leaves its own
+   blur, its tint stays. Unlayered, so it wins over the utilities. */
+:is(
+  .glass,
+  .glass-panel,
+  .glass-floating,
+  .glass-control,
+  .glass-elevated,
+  .glass-dark,
+  .glass-dark-strong
+):has([data-popover-panel]) {
+  -webkit-backdrop-filter: none;
+  backdrop-filter: none;
 }
 
 /* Chips over a slide or thumbnail (slide numbers, counters): scrim with a light blur. */
@@ -807,148 +876,17 @@
     opacity: 1;
   }
 }
-/* Caught (`SnapPulse`): a slide zoomed out moved into the middle of its frame – lit like the
-   AI's rim (`ai-rim`). Out of the middle of each side caught,
-   where the centre line would meet it, two lights run along its edge towards the corners, white
-   heads with trails in its colour, a soft glow under them and a little splash where they started;
-   all fading out before the corners, once. Without motion: the glow only fades. A side
-   (`data-side`) sets which way it reaches in (`--snap-to`), where its middle is (`--snap-at`) and
-   which way its edge runs (`--snap-along`). */
-@property --snap-run {
-  syntax: '<percentage>';
-  inherits: false;
-  initial-value: 0%;
-}
-@keyframes snap-run {
-  to {
-    --snap-run: 46%;
-  }
-}
-@keyframes snap-show {
-  from {
-    opacity: 0;
-  }
-  12% {
-    opacity: 1;
-  }
-  60% {
-    opacity: 1;
-  }
-  to {
-    opacity: 0;
-  }
-}
-@utility snap-side {
-  position: absolute;
-  /* Zero-alpha colour, not `transparent`: Safari would darken the fades (see `ai-rim`). */
-  mask: linear-gradient(var(--snap-along), #0000 6%, #000 28%, #000 72%, #0000 94%);
-  opacity: 0;
-  animation: snap-show 1300ms ease-out forwards;
-  &[data-side='left'] {
-    inset: 0 auto 0 0;
-    width: min(24px, 30%);
-    --snap-to: to right;
-    --snap-at: 0 50%;
-    --snap-along: to bottom;
-    --snap-bump: 100% 30%;
-    &::before {
-      inset: 0 auto 0 0;
-      width: 1.5px;
-    }
-  }
-  &[data-side='right'] {
-    inset: 0 0 0 auto;
-    width: min(24px, 30%);
-    --snap-to: to left;
-    --snap-at: 100% 50%;
-    --snap-along: to bottom;
-    --snap-bump: 100% 30%;
-    &::before {
-      inset: 0 0 0 auto;
-      width: 1.5px;
-    }
-  }
-  &[data-side='top'] {
-    inset: 0 0 auto 0;
-    height: min(24px, 30%);
-    --snap-to: to bottom;
-    --snap-at: 50% 0;
-    --snap-along: to right;
-    --snap-bump: 30% 100%;
-    &::before {
-      inset: 0 0 auto 0;
-      height: 1.5px;
-    }
-  }
-  &[data-side='bottom'] {
-    inset: auto 0 0 0;
-    height: min(24px, 30%);
-    --snap-to: to top;
-    --snap-at: 50% 100%;
-    --snap-along: to right;
-    --snap-bump: 30% 100%;
-    &::before {
-      inset: auto 0 0 0;
-      height: 1.5px;
-    }
-  }
-  &::before,
-  &::after {
+/* A slide zoomed out: the room its frame shows around it takes the pointer as the slide does –
+   the layer's own box stays the slide (its coordinates), only where it is hit reaches out, as far
+   as `SlideFrame` says (`--room-*`, of the slide; none: the slide alone). */
+@utility slide-room {
+  &::before {
     content: '';
     position: absolute;
-    animation: snap-run 1100ms var(--ease-settle) forwards;
-  }
-  /* The lights on the edge. */
-  &::before {
-    background:
-      linear-gradient(
-        var(--snap-along),
-        rgb(from var(--snap-color) r g b / 0) calc(50% - var(--snap-run) - 2%),
-        #fff calc(50% - var(--snap-run)),
-        var(--snap-color) calc(50% - var(--snap-run) + 5%),
-        rgb(from var(--snap-color) r g b / 0) calc(50% - var(--snap-run) + 22%)
-      ),
-      linear-gradient(
-        var(--snap-along),
-        rgb(from var(--snap-color) r g b / 0) calc(50% + var(--snap-run) - 22%),
-        var(--snap-color) calc(50% + var(--snap-run) - 5%),
-        #fff calc(50% + var(--snap-run)),
-        rgb(from var(--snap-color) r g b / 0) calc(50% + var(--snap-run) + 2%)
-      );
-  }
-  /* Their glow, reaching a little in, and the splash in the middle. */
-  &::after {
-    inset: 0;
-    filter: blur(6px);
-    background:
-      radial-gradient(
-        ellipse var(--snap-bump) at var(--snap-at),
-        rgb(from var(--snap-color) r g b / 0.35),
-        rgb(from var(--snap-color) r g b / 0)
-      ),
-      linear-gradient(
-        var(--snap-along),
-        rgb(from var(--snap-color) r g b / 0) calc(50% - var(--snap-run) - 2%),
-        rgb(from var(--snap-color) r g b / 0.45) calc(50% - var(--snap-run)),
-        rgb(from var(--snap-color) r g b / 0.3) calc(50% - var(--snap-run) + 5%),
-        rgb(from var(--snap-color) r g b / 0) calc(50% - var(--snap-run) + 22%)
-      ),
-      linear-gradient(
-        var(--snap-along),
-        rgb(from var(--snap-color) r g b / 0) calc(50% + var(--snap-run) - 22%),
-        rgb(from var(--snap-color) r g b / 0.3) calc(50% + var(--snap-run) - 5%),
-        rgb(from var(--snap-color) r g b / 0.45) calc(50% + var(--snap-run)),
-        rgb(from var(--snap-color) r g b / 0) calc(50% + var(--snap-run) + 2%)
-      );
-    mask: linear-gradient(var(--snap-to), #000, #0000);
-  }
-  @media (prefers-reduced-motion: reduce) {
-    &::before {
-      display: none;
-    }
-    &::after {
-      animation: none;
-    }
+    left: var(--room-left, 0);
+    top: var(--room-top, 0);
+    right: var(--room-right, 0);
+    bottom: var(--room-bottom, 0);
   }
 }
 /* An element turned to a straight angle (`EditableFrame`): a thin line pulses out of its whole
@@ -1170,7 +1108,6 @@
     --z-popover: 50;
     --z-popover-anchor: 51;
     --z-toast: 55;
-    --z-stage: 60;
     --z-presentation: 70;
   }
 
@@ -1233,6 +1170,16 @@
 :root[data-transition='workspace-view']::view-transition-new(root) {
   animation-name: view-fade-in;
 }
+/* The page stays clickable while any view transition runs: the pictures let the pointer through
+   to what isn't moving; a click on a moving thing lands on the root and ends it (viewSwitch.ts). */
+::view-transition {
+  pointer-events: none;
+}
+/* Cloud, into a folder (lib/fly.ts): the files that peeked out of it slide to their places. */
+::view-transition-group(.cloud-fly) {
+  animation-duration: 420ms;
+  animation-timing-function: var(--ease-emphasized);
+}
 /* The header (logo, switcher, avatar) stays as it is (it is WorkspaceLayout's): taken out of the
    crossfade too, so the fade doesn't run over it. */
 :root[data-transition='workspace-view'] [data-app-header] {
@@ -1246,18 +1193,187 @@
 ::view-transition-old(app-header) {
   display: none;
 }
+/* Cloud's side bar likewise (CloudLayout's, it stays): through every switch – an area's tabs,
+   into a folder – it does not fade with the page, which made it flicker. Named only while a
+   switch runs: a named element is a backdrop root, so the menus in it (Neu) could blur nothing
+   behind them. */
+:root:active-view-transition [data-cloud-sidebar] {
+  view-transition-name: cloud-sidebar;
+}
+::view-transition-group(cloud-sidebar),
+::view-transition-old(cloud-sidebar),
+::view-transition-new(cloud-sidebar) {
+  animation: none;
+}
+::view-transition-old(cloud-sidebar) {
+  display: none;
+}
+/* `.view-title`: the mailboxes' names (MailboxTabs) – one name each by its place, the same morph. */
 ::view-transition-group(workspace-view-reviews),
-::view-transition-group(workspace-view-material) {
+::view-transition-group(workspace-view-material),
+::view-transition-group(workspace-view-agents),
+::view-transition-group(workspace-view-todos),
+::view-transition-group(.view-title) {
   animation-duration: 420ms;
   animation-timing-function: var(--ease-emphasized);
 }
 ::view-transition-old(workspace-view-reviews),
 ::view-transition-new(workspace-view-reviews),
 ::view-transition-old(workspace-view-material),
-::view-transition-new(workspace-view-material) {
+::view-transition-new(workspace-view-material),
+::view-transition-old(workspace-view-agents),
+::view-transition-new(workspace-view-agents),
+::view-transition-old(workspace-view-todos),
+::view-transition-new(workspace-view-todos),
+::view-transition-old(.view-title),
+::view-transition-new(.view-title) {
   height: 100%;
   animation-duration: 420ms;
   animation-timing-function: var(--ease-emphasized);
+}
+/* Switching mailbox: the folder group (MailFolderPicker) is its own piece instead of fading with
+   the page – the same buttons stand still, where the other mailbox has other folders the group
+   morphs to its new width and its segments crossfade (as Präsentationen ⇄ Bibliothek). Named
+   only while a switch runs: a named element is a backdrop root, its glass would blur nothing. */
+:root[data-transition='workspace-view'] [data-mail-folders] {
+  view-transition-name: mail-folders;
+}
+::view-transition-group(mail-folders),
+::view-transition-old(mail-folders),
+::view-transition-new(mail-folders) {
+  animation-duration: 420ms;
+  animation-timing-function: var(--ease-emphasized);
+}
+/* At their own size, from the left: the segments crossfade in place instead of stretching. */
+::view-transition-old(mail-folders),
+::view-transition-new(mail-folders) {
+  width: auto;
+  height: 100%;
+}
+/* Switching mailbox (MailboxTabs): the list turns over like a split-flap departure board – row
+   by row from the top, the old mailbox's row folds forward and away, the new one's falls into its
+   place. Paired by place (the n-th row with the n-th), only the first 12 – what is in sight
+   (MailboxTabs scrolls the list to its top first); the rest crossfades with the page. Only these
+   switches name the rows: nothing flips on loading, new mail, scrolling or another folder. */
+:root[data-transition='workspace-view'] [data-mail-list] > li:nth-child(-n + 12) {
+  view-transition-class: mail-flap;
+}
+:root[data-transition='workspace-view'] [data-mail-list] > li:nth-child(1) {
+  view-transition-name: mail-row-1;
+}
+:root[data-transition='workspace-view'] [data-mail-list] > li:nth-child(2) {
+  view-transition-name: mail-row-2;
+}
+:root[data-transition='workspace-view'] [data-mail-list] > li:nth-child(3) {
+  view-transition-name: mail-row-3;
+}
+:root[data-transition='workspace-view'] [data-mail-list] > li:nth-child(4) {
+  view-transition-name: mail-row-4;
+}
+:root[data-transition='workspace-view'] [data-mail-list] > li:nth-child(5) {
+  view-transition-name: mail-row-5;
+}
+:root[data-transition='workspace-view'] [data-mail-list] > li:nth-child(6) {
+  view-transition-name: mail-row-6;
+}
+:root[data-transition='workspace-view'] [data-mail-list] > li:nth-child(7) {
+  view-transition-name: mail-row-7;
+}
+:root[data-transition='workspace-view'] [data-mail-list] > li:nth-child(8) {
+  view-transition-name: mail-row-8;
+}
+:root[data-transition='workspace-view'] [data-mail-list] > li:nth-child(9) {
+  view-transition-name: mail-row-9;
+}
+:root[data-transition='workspace-view'] [data-mail-list] > li:nth-child(10) {
+  view-transition-name: mail-row-10;
+}
+:root[data-transition='workspace-view'] [data-mail-list] > li:nth-child(11) {
+  view-transition-name: mail-row-11;
+}
+:root[data-transition='workspace-view'] [data-mail-list] > li:nth-child(12) {
+  view-transition-name: mail-row-12;
+}
+/* Each row a beat after the one above it: its place, inherited by its two pictures. */
+::view-transition-group(mail-row-2) {
+  --flap: 1;
+}
+::view-transition-group(mail-row-3) {
+  --flap: 2;
+}
+::view-transition-group(mail-row-4) {
+  --flap: 3;
+}
+::view-transition-group(mail-row-5) {
+  --flap: 4;
+}
+::view-transition-group(mail-row-6) {
+  --flap: 5;
+}
+::view-transition-group(mail-row-7) {
+  --flap: 6;
+}
+::view-transition-group(mail-row-8) {
+  --flap: 7;
+}
+::view-transition-group(mail-row-9) {
+  --flap: 8;
+}
+::view-transition-group(mail-row-10) {
+  --flap: 9;
+}
+::view-transition-group(mail-row-11) {
+  --flap: 10;
+}
+::view-transition-group(mail-row-12) {
+  --flap: 11;
+}
+::view-transition-group(.mail-flap) {
+  animation-duration: 320ms;
+  animation-timing-function: var(--ease-emphasized);
+}
+/* At their own size, from the left: a row beside an open mail is narrower than the list alone –
+   the switch closes the mail –, stretched to the other's width it looked skewed. */
+::view-transition-old(.mail-flap),
+::view-transition-new(.mail-flap) {
+  width: auto;
+  height: 100%;
+}
+/* The open mail beside the list: the switch closes it – it goes at once, instead of fading with
+   the page under the rows flipping over it (it flickered). */
+:root[data-transition='workspace-view'] [data-mail-pane] {
+  view-transition-name: mail-pane;
+}
+::view-transition-group(mail-pane) {
+  animation: none;
+}
+::view-transition-old(mail-pane) {
+  animation: view-fade-out 90ms var(--ease-symmetric) both;
+}
+/* 150 ms down to edge-on, then 170 ms in – 24 ms apart: twelve rows in under 600 ms. */
+::view-transition-old(.mail-flap) {
+  animation: mail-flap-away 150ms cubic-bezier(0.5, 0, 0.9, 0.5) calc(var(--flap, 0) * 24ms) both;
+}
+::view-transition-new(.mail-flap) {
+  animation: mail-flap-land 170ms var(--ease-settle) calc(150ms + var(--flap, 0) * 24ms) both;
+}
+@keyframes mail-flap-away {
+  from {
+    transform: perspective(700px) rotateX(0deg);
+  }
+  to {
+    transform: perspective(700px) rotateX(-90deg);
+    opacity: 0.6;
+  }
+}
+@keyframes mail-flap-land {
+  from {
+    transform: perspective(700px) rotateX(90deg);
+    opacity: 0.6;
+  }
+  to {
+    transform: perspective(700px) rotateX(0deg);
+  }
 }
 /* The views' toolbar (ViewToolbar) stays too: each pill keeps its place and morphs to the other
    view's width, only what is in it crossfades. The pictures aren't stretched (full height, own
@@ -1286,6 +1402,11 @@
   border-radius: var(--radius-panel);
   animation-duration: 420ms;
   animation-timing-function: var(--ease-emphasized);
+  /* The browser copies a pill's backdrop-filter (`glass-control`) onto its group, and the group
+     stays at full blur for the whole switch while only its picture fades. Where the other view
+     has no toolbar (Cloud's „Zuletzt“) that blurred the page beneath it – „Was soll erledigt
+     werden?“ lay blurred for ~0.6 s from „Bibliothek“, and the other way round its first frame. */
+  backdrop-filter: none;
 }
 ::view-transition-group(view-part-search) {
   border-radius: var(--radius-control);
@@ -1325,6 +1446,11 @@
   ::view-transition-new(*) {
     animation-duration: 0.01ms;
   }
+  /* No flip: the new mailbox's rows at once. */
+  ::view-transition-old(.mail-flap),
+  ::view-transition-new(.mail-flap) {
+    animation: none;
+  }
 }
 /* A line drawn in (`draw-in`, comment connectors). */
 @keyframes comments-draw {
@@ -1339,10 +1465,10 @@
 /* ── Logo animations (clicking the logo while already home) ───────────────────
    `Logo` gets `data-logo-anim` with one of these at random. The root always animates for the
    whole run – a no-op `logo-hold` unless the variant moves the root itself – so its
-   `animationend` marks the end. Parts: icon (the svg), back/front (its two slides with their
-   lines, the back one top left), bubble (the comment box over them), text (one inline-block per
-   letter, `--i` = its position, 0–5 whatever the word's length – see `Logo`). Where the slides
-   move on their own, the bubble pops once on its pointed corner, as if it had just been said. */
+   `animationend` marks the end. Parts: icon (the svg), back (the tripod, the screen with its
+   title and bars), front (the roll), bubble (the comment box over them), text (one
+   inline-block per letter, `--i` = its position, 0–5 whatever the word's length – see `Logo`).
+   Where screen and roll move on their own, the bubble pops once on its pointed corner, as if it had just been said. */
 [data-logo-anim] {
   animation: logo-hold var(--logo-anim-duration, 800ms) linear;
 }
@@ -2162,7 +2288,7 @@
   --color-surface-raised: #e2e2e5;
   --color-glass-panel: rgb(250 250 250 / 0.78);
   --color-glass-control: rgb(255 255 255 / 0.55);
-  --color-glass-elevated: rgb(255 255 255 / 0.92);
+  --color-glass-elevated: rgb(255 255 255 / 0.66);
 
   --color-surface-1: rgb(0 0 0 / 0.04);
   --color-surface-2: rgb(0 0 0 / 0.06);
@@ -2188,13 +2314,10 @@
   --color-primary: rgb(0 0 0 / 0.88);
   --color-primary-hover: #000000;
 
-  --color-logo-back: #f7cdc5;
-  --color-logo-front: #f1ac9e;
-  --color-logo-lines: #ffffff;
-  --color-logo-mono-back: #a3a3a3;
-  --color-logo-mono-front: #c7c7c7;
-  --color-logo-mono-lines: #262626;
-  --color-logo-mono-bubble: #1f1f1f;
+  --color-logo-legs: #f7cdc5;
+  --color-logo-roll: #e66950;
+  --color-logo-screen: #f1ac9e;
+  --color-logo-bars: #ed9281;
 
   /* Status colours a step darker, readable as text on light grounds. */
   --color-success: #1e9e55;
@@ -2206,6 +2329,7 @@
   --shadow-float: 0 8px 32px rgb(0 0 0 / 0.14);
   --shadow-mark: 0 2px 8px rgb(0 0 0 / 0.25);
   --shadow-lift: 0 4px 12px rgb(0 0 0 / 0.18);
+  --shadow-soft: 0 4px 16px rgb(0 0 0 / 0.09);
   --shadow-glow: 0 2px 12px rgb(0 0 0 / 0.12);
   --shadow-glow-hover: 0 4px 20px rgb(0 0 0 / 0.18);
   --shadow-card-glow:

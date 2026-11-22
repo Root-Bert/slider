@@ -1,6 +1,6 @@
-import type { MeResponse, UpdateMeInput } from '@slider/shared';
+import type { CallVoices, MeResponse, UpdateMeInput } from '@slider/shared';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { api, pageIsFor } from '../api-client';
+import { api, apiFile, pageIsFor } from '../api-client';
 import { queryKeys } from './keys';
 
 export const useMe = () =>
@@ -30,3 +30,30 @@ export function useUpdateMe() {
     },
   });
 }
+
+const CALL_VOICE = ['call-voice'] as const;
+
+/**
+ * The voice agents speak with where the viewer calls them or brings them into a call, and the
+ * voices to pick from (asked of a workspace's live key).
+ */
+export const useCallVoice = () =>
+  useQuery({
+    queryKey: CALL_VOICE,
+    queryFn: () => api.get<CallVoices>('/me/call-voice'),
+    staleTime: 5 * 60_000,
+    retry: false,
+  });
+
+/** Picks the viewer's voice (`null`: the automatic one). */
+export function usePickCallVoice() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (voice: string | null) => api.put<CallVoices>('/me/call-voice', { voice }),
+    onSuccess: (voices) => queryClient.setQueryData(CALL_VOICE, voices),
+  });
+}
+
+/** A voice reading a sentence, as WAV – to hear it before picking it. */
+export const callVoiceSample = (voice: string) =>
+  apiFile(`/me/call-voice/${encodeURIComponent(voice)}/sample`, 'stimme.wav');

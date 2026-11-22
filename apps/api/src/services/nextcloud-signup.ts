@@ -22,6 +22,11 @@ import { sendMail } from './data-requests';
  * stranger's address into their own Nextcloud, and the stranger – trusting a mail from Slider –
  * would create an account that the other one's Nextcloud signs into. And it works once: as soon
  * as the identity exists, the link is spent.
+ *
+ * An identity that signs into an account already gets the same link when it comes from a browser
+ * the account never signed in on through a Nextcloud (`routes/auth`, `NEXTCLOUD_KNOWN_COOKIE`):
+ * mailed to the account's address, it confirms that browser – a grant link someone forwarded from
+ * their own window signs them into nothing.
  */
 
 /** How long the confirmation link works. */
@@ -42,6 +47,8 @@ interface Payload {
   b: string;
   /** Expiry, Unix seconds. */
   e: number;
+  /** Set: the identity signs into an account already – this confirms the browser, not the address. */
+  k?: 1;
 }
 
 const signingKey = (secret: string) =>
@@ -61,7 +68,13 @@ const sameValue = (a: string, b: string) => {
 
 export function nextcloudSignupToken(
   secret: string,
-  signup: { identity: IdentityInput; returnTo: string; browser: string; expiresAt: Date },
+  signup: {
+    identity: IdentityInput;
+    returnTo: string;
+    browser: string;
+    expiresAt: Date;
+    known?: boolean;
+  },
 ): string {
   const { identity } = signup;
   const payload: Payload = {
@@ -72,6 +85,7 @@ export function nextcloudSignupToken(
     r: signup.returnTo,
     b: browserHash(signup.browser),
     e: Math.floor(signup.expiresAt.getTime() / 1000),
+    ...(signup.known ? { k: 1 as const } : {}),
   };
   const body = Buffer.from(JSON.stringify(payload)).toString('base64url');
   return `${body}.${sign(secret, body)}`;
@@ -104,14 +118,15 @@ export async function resolveNextcloudSignup(
   if (payload.e * 1000 <= deps.clock.now().getTime() || !payload.a) throw invalid();
   if (!browser || typeof payload.b !== 'string' || !sameValue(browserHash(browser), payload.b)) {
     throw forbidden(
-      'Öffne den Link bitte im selben Browser, in dem du die Anmeldung mit deiner Nextcloud gestartet hast. Nur dort wird dein Konto erstellt.',
+      'Öffne den Link bitte im selben Browser, in dem du die Anmeldung mit deiner Nextcloud gestartet hast. Nur dort gilt er.',
     );
   }
   const [used] = await deps.db
     .select({ userId: userIdentities.userId })
     .from(userIdentities)
     .where(and(eq(userIdentities.provider, 'nextcloud'), eq(userIdentities.subject, payload.s)));
-  if (used) {
+  if (payload.k === 1 ? !used : used) {
+    if (payload.k === 1) throw invalid();
     throw new ApiError(
       410,
       'link_expired',
@@ -134,16 +149,42 @@ export async function resolveNextcloudSignup(
 /** Mails the confirmation link; `false` when the mail could not be sent. */
 export async function sendNextcloudSignupMail(
   deps: AppDeps,
-  input: { identity: IdentityInput; returnTo: string; server: string; browser: string },
+  input: {
+    identity: IdentityInput;
+    returnTo: string;
+    server: string;
+    browser: string;
+    /** The account the identity signs into: the mail goes to its address and confirms the browser. */
+    account?: { email: string };
+  },
 ): Promise<boolean> {
-  const email = input.identity.email;
+  const { account } = input;
+  const email = account?.email ?? input.identity.email;
   if (!email) return false;
   const token = nextcloudSignupToken(deps.config.secret, {
-    identity: input.identity,
+    identity: { ...input.identity, email: input.identity.email ?? email },
     returnTo: input.returnTo,
     browser: input.browser,
     expiresAt: new Date(deps.clock.now().getTime() + NEXTCLOUD_SIGNUP_TTL_MS),
+    known: Boolean(account),
   });
+  const url = new URL(`/konto-bestaetigen/${token}`, deps.config.webOrigin).toString();
+  if (account) {
+    return sendMail(
+      deps,
+      inviteMail({
+        to: email,
+        subject: 'Deine Anmeldung bei Slider bestätigen',
+        heading: 'Anmeldung bestätigen',
+        intro: `Jemand meldet sich mit deiner Nextcloud (${new URL(input.server).host}) in einem Browser bei Slider an, in dem du dich so noch nie angemeldet hast. Warst du das, bestätige es hier.`,
+        button: 'Anmeldung bestätigen',
+        url,
+        outro:
+          'Öffne den Link im selben Browser, in dem du die Anmeldung gestartet hast. Er gilt eine Stunde. Du warst das nicht? Dann ignoriere diese Mail, ohne den Link meldet sich niemand an.',
+        legalLinks: true,
+      }),
+    );
+  }
   return sendMail(
     deps,
     inviteMail({
@@ -152,7 +193,7 @@ export async function sendNextcloudSignupMail(
       heading: 'Konto erstellen',
       intro: `Du hast dich mit deiner Nextcloud (${new URL(input.server).host}) bei Slider angemeldet. Bestätige noch, dass diese Adresse dir gehört, dann ist dein Konto da.`,
       button: 'Adresse bestätigen',
-      url: new URL(`/konto-bestaetigen/${token}`, deps.config.webOrigin).toString(),
+      url,
       outro:
         'Öffne den Link im selben Browser, in dem du die Anmeldung gestartet hast. Er gilt eine Stunde. Du warst das nicht? Dann ignoriere diese Mail. Ohne den Link entsteht kein Konto.',
       // The address came from a Nextcloud, not from the person in front of Slider.

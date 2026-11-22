@@ -34,7 +34,10 @@ export function UsageOverview({
   details,
   userId,
   onNotify,
+  scope = 'all',
 }: {
+  /** `slider`: only what Slider takes – its presentations and their storage. */
+  scope?: 'all' | 'slider';
   workspace: Pick<Workspace, 'id' | 'role'>;
   details: WorkspaceUsageDetails;
   userId: string;
@@ -42,6 +45,7 @@ export function UsageOverview({
 }) {
   const { usage, billing } = details;
   const selfHosted = !billing.enabled && unlimitedUsage(usage);
+  if (scope === 'slider') return <SliderUsage details={details} />;
   return (
     <>
       <UsageWarnings details={details} isAdmin={workspace.role === 'admin'} />
@@ -73,6 +77,40 @@ export function UsageOverview({
         />
       )}
     </>
+  );
+}
+
+/** Slider's part: its presentations against the plan, and what they take – Cloud's files left out. */
+function SliderUsage({ details }: { details: WorkspaceUsageDetails }) {
+  const { usage, storage } = details;
+  const parts = storageParts(storage).filter((part) => part.key !== 'files' && part.amount > 0);
+  const bytes = parts.reduce((sum, part) => sum + part.amount, 0);
+  return (
+    <Section title="Präsentationen" description="Was Slider von diesem Workspace braucht.">
+      <div className="flex flex-col gap-3 sm:flex-row">
+        <UsageMeter
+          label="Präsentationen"
+          state={deckState(usage)}
+          hint={usage.maxDecks !== null ? 'Archivierte zählen mit.' : undefined}
+        />
+      </div>
+      <div className="flex flex-col gap-3 rounded-panel bg-surface-1 p-4">
+        <div className="flex flex-wrap items-baseline justify-between gap-2">
+          <span className="text-body text-fg-muted">Speicher</span>
+          <span className="text-sm text-fg tabular-nums">{formatFileSize(bytes)}</span>
+        </div>
+        <div className="flex h-2 overflow-hidden rounded-full bg-hover">
+          {parts.map((part) => (
+            <div key={part.key} className={part.color} style={{ flexGrow: part.amount }} />
+          ))}
+        </div>
+        {parts.length === 0 ? (
+          <p className="text-xs text-fg-subtle">Noch nichts gespeichert.</p>
+        ) : (
+          <Legend label="Speicher nach Art" size="sm" items={parts} />
+        )}
+      </div>
+    </Section>
   );
 }
 

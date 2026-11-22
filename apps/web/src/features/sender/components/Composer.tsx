@@ -1,0 +1,387 @@
+import { useEffect, useId, useLayoutEffect, useRef, useState } from 'react';
+import { MAX_SENDER_MESSAGE, searchFold, type AccountAuthor } from '@slider/shared';
+import { AgentAvatar } from '@/features/cloud';
+import { isModEnter, isModKey } from '@/lib/keyboard';
+import { useTallField } from '@/lib/useTallField';
+import { useTypeInto } from '@/lib/useTypeInto';
+import { isApplePlatform } from '@/lib/platform';
+import { AutosizeTextarea, Avatar, cn, Icon, IconButton, Spinner } from '@/ui';
+import { draftOf, setDraft, useDrafts, type DraftTarget } from '@/lib/drafts';
+const SUGGESTIONS = 6;
+
+/** The `@…` being typed just before the caret, if any. */
+function mentionAt(text: string, caret: number): { start: number; query: string } | null {
+  const match = /(^|\s)@([\p{L}\p{N}.-]*)$/u.exec(text.slice(0, caret));
+  if (!match) return null;
+  return { start: caret - match[2]!.length - 1, query: match[2]! };
+}
+
+/** One to name with @: a person, or the conversation's agent (`id` null: made when tagged). */
+type Named =
+  { kind: 'person'; person: AccountAuthor } | { kind: 'agent'; id: string | null; name: string };
+
+/**
+ * The field a conversation is written in: Enter sends, Shift+Enter breaks the line (a mail's
+ * reply: ⌘↵ sends, Enter breaks the line, as a new mail's), @ offers the people to name – and the agent to call, first – ↑ in an empty field changes one's last message.
+ */
+export function Composer({
+  conversationId,
+  target,
+  placeholder,
+  people,
+  agent,
+  onSend,
+  onTyping,
+  onEditLast,
+  focusOnOpen = true,
+  maxHeight = 240,
+  sendKey = 'enter',
+  assist,
+  onFiles,
+  flat = false,
+  typeInto = true,
+}: {
+  /** Drafts are kept per conversation. */
+  conversationId: string;
+  /** Where the draft goes (a conversation, a mail's answer) – kept for the account with it. */
+  target?: DraftTarget;
+  placeholder: string;
+  /** Who can be named with @. */
+  people: readonly AccountAuthor[];
+  /** The agent one calls here with @ (`id` null: an area's, not made yet). */
+  agent?: { id: string | null; name: string } | null;
+  onSend: (text: string) => void;
+  onTyping?: () => void;
+  onEditLast?: () => void;
+  /** The caret in the field when the conversation opens (not beside a list stepped with ↑/↓). */
+  focusOnOpen?: boolean;
+  /** How tall the field grows before it scrolls; a mail's reply grows with its words (`Infinity`). */
+  maxHeight?: number;
+  /** `mod-enter`: ⌘↵ sends, Enter breaks the line – a mail's reply, as a new mail. */
+  sendKey?: 'enter' | 'mod-enter';
+  /**
+   * The AI writes it (a mail's reply): from the words in the field – a few notes – or from
+   * nothing; `put` types it into the field (⌘Z gives the notes back).
+   */
+  assist?: (notes: string, put: (text: string) => void) => Promise<void>;
+  /** Files put on it (a mail's reply): the clip picks them, pasted ones come too. */
+  onFiles?: (files: File[]) => void;
+  /** In the page's flow (a mail's reply under it), not floating over it: its edge, no shadow. */
+  flat?: boolean;
+  /**
+   * Typing with the focus outside a field (a chat just picked in the side bar) writes here – off
+   * where letters are the page's keys (a mail's R, A, F, j/k).
+   */
+  typeInto?: boolean;
+}) {
+  const fieldRef = useRef<HTMLTextAreaElement>(null);
+  const pickerRef = useRef<HTMLInputElement>(null);
+  const listId = useId();
+  // What was written and not sent – back when one returns to the conversation (`Entwürfe`).
+  const [body, setBody] = useState(() => draftOf(conversationId));
+  const [mention, setMention] = useState<{ start: number; query: string } | null>(null);
+  const [picked, setPicked] = useState(0);
+  // Another conversation: its draft, and the caret in the field.
+  const [shown, setShown] = useState(conversationId);
+  // What the field shows that is kept: taken in, or taken by the server – typed on since, not yet.
+  const [saved, setSaved] = useState(body);
+  if (shown !== conversationId) {
+    setShown(conversationId);
+    setBody(draftOf(conversationId));
+    setSaved(draftOf(conversationId));
+    setMention(null);
+  }
+  // Written on another device or tab, or by an agent (the list came down): in the field – unless
+  // one typed on and that is not on the server yet (it would be gone).
+  const kept = useDrafts()[conversationId];
+  const stored = kept?.text ?? '';
+  if (kept?.synced && kept.text === body && saved !== body) setSaved(body);
+  const [seen, setSeen] = useState(stored);
+  if (stored !== seen) {
+    setSeen(stored);
+    if (body === saved || !body.trim()) {
+      setBody(stored);
+      setSaved(stored);
+    }
+  }
+  useEffect(() => {
+    if (focusOnOpen) fieldRef.current?.focus({ preventScroll: true });
+  }, [conversationId, focusOnOpen]);
+  useTypeInto(fieldRef, typeInto);
+  // Written past one line: the buttons go below the words.
+  const tall = useTallField(fieldRef, body);
+  // Where the caret goes once a change of the text is on screen – before the next key.
+  const caretAfter = useRef<number | null>(null);
+  useLayoutEffect(() => {
+    const field = fieldRef.current;
+    const at = caretAfter.current;
+    if (!field || at === null) return;
+    caretAfter.current = null;
+    field.focus();
+    field.setSelectionRange(at, at);
+  }, [body]);
+
+  const fold = searchFold(mention?.query ?? '');
+  const fits = (name: string) =>
+    searchFold(name)
+      .split(/\s+/)
+      .some((part) => part.startsWith(fold)) || searchFold(name).startsWith(fold);
+  const suggestions: Named[] = mention
+    ? [
+        ...(agent && (fits(agent.name) || fits('Agent'))
+          ? [{ kind: 'agent' as const, ...agent }]
+          : []),
+        ...people
+          .filter((person) => fits(person.name))
+          .map((person) => ({ kind: 'person' as const, person })),
+      ].slice(0, SUGGESTIONS)
+    : [];
+  const nameOf = (named: Named) => (named.kind === 'person' ? named.person.name : named.name);
+
+  const change = (text: string) => {
+    setBody(text);
+    setDraft(conversationId, text, target);
+  };
+  const look = () => {
+    const field = fieldRef.current;
+    if (!field) return;
+    setMention(mentionAt(field.value, field.selectionStart));
+    setPicked(0);
+  };
+  const pick = (named: Named) => {
+    const field = fieldRef.current;
+    if (!field || !mention) return;
+    const caret = field.selectionStart;
+    const name = nameOf(named);
+    const text = `${body.slice(0, mention.start)}@${name} ${body.slice(caret)}`;
+    change(text);
+    setMention(null);
+    caretAfter.current = mention.start + name.length + 2;
+  };
+  const send = () => {
+    const text = body.trim();
+    if (!text) return;
+    change('');
+    setMention(null);
+    onSend(text);
+  };
+  const atSign = () => {
+    const field = fieldRef.current;
+    if (!field) return;
+    const caret = field.selectionStart;
+    const before = body.slice(0, caret);
+    const insert = before && !/\s$/.test(before) ? ' @' : '@';
+    const text = before + insert + body.slice(field.selectionEnd);
+    change(text);
+    const at = caret + insert.length;
+    caretAfter.current = at;
+    setMention({ start: at - 1, query: '' });
+    setPicked(0);
+  };
+
+  // The AI writing: the field waits (what it writes takes its place), the spark turns.
+  const [assisting, setAssisting] = useState(false);
+  const write = async () => {
+    if (!assist || assisting) return;
+    setAssisting(true);
+    try {
+      await assist(body, (text) => {
+        // Typed in as if by hand, so ⌘Z gives the notes back (no toast for it).
+        const field = fieldRef.current;
+        if (field && typeof document.execCommand === 'function') {
+          field.readOnly = false;
+          field.focus();
+          field.select();
+          if (document.execCommand('insertText', false, text)) return;
+        }
+        change(text);
+        caretAfter.current = text.length;
+      });
+    } finally {
+      setAssisting(false);
+    }
+  };
+
+  const open = suggestions.length > 0;
+  return (
+    <form
+      aria-label="Nachricht schreiben"
+      onSubmit={(event) => {
+        event.preventDefault();
+        send();
+      }}
+      className={cn(
+        'glass-elevated relative flex shrink-0 items-end gap-0.5 rounded-control py-1 pr-1 pl-3',
+        // More than a line: the words take the whole width, the buttons a row of their own below.
+        tall && 'flex-wrap justify-end',
+        flat && 'shadow-[inset_0_0_0_1px_var(--color-hairline-strong)]!',
+      )}
+    >
+      {open && (
+        <ul
+          id={listId}
+          role="listbox"
+          aria-label="Personen und Agent"
+          data-popover-panel=""
+          className="glass-elevated absolute right-0 bottom-full left-0 mb-2 flex max-w-80 flex-col gap-0.5 rounded-control p-1.5"
+        >
+          {suggestions.map((named, index) => (
+            <li
+              key={named.kind === 'person' ? named.person.id : 'agent'}
+              id={`${listId}-${index}`}
+              role="option"
+              aria-selected={index === picked}
+              onPointerDown={(event) => {
+                event.preventDefault();
+                pick(named);
+              }}
+              onPointerEnter={() => setPicked(index)}
+              className={cn(
+                'flex h-8 cursor-pointer items-center gap-2.5 rounded-chip px-2 text-sm',
+                index === picked ? 'bg-selected text-fg' : 'text-fg-muted',
+              )}
+            >
+              {named.kind === 'person' ? (
+                <Avatar author={named.person} size={20} nativeTitle={false} />
+              ) : named.id ? (
+                <AgentAvatar id={named.id} size={20} className="rounded-mark" />
+              ) : (
+                <span className="flex size-5 shrink-0 items-center justify-center rounded-mark bg-selected">
+                  <Icon name="autoAwesome" size={14} />
+                </span>
+              )}
+              <span className="truncate">{nameOf(named)}</span>
+              {named.kind === 'agent' && named.name !== 'Agent' && (
+                <span className="ml-auto shrink-0 text-xs text-fg-subtle">Agent</span>
+              )}
+            </li>
+          ))}
+        </ul>
+      )}
+      <div className={cn('flex min-w-0 flex-1 flex-col py-[5px]', tall && 'basis-full pr-2')}>
+        <AutosizeTextarea
+          ref={fieldRef}
+          aria-label="Nachricht"
+          role="combobox"
+          aria-expanded={open}
+          aria-controls={open ? listId : undefined}
+          aria-activedescendant={open ? `${listId}-${picked}` : undefined}
+          aria-autocomplete="list"
+          placeholder={placeholder}
+          maxLength={MAX_SENDER_MESSAGE}
+          maxHeight={maxHeight}
+          readOnly={assisting}
+          aria-busy={assisting || undefined}
+          value={body}
+          onChange={(event) => {
+            change(event.target.value);
+            if (event.target.value.trim()) onTyping?.();
+            look();
+          }}
+          onSelect={look}
+          onBlur={() => setMention(null)}
+          onPaste={(event) => {
+            const files = [...event.clipboardData.files];
+            if (!onFiles || files.length === 0) return;
+            event.preventDefault();
+            onFiles(files);
+          }}
+          onKeyDown={(event) => {
+            // The page's keys are not meant while one writes – ⌘F (search) is.
+            if (!(isModKey(event) && event.key.toLowerCase() === 'f')) event.stopPropagation();
+            if (event.nativeEvent.isComposing) return;
+            if (open) {
+              if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
+                event.preventDefault();
+                const step = event.key === 'ArrowDown' ? 1 : -1;
+                setPicked((now) => (now + step + suggestions.length) % suggestions.length);
+                return;
+              }
+              if (event.key === 'Enter' || event.key === 'Tab') {
+                event.preventDefault();
+                const named = suggestions[picked];
+                if (named) pick(named);
+                return;
+              }
+              if (event.key === 'Escape') {
+                event.preventDefault();
+                setMention(null);
+                return;
+              }
+            }
+            if (event.key === 'ArrowUp' && !body && onEditLast) {
+              event.preventDefault();
+              onEditLast();
+              return;
+            }
+            if (event.key !== 'Enter' || event.shiftKey) return;
+            if (sendKey === 'mod-enter' && !isModEnter(event)) return;
+            event.preventDefault();
+            send();
+          }}
+          className="text-body leading-4.5 text-fg placeholder:text-fg-subtle"
+        />
+      </div>
+      {onFiles && (
+        <>
+          <input
+            ref={pickerRef}
+            type="file"
+            multiple
+            hidden
+            tabIndex={-1}
+            onChange={(event) => {
+              const files = [...(event.target.files ?? [])];
+              event.target.value = '';
+              if (files.length > 0) onFiles(files);
+            }}
+          />
+          <IconButton
+            icon="attachFile"
+            label="Datei anhängen"
+            size="compact"
+            onPointerDown={(event) => event.preventDefault()}
+            onClick={() => pickerRef.current?.click()}
+          />
+        </>
+      )}
+      {assist &&
+        (assisting ? (
+          <span className="flex size-7 shrink-0 items-center justify-center">
+            <Spinner size={16} label="Die KI schreibt" />
+          </span>
+        ) : (
+          <IconButton
+            icon="autoAwesome"
+            label={body.trim() ? 'Aus den Stichworten schreiben' : 'Von der KI schreiben lassen'}
+            size="compact"
+            onPointerDown={(event) => event.preventDefault()}
+            onClick={() => void write()}
+          />
+        ))}
+      {/* Only where someone can be named (a mail's reply has no one). */}
+      {(agent || people.length > 0) && (
+        <IconButton
+          icon="at"
+          label="Jemanden erwähnen"
+          size="compact"
+          onPointerDown={(event) => event.preventDefault()}
+          onClick={atSign}
+        />
+      )}
+      <IconButton
+        type="submit"
+        icon="arrowUpward"
+        label="Senden"
+        title={
+          sendKey === 'mod-enter'
+            ? `Senden (${isApplePlatform() ? '⌘↵' : 'Strg+Enter'})`
+            : 'Senden (Enter)'
+        }
+        size="compact"
+        iconTone={body.trim() ? 'success' : undefined}
+        disabled={!body.trim()}
+      />
+    </form>
+  );
+}

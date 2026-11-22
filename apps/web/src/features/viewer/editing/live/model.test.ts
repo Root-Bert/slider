@@ -15,6 +15,7 @@ import {
   addedTurned,
   applyToElement,
   commonList,
+  commonSign,
   copiedElement,
   commonValue,
   formatRange,
@@ -133,6 +134,32 @@ describe('formatting a stretch of text', () => {
       null,
       null,
       null,
+    ]);
+    // Made up here, the bullet is not asked for; one picked is – as the file draws it, a shape
+    // in Inter – and stays at its level only: a level deeper takes that level's.
+    expect(richFromLive(bullets).map((p) => p.list)).toEqual([
+      { kind: 'bullet', level: 1 },
+      { kind: 'bullet', level: 1 },
+      { kind: 'bullet', level: 2 },
+      { kind: 'bullet', level: 1 },
+    ]);
+    const first = { start: { paragraph: 0, offset: 0 }, end: { paragraph: 0, offset: 0 } };
+    const ticked = paragraphRange(bullets, first, { list: 'bullet', char: '✓' });
+    expect(listLabels(ticked)).toEqual(['✓', '•', '–', '•']);
+    expect(ticked[0]?.bullet).toMatchObject({ font: 'Inter', at: 0, width: 27 });
+    expect(commonSign(ticked)).toBeNull();
+    expect(commonSign(ticked.slice(0, 1))).toBe('✓');
+    expect(richFromLive(ticked)[0]?.list).toEqual({ kind: 'bullet', level: 1, char: '✓' });
+    expect(listLabels(paragraphRange(ticked, first, { levelBy: 1 }))).toEqual(['–', '•', '–', '•']);
+    const lettered = paragraphRange(numbered, null, { list: 'number', number: 'a' });
+    expect(listLabels(lettered)).toEqual(['a.', 'b.', 'c.', 'd.']);
+    expect(richFromLive(lettered)[0]?.list).toEqual({ kind: 'number', level: 1, number: 'a' });
+    // Written back as it was (⌘Z): the bullet it had.
+    expect(listLabels(liveFromRich(ticked, richFromLive(lettered)))).toEqual([
+      'a.',
+      'b.',
+      'c.',
+      'd.',
     ]);
     expect(listNumber(28, 'a')).toBe('ab');
     expect(listNumber(14, 'I')).toBe('XIV');

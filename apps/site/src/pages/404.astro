@@ -3,12 +3,12 @@ import Button from '~/components/Button.astro';
 import Highlight from '~/components/Highlight.astro';
 import SectionMark from '~/components/SectionMark.astro';
 import Base from '~/layouts/Base.astro';
-import { page } from '~/lib/links';
+import { appPage } from '~/i18n';
 
 /** Not found: the slide someone was looking for is not in the deck. Served by Caddy for any unknown path. */
 ---
 
-<Base title="Page not found" description="This page does not exist (anymore).">
+<Base app="office" title="Page not found" description="This page does not exist (anymore).">
   <section class="relative isolate flex min-h-[70vh] flex-col justify-center gap-6 px-4 py-24 md:px-16" data-section>
     <SectionMark label="404" />
     <h1 class="text-[38px] leading-[1.08] font-bold tracking-[-0.03em] text-fg min-[380px]:text-[44px] md:text-[72px]">
@@ -19,8 +19,8 @@ import { page } from '~/lib/links';
       The page you were looking for does not exist, or it moved. Start over from the beginning.
     </p>
     <div class="flex flex-wrap gap-3" data-reveal style="--i: 3">
-      <Button href={page()}>Back to the start</Button>
-      <Button href={page('product')} variant="secondary">See the product</Button>
+      <Button href={appPage('office', 'en')}>Back to the start</Button>
+      <Button href={appPage('slider', 'en')} variant="secondary">See Slider</Button>
     </div>
   </section>
 </Base>

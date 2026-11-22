@@ -41,7 +41,12 @@ export function filesRoutes(deps: AppDeps) {
     if (deckId) {
       const viewer = await resolveViewer(c, deps);
       if (!viewer) throw unauthorized();
-      await deckAccess(deps, viewer, deckId, 'view');
+      await deckAccess(deps, viewer, deckId, 'view').catch((refused: unknown) =>
+        // In the trash: whoever may bring it back still sees its pictures there.
+        deckAccess(deps, viewer, deckId, 'own', 'trash').catch(() => {
+          throw refused;
+        }),
+      );
     }
     const memberOf = fontWorkspaceId ?? masterWorkspaceId;
     if (memberOf) {

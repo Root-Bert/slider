@@ -109,3 +109,22 @@ export function inflateEntry(
       .resume();
   });
 }
+
+/**
+ * Whether a zip lists at most `max` entries – counted in its bytes, before a zip library builds
+ * an object for each (a file of a few megabytes can list millions). Nothing the file says about
+ * where its directory lies or how long it is is trusted: every entry a reader builds starts
+ * with the same four bytes, wherever it finds them, so those are counted through the whole
+ * file. Bytes that are no zip pass: opening them fails by itself.
+ */
+export function zipEntriesAtMost(bytes: Uint8Array, max: number): boolean {
+  let count = 0;
+  for (let at = bytes.indexOf(0x50); at >= 0 && at + 4 <= bytes.length;) {
+    if (bytes[at + 1] === 0x4b && bytes[at + 2] === 0x01 && bytes[at + 3] === 0x02) {
+      count += 1;
+      if (count > max) return false;
+    }
+    at = bytes.indexOf(0x50, at + 1);
+  }
+  return true;
+}

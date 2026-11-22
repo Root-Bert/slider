@@ -1,26 +1,17 @@
 import type { Material, MaterialChatDto } from '@slider/shared';
 import { useQueryClient } from '@tanstack/react-query';
 import { useSyncExternalStore } from 'react';
-import { chatMaterial, getMaterialChat, queryKeys } from '@/lib/api';
+import { boardKeys, chatMaterial, getMaterialChat, type BoardRef } from '@/lib/api';
 import { ApiError } from '@/lib/api-client';
+import type { ChatEntry } from './ChatPanel';
 
 /*
  * The AI on the material page (✨, `MaterialChat`): one person's chats with the workspace's AI,
- * kept on the server per deck (`services/material-chat.ts`). The one open is held here per deck,
+ * kept on the server per deck or document (`services/material-chat.ts`). The one open is held here
+ * per owner,
  * so closing the panel keeps it; „Neuer Chat“ begins anew, an earlier one opens from the list.
  * Each message sends only itself – the server knows the chat so far; the answer streams in.
  */
-
-export interface ChatEntry {
-  id: string;
-  role: 'user' | 'assistant';
-  text: string;
-  /** The AI's: `answering` while it is written. */
-  state?: 'answering' | 'done' | 'failed' | 'stopped';
-  /** What it does right now („Sucht im Web …“). */
-  reading?: string | null;
-  error?: string | null;
-}
 
 interface OpenChat {
   /** `null`: a new chat, not sent yet. */
@@ -60,13 +51,14 @@ const entriesOf = (chat: MaterialChatDto): ChatEntry[] =>
     error: message.error,
   }));
 
-/** The deck's open chat, sending, stopping, beginning anew, opening a kept one; refusals go to `refused`. */
-export function useMaterialChat(deckId: string, refused: (message: string) => void) {
+/** The board's open chat (by its owner), sending, stopping, beginning anew, opening a kept one; refusals go to `refused`. */
+export function useMaterialChat(owner: BoardRef, refused: (message: string) => void) {
+  const deckId = owner.id;
   const queryClient = useQueryClient();
   const chat = useSyncExternalStore(subscribe, () => current(deckId));
   const busy = chat.entries.some((entry) => entry.state === 'answering');
   const listChanged = () =>
-    void queryClient.invalidateQueries({ queryKey: queryKeys.materialChats(deckId) });
+    void queryClient.invalidateQueries({ queryKey: boardKeys.chats(owner) });
 
   /** Sends `text`; `false` when it was refused at once (the text then stays in the field). */
   const send = async (text: string): Promise<boolean> => {
@@ -87,7 +79,7 @@ export function useMaterialChat(deckId: string, refused: (message: string) => vo
     let heard = false;
     try {
       await chatMaterial(
-        deckId,
+        owner,
         { chatId: before.chatId, text: message },
         (event) => {
           heard = true;
@@ -157,7 +149,7 @@ export function useMaterialChat(deckId: string, refused: (message: string) => vo
   const openChat = async (chatId: string) => {
     if (busy) return;
     try {
-      const kept = await getMaterialChat(deckId, chatId);
+      const kept = await getMaterialChat(owner, chatId);
       // Sent something meanwhile (or opened another): that one stays.
       if (current(deckId).entries.length === 0)
         set(deckId, { chatId: kept.id, entries: entriesOf(kept) });

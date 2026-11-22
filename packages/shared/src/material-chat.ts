@@ -55,12 +55,13 @@ export interface MaterialChatDto extends MaterialChatSummary {
 
 /**
  * What the answer's stream tells: `chat` – first, the chat it is in (a new one's id and title);
- * `text` – its next words; `reading` – what the AI does now („Sucht im Web …“); `error` – it
+ * `text` – its next words; `reading` – what the AI does now („Sucht im Web …“; `app`: it does
+ * it in Slider, shown with Slider's mark); `error` – it
  * failed (German); `done` – over, and kept.
  */
 export type MaterialChatEvent =
   | { type: 'chat'; id: string; title: string }
   | { type: 'text'; text: string }
-  | { type: 'reading'; label: string }
+  | { type: 'reading'; label: string; app?: 'slider' }
   | { type: 'error'; message: string }
   | { type: 'done'; state: MaterialChatAnswerState };

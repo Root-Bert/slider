@@ -53,6 +53,7 @@ import { ApiError, notFound } from '../http/errors';
 import { assertWithinLimit, clientAddress, fixedWindow } from '../http/rate-limit';
 import { readJson } from '../http/validate';
 import { hasLogin } from '../config';
+import { finishMailOAuth, isMailOAuthState } from '../services/mail-oauth';
 import {
   inviteTokenFromPath,
   linkIdentity,
@@ -102,6 +103,16 @@ export const NEXTCLOUD_FLOW_COOKIE = 'slider_nc_flow';
  */
 export const NEXTCLOUD_SIGNUP_COOKIE = 'slider_nc_signup';
 /**
+ * The accounts that signed in through any Nextcloud in this browser (signed, ids only). Login
+ * Flow v2 hands a grant to the browser that started the flow: someone could start one for a
+ * stranger's Nextcloud and talk them into granting it. A browser not listed here confirms by mail
+ * first – a mail to the account's address, its link bound to this browser.
+ */
+export const NEXTCLOUD_KNOWN_COOKIE = 'slider_nc_known';
+const NEXTCLOUD_KNOWN_MAX = 8;
+/** As long as a browser keeps a cookie (400 days). */
+const NEXTCLOUD_KNOWN_MAX_AGE_S = 400 * 24 * 60 * 60;
+/**
  * A sign-in is picked up for 5 minutes only (Nextcloud keeps its link open for 20): a grant link
  * someone was talked into confirming later signs nobody in.
  */
@@ -134,6 +145,11 @@ const EMAIL_LOGIN_MAILS_PER_CLIENT = 30;
  * them the open links of the browser trying are used up.
  */
 const EMAIL_LOGIN_CODES_PER_ADDRESS = 10;
+/**
+ * Login codes typed per address and day: a new link each hour gives ten tries more, and five
+ * links an hour would add up to thousands a month. Past them only the link in the mail signs in.
+ */
+const EMAIL_LOGIN_CODES_PER_ADDRESS_DAILY = 30;
 /** Login codes typed per client address and hour; a company behind one NAT signs in now and then. */
 const EMAIL_LOGIN_CODES_PER_CLIENT = 60;
 const COOKIE_MAX_AGE = 10 * 60;
@@ -176,6 +192,9 @@ export const safeReturnTo = (value: string | undefined, fallback = DEFAULT_RETUR
  * `email` claim or UPN; only the UPN is vouched for by the directory (its domain is verified).
  * In the personal-accounts tenant it is only the address the account was registered with: it
  * signs in, but its domain counts for no company workspace (`vouchesForDomain`).
+ * Microsoft's own word wins where the app registration asks for it (optional claim `xms_edov`,
+ * „email domain owner verified“): false makes the address unverified – a guest's or an
+ * unconfirmed one – true vouches for the `email` claim too.
  */
 function microsoftIdentity(
   claims: IdTokenClaims,
@@ -187,11 +206,18 @@ function microsoftIdentity(
       ? claims.preferred_username
       : null;
   const email = upn ?? (typeof claims.email === 'string' ? claims.email : null);
+  const edov = claims.xms_edov;
+  const ownerVerified =
+    edov === true || edov === 'true' || edov === '1' || edov === 1
+      ? true
+      : edov === false || edov === 'false' || edov === '0' || edov === 0
+        ? false
+        : null;
   return {
     provider: 'microsoft',
     subject: `${claims.tid}:${claims.oid}`,
     email,
-    emailVerified: upn !== null,
+    emailVerified: email !== null && (ownerVerified ?? upn !== null),
     name: typeof claims.name === 'string' ? claims.name : null,
     inviteToken,
   };
@@ -298,6 +324,8 @@ export function authRoutes(deps: AppDeps, gate: InstanceGate) {
   };
 
   const oidcCallback = (id: OidcProviderId) => async (c: Context<OptionalViewerEnv>) => {
+    // „Mit Google anmelden“ for a mailbox comes back through the login's redirect URI too.
+    if (id === 'google' && isMailOAuthState(c.req.query('state'))) return finishMailOAuth(deps, c);
     const provider = OIDC_PROVIDERS[id];
     const client = provider.client();
     const saved = await readState(c, provider.cookie);
@@ -367,23 +395,52 @@ export function authRoutes(deps: AppDeps, gate: InstanceGate) {
     identity: IdentityInput,
     returnTo: string,
     server: string,
+    /** An account the identity signs into already: its address confirms this browser instead. */
+    account?: { email: string },
   ): Promise<LoginError | null> => {
-    const blocked = await signUpBlocked(deps, identity);
-    if (blocked) return blocked;
+    if (!account) {
+      const blocked = await signUpBlocked(deps, identity);
+      if (blocked) return blocked;
+    }
     if (!deps.mailer.configured) return 'mail_unavailable';
     const browser = await readSignedCookie(c, config, NEXTCLOUD_SIGNUP_COOKIE);
-    if (!identity.email || !browser) return 'failed';
-    if (nextcloudSignupMailLimit.hit(normalizeEmail(identity.email)).allowed) {
-      const sent = await sendNextcloudSignupMail(deps, { identity, returnTo, server, browser });
+    const to = account?.email ?? identity.email;
+    if (!to || !browser) return 'failed';
+    if (nextcloudSignupMailLimit.hit(normalizeEmail(to)).allowed) {
+      const sent = await sendNextcloudSignupMail(deps, {
+        identity,
+        returnTo,
+        server,
+        browser,
+        ...(account ? { account } : {}),
+      });
       if (!sent) return 'failed';
     }
     return null;
+  };
+  const knownHere = async (c: Context) =>
+    ((await readSignedCookie(c, config, NEXTCLOUD_KNOWN_COOKIE)) ?? '')
+      .split('.', NEXTCLOUD_KNOWN_MAX)
+      .filter(Boolean);
+  /** Remembers that the account signed in through any Nextcloud in this browser. */
+  const markKnownHere = async (c: Context, userId: string) => {
+    const others = (await knownHere(c)).filter((id) => id !== userId);
+    const ids = [userId, ...others].slice(0, NEXTCLOUD_KNOWN_MAX).join('.');
+    await writeSignedCookie(c, config, NEXTCLOUD_KNOWN_COOKIE, ids, {
+      sameSite: 'Lax',
+      maxAge: NEXTCLOUD_KNOWN_MAX_AGE_S,
+    });
   };
   const emailLoginAddressLimit = hourly(EMAIL_LOGIN_MAILS_PER_ADDRESS);
   const emailLoginClientLimit = hourly(EMAIL_LOGIN_MAILS_PER_CLIENT);
   /** Codes typed per address and hour: a guess hits one in a million. */
   const emailCodeLimit = hourly(EMAIL_LOGIN_CODES_PER_ADDRESS);
   const emailCodeClientLimit = hourly(EMAIL_LOGIN_CODES_PER_CLIENT);
+  const emailCodeDailyLimit = fixedWindow({
+    limit: EMAIL_LOGIN_CODES_PER_ADDRESS_DAILY,
+    windowMs: 24 * 60 * 60_000,
+    clock: deps.clock,
+  });
 
   /** A mailed link used (by itself or its code): signs in, or creates the account. */
   const signInByMail = async (
@@ -519,6 +576,8 @@ export function authRoutes(deps: AppDeps, gate: InstanceGate) {
       })
 
       .get('/auth/microsoft/callback', viewer, async (c) => {
+        // „Mit Microsoft anmelden“ for a mailbox: the same registered redirect URI.
+        if (isMailOAuthState(c.req.query('state'))) return finishMailOAuth(deps, c);
         const saved = await readState(c, MS_OAUTH_COOKIE);
         const query = c.req.query();
         const mode = saved?.mode ?? 'connect';
@@ -851,12 +910,31 @@ export function authRoutes(deps: AppDeps, gate: InstanceGate) {
         }
 
         const signIn = await signInWithIdentity(deps, identity);
-        if (signIn.ok) {
+        const signedIn = c.var.viewer;
+        if (
+          signIn.ok &&
+          ((signedIn?.kind === 'owner' && signedIn.author.id === signIn.user.id) ||
+            (await knownHere(c)).includes(signIn.user.id))
+        ) {
           await keepAccess(signIn.user.id);
           await startSession(c, deps, signIn.user.id);
+          await markKnownHere(c, signIn.user.id);
           return done(flow.returnTo);
         }
         await deps.nextcloud.discard(granted);
+        if (signIn.ok) {
+          // A browser the account never signed in on through a Nextcloud: the grant may have been
+          // forwarded from someone else's window – the account's mailbox confirms this one.
+          const unsent = await mailNextcloudSignup(
+            c,
+            identity,
+            flow.returnTo,
+            granted.server,
+            signIn.user,
+          );
+          if (unsent) return done(loginErrorPath(unsent, flow.returnTo));
+          return c.json<NextcloudSignInPoll>({ status: 'confirm', email: signIn.user.email });
+        }
         if (signIn.error !== 'email_unverified') {
           return done(loginErrorPath(signIn.error, flow.returnTo));
         }
@@ -880,6 +958,7 @@ export function authRoutes(deps: AppDeps, gate: InstanceGate) {
         }
         removeCookie(c, config, NEXTCLOUD_SIGNUP_COOKIE);
         await startSession(c, deps, signIn.user.id);
+        await markKnownHere(c, signIn.user.id);
         return c.json<LoginResult>({ redirectTo: target });
       })
 
@@ -939,7 +1018,13 @@ export function authRoutes(deps: AppDeps, gate: InstanceGate) {
         );
         return signInByMail(
           c,
-          await redeemEmailCode(deps, code, browser, (email) => emailCodeLimit.hit(email).allowed),
+          await redeemEmailCode(
+            deps,
+            code,
+            browser,
+            (email) => emailCodeLimit.hit(email).allowed,
+            (email) => emailCodeDailyLimit.hit(email).allowed,
+          ),
         );
       })
   );

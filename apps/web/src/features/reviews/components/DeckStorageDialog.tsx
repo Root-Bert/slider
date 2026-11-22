@@ -24,7 +24,7 @@ const BREAKDOWN: { key: keyof DeckStorage['breakdown']; label: string }[] = [
   { key: 'originals', label: 'Originaldateien' },
   { key: 'slideImages', label: 'Folienbilder' },
   { key: 'media', label: 'Aufnahmen und Bilder in Kommentaren' },
-  { key: 'other', label: 'Sonstiges' },
+  { key: 'other', label: 'Andere' },
 ];
 
 /**
@@ -71,7 +71,7 @@ export function DeckStorageDialog({
               <strong className="font-medium text-fg">
                 {formatFileSize(data.reclaimableBytes)}
               </strong>{' '}
-              frei. Endgültig entfernt werden die Originaldateien und Folienbilder von{' '}
+              frei. Endgültig gelöscht werden die Originaldateien und Folienbilder von{' '}
               {pluralize(data.olderVersionCount, 'älteren Version', 'älteren Versionen')}.
             </span>
             <span>
@@ -80,7 +80,7 @@ export function DeckStorageDialog({
             </span>
           </div>
         }
-        confirmLabel={`${formatFileSize(data.reclaimableBytes)} freigeben`}
+        confirmLabel="Löschen"
         confirmIcon="delete"
         pending={prune.isPending}
         error={prune.error?.message}
@@ -189,7 +189,7 @@ function StorageSummary({
               title={label}
               subtitle={
                 key === 'originals' && storage.originalCount > 0
-                  ? pluralize(storage.originalCount, 'History-Version', 'History-Versionen')
+                  ? pluralize(storage.originalCount, 'ältere Version', 'ältere Versionen')
                   : undefined
               }
               size="body"
@@ -222,7 +222,7 @@ function StorageSummary({
       </RowList>
       {storage.busy && (
         <Notice tone="info" size="sm">
-          Gerade wird eine Version verarbeitet – danach kannst du ältere Versionen löschen.
+          Gerade wird eine Version verarbeitet. Danach kannst du ältere Versionen löschen.
         </Notice>
       )}
     </div>

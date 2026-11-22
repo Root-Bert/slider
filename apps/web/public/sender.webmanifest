@@ -1,0 +1,26 @@
+{
+  "id": "/sender",
+  "name": "Sender",
+  "short_name": "Sender",
+  "description": "Sender. Die Nachrichten deines Workspace.",
+  "lang": "de",
+  "start_url": "/sender",
+  "scope": "/",
+  "display": "standalone",
+  "background_color": "#ffffff",
+  "theme_color": "#000000",
+  "icons": [
+    {
+      "src": "/sender-icon-192.png?v=2",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "/sender-icon-512.png?v=2",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any"
+    }
+  ]
+}

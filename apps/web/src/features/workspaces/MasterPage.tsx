@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { Link, useNavigate, useParams, useSearchParams } from 'react-router';
 import { useCreateBlankDeck, useRemoveWorkspaceMaster, useWorkspaceMasters } from '@/lib/api';
+import { useLibrary, useSliderDoor } from '@/lib/apps';
 import { routes } from '@/lib/routes';
 import {
   Button,
@@ -12,6 +13,7 @@ import {
   Menu,
   PageHeader,
   Toast,
+  cn,
   useToast,
   type MenuAction,
 } from '@/ui';
@@ -33,6 +35,8 @@ export function Component() {
   const workspace = useWorkspace();
   const { masterId } = useParams();
   const navigate = useNavigate();
+  const library = useLibrary();
+  const toSlider = useSliderDoor();
   const [toast, showToast] = useToast();
   const [renaming, setRenaming] = useState(false);
   const masters = useWorkspaceMasters(workspace.id);
@@ -65,7 +69,7 @@ export function Component() {
   ];
   const [params] = useSearchParams();
   const fromColors = params.get('from') === 'farben';
-  const back = routes.workspaceMaterial(workspace.id, fromColors ? 'farben' : 'vorlagen');
+  const back = library.home(workspace.id, fromColors ? 'farben' : 'vorlagen');
   // What the filter's segment counts: the designs, or their colours (each value once).
   const backCount = fromColors
     ? new Set(masters.data?.flatMap((item) => (item.colors ?? []).map((c) => c.color))).size
@@ -73,11 +77,16 @@ export function Component() {
 
   return (
     <div className="dot-grid relative min-h-full overflow-x-clip">
-      <title>{`${master?.name ?? 'Vorlage'} | ${workspace.name} | Slider`}</title>
-      <main className="flex flex-col gap-6 px-4 pt-2 pb-16 md:px-14">
+      <title>{`${master?.name ?? 'Vorlage'} | ${workspace.name} | ${library.appName}`}</title>
+      <main
+        className={cn(
+          '@container flex flex-col gap-6 pt-2 pb-16',
+          !library.cloud && 'px-4 md:px-8',
+        )}
+      >
         <PageHeader
           titleRow
-          title={<WorkspaceViews workspaceId={workspace.id} current="material" />}
+          title={<WorkspaceViews workspaceId={workspace.id} current="material" app={library.app} />}
         />
 
         {/* The material's toolbar: where its filter sits, the way back and the design's name with
@@ -126,12 +135,17 @@ export function Component() {
               icon="add"
               aria-label="Neue Präsentation"
               loading={create.isPending}
-              onClick={() =>
+              onClick={() => {
+                // Slider's editor – from Cloud in Slider's window.
+                const slider = toSlider();
                 create.mutate(master.id, {
-                  onSuccess: (deck) => void navigate(routes.deck(deck.id)),
-                  onError: (error) => showToast(error.message, 'danger'),
-                })
-              }
+                  onSuccess: (deck) => slider.go(routes.deck(deck.id)),
+                  onError: (error) => {
+                    slider.close();
+                    showToast(error.message, 'danger');
+                  },
+                });
+              }}
             >
               <span className="max-sm:hidden">Neue Präsentation</span>
             </Button>

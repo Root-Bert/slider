@@ -26,7 +26,7 @@ interface ViewSearchProps {
  * The search of a workspace's views (Präsentationen, Bibliothek), in the toolbar left of the
  * sort select. By default it filters the names; the button in the field adds the contents –
  * a deck's slides and comments (BER-175), a template's layouts, a font's stand-ins and origin.
- * ⌘K / Ctrl K focuses it, Escape clears it.
+ * ⌘F / Strg F focuses it, Escape clears it.
  */
 export function ViewSearch({
   label,
@@ -65,7 +65,7 @@ export function ViewSearch({
             {searching ? (
               <Spinner size={16} className="text-fg-subtle" label="Sucht in den Inhalten" />
             ) : (
-              <Kbd className="max-sm:hidden">{isApplePlatform() ? '⌘K' : 'Strg K'}</Kbd>
+              <Kbd className="max-sm:hidden">{isApplePlatform() ? '⌘F' : 'Strg F'}</Kbd>
             )}
             {contentLabel && onContentChange && (
               <IconButton

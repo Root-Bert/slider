@@ -33,6 +33,7 @@ const WHAT: Record<SlideOperation['type'], string> = {
   replaceImage: 'picture replaced',
   setTilt: 'tilted',
   setLocked: 'locked or unlocked',
+  setEntrance: 'entrance changed',
   setFlow: 'laid out as a row or a column',
   setCornerRadius: 'corners changed',
   setImageFit: 'picture fit changed',

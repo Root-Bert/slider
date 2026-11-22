@@ -1,0 +1,310 @@
+---
+import Button from '../Button.astro';
+import Kind from '../Kind.astro';
+import Phrase from '../Phrase.astro';
+import EndSlide from '../EndSlide.astro';
+import Mark from '../Mark.astro';
+import Plans from '../Plans.astro';
+import Tile from '../Tile.astro';
+import { appPage, s, type Lang } from '~/i18n';
+import { APP_NAMES, PRODUCTS, isLive, type ProductId } from '~/lib/apps';
+import { APP_URL, CLOUD_URL, READER_URL } from '~/lib/links';
+import { LEAD_SCREEN, screenOf } from '~/lib/screens';
+import { SCREEN_WORDS } from '~/i18n/screens';
+
+/**
+ * The office's page, the same in every language: all five apps at once, as one thing. It opens
+ * on one night-dark tile glowing in the apps' colours with three of their screens side by side, shows each app as a dark tile with its screen rising out of
+ * it (a product shelf: name, one line, two ways on), says what they share in three light tiles
+ * and ends on the plan that covers all of them.
+ */
+interface Props {
+  lang: Lang;
+}
+
+const { lang } = Astro.props;
+const w = s(lang);
+/** Slider opens the grid across its width, Writer and Solver share a row, Reader and Cloud the last. */
+const SIZE = { slider: 'wide', writer: 'half', solver: 'half', reader: 'half', cloud: 'half' } as const;
+/** Cloud and Reader open at their own page of the hosted app. */
+const OWN: Partial<Record<ProductId, string>> = { cloud: `${CLOUD_URL}/`, reader: READER_URL };
+/** The screens of the opening: Slider in front, Writer and Solver behind it left and right. */
+const STAGE = (['writer', 'slider', 'solver'] as const).map((id) => ({
+  id,
+  image: screenOf(id, LEAD_SCREEN[id]).image,
+  alt: SCREEN_WORDS[lang].captions[id][LEAD_SCREEN[id]] ?? '',
+}));
+---
+
+<section class="of-hero" data-section data-live="hero">
+  <div class="of-tile canvas-dots">
+    <h1>
+      <span data-reveal>{w.office.title[0]}</span>
+      <span data-reveal style="--i: 1">{w.office.title[1]}</span>
+    </h1>
+    <p class="of-sub" data-reveal style="--i: 3">{w.office.sub}</p>
+    <div class="of-actions" data-reveal style="--i: 4">
+      <Button href={`${APP_URL}/`} variant="inverse">{w.office.cta}</Button>
+      <a class="of-more" href="#apps">{w.office.more}</a>
+    </div>
+    <p class="of-note" data-reveal style="--i: 5"><i aria-hidden="true"></i>{w.office.note}</p>
+    <div class="of-stage" data-reveal style="--i: 5">
+      {
+        STAGE.map(({ id, image, alt }) => (
+          <img class={`of-shot of-shot-${id}`} src={image.src} width={image.width} height={image.height} alt={alt} loading="eager" decoding="async" fetchpriority={id === 'slider' ? 'high' : undefined} />
+        ))
+      }
+    </div>
+  </div>
+</section>
+
+<section id="apps" class="shelf" data-section data-live="apps">
+  {
+    PRODUCTS.map((id) => (
+      <Tile app={id} screen={LEAD_SCREEN[id]} lang={lang} size={SIZE[id]}>
+        <p class="tile-eyebrow">
+          <Mark app={id} size={26} />
+          {APP_NAMES[id]}
+          <small class:list={[isLive(id) && 'is-live']}>{isLive(id) ? w.status.live : w.status.soon}</small>
+        </p>
+        <h2 class="tile-title">{w.apps[id].tagline}</h2>
+        <p class="tile-lead">{w.apps[id].line}</p>
+        <div class="tile-links">
+          {isLive(id) && !OWN[id] && (
+            <Button href={`${APP_URL}/`} variant="inverse" size="md">
+              {w.product.start}
+            </Button>
+          )}
+          {OWN[id] && (
+            <Button href={OWN[id]} variant="inverse" size="md">
+              {w.product.open.replace('{app}', APP_NAMES[id])}
+            </Button>
+          )}
+          <a class="tile-link" href={appPage(id, lang)}>
+            {w.product.learn}
+          </a>
+        </div>
+      </Tile>
+    ))
+  }
+</section>
+
+<section class="together" data-section data-live="together">
+  <div data-reveal><Kind label="Office" parts={[w.office.together.kind]} /></div>
+  <h2 class="exhibit-title together-title" data-reveal><Phrase text={w.office.together.title} by="Lara" /></h2>
+  <p class="exhibit-lead together-sub" data-reveal style="--i: 1">{w.office.together.sub}</p>
+  <ul>
+    {
+      w.office.together.items.map((item, i) => (
+        <li data-reveal style={`--i: ${2 + i}`}>
+          <h3>{item.t}</h3>
+          <p>{item.b}</p>
+        </li>
+      ))
+    }
+  </ul>
+</section>
+
+<Plans lang={lang} />
+
+<EndSlide title={w.office.end.title} sub={w.office.end.sub}>
+  <Button href={`${APP_URL}/`} variant="inverse">{w.office.end.cta}</Button>
+</EndSlide>
+
+<script>
+  import '~/scripts/tilt';
+</script>
+
+<style>
+  /*
+   * The opening: one night-dark tile in both themes, the apps' colours glowing from above, a few
+   * centred words and three screens standing in its lower edge.
+   */
+  .of-hero {
+    max-width: 1680px;
+    margin: 0 auto;
+    padding: clamp(12px, 1.6vw, 24px) clamp(12px, 1.6vw, 24px) 0;
+  }
+  .of-tile {
+    --ground: #0b0b0d;
+    position: relative;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    overflow: hidden;
+    padding: clamp(72px, 8vw, 136px) clamp(20px, 4vw, 64px) 0;
+    border-radius: clamp(24px, 3vw, 44px);
+    background:
+      radial-gradient(40% 52% at 10% 0%, color-mix(in srgb, var(--app-slider) 46%, transparent), transparent 100%),
+      radial-gradient(40% 58% at 37% 0%, color-mix(in srgb, var(--app-cloud) 50%, transparent), transparent 100%),
+      radial-gradient(40% 58% at 63% 0%, color-mix(in srgb, var(--app-writer) 55%, transparent), transparent 100%),
+      radial-gradient(40% 52% at 90% 0%, color-mix(in srgb, var(--app-solver) 44%, transparent), transparent 100%),
+      var(--ground);
+    color: #fff;
+    text-align: center;
+  }
+  .of-hero h1 {
+    font-size: clamp(34px, 5vw, 84px);
+    font-weight: 700;
+    line-height: 1.06;
+    letter-spacing: -0.03em;
+  }
+  .of-hero h1 span {
+    display: block;
+  }
+  .of-sub {
+    max-width: 30em;
+    margin-top: clamp(22px, 2.4vw, 36px);
+    font-size: clamp(16px, 1.35vw, 20px);
+    line-height: 1.5;
+    color: rgb(255 255 255 / 0.72);
+    text-wrap: pretty;
+  }
+  .of-actions {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: center;
+    gap: 12px 28px;
+    margin-top: clamp(28px, 2.8vw, 40px);
+  }
+  .of-more {
+    font-size: clamp(16px, 1.3vw, 19px);
+    font-weight: 500;
+  }
+  .of-more::after {
+    content: ' ›';
+  }
+  .of-more:hover {
+    text-decoration: underline;
+    text-underline-offset: 4px;
+  }
+  .of-note {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin-top: 26px;
+    font-size: 14px;
+    color: rgb(255 255 255 / 0.55);
+    text-align: left;
+  }
+  .of-note i {
+    flex: none;
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    background: var(--color-accent-green);
+    box-shadow: 0 0 0 4px color-mix(in srgb, var(--color-accent-green) 28%, transparent);
+  }
+  /* Slider in front, Writer and Solver behind it left and right, all cut off by the tile's edge. */
+  .of-stage {
+    position: relative;
+    width: min(100%, 1320px);
+    aspect-ratio: 16 / 7.4;
+    margin-top: clamp(48px, 5.4vw, 88px);
+  }
+  .of-shot {
+    position: absolute;
+    top: 9%;
+    width: 50%;
+    height: auto;
+    max-width: none;
+    border-radius: clamp(6px, 0.9vw, 14px);
+    box-shadow: 0 0 0 1px rgb(255 255 255 / 0.12);
+    filter: brightness(0.62);
+  }
+  .of-shot-writer {
+    left: -3%;
+  }
+  .of-shot-solver {
+    right: -3%;
+  }
+  .of-shot-slider {
+    top: 0;
+    left: 18%;
+    z-index: 1;
+    width: 64%;
+    box-shadow:
+      0 0 0 1px rgb(255 255 255 / 0.16),
+      0 0 9vw 1vw rgb(0 0 0 / 0.6);
+    filter: none;
+  }
+  @media (max-width: 767px) {
+    .of-stage {
+      aspect-ratio: 16 / 9;
+    }
+    .of-shot-slider {
+      left: 6%;
+      width: 88%;
+    }
+    .of-shot-writer,
+    .of-shot-solver {
+      display: none;
+    }
+  }
+
+  /* The shelf: one dark tile per app, two of them sharing a row. */
+  .shelf {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: clamp(12px, 1.6vw, 24px);
+    max-width: 1680px;
+    margin: 0 auto;
+    padding: clamp(96px, 12vw, 200px) clamp(12px, 1.6vw, 24px) 0;
+  }
+
+  /* What the five share: a centred line and three light tiles. */
+  .together {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    max-width: 1680px;
+    margin: 0 auto;
+    padding: clamp(150px, 20vw, 320px) clamp(12px, 1.6vw, 24px) 0;
+    text-align: center;
+  }
+  .together-title {
+    margin-top: 24px;
+  }
+  .together-sub {
+    max-width: 32em;
+    margin-top: 28px;
+  }
+  .together ul {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: clamp(12px, 1.6vw, 24px);
+    width: 100%;
+    margin-top: clamp(56px, 7vw, 112px);
+  }
+  .together li {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    padding: clamp(40px, 5vw, 88px) clamp(24px, 3vw, 48px);
+    border-radius: clamp(24px, 3vw, 44px);
+    background: #161618;
+  }
+  :global([data-theme='light']) .together li {
+    background: #fff;
+  }
+  .together h3 {
+    font-size: clamp(24px, 2.4vw, 38px);
+    font-weight: 700;
+    line-height: 1.08;
+    letter-spacing: -0.03em;
+    color: var(--color-fg);
+  }
+  .together li p {
+    max-width: 20em;
+    margin-top: 16px;
+    font-size: clamp(16px, 1.3vw, 19px);
+    line-height: 1.5;
+    color: var(--color-fg-muted);
+  }
+  @media (max-width: 899px) {
+    .together ul {
+      grid-template-columns: 1fr;
+    }
+  }
+</style>

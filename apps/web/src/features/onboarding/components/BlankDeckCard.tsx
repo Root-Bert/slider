@@ -1,6 +1,6 @@
-import { memo, type ReactNode } from 'react';
+import { Fragment, memo, type ReactNode } from 'react';
 import { LayoutPicture, Stars, stars } from '@/features/workspaces';
-import type { WorkspaceMaster } from '@slider/shared';
+import type { SliderTemplate, WorkspaceMaster } from '@slider/shared';
 import {
   cn,
   ErrorText,
@@ -14,7 +14,7 @@ import {
 const SKY = stars(36, 680, 224, 11);
 
 /** The card's sky: faint stars, a few twinkling – decorative only. */
-const Sky = memo(function Sky() {
+export const Sky = memo(function Sky() {
   return (
     <svg
       aria-hidden
@@ -98,40 +98,7 @@ export function BlankDeckCard({
 
         {/* The slides: 16:9, leaning a little, on the right; beside the text on narrow screens
             there is no room. */}
-        <span
-          aria-hidden
-          className="pointer-events-none absolute top-1/2 right-10 aspect-video w-64 -translate-y-1/2 max-sm:hidden"
-        >
-          <span
-            className={cn(
-              ghost,
-              'bg-surface-1 rotate-[-9deg] -translate-x-6 translate-y-2 group-hover:rotate-[-14deg] group-hover:-translate-x-12 group-hover:translate-y-3',
-            )}
-          />
-          <span
-            className={cn(
-              ghost,
-              'bg-surface-2 rotate-[-4deg] -translate-x-3 translate-y-1 group-hover:rotate-[-7deg] group-hover:-translate-x-6 group-hover:translate-y-1.5',
-            )}
-          />
-          <span
-            className={cn(
-              'absolute inset-0 flex flex-col gap-2 rounded-thumb bg-primary-hover p-5 shadow-float',
-              'rotate-2 transition-transform duration-500 ease-emphasized group-hover:-translate-y-2 group-hover:rotate-0',
-            )}
-          >
-            {/* A title and two lines still to be written, faint on the white slide (pure white,
-                like the real slides – `primary-hover` is the one opaque white). */}
-            <span className="h-3 w-2/5 rounded-mark bg-canvas opacity-15" />
-            <span className="mt-1 h-1.5 w-3/4 rounded-mark bg-canvas opacity-8" />
-            <span className="h-1.5 w-3/5 rounded-mark bg-canvas opacity-8" />
-            <span className="absolute inset-x-0 bottom-5 flex justify-center">
-              <span className="flex size-10 items-center justify-center rounded-full border border-dashed border-current text-on-primary opacity-40 transition-[scale,opacity] duration-300 ease-overshoot group-hover:scale-110 group-hover:opacity-70">
-                <Icon name="add" size={24} />
-              </span>
-            </span>
-          </span>
-        </span>
+        <SlideStack className="top-1/2 right-10 w-64 -translate-y-1/2 max-sm:hidden" />
       </button>
       {masters.length > 0 && onMasterChange && (
         <MasterChoice masters={masters} masterId={masterId ?? ''} onChange={onMasterChange} />
@@ -146,6 +113,46 @@ export function BlankDeckCard({
 }
 
 /**
+ * A blank white slide floating, two more fanned out behind it – fanning further when the
+ * enclosing `group` is hovered. Placed and sized by `className` (absolute).
+ */
+export function SlideStack({ className }: { className: string }) {
+  return (
+    <span aria-hidden className={cn('pointer-events-none absolute aspect-video', className)}>
+      <span
+        className={cn(
+          ghost,
+          'bg-surface-1 rotate-[-9deg] -translate-x-6 translate-y-2 group-hover:rotate-[-14deg] group-hover:-translate-x-12 group-hover:translate-y-3',
+        )}
+      />
+      <span
+        className={cn(
+          ghost,
+          'bg-surface-2 rotate-[-4deg] -translate-x-3 translate-y-1 group-hover:rotate-[-7deg] group-hover:-translate-x-6 group-hover:translate-y-1.5',
+        )}
+      />
+      <span
+        className={cn(
+          'absolute inset-0 flex flex-col gap-2 rounded-thumb bg-primary-hover p-5 shadow-float',
+          'rotate-2 transition-transform duration-500 ease-emphasized group-hover:-translate-y-2 group-hover:rotate-0',
+        )}
+      >
+        {/* A title and two lines still to be written, faint on the white slide (pure white,
+              like the real slides – `primary-hover` is the one opaque white). */}
+        <span className="h-3 w-2/5 rounded-mark bg-canvas opacity-15" />
+        <span className="mt-1 h-1.5 w-3/4 rounded-mark bg-canvas opacity-8" />
+        <span className="h-1.5 w-3/5 rounded-mark bg-canvas opacity-8" />
+        <span className="absolute inset-x-0 bottom-5 flex justify-center">
+          <span className="flex size-10 items-center justify-center rounded-full border border-dashed border-current text-on-primary opacity-40 transition-[scale,opacity] duration-300 ease-overshoot group-hover:scale-110 group-hover:opacity-70">
+            <Icon name="add" size={24} />
+          </span>
+        </span>
+      </span>
+    </span>
+  );
+}
+
+/**
  * The designs to start on, as their pictures: „Ohne Vorlage“ (a white slide) first, then each
  * design's first layout with its name below – the picked one ringed, ticked and its name on a
  * pill. Radio buttons underneath, so the arrow keys step through them. Also the „Stil“ of the
@@ -153,6 +160,7 @@ export function BlankDeckCard({
  */
 export function MasterChoice({
   masters,
+  sliderTemplates = [],
   masterId,
   onChange,
   legend = 'Vorlage',
@@ -160,6 +168,8 @@ export function MasterChoice({
   compact = false,
 }: {
   masters: readonly WorkspaceMaster[];
+  /** The templates Slider brings along, after the workspace's own, by group. */
+  sliderTemplates?: readonly SliderTemplate[];
   /** `''`: without a slide master. */
   masterId: string;
   onChange: (masterId: string) => void;
@@ -208,6 +218,30 @@ export function MasterChoice({
           >
             <LayoutPicture master={master} index={0} className="size-full" />
           </MasterTile>
+        ))}
+        {[...new Set(sliderTemplates.map((template) => template.group))].map((group) => (
+          <Fragment key={group}>
+            <h3 className="col-span-full mt-3 text-sm font-medium text-fg-muted">{group}</h3>
+            {sliderTemplates
+              .filter((template) => template.group === group)
+              .map((template) => (
+                <MasterTile
+                  key={template.id}
+                  {...tile}
+                  label={template.name}
+                  selected={masterId === template.id}
+                  onSelect={() => onChange(template.id)}
+                >
+                  <img
+                    src={template.layouts[0]?.thumbnailUrl}
+                    alt=""
+                    loading="lazy"
+                    draggable={false}
+                    className="size-full bg-white object-contain"
+                  />
+                </MasterTile>
+              ))}
+          </Fragment>
         ))}
       </div>
     </fieldset>

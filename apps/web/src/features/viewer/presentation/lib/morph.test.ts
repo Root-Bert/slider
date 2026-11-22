@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { SlideLayers } from '@slider/shared';
+import { entranceFrames, entrancePlan } from './entrances';
 import { morphPictures, morphPlan } from './morph';
 
 const box = (x: number) => ({ x, y: 0.1, w: 0.2, h: 0.2 });
@@ -74,5 +75,29 @@ describe('morphPlan', () => {
     expect(loose.coming.map((part) => part.from?.box.x)).toEqual([0.2, 0.3]);
     expect(loose.leaving.map((part) => part.key)).toEqual(['shape']);
     expect(morphPictures(plan)).not.toContain('/a/blank.png');
+
+    // Entrances in the show: hidden until their turn, after the one before or with it, by order.
+    const comes = entrancePlan(
+      layers('c', [
+        ['ground', 0.1],
+        ['second', 0.2],
+        ['first', 0.3],
+        ['together', 0.4],
+        ['nothing', null],
+      ]),
+      [
+        { id: 'ground' },
+        { id: 'second', entrance: { effect: 'fly', start: 'after', from: 'left', order: 1 } },
+        { id: 'first', entrance: { effect: 'rise', start: 'after', order: 0 } },
+        { id: 'together', entrance: { effect: 'zoom', start: 'with', order: 2 } },
+        { id: 'nothing', entrance: { effect: 'fade', start: 'after', order: 3 } },
+      ],
+    )!;
+    expect(comes.layers.map((layer) => layer.entrance?.delay ?? null)).toEqual([null, 0.5, 0, 0.5]);
+    expect(comes.seconds).toBe(1);
+    expect(entranceFrames(comes.layers[1]!.entrance!, comes.layers[1]!.box)[0]).toEqual({
+      left: '-20%',
+    });
+    expect(entrancePlan(layers('d', [['ground', 0.1]]), [{ id: 'ground' }])).toBeNull();
   });
 });

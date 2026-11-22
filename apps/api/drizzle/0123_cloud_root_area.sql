@@ -1,0 +1,2 @@
+ALTER TABLE "cloud_areas" ADD COLUMN "root" boolean DEFAULT false NOT NULL;--> statement-breakpoint
+CREATE UNIQUE INDEX "cloud_areas_root_idx" ON "cloud_areas" USING btree ("workspace_id") WHERE "cloud_areas"."root";

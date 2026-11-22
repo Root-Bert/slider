@@ -1,6 +1,7 @@
 import type { MeUser } from '@slider/shared';
 import { useId, useState } from 'react';
 import { useNavigate } from 'react-router';
+import { appHome, usePageApp } from '@/lib/apps';
 import { routes } from '@/lib/routes';
 import { useAuthProviders, useMe, useOtherAccounts } from '@/lib/api';
 import {
@@ -37,6 +38,10 @@ export function WorkspaceSwitcher() {
   const { data: me } = useMe();
   const current = useActiveWorkspace();
   const navigate = useNavigate();
+  // Another workspace opens in the app one is in (Cloud, Sender, Slider …); from a page between
+  // the apps (settings, usage) in Cloud, the family's home.
+  const app = usePageApp() ?? 'cloud';
+  const homeOf = (workspaceId: string) => appHome(app, workspaceId).to;
   const [dialog, setDialog] = useState<'create' | 'join' | null>(null);
   const [toast, showToast] = useToast();
   const workspaces = me?.workspaces ?? [];
@@ -101,7 +106,7 @@ export function WorkspaceSwitcher() {
                       )}
                       onClick={() => {
                         close();
-                        void navigate(routes.workspace(workspace.id));
+                        void navigate(homeOf(workspace.id));
                       }}
                     >
                       <span className="truncate">{workspace.name}</span>
@@ -147,9 +152,7 @@ export function WorkspaceSwitcher() {
                       title={`Zu ${other.user.name} wechseln`}
                       disabled={accounts.busy}
                       dimDisabled={false}
-                      onClick={() =>
-                        accounts.switchTo(other.user.id, routes.workspace(workspace.id))
-                      }
+                      onClick={() => accounts.switchTo(other.user.id, homeOf(workspace.id))}
                     >
                       <span className="truncate">{workspace.name}</span>
                       <span className="shrink-0 text-xs text-fg-subtle">

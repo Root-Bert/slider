@@ -23,6 +23,22 @@ const MAX_BACKLOG_SAMPLES = 16_000 * 4;
 /** Connections that fail one after another before it gives up for this session. */
 const MAX_FAILURES = 3;
 
+/**
+ * The service's own turn detection, for a call (`onTurn`): a turn ends after 300 ms of quiet it
+ * judges as finished. Measured (2026-11-20, German): turn.end 420–460 ms after the last word was
+ * spoken, its last words up to ~230 ms later – the call's own pause took 1.5 s and more.
+ */
+const TURN_DETECTION = {
+  start_threshold: 0.5,
+  eager_end_threshold: 0.4,
+  end_threshold: 0.33,
+  min_silence_ms: 300,
+  end_timeout_ms: 2500,
+};
+
+/** What the service says of a turn (`turn.end`) and of a flush written down (`done`). */
+export type LiveSignal = 'turn' | 'done';
+
 type Event =
   | { type: 'session.created' }
   | { type: 'transcription.text.delta'; text: string }
@@ -51,6 +67,8 @@ export class LiveTranscript {
     private readonly onText: (text: string) => void,
     /** Gave up (no key, refused, out of reach): the caption goes back to the pieces. */
     private readonly onUnavailable: () => void,
+    /** Given: the service also says where a turn ends (its turn detection) and a flush is done. */
+    private readonly onSignal?: (signal: LiveSignal) => void,
   ) {}
 
   /** All heard so far – a piece ending now marks its place by this text's length. */
@@ -168,6 +186,7 @@ export class LiveTranscript {
             audio_format: { encoding: 'pcm_s16le', sample_rate: 16_000 },
             target_streaming_delay_ms: TARGET_DELAY_MS,
             ...(terms.length > 0 ? { context_bias: terms } : {}),
+            ...(this.onSignal ? { turn_detection: TURN_DETECTION } : {}),
           },
         },
         socket,
@@ -182,6 +201,10 @@ export class LiveTranscript {
       this.text += event.text;
       this.lastWordsAt = performance.now();
       this.onText(this.text);
+    } else if (event.type === 'turn.end') {
+      this.onSignal?.('turn');
+    } else if (event.type === 'transcription.done') {
+      this.onSignal?.('done');
     } else if (event.type === 'error') {
       // Counts as failed: a service that keeps refusing is given up on.
       this.ready = false;

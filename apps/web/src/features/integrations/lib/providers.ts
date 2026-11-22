@@ -47,9 +47,9 @@ export const KINDS: Record<
   ai: {
     icon: 'autoAwesome',
     workspace:
-      'Das Modell, mit dem die KI beim Bearbeiten Folien ändert, kommentiert und auf Fragen antwortet. Abgerechnet wird über den aktiven Key; die Folien und der Kommentar gehen dafür an seinen Anbieter.',
+      'Die Keys, auf denen die KI läuft. Welche App darauf welche Modelle nutzt, steht darunter. Abgerechnet wird über den aktiven Key; die Inhalte und der Auftrag gehen dafür an seinen Anbieter.',
     instance:
-      'Das Modell, mit dem die KI in allen Workspaces Folien ändert, kommentiert und auf Fragen antwortet – solange ein Workspace kein eigenes nutzt. Abgerechnet wird über den aktiven Key; die Folien und der Kommentar gehen dafür an seinen Anbieter.',
+      'Die Keys, auf denen die KI in allen Workspaces läuft, solange ein Workspace keinen eigenen nutzt. Welche App darauf welche Modelle nutzt, steht darunter. Abgerechnet wird über den aktiven Key; die Inhalte und der Auftrag gehen dafür an seinen Anbieter.',
   },
   speech: {
     icon: 'notesMic',
@@ -104,12 +104,29 @@ export function serviceName(key: Pick<IntegrationKey, 'provider' | 'baseUrl'>): 
   }
 }
 
+/**
+ * The kinds by what they are about – a tab each in a workspace's settings: the AI and its models
+ * (per app), everything spoken, everything pictured.
+ */
+export const INTEGRATION_GROUPS = {
+  ki: { label: 'KI', icon: 'autoAwesome', kinds: ['ai'] },
+  sprache: { label: 'Sprache', icon: 'mic', kinds: ['speech', 'voice', 'live'] },
+  bilder: { label: 'Bilder', icon: 'image', kinds: ['photos', 'images'] },
+} as const satisfies Record<
+  string,
+  { label: string; icon: IconName; kinds: readonly IntegrationKind[] }
+>;
+export type IntegrationGroup = keyof typeof INTEGRATION_GROUPS;
+
+const navOf = (kinds: readonly IntegrationKind[]) =>
+  kinds.map((kind) => ({
+    id: `integration-${kind}`,
+    title: INTEGRATION_KIND_LABELS[kind],
+    icon: KINDS[kind].icon,
+  }));
+
 /** The panel's sections, for the nav at the side – each `integration-<kind>`. */
-export const INTEGRATIONS_NAV = INTEGRATION_KINDS.map((kind) => ({
-  id: `integration-${kind}`,
-  title: INTEGRATION_KIND_LABELS[kind],
-  icon: KINDS[kind].icon,
-}));
+export const INTEGRATIONS_NAV = navOf(INTEGRATION_KINDS);
 
 /** The workspace's own first section, before the kinds: what its AI is called. */
 export const AI_NAME_SECTION = {
@@ -118,8 +135,21 @@ export const AI_NAME_SECTION = {
   icon: 'person',
 } as const satisfies { id: string; title: string; icon: IconName };
 
-/** A workspace's nav: its AI's name, then the kinds – the instance has no name to give. */
-export const WORKSPACE_INTEGRATIONS_NAV = [AI_NAME_SECTION, ...INTEGRATIONS_NAV];
+/** The workspace's second: whether an agent writes along in calls. */
+export const CALL_NOTES_SECTION = {
+  id: 'integration-calls',
+  title: 'Notizen in Anrufen',
+  icon: 'call',
+} as const satisfies { id: string; title: string; icon: IconName };
+
+/**
+ * A workspace's nav for one group: with the AI its name and the call notes first – the instance
+ * has neither to give.
+ */
+export const workspaceIntegrationsNav = (group: IntegrationGroup) => [
+  ...(group === 'ki' ? [AI_NAME_SECTION, CALL_NOTES_SECTION] : []),
+  ...navOf(INTEGRATION_GROUPS[group].kinds),
+];
 
 /** „Anthropic · claude-sonnet-5-5“ – what applies from the instance (or the server). */
 export const describeInherited = (inherited: InheritedIntegration) =>

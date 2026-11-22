@@ -986,10 +986,13 @@ export function EditingProvider({ children }: { children: ReactNode }) {
     copied.cut = false;
     if (slideId === copied.slideId && !back) {
       const size = state?.pageSize ?? PAGE_SIZE;
+      const aside = (at: number, length: number, step: number) =>
+        at + length > 1 ? at + step : Math.min(1 - length, at + step);
       box = {
         ...box,
-        x: Math.min(1 - box.w, box.x + PASTE_STEP),
-        y: Math.min(1 - box.h, box.y + (PASTE_STEP * size.width) / size.height),
+        // Kept on the slide – one that reaches off it already goes on as it lies.
+        x: aside(box.x, box.w, PASTE_STEP),
+        y: aside(box.y, box.h, (PASTE_STEP * size.width) / size.height),
       };
     }
     const elementId = newEditId();
@@ -1235,6 +1238,8 @@ export function EditingProvider({ children }: { children: ReactNode }) {
       // A key typed into a search open anywhere (symbols, photos): the search's, not a picked
       // text box's.
       if (event.defaultPrevented || typedIntoField(event)) return;
+      // A menu open (right click): Esc closes that, the element stays picked.
+      if (event.key === 'Escape' && document.querySelector('[role="menu"]')) return;
       const mod = event.metaKey || event.ctrlKey;
       // A panel's text field takes ⌘↵ itself; any other field gives up its value on blur.
       const textarea = event.target instanceof HTMLTextAreaElement;

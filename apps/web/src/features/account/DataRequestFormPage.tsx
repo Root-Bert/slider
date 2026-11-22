@@ -35,7 +35,7 @@ export function Component() {
         <CenteredCard
           icon={<Icon name="send" size={24} />}
           title="Schau in dein Postfach"
-          message={`Falls Slider Daten zu ${email.trim()} speichert, ist gerade eine Mail mit einem Link dorthin unterwegs. Der Link gilt ${purpose === 'delete' ? '24 Stunden' : '7 Tage'}. Keine Mail bekommen? Dann sind zu dieser Adresse keine Daten gespeichert – oder schau im Spam-Ordner nach.`}
+          message={`Falls Slider Daten zu ${email.trim()} speichert, ist gerade eine Mail mit einem Link dorthin unterwegs. Der Link gilt ${purpose === 'delete' ? '24 Stunden' : '48 Stunden'}. Keine Mail bekommen? Dann sind zu dieser Adresse keine Daten gespeichert – oder schau im Spam-Ordner nach.`}
         >
           <TextLink to={routes.login()}>Zur Anmeldung</TextLink>
         </CenteredCard>

@@ -14,6 +14,7 @@ import {
   startMaterialQuestion,
   stopMaterialQuestion,
 } from '../services/material-questions';
+import { BOARD_OWNER_PATH, ownerIn } from './materials';
 
 /** The event name of an answer's stream. */
 export const MATERIAL_ANSWER_EVENT = 'answer';
@@ -27,16 +28,18 @@ export const MATERIAL_ANSWER_EVENT = 'answer';
  *   asked about: at once); the stream closed, it stops;
  * - `POST /material-questions/:id/stop` → 204 („Stoppen“);
  * - `DELETE /material-questions/:id` → 204 („Antwort löschen“; `?part=all`: a reply with it).
+ *
+ * The first two also under `/documents/:documentId/…` for a text document's board.
  */
 export function materialQuestionsRoutes(deps: AppDeps) {
   const viewer = viewerMiddleware(deps);
   const asks = aiLimits(deps).materialQuestions;
 
   return new Hono<ViewerEnv>()
-    .get('/decks/:deckId/material-questions', viewer, async (c) =>
-      c.json(await listMaterialQuestions(deps, c.var.viewer, c.req.param('deckId'))),
+    .get(`${BOARD_OWNER_PATH}/material-questions`, viewer, async (c) =>
+      c.json(await listMaterialQuestions(deps, c.var.viewer, ownerIn(c))),
     )
-    .post('/decks/:deckId/material-questions', viewer, async (c) => {
+    .post(`${BOARD_OWNER_PATH}/material-questions`, viewer, async (c) => {
       const input = await readJson(c, askMaterialInputSchema);
       if (input.ask || input.kind === 'note')
         assertWithinLimit(
@@ -45,7 +48,7 @@ export function materialQuestionsRoutes(deps: AppDeps) {
           'Zu viele Fragen auf einmal. Bitte warte einen Moment.',
         );
       // Refusals (no key, no access) answer with their status before the stream starts.
-      const ask = await startMaterialQuestion(deps, c.var.viewer, c.req.param('deckId'), input);
+      const ask = await startMaterialQuestion(deps, c.var.viewer, ownerIn(c), input);
       return streamSSE(c, async (stream) => {
         const gone = new AbortController();
         stream.onAbort(() => gone.abort());

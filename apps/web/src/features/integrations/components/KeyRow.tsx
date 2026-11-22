@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { Fragment, useState, type ReactNode } from 'react';
 import { SERVER_PROVIDER, defaultQuickModel, type IntegrationKey } from '@slider/shared';
 import { useIntegrationModels, useRemoveIntegrationKey, useUpdateIntegrationKey } from '@/lib/api';
 import { formatDateTime } from '@/lib/format';
@@ -15,9 +15,14 @@ import {
 } from '@/ui';
 import { serviceName } from '../lib/providers';
 import { AI_MODEL_ROLES } from '../lib/ai-models';
+import { AppModels } from './AppModels';
 import { ModelLine } from './ModelLine';
 import { ProviderLogo } from './ProviderLogo';
 import { RoleModelSelect } from './RoleModelSelect';
+
+const SliderModels = ({ children }: { children: ReactNode }) => (
+  <AppModels app="slider">{children}</AppModels>
+);
 
 /**
  * One stored key: its service, model and state – set active (or no longer use it), another
@@ -48,6 +53,8 @@ export function KeyRow({
   const nameOf = (id: string) => options.find((model) => model.id === id)?.name ?? id;
   // The AI's second model, to create decks on: none of its own runs on the first.
   const isAi = key.kind === 'ai';
+  // The AI's models are Slider's own, in its box; the key's state stays with the key above.
+  const ModelsBox = isAi ? SliderModels : Fragment;
   // Quick requests without a model of their own: Haiku on Anthropic, else the key's model.
   const quickStandard = defaultQuickModel(key.provider, key.model);
   const pending = (field: 'active' | 'recheck') =>
@@ -108,7 +115,7 @@ export function KeyRow({
         </span>
         <span className="ml-auto flex items-center gap-1">
           {/* Without a model there is no second line to hold it. */}
-          {!hasModel && toggle}
+          {(!hasModel || isAi) && toggle}
           <IconButton
             icon="delete"
             label="Key entfernen"
@@ -117,81 +124,85 @@ export function KeyRow({
           />
         </span>
       </div>
-      {hasModel && (
-        <ModelLine role={isAi ? 'review' : null} end={toggle}>
-          <Select
-            aria-label={
-              isAi ? `Modell für ${AI_MODEL_ROLES.review.label} mit ${name}` : `Modell für ${name}`
-            }
-            size="sm"
-            value={key.model}
-            disabled={update.isPending}
-            // Until the service answered (or when it does not): just the current one.
-            options={options.map((model) => ({ value: model.id, label: model.name }))}
-            onChange={(model) =>
-              update.mutate(
-                { keyId: key.id, model },
-                { onSuccess: () => onNotify(`${name} nutzt jetzt ${model}`) },
-              )
-            }
-          />
-          {models.isFetching && !models.data && (
-            <Spinner size="sm" label="Modelle werden geladen" />
-          )}
-        </ModelLine>
-      )}
-      {isAi && (
-        <ModelLine role="create">
-          <RoleModelSelect
-            role="create"
-            where={`mit ${name}`}
-            offered={models.data?.models ?? []}
-            standard={key.model}
-            standardLabel={`Wie oben (${nameOf(key.model)})`}
-            current={key.createModel}
-            disabled={update.isPending}
-            onPick={(model) =>
-              update.mutate(
-                { keyId: key.id, createModel: model },
-                {
-                  onSuccess: () =>
-                    onNotify(
-                      `${AI_MODEL_ROLES.create.label} nutzt jetzt ${nameOf(model ?? key.model)}`,
-                    ),
-                },
-              )
-            }
-          />
-        </ModelLine>
-      )}
-      {isAi && (
-        <ModelLine role="quick">
-          <RoleModelSelect
-            role="quick"
-            where={`mit ${name}`}
-            offered={models.data?.models ?? []}
-            standard={quickStandard}
-            standardLabel={
-              quickStandard === key.model
-                ? `Wie oben (${nameOf(key.model)})`
-                : `${nameOf(quickStandard)} (Standard)`
-            }
-            current={key.quickModel}
-            disabled={update.isPending}
-            onPick={(model) =>
-              update.mutate(
-                { keyId: key.id, quickModel: model },
-                {
-                  onSuccess: () =>
-                    onNotify(
-                      `${AI_MODEL_ROLES.quick.label} nutzen jetzt ${nameOf(model ?? quickStandard)}`,
-                    ),
-                },
-              )
-            }
-          />
-        </ModelLine>
-      )}
+      <ModelsBox>
+        {hasModel && (
+          <ModelLine role={isAi ? 'review' : null} end={isAi ? undefined : toggle}>
+            <Select
+              aria-label={
+                isAi
+                  ? `Modell für ${AI_MODEL_ROLES.review.label} mit ${name}`
+                  : `Modell für ${name}`
+              }
+              size="sm"
+              value={key.model}
+              disabled={update.isPending}
+              // Until the service answered (or when it does not): just the current one.
+              options={options.map((model) => ({ value: model.id, label: model.name }))}
+              onChange={(model) =>
+                update.mutate(
+                  { keyId: key.id, model },
+                  { onSuccess: () => onNotify(`${name} nutzt jetzt ${model}`) },
+                )
+              }
+            />
+            {models.isFetching && !models.data && (
+              <Spinner size="sm" label="Modelle werden geladen" />
+            )}
+          </ModelLine>
+        )}
+        {isAi && (
+          <ModelLine role="create">
+            <RoleModelSelect
+              role="create"
+              where={`mit ${name}`}
+              offered={models.data?.models ?? []}
+              standard={key.model}
+              standardLabel={`Wie oben (${nameOf(key.model)})`}
+              current={key.createModel}
+              disabled={update.isPending}
+              onPick={(model) =>
+                update.mutate(
+                  { keyId: key.id, createModel: model },
+                  {
+                    onSuccess: () =>
+                      onNotify(
+                        `${AI_MODEL_ROLES.create.label} nutzt jetzt ${nameOf(model ?? key.model)}`,
+                      ),
+                  },
+                )
+              }
+            />
+          </ModelLine>
+        )}
+        {isAi && (
+          <ModelLine role="quick">
+            <RoleModelSelect
+              role="quick"
+              where={`mit ${name}`}
+              offered={models.data?.models ?? []}
+              standard={quickStandard}
+              standardLabel={
+                quickStandard === key.model
+                  ? `Wie oben (${nameOf(key.model)})`
+                  : `${nameOf(quickStandard)} (Standard)`
+              }
+              current={key.quickModel}
+              disabled={update.isPending}
+              onPick={(model) =>
+                update.mutate(
+                  { keyId: key.id, quickModel: model },
+                  {
+                    onSuccess: () =>
+                      onNotify(
+                        `${AI_MODEL_ROLES.quick.label} nutzen jetzt ${nameOf(model ?? quickStandard)}`,
+                      ),
+                  },
+                )
+              }
+            />
+          </ModelLine>
+        )}
+      </ModelsBox>
       {update.error && <ErrorText>{update.error.message}</ErrorText>}
       {models.isError && !key.error && (
         <ErrorText>Die Modelle ließen sich nicht laden: {models.error.message}</ErrorText>

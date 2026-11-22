@@ -1,16 +1,25 @@
 /** Where the website points to: the hosted app and the public repository. */
 export const APP_URL = 'https://slider.bertro.dev';
+/** Cloud in the hosted app (it has no address of its own). */
+export const CLOUD_URL = `${APP_URL}/cloud`;
+/** Reader in the hosted app: on to the PDFs of the workspace last open. */
+export const READER_URL = `${APP_URL}/reader`;
 export const REPO_URL = 'https://github.com/Root-Bert/slider';
 export const CHANGELOG_URL = `${REPO_URL}/releases`;
-export const BERTRO_URL = 'https://bertro.dev';
+/** The personal page of the person behind it all. */
+export const BERTRO_URL = '/me/';
 export const CONTACT_URL = 'mailto:slider@bertro.dev';
+/** Slider's API as the website reaches it (Caddy in production, a dev middleware in `astro.config.mjs`). */
+export const API_URL = '/slider/api';
 
-/** A path inside the website, under its base (`/slider`). */
+/**
+ * One of Slider's own pages (`/slider/…`): blog, contact, legal, download. The office and the
+ * apps' pages are built with `appPage` (`~/i18n`).
+ */
 export function page(path = ''): string {
-  const base = import.meta.env.BASE_URL.replace(/\/$/, '');
   const rest = path.replace(/^\//, '');
-  return rest ? `${base}/${rest}` : `${base}/`;
+  return rest ? `/slider/${rest}` : '/slider/';
 }
 
-/** A file from `public/`, under the base. */
-export const asset = (path: string): string => page(path);
+/** A file from `public/`. */
+export const asset = (path: string): string => `/${path.replace(/^\//, '')}`;

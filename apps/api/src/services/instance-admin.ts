@@ -46,6 +46,7 @@ import { isPaying } from './billing-owner';
 import { countBy } from './plans';
 import { DAY_MS } from './retention-rules';
 import { emptyBreakdown, totalBytes, workspaceStorage } from './workspace-storage';
+import { cloudFileCounts } from './cloud/overview';
 
 /**
  * The instance admin's dashboard (BER-167): how big the instance is, and the accounts and
@@ -202,10 +203,16 @@ export async function instanceOverview(deps: AdminDeps): Promise<InstanceOvervie
       .select({ id: workspaces.id, name: workspaces.name, logoKey: workspaces.logoKey })
       .from(workspaces),
   ]);
-  const storage = await workspaceStorage(
-    deps.db,
-    all.map((row) => row.id),
-  );
+  const [storage, fileCounts] = await Promise.all([
+    workspaceStorage(
+      deps.db,
+      all.map((row) => row.id),
+    ),
+    cloudFileCounts(
+      deps.db,
+      all.map((row) => row.id),
+    ),
+  ]);
   const sum = emptyBreakdown();
   for (const part of storage.values()) {
     for (const key of Object.keys(sum) as (keyof typeof sum)[]) sum[key] += part[key];
@@ -239,6 +246,7 @@ export async function instanceOverview(deps: AdminDeps): Promise<InstanceOvervie
       blocked: orgs?.blocked ?? 0,
     },
     decks: deckCount?.total ?? 0,
+    files: [...fileCounts.values()].reduce((total, each) => total + each, 0),
     largest,
     storage: sum,
     plans: plansDiffer(deps.config),
@@ -332,10 +340,11 @@ async function toInstanceWorkspaces(
   const ids = rows.map((row) => row.id);
   if (ids.length === 0) return [];
   // Counted like the plan limits count them (`plans`).
-  const [memberCounts, deckCountOf, storage] = await Promise.all([
+  const [memberCounts, deckCountOf, storage, fileCountOf] = await Promise.all([
     countBy(db, workspaceMembers, ids),
     countBy(db, decks, ids),
     workspaceStorage(db, ids),
+    cloudFileCounts(db, ids),
   ]);
   return rows.map((row) => {
     const files = storage.get(row.id);
@@ -350,6 +359,8 @@ async function toInstanceWorkspaces(
       subscribed: isPaying(row),
       memberCount: memberCounts.get(row.id) ?? 0,
       deckCount: deckCountOf.get(row.id) ?? 0,
+      fileCount: fileCountOf.get(row.id) ?? 0,
+      fileBytes: files?.files ?? 0,
       storageBytes: files ? totalBytes(files) : 0,
       blockedAt: row.blockedAt?.toISOString() ?? null,
     };

@@ -55,8 +55,27 @@ export async function resolveViewer(
     }
     return userViewer(user);
   }
-  if (deps.config.auth.devLogin && deps.ownerId) return loadOwnerViewer(deps, deps.ownerId);
+  if (deps.config.auth.devLogin && deps.ownerId && fromThisMachine(c)) {
+    return loadOwnerViewer(deps, deps.ownerId);
+  }
   return null;
+}
+
+const LOOPBACK_HOSTS = new Set(['localhost', '127.0.0.1', '[::1]']);
+const LOOPBACK_ADDRESS = /^(?:127\.|::1$|::ffff:127\.)/;
+
+/**
+ * The dev login (on by itself outside production when no login is set up) signs in only who
+ * calls from this machine: a loopback host name (the Vite proxy keeps the browser's) over a
+ * loopback connection. A dev server on a reachable address, or behind a proxy that names its
+ * public host, is not open to everyone. No socket: an in-process request (tests).
+ */
+function fromThisMachine(c: Context): boolean {
+  const host = (c.req.header('host') ?? new URL(c.req.url).host).replace(/:\d+$/, '');
+  if (!LOOPBACK_HOSTS.has(host.toLowerCase())) return false;
+  const env = c.env as { incoming?: { socket?: { remoteAddress?: string } } } | undefined;
+  const remote = env?.incoming?.socket?.remoteAddress;
+  return remote === undefined || LOOPBACK_ADDRESS.test(remote);
 }
 
 export const userViewer = (user: UserRow): Viewer => ({ kind: 'owner', author: ownerAuthor(user) });

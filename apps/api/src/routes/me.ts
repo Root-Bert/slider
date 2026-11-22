@@ -3,6 +3,7 @@ import { Hono } from 'hono';
 import {
   deleteAccountInputSchema,
   domainJoinAllowed,
+  updateCallVoiceInputSchema,
   updateMeInputSchema,
   type DisconnectNextcloudResult,
   type MeResponse,
@@ -16,8 +17,10 @@ import { endSession, signedInAt } from '../auth/session';
 import { viewerMiddleware, type ViewerEnv } from '../auth/viewer';
 import { users } from '../db/schema';
 import type { AppDeps } from '../deps';
+import { assertWithinLimit, fixedWindow } from '../http/rate-limit';
 import { readJson } from '../http/validate';
 import { deleteAccount, successorChoices } from '../services/account-deletion';
+import { callVoiceSample, callVoices, pickCallVoice } from '../services/call-voices';
 import { exportAccount } from '../services/account-export';
 import { updateViewerColor, updateViewerName } from '../services/users';
 import { disconnectNextcloud, listNextcloudConnections } from '../services/nextcloud-connections';
@@ -80,6 +83,7 @@ export function zipResponse(
 }
 
 export function meRoutes(deps: AppDeps, gate: InstanceGate) {
+  const samples = fixedWindow({ limit: 60, windowMs: 15 * 60_000, clock: deps.clock });
   return (
     new Hono<ViewerEnv>()
       .get('/me', viewerMiddleware(deps), async (c) =>
@@ -95,6 +99,31 @@ export function meRoutes(deps: AppDeps, gate: InstanceGate) {
           for (const deckId of renamed.deckIds) deps.live?.commentsChanged(deckId);
         }
         return c.json<MeResponse>(await meResponse(deps, gate, c, viewer));
+      })
+      /** The voice agents speak with where the viewer calls them, and those to pick from. */
+      .get('/me/call-voice', viewerMiddleware(deps), async (c) => {
+        requireOwner(c.var.viewer);
+        return c.json(await callVoices(deps, c.var.viewer.author.id));
+      })
+      .put('/me/call-voice', viewerMiddleware(deps), async (c) => {
+        requireOwner(c.var.viewer);
+        const { voice } = await readJson(c, updateCallVoiceInputSchema);
+        return c.json(await pickCallVoice(deps, c.var.viewer.author.id, voice));
+      })
+      /** A voice reading a sentence, as WAV – heard before it is picked. */
+      .get('/me/call-voice/:voice/sample', viewerMiddleware(deps), async (c) => {
+        requireOwner(c.var.viewer);
+        // A new sample is a request to the service on a workspace's key.
+        assertWithinLimit(
+          c,
+          samples.hit(c.var.viewer.author.id),
+          'Zu viele Hörproben. Bitte kurz warten und erneut versuchen.',
+        );
+        const wav = await callVoiceSample(deps, c.var.viewer.author.id, c.req.param('voice'));
+        return c.body(wav, 200, {
+          'Content-Type': 'audio/wav',
+          'Cache-Control': 'private, max-age=3600',
+        });
       })
       /** Everything stored about the viewer, as a ZIP (BER-145, DSGVO Art. 15/20). */
       .get('/me/export', viewerMiddleware(deps), async (c) => {

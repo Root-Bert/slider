@@ -1,4 +1,4 @@
-import type { Deck, RerenderResult, UpdateDeckInput } from '@slider/shared';
+import type { CloudTargetInput, Deck, RerenderResult, UpdateDeckInput } from '@slider/shared';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useRef } from 'react';
 import { api } from '../api-client';
@@ -75,11 +75,57 @@ export function useDeck(deckId: string) {
   });
 }
 
+type Lists = ReturnType<typeof useQueryClient>;
+const TRASH_LISTS = ['decks', 'trash'] as const;
+
+/**
+ * The lists show a change at once, before the server answers; what comes back is how to take it
+ * back when the server refuses. Every caller reloads the lists afterwards anyway.
+ */
+async function changeLists(
+  queryClient: Lists,
+  queryKey: readonly string[],
+  change: (decks: Deck[]) => Deck[],
+): Promise<() => void> {
+  await queryClient.cancelQueries({ queryKey });
+  const before = queryClient.getQueriesData<Deck[]>({ queryKey });
+  queryClient.setQueriesData<Deck[]>({ queryKey }, (decks) => decks && change(decks));
+  return () => before.forEach(([key, decks]) => queryClient.setQueryData(key, decks));
+}
+
+/** What a list row shows of an update: the name, and whether it is archived. */
+const updated =
+  (deckIds: readonly string[], input: UpdateDeckInput) =>
+  (decks: Deck[]): Deck[] =>
+    decks.map((deck) =>
+      deckIds.includes(deck.id)
+        ? {
+            ...deck,
+            ...(input.title !== undefined && { title: input.title }),
+            ...(input.archived !== undefined && {
+              archivedAt: input.archived ? (deck.archivedAt ?? new Date().toISOString()) : null,
+            }),
+          }
+        : deck,
+    );
+const without =
+  (deckIds: readonly string[]) =>
+  (decks: Deck[]): Deck[] =>
+    decks.filter((deck) => !deckIds.includes(deck.id));
+
 export function useUpdateDeck(deckId: string, scope?: string) {
   const queryClient = useQueryClient();
   return useMutation({
     ...(scope && { scope: { id: scope } }),
     mutationFn: (input: UpdateDeckInput) => api.patch<Deck>(`/decks/${deckId}`, input),
+    onMutate: (input) =>
+      input.title === undefined && input.archived === undefined
+        ? undefined
+        : changeLists(queryClient, queryKeys.deckLists, updated([deckId], input)),
+    onError: (_error, _input, undo) => {
+      undo?.();
+      void queryClient.invalidateQueries({ queryKey: queryKeys.deckLists });
+    },
     onSuccess: (deck) => {
       // In line with other changes (`scope`): only what this one set, not their state before.
       queryClient.setQueryData<Deck>(queryKeys.deck(deckId), (current) =>
@@ -95,8 +141,34 @@ export function useDeleteDeck() {
   return useMutation({
     mutationFn: (deckId: string) => api.delete(`/decks/${deckId}`),
     onSuccess: () => {
+      // One trash for both apps: its file in Cloud went or came with it.
+      void queryClient.invalidateQueries({ queryKey: ['cloud'] });
       void queryClient.invalidateQueries({ queryKey: queryKeys.decks });
       // Frees a slot of the plan's deck limit (`Workspace.usage`, BER-130).
+      void queryClient.invalidateQueries({ queryKey: queryKeys.me });
+    },
+  });
+}
+
+/** The trash: deleted presentations one may bring back („Papierkorb“). */
+export function useTrashedDecks(workspaceId: string) {
+  return useQuery({
+    queryKey: queryKeys.deckTrash(workspaceId),
+    queryFn: () => api.get<Deck[]>(`/decks/trash?workspaceId=${encodeURIComponent(workspaceId)}`),
+  });
+}
+
+/** „Wiederherstellen“ out of the trash. */
+export function useRestoreDeck() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (deckId: string) => api.post(`/decks/${deckId}/restore`),
+    onMutate: (deckId) => changeLists(queryClient, TRASH_LISTS, without([deckId])),
+    onError: (_error, _deckId, undo) => undo?.(),
+    onSuccess: () => {
+      // One trash for both apps: its file in Cloud went or came with it.
+      void queryClient.invalidateQueries({ queryKey: ['cloud'] });
+      void queryClient.invalidateQueries({ queryKey: queryKeys.decks });
       void queryClient.invalidateQueries({ queryKey: queryKeys.me });
     },
   });
@@ -131,21 +203,47 @@ async function eachDeck<T>(
   return outcome;
 }
 
+/** „Verschieben …“: the folder in Cloud the presentations lie in from now on. */
+export function usePlaceDecks() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({ deckIds, target }: { deckIds: readonly string[]; target: CloudTargetInput }) =>
+      eachDeck(deckIds, (deckId) => api.put<Deck>(`/decks/${deckId}/place`, target)),
+    onSettled: (_result, _error, { deckIds }) => {
+      void queryClient.invalidateQueries({ queryKey: queryKeys.decks });
+      for (const deckId of deckIds) {
+        void queryClient.invalidateQueries({ queryKey: queryKeys.deck(deckId) });
+      }
+      void queryClient.invalidateQueries({ queryKey: ['cloud'] });
+    },
+  });
+}
+
 export function useUpdateDecks() {
   const queryClient = useQueryClient();
   return useMutation({
     mutationFn: ({ deckIds, input }: { deckIds: readonly string[]; input: UpdateDeckInput }) =>
       eachDeck(deckIds, (deckId) => api.patch<Deck>(`/decks/${deckId}`, input)),
+    // A deck the server refused shows as before once the lists are reloaded (`onSettled`).
+    onMutate: ({ deckIds, input }) => {
+      void changeLists(queryClient, queryKeys.deckLists, updated(deckIds, input));
+    },
     onSettled: () => queryClient.invalidateQueries({ queryKey: queryKeys.decks }),
   });
 }
 
-export function useDeleteDecks() {
+/** „Löschen“: into the trash – `forGood`: out of it („Endgültig löschen“). */
+export function useDeleteDecks(forGood = false) {
   const queryClient = useQueryClient();
   return useMutation({
     mutationFn: (deckIds: readonly string[]) =>
-      eachDeck(deckIds, (deckId) => api.delete(`/decks/${deckId}`)),
+      eachDeck(deckIds, (deckId) => api.delete(`/decks/${deckId}${forGood ? '/trash' : ''}`)),
+    onMutate: (deckIds) => {
+      void changeLists(queryClient, forGood ? TRASH_LISTS : queryKeys.deckLists, without(deckIds));
+    },
     onSettled: () => {
+      // One trash for both apps: its file in Cloud went or came with it.
+      void queryClient.invalidateQueries({ queryKey: ['cloud'] });
       void queryClient.invalidateQueries({ queryKey: queryKeys.decks });
       // Frees slots of the plan's deck limit (`Workspace.usage`, BER-130).
       void queryClient.invalidateQueries({ queryKey: queryKeys.me });

@@ -1,4 +1,5 @@
-import { createCanvas, loadImage } from '@napi-rs/canvas';
+import { createCanvas } from '@napi-rs/canvas';
+import { loadImage } from '../import/load-image';
 import type { UploadedEditImage, Viewer } from '@slider/shared';
 import type { RembgConfig } from '../config';
 import type { AppDeps } from '../deps';

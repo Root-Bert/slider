@@ -64,8 +64,8 @@ export function ResolveToggle({
   const title = !done
     ? 'Als erledigt markieren'
     : byAi
-      ? 'Von der KI erledigt – klicken zum Wiederöffnen'
-      : 'Erledigt – klicken zum Wiederöffnen';
+      ? 'Von der KI erledigt. Klicken zum Wiederöffnen'
+      : 'Erledigt. Klicken zum Wiederöffnen';
   const icon = done && byAi ? 'autoAwesome' : 'check';
 
   return (

@@ -21,13 +21,14 @@ export function SlideThumbnail({ glow = false, glowClassName, ...props }: SlideT
     <div className="relative isolate">
       {/* Blur sits on a padded wrapper, not the image: browsers clip a composited filter to the
           element's own box (the halo only showed after a forced repaint, e.g. a screenshot).
-          will-change keeps it on its own layer: the blur is rasterised once and only scaled, instead
-          of re-blurred every frame (stutter) and re-rasterised when the transition ends (jump). */}
+          Only its opacity ever changes: the blurred picture is painted once and then just faded –
+          scaling it re-blurred it every frame (stutter) and repainted it at the end (jump), and a
+          layer kept per card for that ran short with many cards. */}
       <div
         aria-hidden
         className={cn(
-          'pointer-events-none absolute -inset-16 -z-(--z-raised) p-16 opacity-35 blur-2xl',
-          'transition-[opacity,scale] duration-300 will-change-[opacity,scale]',
+          'pointer-events-none absolute -inset-10 -z-(--z-raised) p-10 opacity-30 blur-xl',
+          'transition-opacity duration-200',
           glowClassName,
         )}
       >

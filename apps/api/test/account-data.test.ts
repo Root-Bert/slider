@@ -4,15 +4,40 @@ import JSZip from 'jszip';
 import { DELETED_ACCOUNT_NAME, type Author, type WorkspaceRole } from '@slider/shared';
 import {
   appConnections,
+  blobDeletions,
+  callRecords,
+  cloudAreas,
+  cloudConnections,
+  cloudNodes,
+  cloudStars,
   comments,
   decks,
   deletedPptxComments,
+  documentCommentReactions,
+  documentComments,
+  googleConnections,
+  integrationKeys,
+  mailAccounts,
+  mailInsights,
+  mailMessages,
+  mailThreads,
+  cloudAgentChats,
+  cloudAgentFiles,
+  cloudAgentMessages,
+  cloudAgents,
   materialChatMessages,
   materialChats,
   materialQuestions,
   media,
+  pdfComments,
+  pdfMarks,
+  readerSignatures,
   revisions,
+  senderChannels,
+  senderDrafts,
+  senderMessages,
   sessions,
+  showRuns,
   slides,
   slideVersions,
   userIdentities,
@@ -22,6 +47,7 @@ import {
   workspaces,
 } from '../src/db/schema';
 import { hashToken } from '../src/auth/session';
+import { encryptToken } from '../src/auth/token-crypto';
 import { ensurePersonalWorkspace } from '../src/services/workspaces';
 import { RecordingMailer } from '../src/mail/mailer';
 import { deleteAccount } from '../src/services/account-deletion';
@@ -90,6 +116,97 @@ async function recording(
   return storageKey;
 }
 
+/** A rehearsal on `deckId` saved by `userId`, with a 4-byte recording. */
+async function rehearsal(deckId: string, userId: string) {
+  const id = crypto.randomUUID();
+  const recordingKey = `decks/${deckId}/runs/${id}.webm`;
+  await ctx.deps.storage.put(recordingKey, new Uint8Array([0x1a, 0x45, 0xdf, 0xa3]));
+  const at = new Date();
+  await ctx.deps.db.insert(showRuns).values({
+    id,
+    deckId,
+    at,
+    summary: { at: at.toISOString(), total: 1000, rows: [] },
+    recordingKey,
+    recordedBy: userId,
+  });
+  return { id, recordingKey };
+}
+
+/**
+ * A mailbox of `userId` in `workspaceId` with one mail and its attachment kept in storage;
+ * `microsoft`: signed in through Microsoft, its refresh token kept (sealed) beside the password.
+ */
+async function mailbox(userId: string, workspaceId: string, signIn?: 'microsoft') {
+  const id = crypto.randomUUID();
+  await ctx.deps.db.insert(mailAccounts).values({
+    id,
+    workspaceId,
+    userId,
+    address: 'anna@firma.de',
+    name: 'Anna Schmidt',
+    imapHost: 'imap.firma.de',
+    imapPort: 993,
+    imapSecure: true,
+    smtpHost: 'smtp.firma.de',
+    smtpPort: 465,
+    smtpSecure: true,
+    username: 'anna-login',
+    password: 'postfach-geheim',
+    ...(signIn ? { auth: signIn, refreshToken: 'ms-refresh-geheim' } : {}),
+    folders: [{ key: 'Kunden', path: 'Kunden', name: 'Kunden', role: null }],
+  });
+  const threadId = crypto.randomUUID();
+  await ctx.deps.db.insert(mailThreads).values({
+    id: threadId,
+    accountId: id,
+    subject: 'Angebot',
+    lastAt: new Date(),
+    context: {
+      summary: 'Ein Kunde schickt ein Angebot.',
+      kind: 'Angebot',
+      verdict: 'ok',
+      warning: null,
+      todo: null,
+      needsInfo: false,
+      facts: [],
+      links: [],
+      documents: [],
+      filing: [],
+    },
+  });
+  const key = `mail/${id}/${crypto.randomUUID()}`;
+  await ctx.deps.storage.put(key, new TextEncoder().encode('PDF'));
+  const picture = `mail/${id}/${crypto.randomUUID()}`;
+  await ctx.deps.storage.put(picture, new TextEncoder().encode('PNG'));
+  await ctx.deps.db.insert(mailMessages).values({
+    id: crypto.randomUUID(),
+    accountId: id,
+    threadId,
+    folder: 'inbox',
+    folders: ['inbox', 'Kunden'],
+    uid: 1,
+    messageId: `<${id}@firma.de>`,
+    from: { name: 'Kunde', address: 'kunde@extern.de' },
+    to: [{ name: 'Anna Schmidt', address: 'anna@firma.de' }],
+    cc: [],
+    subject: 'Angebot',
+    text: 'Anbei das Angebot.',
+    attachments: [{ id: 'a1', name: 'Angebot.pdf', type: 'application/pdf', size: 3, key }],
+    html: '<p>Anbei das Angebot.</p><img src="cid:logo">',
+    inlineImages: [{ id: 'i1', cid: 'logo', type: 'image/png', size: 3, key: picture }],
+    sentAt: new Date(),
+  });
+  // The AI panel's bullets for it (kept 14 days): in the export with their conversation.
+  await ctx.deps.db.insert(mailInsights).values({
+    threadId,
+    userId,
+    version: '1:x',
+    payload: { bullets: ['Angebot kommt'], organisations: [] },
+  });
+  return id;
+}
+
 const deleteMe = (cookie: string, confirmEmail: string) =>
   ctx.request('/api/me', { method: 'DELETE', json: { confirmEmail }, cookie });
 
@@ -98,6 +215,7 @@ const rowCount = async (query: Promise<{ count: number }[]>) => (await query)[0]
 describe('data export (BER-145)', () => {
   it('zips profile, own and taken-over decks with their files, own comments and recordings – no secrets; uploads passed on with a removal stay out', async () => {
     const person = await anna();
+    await ctx.deps.db.update(users).set({ callVoice: 'paul' }).where(eq(users.id, person.user.id));
     const own = await createReadyDeck(ctx, { title: 'Annas Deck' });
     const pptxKey = blobKeys.pptx(own.deckId, own.revisionId);
     await ctx.deps.storage.put(pptxKey, new TextEncoder().encode('PPTX'));
@@ -133,6 +251,12 @@ describe('data export (BER-145)', () => {
       person.cookie,
     );
     await recording(other.deckId, commentId, person.user.id);
+    await ctx.deps.db
+      .update(media)
+      .set({ transcript: 'Die Folie ist zu voll.', transcriptStatus: 'done' })
+      .where(eq(media.commentId, commentId));
+    await rehearsal(other.deckId, person.user.id);
+    await rehearsal(other.deckId, ctx.ownerId);
     await comment(other.deckId, other.slideIds[0] ?? '', 'Von Robert');
     await ctx.deps.db.insert(workspaceInvites).values({
       id: crypto.randomUUID(),
@@ -145,6 +269,124 @@ describe('data export (BER-145)', () => {
     });
 
     // A KI-App let in for the workspace, and a question about a deck's material.
+    const box = await mailbox(person.user.id, ctx.workspaceId, 'microsoft');
+    // Sender: her message and Robert's answer in their direct conversation.
+    const direct = (await (
+      await ctx.request(`/api/workspaces/${ctx.workspaceId}/sender/direct`, {
+        method: 'POST',
+        json: { userId: person.user.id },
+      })
+    ).json()) as { id: string };
+    for (const [text, cookie] of [
+      ['Hast du die Folien?', person.cookie],
+      ['Ja, gleich.', undefined],
+    ] as const) {
+      const sent = await ctx.request(`/api/sender/channels/${direct.id}/messages`, {
+        method: 'POST',
+        json: { text },
+        cookie,
+      });
+      expect(sent.status).toBe(201);
+    }
+    // She pinned the conversation at the top of her chats; Robert's pin of it is his.
+    for (const cookie of [person.cookie, undefined]) {
+      const pinned = await ctx.request('/api/sender/pins', {
+        method: 'POST',
+        json: { kind: 'channel', id: direct.id, pinned: true },
+        cookie,
+      });
+      expect(pinned.status).toBe(200);
+    }
+    // Her draft in the conversation and Robert's there: only hers goes along, as she wrote it.
+    for (const [text, cookie] of [
+      ['Und die Zahlen …', person.cookie],
+      ['Roberts Entwurf', undefined],
+    ] as const) {
+      const kept = await ctx.request(`/api/workspaces/${ctx.workspaceId}/drafts/${direct.id}`, {
+        method: 'PUT',
+        json: { text, target: { kind: 'conversation' }, at: new Date().toISOString() },
+        cookie,
+      });
+      expect(kept.status).toBe(200);
+    }
+    // Writer and Reader: her comments, a reaction, what she and Robert filled in, her signature.
+    const [documentId, pdfId] = [crypto.randomUUID(), crypto.randomUUID()];
+    await ctx.deps.db.insert(cloudNodes).values([
+      { id: documentId, workspaceId: ctx.workspaceId, kind: 'file', name: 'Bericht.odt' },
+      { id: pdfId, workspaceId: ctx.workspaceId, kind: 'file', name: 'Vertrag.pdf' },
+    ]);
+    const writerComment = crypto.randomUUID();
+    await ctx.deps.db.insert(documentComments).values({
+      id: writerComment,
+      documentId,
+      authorId: person.user.id,
+      body: 'Absatz 2 kürzen.',
+    });
+    await ctx.deps.db.insert(documentCommentReactions).values({
+      commentId: writerComment,
+      userId: person.user.id,
+      author: { id: person.user.id, name: 'Anna Schmidt', type: 'owner', color: 'blue' },
+      kind: 'up',
+    });
+    await ctx.deps.db.insert(pdfComments).values({
+      id: crypto.randomUUID(),
+      pdfId,
+      authorId: person.user.id,
+      body: 'Seite 3 fehlt.',
+    });
+    const png = 'data:image/png;base64,iVBORw0KGgo=';
+    await ctx.deps.db.insert(pdfMarks).values([
+      {
+        pdfId,
+        id: 'sig-1',
+        authorId: person.user.id,
+        body: { kind: 'signature', page: 0, rect: { x: 0, y: 0, w: 0.2, h: 0.1 }, image: png },
+      },
+      {
+        pdfId,
+        id: 'field:Ort',
+        authorId: ctx.ownerId,
+        body: { kind: 'field', page: 0, name: 'Ort', value: 'Berlin' },
+      },
+    ]);
+    await ctx.deps.db.insert(cloudStars).values({ userId: person.user.id, nodeId: pdfId });
+    await ctx.deps.db.insert(cloudConnections).values({
+      id: crypto.randomUUID(),
+      workspaceId: ctx.workspaceId,
+      userId: person.user.id,
+      name: 'Linear',
+      url: 'https://mcp.linear.app/mcp',
+      auth: {
+        token: 'geheim-token',
+        tokens: { access_token: 'geheim-at' },
+        discovery: {
+          authorizationServerUrl: 'https://mcp.linear.app',
+          authorizationServerMetadata: { revocation_endpoint: 'https://mcp.linear.app/revoke' },
+        },
+      },
+      state: 'connected',
+      tools: [],
+    });
+    // An API's key goes in a header of its own: its kind is exported, the key never.
+    await ctx.deps.db.insert(cloudConnections).values({
+      id: crypto.randomUUID(),
+      workspaceId: ctx.workspaceId,
+      userId: person.user.id,
+      name: 'Personio',
+      url: 'https://api.personio.test/v1',
+      kind: 'api',
+      api: { auth: 'header', header: 'X-Api-Key', about: 'Urlaube' },
+      auth: { token: 'api-geheim' },
+      state: 'connected',
+      tools: [],
+    });
+    await ctx.deps.db.insert(readerSignatures).values({
+      id: crypto.randomUUID(),
+      userId: person.user.id,
+      image: png,
+      width: 10,
+      height: 5,
+    });
     const appHash = hashToken('slider_pat_anna');
     await ctx.deps.db.insert(appConnections).values({
       id: crypto.randomUUID(),
@@ -176,6 +418,181 @@ describe('data export (BER-145)', () => {
       question: 'Wie stark wächst der Markt?',
       answer: 'Um **12 Prozent**.',
       state: 'done',
+    });
+    const agentId = crypto.randomUUID();
+    await ctx.deps.db.insert(cloudAgents).values({
+      id: agentId,
+      workspaceId: ctx.workspaceId,
+      userId: person.user.id,
+      title: 'Schreib einen Bericht',
+    });
+    await ctx.deps.db
+      .insert(cloudAgentChats)
+      .values({ id: agentId, agentId, userId: person.user.id });
+    await ctx.deps.db.insert(cloudAgentMessages).values({
+      id: crypto.randomUUID(),
+      agentId,
+      chatId: agentId,
+      seq: 1,
+      role: 'user',
+      text: 'Schreib einen Bericht',
+    });
+    // Robert wrote to her agent too; she wrote to his.
+    await ctx.deps.db.insert(cloudAgentMessages).values({
+      id: crypto.randomUUID(),
+      agentId,
+      chatId: agentId,
+      userId: ctx.ownerId,
+      seq: 2,
+      role: 'user',
+      text: 'Mit Zahlen bitte',
+    });
+    const robertsAgent = crypto.randomUUID();
+    await ctx.deps.db.insert(cloudAgents).values({
+      id: robertsAgent,
+      workspaceId: ctx.workspaceId,
+      userId: ctx.ownerId,
+      title: 'Roberts Agent',
+    });
+    await ctx.deps.db
+      .insert(cloudAgentChats)
+      .values({ id: robertsAgent, agentId: robertsAgent, userId: ctx.ownerId });
+    await ctx.deps.db.insert(cloudAgentMessages).values([
+      {
+        id: crypto.randomUUID(),
+        agentId: robertsAgent,
+        chatId: robertsAgent,
+        userId: ctx.ownerId,
+        seq: 1,
+        role: 'user',
+        text: 'Von Robert an seinen',
+      },
+      {
+        id: crypto.randomUUID(),
+        agentId: robertsAgent,
+        chatId: robertsAgent,
+        userId: person.user.id,
+        seq: 2,
+        role: 'user',
+        text: 'Von Anna an Roberts',
+      },
+    ]);
+    await ctx.deps.db.insert(cloudAgentFiles).values({
+      id: crypto.randomUUID(),
+      agentId,
+      kind: 'new',
+      name: 'Bericht.md',
+      content: '# Bericht',
+    });
+    // Tagged in conversations: hers what was said in one she reads – not in a group she is not in.
+    const secretGroup = crypto.randomUUID();
+    await ctx.deps.db
+      .insert(senderChannels)
+      .values({ id: secretGroup, workspaceId: ctx.workspaceId, kind: 'group', name: 'Geheim' });
+    await ctx.deps.db.insert(cloudAgentChats).values([
+      { id: `${agentId}:${direct.id}`, agentId, userId: person.user.id },
+      { id: `${agentId}:${secretGroup}`, agentId, userId: person.user.id },
+      { id: `${robertsAgent}:${secretGroup}`, agentId: robertsAgent, userId: person.user.id },
+    ]);
+    const said = (
+      to: string,
+      chat: string,
+      seq: number,
+      role: 'user' | 'assistant',
+      text: string,
+    ) => ({
+      id: crypto.randomUUID(),
+      agentId: to,
+      chatId: `${to}:${chat}`,
+      userId: role === 'user' ? person.user.id : null,
+      seq,
+      role,
+      text,
+    });
+    await ctx.deps.db
+      .insert(cloudAgentMessages)
+      .values([
+        said(agentId, direct.id, 3, 'user', 'Gerufen im Direkten'),
+        said(agentId, secretGroup, 4, 'user', 'Gerufen, zuvor: Ben: Geheim aus der Gruppe'),
+        said(agentId, secretGroup, 5, 'assistant', 'Geheim beantwortet'),
+        said(robertsAgent, secretGroup, 3, 'user', 'Ben: Geheim bei Robert'),
+      ]);
+    // Her agent of an area she no longer sees: only what she wrote to it.
+    const board = crypto.randomUUID();
+    await ctx.deps.db.insert(cloudAreas).values({
+      id: board,
+      workspaceId: ctx.workspaceId,
+      name: 'Vorstand',
+      color: 'violet',
+      visibility: 'members',
+      createdBy: ctx.ownerId,
+    });
+    const areaAgent = crypto.randomUUID();
+    await ctx.deps.db.insert(cloudAgents).values({
+      id: areaAgent,
+      workspaceId: ctx.workspaceId,
+      userId: person.user.id,
+      areaId: board,
+      shared: true,
+      title: 'Agent',
+    });
+    await ctx.deps.db
+      .insert(cloudAgentChats)
+      .values({ id: areaAgent, agentId: areaAgent, userId: person.user.id });
+    await ctx.deps.db.insert(cloudAgentMessages).values(
+      (
+        [
+          [person.user.id, 'user', 'Meins im Bereich'],
+          [ctx.ownerId, 'user', 'Von Robert im Bereich'],
+          [null, 'assistant', 'Antwort im Bereich'],
+        ] as const
+      ).map(([from, role, text], at) => ({
+        id: crypto.randomUUID(),
+        agentId: areaAgent,
+        chatId: areaAgent,
+        userId: from,
+        seq: at + 1,
+        role,
+        text,
+      })),
+    );
+    // Her private one there stays hers in full.
+    const privateThere = crypto.randomUUID();
+    await ctx.deps.db.insert(cloudAgents).values({
+      id: privateThere,
+      workspaceId: ctx.workspaceId,
+      userId: person.user.id,
+      areaId: board,
+      title: 'Privat',
+    });
+    await ctx.deps.db
+      .insert(cloudAgentChats)
+      .values({ id: privateThere, agentId: privateThere, userId: person.user.id });
+    await ctx.deps.db.insert(cloudAgentMessages).values([
+      {
+        id: crypto.randomUUID(),
+        agentId: privateThere,
+        chatId: privateThere,
+        userId: person.user.id,
+        seq: 1,
+        role: 'user',
+        text: 'Nur für mich',
+      },
+      {
+        id: crypto.randomUUID(),
+        agentId: privateThere,
+        chatId: privateThere,
+        seq: 2,
+        role: 'assistant',
+        text: 'Gern',
+      },
+    ]);
+    await ctx.deps.db.insert(cloudAgentFiles).values({
+      id: crypto.randomUUID(),
+      agentId: areaAgent,
+      kind: 'new',
+      name: 'Vorstand.md',
+      content: '# Vorstand',
     });
     const chatId = crypto.randomUUID();
     await ctx.deps.db.insert(materialChats).values({
@@ -212,6 +629,37 @@ describe('data export (BER-145)', () => {
     expect(
       await (await words(`${teamWords}?word=Quartalsziel`, { method: 'DELETE' })).json(),
     ).toEqual([]);
+    expect((await teach(teamWords, 'Umsatzziel')).status).toBe(200);
+
+    // A call with Robert in their direct conversation, written down, with its notes.
+    const turn = (userId: string, name: string, text: string) => ({
+      userId,
+      name,
+      text,
+      at: new Date().toISOString(),
+    });
+    await ctx.deps.db.insert(callRecords).values({
+      id: crypto.randomUUID(),
+      workspaceId: ctx.workspaceId,
+      channelId: direct.id,
+      kind: 'direct',
+      title: '',
+      startedBy: person.user.id,
+      personIds: [person.user.id, ctx.ownerId],
+      people: [
+        { id: person.user.id, name: 'Anna Schmidt', type: 'owner', color: 'blue' },
+        { id: ctx.ownerId, name: 'Robert', type: 'owner', color: 'red' },
+      ],
+      lines: [
+        turn(person.user.id, 'Anna Schmidt', 'Machen wir Freitag.'),
+        turn(ctx.ownerId, 'Robert', 'Passt mir.'),
+      ],
+      orders: [],
+      notes: { summary: 'Termin Freitag.', decisions: [], todos: [], open: [], links: [] },
+      notesState: 'done',
+      startedAt: new Date(),
+      endedAt: new Date(),
+    });
 
     const res = await ctx.request('/api/me/export', { cookie: person.cookie });
     expect(res.status).toBe(200);
@@ -222,14 +670,58 @@ describe('data export (BER-145)', () => {
     const zip = await JSZip.loadAsync(await res.arrayBuffer());
     const read = async (name: string) => JSON.parse((await zip.file(name)?.async('string')) ?? '');
     const account = await read('konto.json');
+    // Their own files in Cloud are listed (none here); a second archive at once is refused.
+    expect(await read('dateien.json')).toEqual([]);
+    expect(
+      (
+        await Promise.all([
+          ctx.request('/api/me/export', { cookie: person.cookie }),
+          ctx.request('/api/me/export', { cookie: person.cookie }),
+        ])
+      )
+        .map((each) => each.status)
+        .sort(),
+    ).toEqual([200, 429]);
     expect(await read('woerterbuch.json')).toEqual([
       { word: 'Slider-Deck', createdAt: expect.any(String) },
     ]);
-    expect(account.profile).toMatchObject({ name: 'Anna Schmidt', email: 'anna@firma.de' });
+    expect(account.profile).toMatchObject({
+      name: 'Anna Schmidt',
+      email: 'anna@firma.de',
+      callVoice: 'paul',
+    });
     expect(account.workspaces).toEqual([
       expect.objectContaining({ id: ctx.workspaceId, role: 'member' }),
     ]);
     expect(account.sessions).toHaveLength(1);
+    expect(account.profile.lastActiveAt).toEqual(expect.any(String));
+    // Both made in the same moment: in either order.
+    expect(account.cloudConnections).toHaveLength(2);
+    expect(account.cloudConnections).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          name: 'Linear',
+          kind: 'mcp',
+          url: 'https://mcp.linear.app/mcp',
+          state: 'connected',
+        }),
+        expect.objectContaining({
+          name: 'Personio',
+          kind: 'api',
+          api: { auth: 'header', header: 'X-Api-Key', spec: null, about: 'Urlaube' },
+        }),
+      ]),
+    );
+    expect(account.cloudStarred).toEqual([
+      expect.objectContaining({ id: pdfId, name: 'Vertrag.pdf' }),
+    ]);
+    expect(account.senderConversations).toEqual([
+      expect.objectContaining({ id: direct.id, kind: 'direct' }),
+    ]);
+    expect(account.senderPinned).toEqual([
+      { conversationId: direct.id, agentId: null, mailThreadId: null, at: expect.any(String) },
+    ]);
+    expect(account.workspaceWords).toEqual([expect.objectContaining({ word: 'Umsatzziel' })]);
     expect(account.aiApps).toEqual([
       expect.objectContaining({
         name: 'Claude Code',
@@ -245,6 +737,43 @@ describe('data export (BER-145)', () => {
         answer: 'Um **12 Prozent**.',
       }),
     ]);
+    expect(await read('agenten.json')).toEqual([
+      expect.objectContaining({
+        title: 'Schreib einen Bericht',
+        messages: [
+          expect.objectContaining({ role: 'du', text: 'Schreib einen Bericht' }),
+          expect.objectContaining({ role: 'andere Person', text: 'Mit Zahlen bitte' }),
+          expect.objectContaining({ role: 'du', text: 'Gerufen im Direkten' }),
+        ],
+        files: [expect.objectContaining({ name: 'Bericht.md', kind: 'new', content: '# Bericht' })],
+      }),
+      expect.objectContaining({
+        id: areaAgent,
+        areaLeft: true,
+        messages: [expect.objectContaining({ role: 'du', text: 'Meins im Bereich' })],
+        files: [],
+      }),
+      expect.objectContaining({
+        id: privateThere,
+        messages: [
+          expect.objectContaining({ role: 'du', text: 'Nur für mich' }),
+          expect.objectContaining({ role: 'KI', text: 'Gern' }),
+        ],
+      }),
+      expect.objectContaining({
+        title: 'Roberts Agent',
+        messages: [expect.objectContaining({ role: 'du', text: 'Von Anna an Roberts' })],
+      }),
+    ]);
+    expect(await read('material.json')).toEqual({
+      notes: [
+        expect.objectContaining({
+          deck: { id: other.deckId, title: 'Roberts Deck' },
+          text: 'Wie stark wächst der Markt?',
+        }),
+      ],
+      files: [],
+    });
     expect(await read('ki-chats.json')).toEqual([
       expect.objectContaining({
         deck: { id: other.deckId, title: 'Roberts Deck' },
@@ -269,8 +798,79 @@ describe('data export (BER-145)', () => {
     const written = await read('kommentare.json');
     expect(written.map((c: { body: string }) => c.body)).toEqual(['Folie 1 ist zu voll.']);
     const recordings = await read('aufnahmen.json');
-    expect(recordings).toHaveLength(1);
-    expect(zip.file(recordings[0].file)).not.toBeNull();
+    // Her comment's recording and her rehearsal – not Robert's.
+    expect(recordings.map((r: { kind: string }) => r.kind)).toEqual(['audio', 'rehearsal']);
+    expect(recordings[0].transcript).toBe('Die Folie ist zu voll.');
+    for (const each of recordings) expect(zip.file(each.file)).not.toBeNull();
+    expect(await read('nachrichten.json')).toEqual([
+      expect.objectContaining({
+        conversation: expect.objectContaining({ id: direct.id, kind: 'direct' }),
+        text: 'Hast du die Folien?',
+      }),
+    ]);
+    expect(await read('entwuerfe.json')).toEqual([
+      expect.objectContaining({
+        workspaceId: ctx.workspaceId,
+        key: direct.id,
+        kind: 'conversation',
+        text: 'Und die Zahlen …',
+      }),
+    ]);
+    // Her calls: her words, not Robert's, and the notes.
+    expect(await read('anrufe.json')).toEqual([
+      expect.objectContaining({
+        said: [expect.objectContaining({ text: 'Machen wir Freitag.' })],
+        notes: expect.objectContaining({ summary: 'Termin Freitag.' }),
+      }),
+    ]);
+    const documents = await read('dokumente.json');
+    expect(documents.comments.map((c: { body: string }) => c.body)).toEqual([
+      'Absatz 2 kürzen.',
+      'Seite 3 fehlt.',
+    ]);
+    expect(documents.reactions).toEqual([expect.objectContaining({ commentId: writerComment })]);
+    // Her entry on the PDF, not Robert's; the signature's picture as a file.
+    expect(documents.filledIn).toEqual([
+      expect.objectContaining({ id: 'sig-1', file: { id: pdfId, name: 'Vertrag.pdf' } }),
+    ]);
+    for (const file of [documents.filledIn[0].image, documents.signatures[0].file]) {
+      expect((await zip.file(file)?.async('uint8array'))?.slice(1, 4)).toEqual(
+        new TextEncoder().encode('PNG'),
+      );
+    }
+    // Her mailbox: where she reads and what – never its sign-in (checked with all below).
+    const mail = await read('mail.json');
+    expect(mail).toEqual([
+      expect.objectContaining({
+        address: 'anna@firma.de',
+        imapServer: 'imap.firma.de',
+        signIn: 'microsoft',
+        folders: ['Posteingang', 'Gesendet', 'Spam', 'Kunden'],
+        conversations: [
+          expect.objectContaining({
+            subject: 'Angebot',
+            aiContext: expect.objectContaining({ summary: 'Ein Kunde schickt ein Angebot.' }),
+            aiSummary: expect.objectContaining({ bullets: ['Angebot kommt'] }),
+            messages: [
+              expect.objectContaining({
+                text: 'Anbei das Angebot.',
+                seen: false,
+                // Where it lies, by the names its folders show under.
+                folders: ['Posteingang', 'Kunden'],
+                attachments: [expect.objectContaining({ name: 'Angebot.pdf' })],
+              }),
+            ],
+          }),
+        ],
+      }),
+    ]);
+    const attachment = mail[0].conversations[0].messages[0].attachments[0].file;
+    expect(await zip.file(attachment)?.async('string')).toBe('PDF');
+    // Its HTML and the pictures it brings itself (`cid:`) come along too.
+    const [inline] = mail[0].conversations[0].messages[0].inlineImages;
+    expect(mail[0].conversations[0].messages[0].html).toContain('cid:logo');
+    expect(inline).toMatchObject({ cid: 'logo', type: 'image/png' });
+    expect(await zip.file(inline.file)?.async('string')).toBe('PNG');
     expect(await read('einladungen.json')).toEqual([
       expect.objectContaining({ email: 'Anna@Firma.de', role: 'member' }),
     ]);
@@ -278,15 +878,50 @@ describe('data export (BER-145)', () => {
     const everything = await Promise.all(
       Object.values(zip.files).map((file) => file.async('string')),
     );
-    expect(everything.join('\n')).not.toMatch(/token_hash|refreshToken|publicKey|geheim/);
+    expect(everything.join('\n')).not.toMatch(
+      /token_hash|refreshToken|publicKey|geheim|anna-login/,
+    );
     expect(everything.join('\n')).not.toContain(appHash);
 
-    // Removed from the workspace: the upload is the workspace's now (BER-165).
+    // Removed from the workspace: the upload is the workspace's now (BER-165); her mailbox
+    // there stops syncing and goes, attachments and all – the one elsewhere stays. Her
+    // connection there goes too, its sign-in handed back to the service.
+    const revoked: string[] = [];
+    ctx.deps.ssoNetwork!.fetch = async (url, init) => {
+      revoked.push(`${String(url)} ${String(init?.body)}`);
+      return new Response(null, { status: 200 });
+    };
+    const elsewhereId = crypto.randomUUID();
+    await ctx.deps.db
+      .insert(workspaces)
+      .values({ id: elsewhereId, name: 'Privat', slug: 'privat' });
+    await join(person.user.id, elsewhereId, 'admin');
+    const keptBox = await mailbox(person.user.id, elsewhereId);
     const removed = await ctx.request(
       `/api/workspaces/${ctx.workspaceId}/members/${person.user.id}`,
       { method: 'DELETE' },
     );
     expect(removed.status).toBe(204);
+    expect(
+      (
+        await ctx.deps.db
+          .select({ id: mailAccounts.id })
+          .from(mailAccounts)
+          .where(eq(mailAccounts.userId, person.user.id))
+      ).map((row) => row.id),
+    ).toEqual([keptBox]);
+    expect(await ctx.deps.storage.list(`mail/${box}/`)).toEqual([]);
+    expect(await ctx.deps.storage.list(`mail/${keptBox}/`)).toHaveLength(2);
+    await ctx.deps.background?.idle();
+    expect(revoked).toEqual([
+      'https://mcp.linear.app/revoke token=geheim-at&token_type_hint=access_token',
+    ]);
+    expect(
+      await ctx.deps.db
+        .select()
+        .from(cloudConnections)
+        .where(eq(cloudConnections.userId, person.user.id)),
+    ).toEqual([]);
     const after = await JSZip.loadAsync(
       await (await ctx.request('/api/me/export', { cookie: person.cookie })).arrayBuffer(),
     );
@@ -295,6 +930,11 @@ describe('data export (BER-145)', () => {
     ) as { title: string }[];
     expect(afterList.map((deck) => deck.title)).not.toContain('Annas Deck');
     expect(after.file(ownEntry.file)).toBeNull();
+    // Her drafts and pins there go with her: nobody could see or delete them any more.
+    expect(JSON.parse((await after.file('entwuerfe.json')?.async('string')) ?? '')).toEqual([]);
+    expect(
+      JSON.parse((await after.file('konto.json')?.async('string')) ?? '').senderPinned,
+    ).toEqual([]);
   });
 });
 
@@ -398,6 +1038,129 @@ describe('deleting an account (BER-145)', () => {
     const annasComment = await comment(roberts.deckId, slideId, 'Zu viel Text.', person.cookie);
     const recordingKey = await recording(roberts.deckId, annasComment, annaId);
     const drawingKey = await recording(roberts.deckId, annasComment, annaId, 'image');
+    const run = await rehearsal(roberts.deckId, annaId);
+    // Her reply under Robert's note on the material page, the AI key she set.
+    const noteId = crypto.randomUUID();
+    await ctx.request(`/api/decks/${roberts.deckId}/board/items`, {
+      method: 'POST',
+      json: { id: noteId, kind: 'box', text: 'Marktgröße?', x: 0, y: 0, w: 200, h: 120 },
+    });
+    const replyId = crypto.randomUUID();
+    await ctx.deps.db.insert(materialQuestions).values({
+      id: replyId,
+      deckId: roberts.deckId,
+      noteId,
+      userId: annaId,
+      kind: 'reply',
+      author: { id: annaId, name: 'Anna Schmidt', type: 'owner', color: 'blue' },
+      question: 'Eher 12 Prozent.',
+      answer: '',
+    });
+    const keyId = crypto.randomUUID();
+    await ctx.deps.db.insert(integrationKeys).values({
+      id: keyId,
+      workspaceId: ctx.workspaceId,
+      kind: 'ai',
+      provider: 'anthropic',
+      apiKey: 'sk-ant-anna',
+      hint: 'sk-ant-…anna',
+      model: 'claude',
+      setById: annaId,
+      setByName: 'Anna Schmidt',
+      setAt: new Date(),
+    });
+    await ctx.deps.db
+      .update(workspaces)
+      .set({ aiKeySetById: annaId, aiKeySetByName: 'Anna Schmidt' })
+      .where(eq(workspaces.id, ctx.workspaceId));
+    // Sender: Robert's direct conversation with her, mentioning her by first and full name;
+    // Writer: a comment mentioning her.
+    const direct = (await (
+      await ctx.request(`/api/workspaces/${ctx.workspaceId}/sender/direct`, {
+        method: 'POST',
+        json: { userId: annaId },
+      })
+    ).json()) as { id: string };
+    const say = async (text: string, cookie?: string) => {
+      const sent = await ctx.request(`/api/sender/channels/${direct.id}/messages`, {
+        method: 'POST',
+        json: { text },
+        cookie,
+      });
+      expect(sent.status).toBe(201);
+      return ((await sent.json()) as { id: string }).id;
+    };
+    const toHer = await say('Hallo @Anna, und @anna schmidt?');
+    const hers = await say('Hallo Robert', person.cookie);
+    // Her draft goes with her.
+    await ctx.deps.db.insert(senderDrafts).values({
+      id: crypto.randomUUID(),
+      userId: annaId,
+      workspaceId: ctx.workspaceId,
+      key: direct.id,
+      kind: 'conversation',
+      target: { kind: 'conversation' },
+      text: 'Noch nicht abgeschickt',
+      updatedAt: new Date(),
+    });
+    // Then two more in the workspace: another Anna, and her namesake. Their mentions stay theirs.
+    const berg = await signedInUser(ctx, { name: 'Anna Berg', email: 'berg@firma.de' });
+    await join(berg.user.id, ctx.workspaceId, 'member');
+    const namesake = await signedInUser(ctx, { name: 'Anna Schmidt', email: 'schmidt@firma.de' });
+    await join(namesake.user.id, ctx.workspaceId, 'member');
+    const both = await say('@Anna Berg und @anna, bitte.');
+    const toNamesake = await say('@Anna Schmidt, kommst du?');
+    const onlyBerg = await say('Danke @Anna Berg');
+    const documentId = crypto.randomUUID();
+    await ctx.deps.db.insert(cloudNodes).values({
+      id: documentId,
+      workspaceId: ctx.workspaceId,
+      kind: 'file',
+      name: 'Bericht.odt',
+    });
+    const writerComment = crypto.randomUUID();
+    await ctx.deps.db.insert(documentComments).values({
+      id: writerComment,
+      documentId,
+      authorId: ctx.ownerId,
+      body: 'Frag @Anna Schmidt.',
+    });
+    // Her grants outside: a Google one left from before, a connection in Cloud signed in by OAuth
+    // at a service that names where to revoke – both revoked once she is gone.
+    await ctx.deps.db.insert(googleConnections).values({
+      id: crypto.randomUUID(),
+      userId: annaId,
+      subject: 'sub-anna',
+      refreshToken: await encryptToken(ctx.deps.config.secret, 'g-anna', 'google-refresh-token'),
+    });
+    await ctx.deps.db.insert(cloudConnections).values({
+      id: crypto.randomUUID(),
+      workspaceId: ctx.workspaceId,
+      userId: annaId,
+      name: 'Linear',
+      url: 'https://mcp.linear.app/mcp',
+      auth: {
+        client: { client_id: 'slider-client' },
+        tokens: { access_token: 'at-anna', refresh_token: 'rt-anna' },
+        discovery: {
+          authorizationServerUrl: 'https://mcp.linear.app',
+          authorizationServerMetadata: { revocation_endpoint: 'https://mcp.linear.app/revoke' },
+        },
+      },
+      state: 'connected',
+      tools: [],
+    });
+    const revoked: string[] = [];
+    ctx.deps.ssoNetwork!.fetch = async (url, init) => {
+      revoked.push(`${String(url)} ${String(init?.body)}`);
+      return new Response(null, { status: 200 });
+    };
+    // Her mailboxes, here and in her own workspace: their attachments go too.
+    // The one signed in through Microsoft: its refresh token goes with it.
+    const mailboxes = [
+      await mailbox(annaId, ctx.workspaceId),
+      await mailbox(annaId, soloId, 'microsoft'),
+    ];
     await ctx.deps.db
       .update(comments)
       .set({ status: 'done', resolvedBy: annaId })
@@ -420,8 +1183,29 @@ describe('deleting an account (BER-145)', () => {
       expiresAt: new Date(Date.now() + 86_400_000),
     });
 
+    // Her files are noted for deletion with the rows: a crash after the commit leaves them to
+    // the sweep. Gone, the notes go too.
+    const transaction = ctx.deps.db.transaction.bind(ctx.deps.db);
+    let noted: string[] | undefined;
+    ctx.deps.db.transaction = (async (...args: Parameters<typeof transaction>) => {
+      const result = await transaction(...args);
+      noted ??= (await ctx.deps.db.select().from(blobDeletions)).map((row) => row.key);
+      return result;
+    }) as typeof transaction;
     const res = await deleteMe(person.cookie, ' Anna@Firma.de ');
+    ctx.deps.db.transaction = transaction;
     expect(res.status).toBe(204);
+    expect(noted).toEqual(
+      expect.arrayContaining([
+        recordingKey,
+        run.recordingKey,
+        blobKeys.deckPrefix(linked.deckId),
+        ...mailboxes.map((id) => `mail/${id}/`),
+      ]),
+    );
+    expect(await ctx.deps.db.select().from(blobDeletions)).toEqual([]);
+    // The services are asked to forget her grants after that, in the background.
+    await ctx.deps.background?.idle();
 
     const { db } = ctx.deps;
     expect(await db.select().from(users).where(eq(users.id, annaId))).toEqual([]);
@@ -445,6 +1229,21 @@ describe('deleting an account (BER-145)', () => {
     // Images go too (what a screenshot shows can't be anonymised); the comment text stays.
     expect(await db.select().from(media).where(eq(media.storageKey, drawingKey))).toEqual([]);
     expect(await ctx.deps.media.get(drawingKey)).toBeNull();
+    // Her rehearsal's recording goes; the run stays with the deck.
+    const [runLeft] = await db.select().from(showRuns).where(eq(showRuns.id, run.id));
+    expect(runLeft).toMatchObject({ recordingKey: null, recordedBy: null });
+    expect(await ctx.deps.storage.get(run.recordingKey)).toBeNull();
+    expect(await db.select().from(senderDrafts).where(eq(senderDrafts.userId, annaId))).toEqual([]);
+    expect(await db.select().from(mailAccounts).where(eq(mailAccounts.userId, annaId))).toEqual([]);
+    expect(revoked).toEqual([
+      'https://oauth2.googleapis.com/revoke token=g-anna',
+      'https://mcp.linear.app/revoke token=rt-anna&token_type_hint=refresh_token&client_id=slider-client',
+      'https://mcp.linear.app/revoke token=at-anna&token_type_hint=access_token&client_id=slider-client',
+    ]);
+    expect(
+      await db.select().from(cloudConnections).where(eq(cloudConnections.userId, annaId)),
+    ).toEqual([]);
+    for (const id of mailboxes) expect(await ctx.deps.storage.list(`mail/${id}/`)).toEqual([]);
     const [mentioning] = await db.select().from(comments).where(eq(comments.id, mention));
     expect(mentioning?.body).toBe(`Danke @${DELETED_ACCOUNT_NAME}! Und @Anna Schmidtke?`);
 
@@ -459,6 +1258,50 @@ describe('deleting an account (BER-145)', () => {
       .from(comments)
       .where(sql`${comments.author}::text like ${`%${annaId}%`}`);
     expect(leftovers[0]?.count).toBe(0);
+    const [reply] = await db
+      .select()
+      .from(materialQuestions)
+      .where(eq(materialQuestions.id, replyId));
+    expect(reply).toMatchObject({
+      userId: null,
+      author: { id: author.id, name: DELETED_ACCOUNT_NAME },
+    });
+    expect(JSON.stringify(await db.select().from(materialQuestions))).not.toContain(annaId);
+    const said = await db
+      .select()
+      .from(senderMessages)
+      .where(eq(senderMessages.channelId, direct.id));
+    expect(said.find((m) => m.id === toHer)).toMatchObject({
+      text: `Hallo @${DELETED_ACCOUNT_NAME}, und @${DELETED_ACCOUNT_NAME}?`,
+      mentions: [],
+    });
+    expect(said.find((m) => m.id === hers)).toMatchObject({ userId: null, text: 'Hallo Robert' });
+    // `@Anna` before „Berg“ is the other Anna's, and with her namesake there the deleted one's
+    // own name may be the living one's: those stay as written, only her id goes.
+    for (const [id, text] of [
+      [both, '@Anna Berg und @anna, bitte.'],
+      [toNamesake, '@Anna Schmidt, kommst du?'],
+      [onlyBerg, 'Danke @Anna Berg'],
+    ] as const) {
+      const message = said.find((m) => m.id === id);
+      expect(message?.text).toBe(text);
+      expect(message?.mentions).toEqual(expect.arrayContaining([berg.user.id, namesake.user.id]));
+      expect(message?.mentions).not.toContain(annaId);
+    }
+    const [conversation] = await db
+      .select()
+      .from(senderChannels)
+      .where(eq(senderChannels.id, direct.id));
+    expect(conversation?.directKey).not.toContain(annaId);
+    const [writer] = await db
+      .select()
+      .from(documentComments)
+      .where(eq(documentComments.id, writerComment));
+    expect(writer?.body).toBe(`Frag @${DELETED_ACCOUNT_NAME}.`);
+    const [key] = await db.select().from(integrationKeys).where(eq(integrationKeys.id, keyId));
+    expect(key).toMatchObject({ setById: null, setByName: DELETED_ACCOUNT_NAME });
+    const [shared] = await db.select().from(workspaces).where(eq(workspaces.id, ctx.workspaceId));
+    expect(shared).toMatchObject({ aiKeySetById: null, aiKeySetByName: DELETED_ACCOUNT_NAME });
 
     // The deck shows the comment under the deleted author.
     const list = (await (await ctx.request(`/api/decks/${roberts.deckId}/comments`)).json()) as {
@@ -713,6 +1556,19 @@ describe('data requests without login (BER-146)', () => {
     });
     const zip = await ctx.request(`/api/data-requests/${token}/export`);
     expect(zip.headers.get('content-type')).toBe('application/zip');
+    // The whole account: two days, three downloads – then the page and the link say so.
+    expect(mailer.sent.at(-1)?.text).toContain('48 Stunden');
+    const exportInfo = (await (await ctx.request(`/api/data-requests/${token}`)).json()) as {
+      expiresAt: string;
+    };
+    expect(
+      new Date(exportInfo.expiresAt).getTime() - ctx.clock.now().getTime(),
+    ).toBeLessThanOrEqual(48 * 60 * 60 * 1000);
+    for (let i = 0; i < 2; i++) {
+      expect((await ctx.request(`/api/data-requests/${token}/export`)).status).toBe(200);
+    }
+    expect((await ctx.request(`/api/data-requests/${token}/export`)).status).toBe(410);
+    expect((await ctx.request(`/api/data-requests/${token}`)).status).toBe(410);
     // An export link deletes nothing, a forged one does nothing at all.
     expect(
       (await ctx.request(`/api/data-requests/${token}/delete`, { method: 'POST' })).status,
@@ -1058,7 +1914,33 @@ describe('deleting a deck (BER-143)', () => {
       .insert(deletedPptxComments)
       .values({ deckId: deck.deckId, externalId: 'pptx-1' });
 
+    // „Löschen“ puts it into the trash: in no list, not to be opened, yet whole – and back as
+    // it was when restored. Only out of the trash it is gone.
+    const listed = async (path: string) =>
+      ((await (await ctx.request(path)).json()) as { id: string }[]).map((each) => each.id);
+    const picture = (
+      (await (await ctx.request('/api/decks')).json()) as { id: string; thumbnailUrl: string }[]
+    ).find((each) => each.id === deck.deckId)!.thumbnailUrl;
+    expect((await ctx.request(picture)).status).toBe(200);
     expect((await ctx.request(`/api/decks/${deck.deckId}`, { method: 'DELETE' })).status).toBe(204);
+    expect(await listed('/api/decks')).not.toContain(deck.deckId);
+    expect(await listed('/api/decks/trash')).toEqual([deck.deckId]);
+    // The trash shows its picture to whoever may bring it back.
+    expect((await ctx.request(picture)).status).toBe(200);
+    expect((await ctx.request(`/api/decks/${deck.deckId}`)).status).toBe(404);
+    expect((await ctx.request(`/api/decks/${deck.deckId}`, { method: 'DELETE' })).status).toBe(404);
+    expect(
+      (await ctx.request(`/api/decks/${deck.deckId}/restore`, { method: 'POST' })).status,
+    ).toBe(204);
+    expect(await listed('/api/decks')).toContain(deck.deckId);
+    expect(await listed('/api/decks/trash')).toEqual([]);
+    expect(
+      (await ctx.request(`/api/decks/${deck.deckId}/trash`, { method: 'DELETE' })).status,
+    ).toBe(404);
+    expect((await ctx.request(`/api/decks/${deck.deckId}`, { method: 'DELETE' })).status).toBe(204);
+    expect(
+      (await ctx.request(`/api/decks/${deck.deckId}/trash`, { method: 'DELETE' })).status,
+    ).toBe(204);
 
     const { db } = ctx.deps;
     for (const [name, rows] of [

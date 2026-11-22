@@ -1,6 +1,6 @@
 """
-Writes the Slider logo files into brand/logo/, one folder per layout: the mark (two stacked
-slides with a comment box over them) beside the word "Slider", above it, alone, and the word
+Writes the Slider logo files into brand/logo/, one folder per layout: the mark (a pull-down
+screen with a bar chart, a comment box over it) beside the word "Slider", above it, alone, and the word
 alone, for light and dark backgrounds, plus the 256 icon tiles in `icon/`. SVGs carry the word
 as outlines (Inter, weight 600, as the app's Logo draws it), so they look the same everywhere;
 scripts/logo-png.ts renders the PNGs from them.
@@ -34,35 +34,92 @@ SIZE, GAP, TRACKING = 72.0, 24.0, -0.025
 STACK_SCALE, STACK_GAP = 1.6, 48.0
 
 ORANGE = "#e3583d"
-GREEN, BLUE = "#009572", "#104d80"  # Solver's and Writer's colours, in the Dock tile's gradient
+# Solver's, Writer's and Cloud's colours, in the Dock tile's gradient
+GREEN, BLUE, PURPLE = "#009572", "#003399", "#6a3fc4"
 
-# The mark's parts as the 256 icon tiles place them ("Icon-Exporte"): x, y, width, height and
-# corner radius; lines as x, y, length; the comment box's bottom-left corner nearly sharp. The
-# mark alone is the same shrunk by TILE_SCALE round TILE_ORIGIN (the "Slider Mark" frame).
-TILE_SCALE, TILE_ORIGIN = 2.16, (24.0, 32.0)
-BACK = (26.0, 34.0, 172.8, 97.2, 25.92)
-FRONT = (45.92, 118.2, 172.8, 103.8, 25.92)
-LINES = [(51.16, 50.2, 66.0), (70.76, 180.48, 5.0), (91.28, 180.48, 82.0), (70.76, 200.0867, 5.0), (91.28, 200.0867, 54.0)]
+# The mark's parts as the 256 icon tiles place them ("Icon-Exporte", Figma „Zugband – Balken“):
+# a projection screen on a tripod, under its roll, a title line and a bar chart on it, the comment
+# box over it with its bottom-left corner nearly sharp. Boxes are x, y, width, height and corner
+# radius; the title x, y, length; the bars x and top, standing on BASE; the legs run from LEGS_TOP
+# (behind the screen) to their feet. The mark alone is the same shrunk by TILE_SCALE
+# round TILE_ORIGIN, centred in the 96.2 × 89 "Slider Mark" frame.
+TILE_SCALE, TILE_ORIGIN = 2.1, (32.83, 40.05)
+ROLL = (36.0, 42.0, 168.0, 14.0, 7.0)
+SCREEN = (44.0, 52.0, 152.0, 154.0, 10.0)
+TITLE = (54.0, 74.0, 12.0)
+BARS, BAR_W, BASE = (
+    [
+        (54.0, 150.0),
+        (76.0, 178.0),
+        (98.0, 132.0),
+        (120.0, 168.0),
+        (142.0, 184.0),
+        (164.0, 120.0),
+    ],
+    16.0,
+    196.0,
+)
+LEGS_TOP, FEET = (120.0, 146.0), [(84.0, 222.0), (156.0, 222.0), (120.0, 214.0)]
 BUBBLE = (76.16, 62.12, 155.52, 97.2, 34.56, 8.64)
-# Line widths: 3 in the mark (6.48 in a tile showing the mark as it is), 6 in the Dock/grey tiles.
-MARK_LINE, TILE_LINE = 3.0, 6.0
+# Stroke widths in the tile's units (the mark shrinks them with it).
+TITLE_LINE, LEG_LINE = 6.0, 7.0
 
-# The slides are the orange laid over the ground (white or black), their lines in the ground's
-# colour; the comment box is solid orange.
+# The legs, the screen, the bars and the roll are the orange laid over the ground (white or
+# black); the title line and the comment box are solid orange.
 VARIANTS = {
-    "light": {"ground": "#ffffff", "back": 0.3, "front": 0.5, "ink": 'fill="#141414"'},
-    "dark": {"ground": "#000000", "back": 0.69, "front": 0.53, "ink": 'fill="#ffffff" fill-opacity=".9"'},
+    "light": {
+        "ground": "#ffffff",
+        "legs": 0.3,
+        "roll": 0.9,
+        "screen": 0.5,
+        "bars": 0.65,
+        "ink": 'fill="#141414"',
+    },
+    "dark": {
+        "ground": "#000000",
+        "legs": 0.69,
+        "roll": 0.9,
+        "screen": 0.53,
+        "bars": 0.8,
+        "ink": 'fill="#ffffff" fill-opacity=".9"',
+    },
 }
 
-# The mark in greys, as the brand guide's monochrome icons (the app's own header): tile, back,
-# front, lines, comment box, and the comment box's inner edge in the tiles ("doppelte Kante").
+# The mark in greys, as the brand guide's monochrome icons (the app's own header): tile, legs,
+# roll, screen, bars, title, comment box, and the comment box's inner edge in the tiles ("doppelte Kante").
 MONO = {
-    "light": {"tile": "#ffffff", "back": "#a3a3a3", "front": "#c7c7c7", "lines": "#262626", "bubble": "#1f1f1f", "edge": "#f0f0f0"},
-    "dark": {"tile": "#000000", "back": "#7a7a7a", "front": "#525252", "lines": "#ebebeb", "bubble": "#f5f5f5", "edge": "#181818"},
+    "light": {
+        "tile": "#ffffff",
+        "legs": "#a3a3a3",
+        "roll": "#525252",
+        "screen": "#c7c7c7",
+        "bars": "#7a7a7a",
+        "title": "#262626",
+        "bubble": "#1f1f1f",
+        "edge": "#f0f0f0",
+    },
+    "dark": {
+        "tile": "#000000",
+        "legs": "#7a7a7a",
+        "roll": "#c7c7c7",
+        "screen": "#525252",
+        "bars": "#a3a3a3",
+        "title": "#ebebeb",
+        "bubble": "#f5f5f5",
+        "edge": "#181818",
+    },
 }
-# The Dock tile: white 50 % / 30 % over the orange, orange lines, a white comment box with an
-# orange inner edge.
-DOCK = {"back": "#f1ac9e", "front": "#eb8a77", "lines": ORANGE, "bubble": "#ffffff", "edge": ORANGE}
+# The Dock tile: white 70 % / 50 % / 10 % over the orange (legs, screen, roll), orange bars and
+# title, a white comment box with an orange inner edge.
+DOCK = {
+    "legs": "#f7cdc5",
+    "roll": "#e66950",
+    "screen": "#f1ac9e",
+    "bars": ORANGE,
+    "title": ORANGE,
+    "bubble": "#ffffff",
+    "edge": ORANGE,
+}
 
 
 def num(v: float) -> str:
@@ -74,7 +131,9 @@ def flatten(alpha: float, ground: str, top: str = ORANGE) -> str:
     a = [int(top[i : i + 2], 16) for i in (1, 3, 5)]
     b = [int(ground[i : i + 2], 16) for i in (1, 3, 5)]
     # Halves round up, as Figma's hex values do.
-    return "#" + "".join(f"{int(t * alpha + g * (1 - alpha) + 0.5):02x}" for t, g in zip(a, b))
+    return "#" + "".join(
+        f"{int(t * alpha + g * (1 - alpha) + 0.5):02x}" for t, g in zip(a, b)
+    )
 
 
 def mix(c1: str, c2: str, t: float) -> str:
@@ -85,7 +144,9 @@ class Place:
     """Maps the tile's coordinates into an SVG: `scale` times their distance from TILE_ORIGIN
     (the mark alone), or as they are (a tile)."""
 
-    def __init__(self, tile: bool, scale: float = 1.0, at: tuple[float, float] = (0.0, 0.0)):
+    def __init__(
+        self, tile: bool, scale: float = 1.0, at: tuple[float, float] = (0.0, 0.0)
+    ):
         self.k = scale if tile else scale / TILE_SCALE
         self.ox, self.oy = (0.0, 0.0) if tile else TILE_ORIGIN
         self.at = at
@@ -103,15 +164,28 @@ class Place:
             f'height="{num(h * self.k)}" rx="{num(r * self.k)}" fill="{fill}"{extra}/>'
         )
 
-    def lines(self, stroke: str, width: float, title: bool) -> str:
-        """The back slide's title line (`title`) or the front slide's bullets and lines."""
-        chosen = LINES[:1] if title else LINES[1:]
-        d = "".join(f"M{num(self.x(x))} {num(self.y(y))}h{num(n * self.k)}" for x, y, n in chosen)
-        return f'<path d="{d}" stroke="{stroke}" stroke-width="{num(width)}"/>'
+    def line(
+        self, x: float, y: float, dx: float, dy: float, stroke: str, width: float
+    ) -> str:
+        """A line with round ends from (x, y), `dx` across and `dy` down."""
+        return (
+            f'<path d="M{num(self.x(x))} {num(self.y(y))}l{num(dx * self.k)} {num(dy * self.k)}" '
+            f'stroke="{stroke}" stroke-width="{num(width * self.k)}" stroke-linecap="round"/>'
+        )
+
+    def circle(self, cx: float, cy: float, r: float, fill: str, extra: str = "") -> str:
+        return f'<circle cx="{num(self.x(cx))}" cy="{num(self.y(cy))}" r="{num(r * self.k)}" fill="{fill}"{extra}/>'
 
     def bubble_d(self) -> str:
         x, y, w, h, r, s = BUBBLE
-        x, y, w, h, r, s = self.x(x), self.y(y), w * self.k, h * self.k, r * self.k, s * self.k
+        x, y, w, h, r, s = (
+            self.x(x),
+            self.y(y),
+            w * self.k,
+            h * self.k,
+            r * self.k,
+            s * self.k,
+        )
         return (
             f"M{num(x + r)} {num(y)}h{num(w - 2 * r)}a{num(r)} {num(r)} 0 0 1 {num(r)} {num(r)}"
             f"v{num(h - 2 * r)}a{num(r)} {num(r)} 0 0 1-{num(r)} {num(r)}H{num(x + s)}"
@@ -119,31 +193,44 @@ class Place:
         )
 
 
-def mark(place: Place, back: str, front: str, lines: str, bubble: str, line: float = MARK_LINE) -> str:
-    """The flat mark: no shadows, the comment box solid."""
-    width = line * place.k * TILE_SCALE
+def screen(place: Place, c: dict, shadow: str = "") -> str:
+    """Everything under the comment box, back to front: the legs, the screen with its title line
+    and bars, the roll. `shadow` on the screen and the roll."""
+    x, y, n = TITLE
+    lx, ly = LEGS_TOP
     return (
-        place.rect(BACK, back)
-        + place.lines(lines, width, title=True)
-        + place.rect(FRONT, front)
-        + place.lines(lines, width, title=False)
-        + f'<path d="{place.bubble_d()}" fill="{bubble}"/>'
+        "".join(
+            place.line(lx, ly, fx - lx, fy - ly, c["legs"], LEG_LINE) for fx, fy in FEET
+        )
+        + place.rect(SCREEN, c["screen"], shadow)
+        + place.line(x, y, n, 0, c["title"], TITLE_LINE)
+        + "".join(
+            place.rect((bx, bt, BAR_W, BASE - bt, 4.0), c["bars"]) for bx, bt in BARS
+        )
+        + place.rect(ROLL, c["roll"], shadow)
     )
+
+
+def mark(place: Place, c: dict) -> str:
+    """The flat mark: no shadows, the comment box solid."""
+    return screen(place, c) + f'<path d="{place.bubble_d()}" fill="{c["bubble"]}"/>'
 
 
 # Every part of a tile casts the brand guide's shadow: black 25 %, 8 blur, 2 left and 4 down.
 SHADOW = (
-    '<filter id="shadow" x="-20%" y="-20%" width="140%" height="150%" color-interpolation-filters="sRGB">'
+    # over the whole tile: a box around each part would clip the shadow of the thin roll
+    '<filter id="shadow" filterUnits="userSpaceOnUse" x="-16" y="-16" width="288" height="288" color-interpolation-filters="sRGB">'
     '<feDropShadow dx="-2" dy="4" stdDeviation="4" flood-color="#000000" flood-opacity=".25"/></filter>'
 )
 
 
-def tile(ground: str, back: str, front: str, lines: str, bubble: str, edge: str | None, line: float) -> str:
-    """A 256 tile: each slide and the comment box with its shadow; with `edge`, the comment box
+def tile(ground: str, c: dict, edge: str | None) -> str:
+    """A 256 tile: the screen, the roll and the comment box with their shadow; with `edge`, the comment box
     has the guide's double edge – outlined 4 in its own colour, a band of `edge` 6 deep inside its
     outline (Figma's inner shadow, spread 8, renders that deep)."""
     p = Place(tile=True)
     d = p.bubble_d()
+    bubble = c["bubble"]
     if edge:
         box = (
             f'<path d="{d}" fill="{bubble}"/>'
@@ -156,19 +243,16 @@ def tile(ground: str, back: str, front: str, lines: str, bubble: str, edge: str 
     return (
         f"<defs>{SHADOW}{defs}</defs>"
         + ground
-        + p.rect(BACK, back, ' filter="url(#shadow)"')
-        + p.lines(lines, line, title=True)
-        + p.rect(FRONT, front, ' filter="url(#shadow)"')
-        + p.lines(lines, line, title=False)
+        + screen(p, c, ' filter="url(#shadow)"')
         + f'<g filter="url(#shadow)">{box}</g>'
     )
 
 
 def dock_ground() -> str:
-    """Slider orange under the guide's angular gradient (orange, Solver green at 33 %, Writer
-    blue at 67 %, orange), centred 128 above the tile – drawn as 1° wedges, as SVG has no conic
-    gradient. Its angle runs clockwise from straight down."""
-    stops = [(0.0, ORANGE), (0.33, GREEN), (0.67, BLUE), (1.0, ORANGE)]
+    """Slider orange under the guide's angular gradient (orange, Solver green at 25 %, Writer
+    blue at 50 %, Cloud purple at 75 %, orange), centred 128 above the tile – drawn as 1° wedges,
+    as SVG has no conic gradient. Its angle runs clockwise from straight down."""
+    stops = [(0.0, ORANGE), (0.25, GREEN), (0.5, BLUE), (0.75, PURPLE), (1.0, ORANGE)]
 
     def colour(pos: float) -> str:
         for (p0, c0), (p1, c1) in zip(stops, stops[1:]):
@@ -181,7 +265,9 @@ def dock_ground() -> str:
     for deg in range(-46, 47):
         # A wedge a little wider than its degree, so no seam shows between neighbours.
         a0, a1 = math.radians(deg - 0.5), math.radians(deg + 0.6)
-        pts = [(cx, cy)] + [(cx - far * math.sin(a), cy + far * math.cos(a)) for a in (a0, a1)]
+        pts = [(cx, cy)] + [
+            (cx - far * math.sin(a), cy + far * math.cos(a)) for a in (a0, a1)
+        ]
         d = "M" + "L".join(f"{num(x)} {num(y)}" for x, y in pts) + "Z"
         wedges.append(f'<path d="{d}" fill="{colour((deg % 360) / 360)}"/>')
     return (
@@ -244,34 +330,83 @@ def main() -> None:
     for mode, variant in VARIANTS.items():
         ink, ground = variant["ink"], variant["ground"]
         name = f"slider-{mode}"
-        colours = (flatten(variant["back"], ground), flatten(variant["front"], ground), ground, ORANGE)
-        icon = mark(alone, *colours)
-        write("word", name, svg(round(ink_width, 2), round(y1 - y0, 2), word(-x0, -y0, ink)))
+        colours = {
+            "legs": flatten(variant["legs"], ground),
+            "roll": flatten(variant["roll"], ground),
+            "screen": flatten(variant["screen"], ground),
+            "bars": flatten(variant["bars"], ground),
+            "title": ORANGE,
+            "bubble": ORANGE,
+        }
+        icon = mark(alone, colours)
+        write(
+            "word",
+            name,
+            svg(round(ink_width, 2), round(y1 - y0, 2), word(-x0, -y0, ink)),
+        )
         write("mark", name, svg(MARK_W, MARK_H, icon))
-        write("horizontal", name, svg(beside_width, MARK_H, icon + word(MARK_W + GAP, MARK_H / 2 + cap / 2, ink)))
+        write(
+            "horizontal",
+            name,
+            svg(
+                beside_width,
+                MARK_H,
+                icon + word(MARK_W + GAP, MARK_H / 2 + cap / 2, ink),
+            ),
+        )
         word_left = (stack_width - ink_width) / 2 - x0
-        write("stacked", name, svg(stack_width, stack_height, mark(big, *colours) + word(word_left, stack_baseline, ink)))
+        write(
+            "stacked",
+            name,
+            svg(
+                stack_width,
+                stack_height,
+                mark(big, colours) + word(word_left, stack_baseline, ink),
+            ),
+        )
         # The mark as it is on a white or black tile ("App-Icons / Weißer/Schwarzer Hintergrund").
         on = "white" if mode == "light" else "black"
-        write("icon", f"slider-{on}", svg(256, 256, tile(f'<rect width="256" height="256" fill="{ground}"/>', *colours, None, MARK_LINE * TILE_SCALE)))
+        write(
+            "icon",
+            f"slider-{on}",
+            svg(
+                256,
+                256,
+                tile(
+                    f'<rect width="256" height="256" fill="{ground}"/>', colours, None
+                ),
+            ),
+        )
 
         # The same in greys: the mark alone and beside the word, as the app's header shows it.
         grey = MONO[mode]
-        icon = mark(alone, grey["back"], grey["front"], grey["lines"], grey["bubble"])
+        icon = mark(alone, grey)
         write("mark", f"slider-mono-{mode}", svg(MARK_W, MARK_H, icon))
         write(
             "horizontal",
             f"slider-mono-{mode}",
-            svg(beside_width, MARK_H, icon + word(MARK_W + GAP, MARK_H / 2 + cap / 2, ink)),
+            svg(
+                beside_width,
+                MARK_H,
+                icon + word(MARK_W + GAP, MARK_H / 2 + cap / 2, ink),
+            ),
         )
         write(
             "icon",
             f"slider-mono-{mode}",
-            svg(256, 256, tile(f'<rect width="256" height="256" fill="{grey["tile"]}"/>', grey["back"], grey["front"], grey["lines"], grey["bubble"], grey["edge"], TILE_LINE)),
+            svg(
+                256,
+                256,
+                tile(
+                    f'<rect width="256" height="256" fill="{grey["tile"]}"/>',
+                    grey,
+                    grey["edge"],
+                ),
+            ),
         )
 
     # The full-bleed Dock tile, kept as a brand asset. The web app uses the Composer PNG.
-    write("icon", "slider-dock", svg(256, 256, tile(dock_ground(), DOCK["back"], DOCK["front"], DOCK["lines"], DOCK["bubble"], DOCK["edge"], TILE_LINE)))
+    write("icon", "slider-dock", svg(256, 256, tile(dock_ground(), DOCK, DOCK["edge"])))
 
 
 if __name__ == "__main__":

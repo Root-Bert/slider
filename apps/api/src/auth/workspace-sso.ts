@@ -59,6 +59,7 @@ export function workspaceSsoClient(
       label: '',
       scopes: 'openid email profile',
       redirectUri: ssoRedirectUri(config),
+      authorizeOnIssuerHost: true,
     },
     clock,
     safeOidcFetch(network),

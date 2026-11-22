@@ -5,7 +5,6 @@ import { generatedAvatar } from '@/lib/generated-avatar';
 import { GoogleSlidesMark } from './brand/GoogleSlidesMark';
 import { cn } from './cn';
 import { Icon } from './Icon';
-import { LogoMark } from './Logo';
 
 export type AvatarSize = 16 | 18 | 20 | 24 | 28 | 32 | 64;
 
@@ -19,20 +18,26 @@ interface AvatarProps {
   source?: CommentSource;
   /** Native name tooltip; off where the caller shows its own. */
   nativeTitle?: boolean;
+  /** Another picture in the ring instead of the one seeded by the name (a mail sender's glyph). */
+  picture?: string;
+  /** Over the picture, inside the ring (a sender's logo once it has loaded). */
+  children?: ReactNode;
   className?: string;
 }
 
 /**
  * UI kit "Avatar": circle with a pastel presence ring around a DiceBear avatar seeded by the
  * name, so everyone has one (PowerPoint authors too). A deleted account shows a plain person
- * icon instead – no avatar that could still point to who it was (BER-145); the AI the app icon's
- * mark in the monochrome icon's greys on a grey circle (the website's `AiMark` wears the orange).
+ * icon instead – no avatar that could still point to who it was (BER-145); the AI its own sign
+ * (the sparkles of „KI“ everywhere else in the app) in white on a grey circle – not Slider's mark.
  */
 export function Avatar({
   author,
   size = 24,
   source = 'app',
   nativeTitle = true,
+  picture,
+  children,
   className,
 }: AvatarProps) {
   // The ring is the picture's own border, so ring and picture share one circle.
@@ -48,7 +53,7 @@ export function Avatar({
     >
       {author.type === 'ai' ? (
         <span className="flex size-full items-center justify-center rounded-full bg-logo-grey">
-          <LogoMark width={Math.round(size * 0.66)} tone="onGrey" />
+          <Icon name="autoAwesome" size={Math.round(size * 0.6)} className="text-white" />
         </span>
       ) : author.type === 'deleted' ? (
         <span
@@ -59,13 +64,14 @@ export function Avatar({
         </span>
       ) : (
         <img
-          src={generatedAvatar(author.name)}
+          src={picture ?? generatedAvatar(author.name)}
           alt=""
           className="size-full rounded-full border-solid bg-placeholder object-cover"
           style={ring}
           draggable={false}
         />
       )}
+      {children}
       {source === 'gslides' && (
         <span
           className="absolute -right-1 -bottom-1 flex items-center justify-center"

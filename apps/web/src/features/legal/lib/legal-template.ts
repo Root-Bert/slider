@@ -64,7 +64,11 @@ export const TEMPLATE_OPTIONS = [
   },
   { key: 'deleteUnused', label: 'Ungenutzte Daten löschen', description: 'Nach 18 Monaten' },
   { key: 'payments', label: 'Bezahlter Plan über Stripe' },
-  { key: 'stockPhotos', label: 'Fotosuche über Unsplash' },
+  {
+    key: 'stockPhotos',
+    label: 'Fotosuche über Unsplash oder Pexels',
+    description: 'Auch wenn nur Workspaces einen Key dafür hinterlegen',
+  },
   { key: 'cloudflare', label: 'Cloudflare vor dem Server' },
 ] as const;
 

@@ -1,9 +1,18 @@
 // LibreOffice draws the slides and renders every edit. The app doesn't carry it (≈ 600 MB):
-// an installed LibreOffice is used as it is, else it is loaded once into the app's data folder –
-// one pinned, tested version from The Document Foundation, checked against its SHA-256.
+// an installed LibreOffice is copied into the app's data folder, else it is loaded there once –
+// one pinned, tested version from The Document Foundation, checked against its SHA-256. The app's
+// copy is marked to stay out of the Dock (`hide`).
 import { execFile } from 'node:child_process';
 import { createHash } from 'node:crypto';
-import { createWriteStream, existsSync, mkdirSync, readdirSync, renameSync, rmSync } from 'node:fs';
+import {
+  copyFileSync,
+  createWriteStream,
+  existsSync,
+  mkdirSync,
+  readdirSync,
+  renameSync,
+  rmSync,
+} from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { Readable } from 'node:stream';
@@ -117,16 +126,88 @@ export async function installLibreOffice(userData, onProgress) {
     await run('ditto', [path.join(mount, 'LibreOffice.app'), staged]);
     await run('hdiutil', ['detach', mount, '-force']);
     mounted = false;
-    await run('xattr', ['-dr', 'com.apple.quarantine', staged]).catch(() => {});
-    slim(staged);
-    // It has to start before it counts as set up.
-    await run(path.join(staged, SOFFICE), ['--version'], { timeout: 60_000 });
-    rmSync(loadedFolder(userData), { recursive: true, force: true });
-    renameSync(staged, loadedFolder(userData));
-    return path.join(loadedFolder(userData), SOFFICE);
+    return await setUp(userData, staged);
   } finally {
     if (mounted) await run('hdiutil', ['detach', mount, '-force']).catch(() => {});
     rmSync(work, { recursive: true, force: true });
+  }
+}
+
+/** Slims and hides the copy in `staged`, starts it once and moves it to its place. */
+async function setUp(userData, staged) {
+  await run('xattr', ['-dr', 'com.apple.quarantine', staged]).catch(() => {});
+  slim(staged);
+  await hide(staged);
+  // It has to start before it counts as set up.
+  await run(path.join(staged, SOFFICE), ['--version'], { timeout: 60_000 });
+  rmSync(loadedFolder(userData), { recursive: true, force: true });
+  renameSync(staged, loadedFolder(userData));
+  return path.join(loadedFolder(userData), SOFFICE);
+}
+
+const PLIST_BUDDY = '/usr/libexec/PlistBuddy';
+
+/** Whether this LibreOffice is marked to stay out of the Dock. */
+async function hidden(office) {
+  return run(PLIST_BUDDY, ['-c', 'Print :LSUIElement', path.join(office, 'Contents', 'Info.plist')])
+    .then(({ stdout }) => stdout.trim() === 'true')
+    .catch(() => false);
+}
+
+/**
+ * Keeps this LibreOffice out of the Dock and the app switcher: `--headless` alone does not – with
+ * the first slide it draws, macOS lists `soffice` as an app. `LSUIElement` in its Info.plist
+ * makes it a background one; the folder is signed anew (ad hoc) with it, since macOS ends a
+ * `soffice` whose Info.plist no longer fits its signature at launch. On failure the Info.plist
+ * is as before.
+ */
+async function hide(office) {
+  if (await hidden(office)) return;
+  const plist = path.join(office, 'Contents', 'Info.plist');
+  // Beside the folder: codesign refuses a file it does not know inside `Contents`.
+  const before = `${office}.Info.plist`;
+  copyFileSync(plist, before);
+  try {
+    await run(PLIST_BUDDY, ['-c', 'Add :LSUIElement bool true', plist]);
+    await run('codesign', ['--force', '--sign', '-', office]);
+  } catch (error) {
+    copyFileSync(before, plist);
+    throw error;
+  } finally {
+    rmSync(before, { force: true });
+  }
+}
+
+/**
+ * The LibreOffice Slider starts, out of the Dock (macOS): its own copy, hidden – an installed
+ * one (`found` outside the app's data) is copied there first, as it cannot be changed where it
+ * is. `onSetup()` when that takes a moment. Whatever fails, `found` is used as it is.
+ */
+export async function ownLibreOffice(userData, found, onSetup) {
+  if (process.platform !== 'darwin') return found;
+  const own = loadedFolder(userData);
+  try {
+    if (found.startsWith(own + path.sep)) {
+      if (!(await hidden(own))) {
+        onSetup();
+        await hide(own);
+      }
+      return found;
+    }
+    onSetup();
+    const work = path.join(userData, 'libreoffice-setup');
+    const staged = path.join(work, 'libreoffice');
+    rmSync(work, { recursive: true, force: true });
+    mkdirSync(work, { recursive: true });
+    try {
+      await run('ditto', [found.slice(0, -SOFFICE.length - 1), staged]);
+      return await setUp(userData, staged);
+    } finally {
+      rmSync(work, { recursive: true, force: true });
+    }
+  } catch (error) {
+    console.warn(`LibreOffice stays in the Dock: ${error.message}`);
+    return found;
   }
 }
 

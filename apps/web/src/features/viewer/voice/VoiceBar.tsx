@@ -1,4 +1,11 @@
-import type { Author, VoiceItem, VoiceItemState, VoiceSession } from '@slider/shared';
+import type {
+  Author,
+  DocumentVoiceItem,
+  DocumentVoiceSession,
+  VoiceItem,
+  VoiceItemState,
+  VoiceSession,
+} from '@slider/shared';
 import { useEffect, useState, type AnimationEvent, type KeyboardEvent } from 'react';
 import { createPortal } from 'react-dom';
 import { isTextTarget } from '@/lib/dom';
@@ -58,9 +65,9 @@ const CAPTION_PIECES = 4;
  * Counts up each time the server made something of what was said – a new comment, more of one,
  * a command – so the bar can show it was understood. Nothing counts for the session's start.
  */
-function useRecognitions(session: VoiceSession | null): number {
+function useRecognitions(session: VoiceSession | DocumentVoiceSession | null): number {
   const [seen, setSeen] = useState<{
-    session: VoiceSession | null;
+    session: VoiceSession | DocumentVoiceSession | null;
     keys: ReadonlySet<string>;
     count: number;
   }>({ session: null, keys: new Set(), count: 0 });
@@ -77,6 +84,27 @@ function useRecognitions(session: VoiceSession | null): number {
   return seen.count;
 }
 
+/** A comment said, a deck's or a document's. */
+export type VoiceBarItem = VoiceItem | DocumentVoiceItem;
+
+/** What the bar needs of the page it is on – a presentation here, a text document in Writer. */
+export interface VoiceBarHost {
+  aiAuthor: Author;
+  /** The person's colour: the avatar flares up in it when something was understood. */
+  color: string;
+  /** Where a comment stands, in a word or two („Folie 3“). */
+  place: (item: VoiceBarItem) => string;
+  /** A click on a comment in the list: the page shows it. */
+  open: (item: VoiceBarItem) => void;
+  /** How speaking works here, as the bar's tooltip. */
+  hint: string;
+  sidePanelOpen?: boolean;
+  /** What is said shows elsewhere just now (a box for the AI): not here as well. */
+  boxOpen?: boolean;
+  /** Where the bar sits without a slot, instead of floating at the top. */
+  className?: string;
+}
+
 /**
  * Speaking to the AI (a click on its avatar): one flat bar grown out of the split handle's line
  * under the track and shrunk back into it, like the find bar (`FindBar`) – the live caption, the
@@ -84,14 +112,46 @@ function useRecognitions(session: VoiceSession | null): number {
  * the find bar or a handle hint takes the slot; without a slot (phones) it floats at the top.
  */
 export function VoiceBar({ slot = null }: { slot?: HTMLElement | null }) {
-  const voice = useVoice();
   const { aiAuthor, slideIndex, viewer } = useViewerData();
   const viewerState = useViewerState();
-  const sidePanelOpen = isSidePanelOpen(viewerState);
-  // A box for the AI open: what is said now shows in its field only, not here as well.
-  const boxOpen = viewerState.draft?.aiBox !== undefined;
   const dispatch = useViewerDispatch();
   const goToSlide = useGoToSlide();
+  const indexOf = (item: VoiceBarItem) =>
+    'slideId' in item && item.slideId ? slideIndex.get(item.slideId) : undefined;
+  return (
+    <VoiceBarView
+      slot={slot}
+      host={{
+        aiAuthor,
+        color: ringColor(viewer.author.color),
+        place: (item) => {
+          const index = indexOf(item);
+          return index === undefined ? 'Präsentation' : slideLabel(index);
+        },
+        open: (item) => {
+          const index = indexOf(item);
+          if (index !== undefined) goToSlide(index);
+          dispatch({ type: 'threadFocused', threadId: item.threadId, openPanel: false });
+        },
+        hint: `Geh durch die Folien und zeig mit der Maus, was du meinst. Fertige Gedanken gehen sofort an ${aiAuthor.name}. Senden beendet das Zuhören – was du gesagt hast, wird noch fertig bearbeitet. Auch: „nächste Folie“, „vergiss das“, „mach das rückgängig“, „Stopp“.`,
+        sidePanelOpen: isSidePanelOpen(viewerState),
+        // A box for the AI open: what is said now shows in its field only, not here as well.
+        boxOpen: viewerState.draft?.aiBox !== undefined,
+      }}
+    />
+  );
+}
+
+/** The bar itself, on any page that speaks to the AI (`VoiceBarHost`). */
+export function VoiceBarView({
+  slot = null,
+  host,
+}: {
+  slot?: HTMLElement | null;
+  host: VoiceBarHost;
+}) {
+  const voice = useVoice();
+  const { aiAuthor, sidePanelOpen = false, boxOpen = false } = host;
   const [listOpen, setListOpen] = useState(false);
   const { status, session, speaking, sending, error } = voice;
   const recognitions = useRecognitions(session);
@@ -193,13 +253,7 @@ export function VoiceBar({ slot = null }: { slot?: HTMLElement | null }) {
             ? 'Schreibt mit …'
             : statusLine);
   const showsCaption = problem === null && listening && !boxOpen && !!caption;
-  const hint = `Geh durch die Folien und zeig mit der Maus, was du meinst. Fertige Gedanken gehen sofort an ${aiAuthor.name}. Senden beendet das Zuhören – was du gesagt hast, wird noch fertig bearbeitet. Auch: „nächste Folie“, „vergiss das“, „mach das rückgängig“, „Stopp“.${session ? ` Spracherkennung: ${session.speechService}.` : ''}`;
-
-  const open = (item: VoiceItem) => {
-    const index = item.slideId ? slideIndex.get(item.slideId) : undefined;
-    if (index !== undefined) goToSlide(index);
-    dispatch({ type: 'threadFocused', threadId: item.threadId, openPanel: false });
-  };
+  const hint = `${host.hint}${session ? ` Spracherkennung: ${session.speechService}.` : ''}`;
 
   // Esc closes the list first, then leaves the rest to the viewer.
   const onKeyDown = (event: KeyboardEvent<HTMLElement>) => {
@@ -221,11 +275,12 @@ export function VoiceBar({ slot = null }: { slot?: HTMLElement | null }) {
           ? // In the gap the controls leave in the middle (`useHandleRoom`); a container, so
             // its comment count gets shorter when that's narrow.
             'absolute z-(--z-raised) w-[min(460px,calc(100%-3.5rem))] @container'
-          : cn(
-              'fixed inset-x-4 top-3 z-(--z-panel) transition-[right] duration-300',
-              'md:top-4 md:right-6 md:left-auto md:w-[460px]',
-              sidePanelOpen && 'md:right-[424px] md:max-w-[calc(100%-448px)]',
-            ),
+          : (host.className ??
+              cn(
+                'fixed inset-x-4 top-3 z-(--z-panel) transition-[right] duration-300',
+                'md:top-4 md:right-6 md:left-auto md:w-[460px]',
+                sidePanelOpen && 'md:right-[424px] md:max-w-[calc(100%-448px)]',
+              )),
       )}
     >
       {listOpen && items.length > 0 && (
@@ -242,18 +297,15 @@ export function VoiceBar({ slot = null }: { slot?: HTMLElement | null }) {
           >
             {items.map((item) => {
               const label = STATE_LABEL[item.state];
-              const index = item.slideId ? slideIndex.get(item.slideId) : undefined;
               return (
                 <li key={item.commentId}>
                   <button
                     type="button"
-                    onClick={() => open(item)}
+                    onClick={() => host.open(item)}
                     className="flex w-full flex-col gap-1 rounded-control px-2 py-1.5 text-left hover:bg-hover"
                   >
                     <span className="flex items-center gap-2">
-                      <span className="text-caption text-fg-muted">
-                        {index === undefined ? 'Präsentation' : slideLabel(index)}
-                      </span>
+                      <span className="text-caption text-fg-muted">{host.place(item)}</span>
                       <Badge tone={label.tone}>{label.text}</Badge>
                     </span>
                     <span className="line-clamp-2 text-sm text-fg">{item.text}</span>
@@ -295,7 +347,7 @@ export function VoiceBar({ slot = null }: { slot?: HTMLElement | null }) {
           author={aiAuthor}
           active={listening}
           recognitions={recognitions}
-          color={ringColor(viewer.author.color)}
+          color={host.color}
         />
         {/* rtl + ltr inside: a long caption is cut at its start, so the newest words stay. */}
         <span

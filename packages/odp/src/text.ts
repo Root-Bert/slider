@@ -1,5 +1,6 @@
 import {
   attr,
+  spaceRun,
   childrenOf,
   cloneNode,
   element,
@@ -38,7 +39,7 @@ export function paragraphText(paragraph: XmlNode): string {
     }
     const tag = tagOf(child);
     if (!tag || NO_TEXT.has(tag) || !tag.startsWith('text:')) continue;
-    if (tag === 'text:s') out += ' '.repeat(Math.max(1, Number(attr(child, 'text:c') ?? 1) || 1));
+    if (tag === 'text:s') out += spaceRun(attr(child, 'text:c'));
     else if (tag === 'text:tab') out += '\t';
     else if (tag === 'text:line-break') out += '\n';
     else out += paragraphText(child);

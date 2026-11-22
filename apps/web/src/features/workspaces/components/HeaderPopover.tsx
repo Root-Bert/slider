@@ -9,6 +9,8 @@ import { cn, PopoverPanel, usePopover } from '@/ui';
  */
 export function HeaderPopover({
   label,
+  before,
+  className,
   trigger,
   triggerClassName,
   align = 'left',
@@ -18,6 +20,10 @@ export function HeaderPopover({
 }: {
   /** Accessible name of the trigger. */
   label: string;
+  /** Stands before the trigger and belongs to it: the panel opens flush with its left edge. */
+  before?: ReactNode;
+  /** Of the wrapper the panel is anchored to. */
+  className?: string;
   trigger: (open: boolean) => ReactNode;
   triggerClassName?: string;
   align?: 'left' | 'right';
@@ -36,7 +42,8 @@ export function HeaderPopover({
   };
 
   return (
-    <div ref={wrapperRef} className="relative min-w-0">
+    <div ref={wrapperRef} className={cn('relative min-w-0', className)}>
+      {before}
       <button
         type="button"
         id={triggerId}

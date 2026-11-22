@@ -1,4 +1,5 @@
-import { createCanvas, loadImage } from '@napi-rs/canvas';
+import { createCanvas } from '@napi-rs/canvas';
+import { loadImage } from '../import/load-image';
 import { projected, TILT_DEPTH, type BoxTilt, type Rect } from '@slider/shared';
 
 /*

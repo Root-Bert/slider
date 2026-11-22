@@ -2,7 +2,7 @@ import { MATERIAL_CITATION, markdownToRich, type Material } from '@slider/shared
 import { Fragment, useMemo, type ReactNode } from 'react';
 import { formatDateTime, formatRelativeTime } from '@/lib/format';
 import { Avatar, cn, Icon, IconButton } from '@/ui';
-import { useViewerToast } from '../state/viewer-toast';
+import { useBoardOwner } from './board-owner';
 import { withoutSources, type NoteAnswerValue } from './note-answers';
 import { RichText } from './rich-text';
 
@@ -48,7 +48,7 @@ export function NoteAnswer({
   actions: NoteAnswerActions;
   className?: string;
 }) {
-  const toast = useViewerToast();
+  const { toast } = useBoardOwner();
   const { ai, byId, canComment } = actions;
   const writing = answer.state === 'answering';
   // While it is written, a source half come is left out until it is whole.

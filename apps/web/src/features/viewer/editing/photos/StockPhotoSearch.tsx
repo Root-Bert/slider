@@ -4,17 +4,21 @@ import {
   stockLink,
   stockPhotoUrl,
   type EditableElement,
+  type PhotoProvider,
   type StockPhoto,
+  type StockSearch,
 } from '@slider/shared';
+import type { UseQueryResult } from '@tanstack/react-query';
 import { useEffect, useRef, useState, type KeyboardEvent as ReactKeyboardEvent } from 'react';
 import { usePickStockPhoto, useStockSearch } from '@/lib/api';
 import { isModKey } from '@/lib/keyboard';
-import { cn, Spinner, TextField, useDebounced } from '@/ui';
+import { cn, Spinner, TextField } from '@/ui';
 import { useViewerData } from '../../state/viewer-data';
 import { useViewerToast } from '../../state/viewer-toast';
 import { useEditing } from '../editing-context';
 import { useTypeIntoField } from '../hooks/useTypeIntoField';
 import { photoPreviews } from './photo-previews';
+import { usePhotoTerm } from './photo-term';
 
 /**
  * Searching the workspace's photo service (Unsplash, Pexels) for a picture frame (in the format bar): the photos found, small – each
@@ -109,18 +113,54 @@ export function PhotoSearch({
   take: (photo: StockPhoto) => Promise<void>;
 }) {
   const editing = useEditing();
-  const source = editing.state?.photoSource ?? 'unsplash';
   const { deck } = useViewerData();
   const toast = useViewerToast();
-  const [typed, setQuery] = useState(initialQuery);
-  const query = given ?? typed;
-  const settled = useDebounced(query, 400);
-  // Photos at random stay until there is a search: two letters.
-  const term = settled.trim().length >= 2 ? settled : '';
-  const search = useStockSearch(deck.id, term);
+  const asked = usePhotoTerm(initialQuery, given);
+  const search = useStockSearch(deck.id, asked.term);
+  return (
+    <PhotoGrid
+      large={large}
+      autoFocus={autoFocus}
+      asked={asked}
+      search={search}
+      columns={columns}
+      take={take}
+      source={editing.state?.photoSource ?? 'unsplash'}
+      onError={(message) => toast(message, 'danger')}
+    />
+  );
+}
+
+/**
+ * {@link PhotoSearch} for anything with photos, not only a slide: `useSearch` asks the photo
+ * service (the deck's, a text document's), `onError` says what went wrong.
+ */
+export function PhotoGrid({
+  large,
+  autoFocus,
+  asked: { query, setQuery, term },
+  search,
+  columns,
+  take,
+  source,
+  onError,
+}: {
+  large: boolean;
+  autoFocus: boolean;
+  /** {@link usePhotoTerm}. */
+  asked: ReturnType<typeof usePhotoTerm>;
+  /** The photos for its term (empty: at random). */
+  search: UseQueryResult<StockSearch>;
+  columns: number;
+  take: (photo: StockPhoto) => Promise<void>;
+  source: PhotoProvider;
+  onError: (message: string) => void;
+}) {
   const [picking, setPicking] = useState<string | null>(null);
 
   const photos = search.data?.photos ?? [];
+  // The service the photos came from – what was asked, until there are some.
+  const shownSource = photos[0]?.credit.source ?? source;
   // The photo the arrows are on – the photos' one stop for Tab; back to the first for a new search.
   const [cursor, setCursor] = useState({ term, index: 0 });
   const current = cursor.term === term ? Math.min(cursor.index, photos.length - 1) : 0;
@@ -179,7 +219,7 @@ export function PhotoSearch({
     try {
       await take(photo);
     } catch (error) {
-      toast(error instanceof Error ? error.message : 'Das Foto ließ sich nicht holen.', 'danger');
+      onError(error instanceof Error ? error.message : 'Das Foto ließ sich nicht holen.');
     } finally {
       setPicking(null);
     }
@@ -278,12 +318,12 @@ export function PhotoSearch({
       <p className="text-caption text-fg-subtle">
         Fotos von{' '}
         <a
-          href={stockLink(STOCK_HOMES[source], source)}
+          href={stockLink(STOCK_HOMES[shownSource], shownSource)}
           target="_blank"
           rel="noopener noreferrer"
           className="underline decoration-fg-subtle/50 underline-offset-2 hover:text-fg"
         >
-          {PROVIDER_LABELS[source]}
+          {PROVIDER_LABELS[shownSource]}
         </a>
       </p>
     </div>

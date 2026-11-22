@@ -13,6 +13,7 @@ import {
   type RefObject,
 } from 'react';
 import { accentColor } from '@/lib/accent';
+import { MaterialTile } from '../board/MaterialTile';
 import { SwapImage } from '../stage/SwapImage';
 import { Avatar, cn, ContextMenu, Icon, type MenuAction } from '@/ui';
 import { useLivePeople } from '../live/lib/live-people';
@@ -504,21 +505,14 @@ export function Minimap({ layout, scrollerRef, narrow }: MinimapProps) {
                   height: mini.h,
                 }}
               >
-                <button
-                  type="button"
-                  data-board-thumb
-                  aria-label="Material anzeigen"
-                  title="Material (M)"
-                  onClick={() => {
+                <MaterialTile
+                  onOpen={() => {
                     if (clickGuard.consume()) return;
                     dispatch({ type: 'materialSet', open: true });
                   }}
-                  className="flex size-full items-center justify-center rounded-thumb bg-surface-2 text-fg-muted ring-hairline transition-colors hover:bg-selected hover:text-fg focus-visible:outline-2 focus-visible:outline-offset-3 focus-visible:outline-white"
                 >
-                  {/* The icon alone; its name is in the label and the tooltip. */}
-                  <Icon name="attachFile" size={18} />
                   <MaterialPeople />
-                </button>
+                </MaterialTile>
               </li>
             )}
             {slides.map((slide, index) => {

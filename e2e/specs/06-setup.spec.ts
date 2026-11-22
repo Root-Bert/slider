@@ -32,6 +32,8 @@ test('dev login: the dev owner is not asked for the setup token', async ({ page 
   expect((await page.request.get('/api/decks')).status()).toBe(200);
   await page.goto('/');
   await expect(page).not.toHaveURL(/einrichtung/);
+  // The start is Cloud, in the workspace last open; Slider's presentations are at /slider.
+  await expect(page).toHaveURL(/\/w\/[^/]+\/dateien$/);
 });
 
 test('/einrichtung with a wrong setup token', async ({ page }) => {

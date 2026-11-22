@@ -1,0 +1,51 @@
+{
+  "appId": "dev.bertro.writer",
+  "productName": "Writer",
+  "artifactName": "Writer-${arch}.${ext}",
+  "directories": { "output": "dist/writer" },
+  "extraMetadata": {
+    "name": "writer-desktop",
+    "productName": "Writer",
+    "main": "writer/main.mjs",
+    "description": "Writer as a desktop app: your documents in a window of their own."
+  },
+  "files": ["writer/**", "!writer/builder.json", "tabbar/**", "tabs.mjs", "package.json"],
+  "mac": {
+    "category": "public.app-category.productivity",
+    "target": ["dmg", "zip"],
+    "hardenedRuntime": true,
+    "entitlements": "entitlements.mac.plist",
+    "entitlementsInherit": "entitlements.mac.plist",
+    "notarize": true,
+    "darkModeSupport": true,
+    "extendInfo": {
+      "NSMicrophoneUsageDescription": "Für Anrufe, Sprach- und Videokommentare und um mit der KI zu sprechen.",
+      "NSCameraUsageDescription": "Für Videoanrufe und Videokommentare."
+    },
+    "icon": "writer/icon.png"
+  },
+  "linux": {
+    "target": ["AppImage", "deb"],
+    "category": "Office",
+    "executableName": "writer",
+    "icon": "writer/icon.png"
+  },
+  "electronFuses": {
+    "runAsNode": false,
+    "enableNodeOptionsEnvironmentVariable": false,
+    "enableNodeCliInspectArguments": false,
+    "onlyLoadAppFromAsar": true,
+    "enableEmbeddedAsarIntegrityValidation": true,
+    "resetAdHocDarwinSignature": true
+  },
+  "protocols": [{ "name": "Writer", "schemes": ["slider-writer"] }],
+  "fileAssociations": [
+    {
+      "ext": ["odt", "ott"],
+      "name": "OpenDocument-Text",
+      "role": "Editor",
+      "mimeType": "application/vnd.oasis.opendocument.text",
+      "rank": "Alternate"
+    }
+  ]
+}

@@ -27,6 +27,7 @@ import { useGoToSlide } from './hooks/useGoToSlide';
 import { useThreadHover } from './hooks/useThreadHover';
 import { useMaterialUrlSync, useSlideUrlSync } from './hooks/useSlideUrlSync';
 import { MaterialPage } from './board/MaterialPage';
+import { DeckBoardOwner } from './components/DeckBoardOwner';
 import { useViewerShortcuts } from './hooks/useViewerShortcuts';
 import { CursorLayer } from './live/CursorLayer';
 import { useLive } from './live/hooks/useLive';
@@ -206,7 +207,9 @@ function ViewerMain() {
                 <MediaReplyDialog />
                 <DeletedSlidesPanel />
                 {/* The AI's chat (a click on its avatar), as on the material page. */}
-                <AiChatPanel />
+                <DeckBoardOwner>
+                  <AiChatPanel />
+                </DeckBoardOwner>
                 <FormatBar />
                 {/* Tilted elements changed: drawn tilted anew, picked or not. */}
                 <TiltRefreshes />
@@ -240,7 +243,9 @@ function ViewerMain() {
                 )}
               </div>
               {/* „Material“: the board's page, left of the presentation. */}
-              <MaterialPage />
+              <DeckBoardOwner>
+                <MaterialPage />
+              </DeckBoardOwner>
               {/* Above the thread panel and popovers (`--z-toast`), on either page. */}
               <Toast toast={toast} />
             </div>

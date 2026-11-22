@@ -1,37 +1,48 @@
 ---
 import '~/styles/site.css';
 import Footer from '~/components/Footer.astro';
-import Header, { type SitePage } from '~/components/Header.astro';
+import Header from '~/components/Header.astro';
 import LiveComments from '~/components/live/LiveComments.astro';
-import { LANGS, localPage, t, type Lang } from '~/i18n';
+import { LANGS, appPage, localPage, t, type Lang } from '~/i18n';
+import { APP_NAMES, type AppId } from '~/lib/apps';
 import { asset } from '~/lib/links';
 
 interface Props {
-  /** Page title before " | Slider". */
+  /** Page title before " | Slider" (the name of the app the page belongs to). */
   title?: string;
+  /** The whole title, for the office's and the apps' own pages. */
+  fullTitle?: string;
   description?: string;
-  current?: SitePage;
+  /** The office or the app this page belongs to: Slider's blog, contact and legal pages are Slider's. */
+  app?: AppId;
   lang?: Lang;
   /**
-   * The page's path without language (`''`, `'pricing'`) when it exists in every language: the
-   * footer switches between them, search engines get the alternates, and a first visit to the
-   * English page follows the browser's language. Blog and legal pages have one language only.
+   * Set when the page exists in every language: `''` for the office's or an app's own page, a
+   * path (`'download'`) for one of Slider's pages or a page under the office (`'vision'`). The footer switches between the versions,
+   * search engines get the alternates, and a first visit to the English page follows the
+   * browser's language. The blog (`'blog'`, `'blog/<slug>'`) lies under Slider's address whatever
+   * app it wears. Legal pages have one language only.
    */
   translated?: string;
 }
 
-const { title, description, current, lang = 'en', translated } = Astro.props;
+const { title, description, app = 'slider', lang = 'en', translated } = Astro.props;
 const words = t(lang);
-const fullTitle = title ? `${title} | Slider` : words.meta.title;
+const fullTitle = Astro.props.fullTitle ?? (title ? `${title} | ${APP_NAMES[app]}` : words.meta.title);
 const canonical = new URL(Astro.url.pathname, Astro.site);
 /** The share preview (1200 × 630), rendered from the site itself. */
 const ogImage = new URL(asset('og.png'), Astro.site);
 const versions =
-  translated === undefined ? [] : LANGS.map((l) => ({ lang: l, href: localPage(l, translated) }));
+  translated === undefined
+    ? []
+    : LANGS.map((l) => ({
+        lang: l,
+        href: !translated ? appPage(app, l) : app === 'slider' || translated.startsWith('blog') ? localPage(l, translated) : `${appPage(app, l)}${translated}/`,
+      }));
 ---
 
 <!doctype html>
-<html lang={lang}>
+<html lang={lang} data-app={app}>
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
@@ -43,12 +54,12 @@ const versions =
     <link rel="canonical" href={canonical} />
     {versions.map((v) => <link rel="alternate" hreflang={v.lang} href={new URL(v.href, Astro.site)} />)}
     {versions.length > 0 && <link rel="alternate" hreflang="x-default" href={new URL(versions[0]!.href, Astro.site)} />}
-    <link rel="icon" href={`${asset('favicon.svg')}?v=4`} type="image/svg+xml" />
+    <link rel="icon" href={`${asset('favicon.svg')}?v=6`} type="image/svg+xml" />
     <meta property="og:type" content="website" />
     <meta property="og:title" content={fullTitle} />
     <meta property="og:description" content={description ?? words.meta.description} />
     <meta property="og:url" content={canonical} />
-    <meta property="og:site_name" content="Slider" />
+    <meta property="og:site_name" content={app === 'office' ? 'The Office' : APP_NAMES[app]} />
     <meta property="og:image" content={ogImage} />
     <meta property="og:image:width" content="1200" />
     <meta property="og:image:height" content="630" />
@@ -92,7 +103,7 @@ const versions =
     <a href="#main" class="sr-only focus:not-sr-only focus:absolute focus:top-2 focus:left-2 focus:z-(--z-toast) focus:rounded-control focus:bg-primary focus:px-3 focus:py-2 focus:text-on-primary">{words.nav.skip}</a>
     <!-- Cursors and comments may reach past the screen: cut here, so a phone never scrolls sideways. -->
     <div class="overflow-x-clip">
-      <Header current={current} lang={lang} />
+      <Header app={app} lang={lang} />
       <main id="main" data-live="main">
         <slot />
       </main>

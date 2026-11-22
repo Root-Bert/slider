@@ -55,13 +55,20 @@ export function Figure({ value, caption }: { value: string; caption: string }) {
 const storageTotal = ({ storage }: InstanceOverview) =>
   STORAGE_CATEGORIES.reduce((sum, key) => sum + storage[key], 0);
 
-export function StorageCard({ overview }: { overview: InstanceOverview }) {
+/** `app` `slider`: only what Slider keeps – Cloud's files left out. */
+export function StorageCard({ overview, app }: { overview: InstanceOverview; app?: 'slider' }) {
   const { storage } = overview;
-  const total = storageTotal(overview);
+  const parts = storageParts(storage).filter((part) => !app || part.key !== 'files');
+  const total = parts.reduce((sum, part) => sum + part.amount, 0);
   return (
     <Section title="Speicher" density="compact">
-      <Figure value={formatFileSize(total)} caption="alle Präsentationen und Aufnahmen" />
-      <PartsBar label="Speicher nach Art der Datei" parts={storageParts(storage)} />
+      <Figure
+        value={formatFileSize(total)}
+        caption={
+          app ? 'alle Präsentationen und Aufnahmen' : 'alle Präsentationen, Aufnahmen und Dateien'
+        }
+      />
+      <PartsBar label="Speicher nach Art der Datei" parts={parts} />
     </Section>
   );
 }

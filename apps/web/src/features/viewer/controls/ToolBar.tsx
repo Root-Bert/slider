@@ -50,8 +50,8 @@ const MODES = [
  * Tool bar at the left of the controls row (Figma D1), a compact pill as tall as the filter pill.
  * Far left the switch between reviewing and editing, the two main modes. Then the tools of the
  * mode: reviewing – pointer (pins, boxes and text on the slide), freehand, arrow, marker, eraser;
- * editing – undo and redo (picking and drawing a frame need no tool; a symbol goes into a picture
- * frame's „Symbole“). Then how the slides are shown, in either mode: the PowerPoint boxes comments
+ * editing – undo and redo (picking and drawing a frame need no tool; a symbol is a frame drawn and
+ * taken as „Symbol“). Then how the slides are shown, in either mode: the PowerPoint boxes comments
  * attach to, the layers in 3D, the guides, the slides hidden in PowerPoint and the change markers
  * of the latest version.
  */

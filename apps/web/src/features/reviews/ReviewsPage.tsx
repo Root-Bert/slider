@@ -1,14 +1,24 @@
-import { useEffect, useId, useMemo, useRef, useState, type MouseEvent } from 'react';
+import {
+  useEffect,
+  useEffectEvent,
+  useId,
+  useMemo,
+  useRef,
+  useState,
+  type MouseEvent,
+} from 'react';
 import { useNavigate } from 'react-router';
-import type { Deck, DeckFolder } from '@slider/shared';
+import type { Deck } from '@slider/shared';
 import { routes } from '@/lib/routes';
 import { desktopBridge } from '@/lib/desktop-bridge';
 import { keepPickedFile, pickPresentations, webFilesSupported } from '@/lib/web-files';
-import { isContentQuery, useDeckSearch, useDecks, useFolders } from '@/lib/api';
+import { isContentQuery, useDeckSearch, useDecks, useTrashedDecks } from '@/lib/api';
 import { useCollectionSelection } from '@/lib/collection-selection';
 import { isOnControl } from '@/lib/marquee-select';
+import { isTextTarget } from '@/lib/dom';
 import { useAccount } from '@/features/auth';
 import { UploadToast, useDeckUpload } from '@/features/onboarding';
+import { HomeChat } from './components/HomeChat';
 import {
   canCreateDecks,
   deckState,
@@ -23,48 +33,29 @@ import {
   Button,
   cn,
   ContextMenu,
-  Icon,
   PageHeader,
   SelectionBar,
-  TextLink,
   Toast,
   useDebounced,
   useFileDrop,
   useToast,
   type MenuAction,
 } from '@/ui';
-import { DeleteFolderDialog } from './components/DeleteFolderDialog';
 import { DeckCollection, DeckCollectionSkeleton, type DeckView } from './components/DeckCollection';
 import { EmptyState } from './components/EmptyState';
-import { FolderNameDialog } from './components/FolderNameDialog';
-import { FolderTiles } from './components/FolderTiles';
+import { TrashedDecks } from './components/TrashedDecks';
 import { NoResults } from './components/NoResults';
 import { ReviewsToolbar } from './components/ReviewsToolbar';
 import { useBulkDeckActions } from './hooks/useBulkDeckActions';
 import { useDeckContextMenu } from './hooks/useDeckContextMenu';
-import { useFolderDialog } from './hooks/useFolderDialog';
-import { useMoveDecks } from './hooks/useMoveDecks';
-import { movedMessage } from './lib/bulk-messages';
-import { useOpenFolder } from './hooks/useOpenFolder';
 import { useStoredChoice } from './hooks/useStoredChoice';
-import {
-  countByFolder,
-  countByTab,
-  isEmptyFolder,
-  DECK_SORTS,
-  inFolder,
-  onlyFolderTiles,
-  type FolderScope,
-  selectDecks,
-  type ReviewTab,
-} from './lib/deck-filters';
+import { countByTab, DECK_SORTS, deckOrder, selectDecks, type ReviewTab } from './lib/deck-filters';
 import { useLastVisits } from './hooks/useLastVisits';
 import { usePinnedDecks } from './hooks/usePinnedDecks';
 import { pinnableDeckIds, prunePinnedDecks } from './lib/pinned-decks';
 
 const DECK_VIEWS = ['grid', 'list'] as const satisfies readonly DeckView[];
 const NO_DECKS: readonly Deck[] = [];
-const NO_FOLDERS: readonly DeckFolder[] = [];
 
 /**
  * G1 "Projekte" – every deck of one workspace, whoever added it (BER-121, BER-129).
@@ -80,24 +71,20 @@ export function Component() {
   const blocked = newReviewBlockedMessage(workspace);
   const limitNoticeId = useId();
   const decksQuery = useDecks(workspace.id);
+  const trashed = useTrashedDecks(workspace.id);
   const decks = decksQuery.data ?? NO_DECKS;
   const { openedAt } = useLastVisits();
   const { isPinned } = usePinnedDecks(workspace.id);
   const [toast, showToast] = useToast();
-  const foldersQuery = useFolders(workspace.id);
-  const folders = foldersQuery.data ?? NO_FOLDERS;
-  const folderDialog = useFolderDialog(workspace.id);
-  const moveDecks = useMoveDecks();
-  const [deletingFolder, setDeletingFolder] = useState<DeckFolder | null>(null);
-  const { openFolder, openFolderById } = useOpenFolder(folders, foldersQuery.isSuccess);
 
   const [query, setQuery] = useState('');
   const [tab, setTab] = useState<ReviewTab>('all');
   const [sort, setSort] = useStoredChoice('slider.reviews.sort', DECK_SORTS, 'opened');
   const [view, setView] = useStoredChoice('slider.reviews.view', DECK_VIEWS, 'grid');
 
-  const folder: FolderScope = openFolder ? openFolder.id : query.trim() ? '*' : null;
-  const atTop = folder === null;
+  // Every presentation one may see, from wherever it lies: folders are Cloud's, not this
+  // page's (`services/deck-places` in the API).
+  const folder = '*';
 
   // Names are filtered here; slides and comments only when switched on, searched on the server
   // once typing pauses (BER-175). Off again on every visit.
@@ -128,7 +115,6 @@ export function Component() {
     isPinned,
     contentMatches,
   });
-  const inScope = decks.filter((deck) => inFolder(deck, folder));
 
   // Multi-select: ⌘/Shift-click, ⌘A or a selection box dragged over empty space.
   const pageRef = useRef<HTMLDivElement>(null);
@@ -143,6 +129,33 @@ export function Component() {
     onDone: selection.clear,
   });
   const [selectionMenuAt, setSelectionMenuAt] = useState<{ x: number; y: number } | null>(null);
+  // The selection bar goes with the selection, and the focus on one of its buttons with it:
+  // the page takes it, so the keys go on working from where one was.
+  const picking = selectedDecks.length > 0;
+  const wasPicking = useRef(false);
+  useEffect(() => {
+    const before = wasPicking.current;
+    wasPicking.current = picking;
+    if (picking || !before) return;
+    const timer = setTimeout(() => {
+      if (document.activeElement === document.body) pageRef.current?.focus();
+      // After a dialog that closes with the action has handed the focus back (to the button gone).
+    }, 50);
+    return () => clearTimeout(timer);
+  }, [picking]);
+  // ⌫ and Entf ask to delete what is picked, as in Cloud: only when all of it is one's to delete.
+  const removePicked = bulk.remove;
+  const onDeleteKey = useEffectEvent((event: KeyboardEvent) => {
+    if (event.key !== 'Delete' && event.key !== 'Backspace') return;
+    if (event.defaultPrevented || isTextTarget(event.target) || !removePicked) return;
+    if (document.querySelector('dialog[open], [role="menu"]')) return;
+    event.preventDefault();
+    removePicked();
+  });
+  useEffect(() => {
+    window.addEventListener('keydown', onDeleteKey);
+    return () => window.removeEventListener('keydown', onDeleteKey);
+  }, []);
 
   // A pinned deck deleted, moved away or archived (here or elsewhere) would otherwise hold one
   // of the few pin slots of this workspace while no pin shows on "Alle".
@@ -158,14 +171,14 @@ export function Component() {
     mayCreate && !blocked ? () => void navigate(routes.newReview(workspace.id)) : undefined;
 
   // Files dragged from the desktop onto the page become new presentations, as „Neue Präsentation“
-  // makes them: one opens, several go up one after another and the page stays; in an open folder
-  // they land in it.
+  // makes them: one opens, several go up one after another and the page stays.
   const droppedCount = useRef(0);
   // „Öffnen …“ in the browser: the file going up now, with its handle – an ODP stays that file.
   const picked = useRef<Awaited<ReturnType<typeof pickPresentations>>[number] | null>(null);
+  const uploaded = useRef(0);
   const upload = useDeckUpload(workspace.id, (deck) => {
+    uploaded.current += 1;
     if (picked.current) void keepPickedFile(deck.id, picked.current.handle, picked.current.file);
-    if (openFolder) moveDecks.mutate({ deckIds: [deck.id], folderId: openFolder.id });
     if (droppedCount.current === 1) void navigate(routes.deck(deck.id));
   });
   const uploadFailed = upload.state.status === 'error' ? upload.state.message : null;
@@ -173,14 +186,18 @@ export function Component() {
     if (uploadFailed) showToast(uploadFailed, 'danger');
   }, [uploadFailed, showToast]);
   const dropFiles = async (files: File[]) => {
-    if (files.length === 0 || upload.state.status === 'uploading') return;
+    if (files.length === 0) return;
+    if (upload.state.status === 'uploading') return showToast('Der Upload läuft noch.');
     if (!mayCreate || blocked) {
       showToast(blocked ?? 'Du kannst hier keine Präsentationen anlegen.', 'danger');
       return;
     }
     droppedCount.current = files.length;
+    uploaded.current = 0;
     for (const file of files) await upload.run(file);
-    if (files.length > 1) showToast(`${files.length} Präsentationen hochgeladen`);
+    // One that failed has said so itself.
+    if (files.length > 1 && uploaded.current === files.length)
+      showToast(`${files.length} Präsentationen hochgeladen`);
   };
   const openPicked = async () => {
     const files = await pickPresentations().catch((error: unknown) => {
@@ -189,12 +206,14 @@ export function Component() {
     });
     if (files.length === 0 || upload.state.status === 'uploading') return;
     droppedCount.current = files.length;
+    uploaded.current = 0;
     for (const each of files) {
       picked.current = each;
       await upload.run(each.file);
     }
     picked.current = null;
-    if (files.length > 1) showToast(`${files.length} Präsentationen hochgeladen`);
+    if (files.length > 1 && uploaded.current === files.length)
+      showToast(`${files.length} Präsentationen hochgeladen`);
   };
   const { dragOver, handlers: dropHandlers } = useFileDrop((files) => void dropFiles(files));
 
@@ -209,11 +228,6 @@ export function Component() {
   const pageActions: MenuAction[] = [
     ...(mayCreate
       ? [
-          {
-            label: 'Neuer Ordner',
-            icon: 'folder',
-            onSelect: folderDialog.openCreate,
-          } satisfies MenuAction,
           {
             label: 'Neue Präsentation',
             icon: 'add',
@@ -244,28 +258,13 @@ export function Component() {
     },
   ];
 
-  const dropDecks = (target: string, deckIds: string[]) => {
-    const name = folders.find((each) => each.id === target)?.name ?? null;
-    moveDecks.mutate(
-      { deckIds, folderId: target },
-      {
-        onSuccess: (result) => {
-          const message = movedMessage(result, name);
-          showToast(message.text, message.tone);
-          selection.clear();
-        },
-        onError: (error) => showToast(error.message, 'danger'),
-      },
-    );
-  };
-  const folderCounts = countByFolder(decks);
-
   return (
     <div
       ref={pageRef}
+      tabIndex={-1}
       // The cards' thumbnail glow reaches past the page gutter: clipped, so phones don't scroll
       // sideways (clip, not hidden – no scroll container, sticky bars keep working).
-      className="dot-grid relative min-h-full overflow-x-clip"
+      className="dot-grid relative min-h-full overflow-x-clip outline-none"
       // Selection in the viewer's own reviewer colour, like their comments (BER-99).
       style={selectionStyle(user.color)}
       onContextMenu={onPageContextMenu}
@@ -274,22 +273,13 @@ export function Component() {
     >
       <title>{`Präsentationen | ${workspace.name} | Slider`}</title>
 
-      <main className="flex flex-col gap-6 px-4 pt-2 pb-16 md:px-14">
+      {/* The chat's panel (`HomeChat`) stands beside the list, not over it – as the header. */}
+      <main className="@container flex flex-col gap-6 px-4 pt-2 pb-16 transition-[margin] duration-300 ease-out md:px-8 md:[body:has([data-cloud-panel])_&]:mr-[400px]">
         <PageHeader
           layout="inline"
           subtitleSize="body"
           titleRow
-          title={
-            openFolder ? (
-              <>
-                <TextLink onClick={() => openFolderById(null)}>Präsentationen</TextLink>
-                <Icon name="chevronRight" size={24} className="shrink-0 text-fg-subtle" />
-                <span className="truncate">{openFolder.name}</span>
-              </>
-            ) : (
-              <WorkspaceViews workspaceId={workspace.id} current="reviews" />
-            )
-          }
+          title={<WorkspaceViews workspaceId={workspace.id} current="reviews" />}
           subtitle={
             // Only the plan's deck limit, when there is one.
             decksQuery.data !== undefined &&
@@ -332,7 +322,7 @@ export function Component() {
             }
             tab={tab}
             onTabChange={setTab}
-            counts={countByTab(decks, folder)}
+            counts={{ ...countByTab(decks, folder), trash: trashed.data?.length ?? 0 }}
             sort={sort}
             onSortChange={setSort}
             view={view}
@@ -359,25 +349,28 @@ export function Component() {
           />
         )}
 
-        {atTop && decksQuery.data !== undefined && (
-          <FolderTiles
-            folders={folders}
-            counts={folderCounts}
-            onOpen={(id) => openFolderById(id)}
-            manage={
-              mayCreate
-                ? {
-                    onRename: folderDialog.openRename,
-                    onDelete: setDeletingFolder,
-                    onDropDecks: dropDecks,
-                  }
-                : undefined
-            }
-          />
-        )}
-
         <section aria-label="Präsentationen" aria-busy={decksQuery.isPending}>
-          {decksQuery.isPending ? (
+          {tab === 'trash' && trashed.isPending ? (
+            <DeckCollectionSkeleton view="list" count={3} />
+          ) : tab === 'trash' && trashed.isLoadingError ? (
+            <EmptyState
+              title="Papierkorb konnte nicht geladen werden"
+              message={trashed.error.message}
+              action={
+                <Button variant="secondary" icon="refresh" onClick={() => void trashed.refetch()}>
+                  Erneut versuchen
+                </Button>
+              }
+            />
+          ) : tab === 'trash' ? (
+            <TrashedDecks
+              workspaceId={workspace.id}
+              onNotify={showToast}
+              query={query}
+              order={deckOrder(sort, openedAt)}
+              empty={<NoResults hasDecks query={query} tab="trash" onAdd={goToNew} />}
+            />
+          ) : decksQuery.isPending ? (
             <DeckCollectionSkeleton view={view} />
           ) : decksQuery.isLoadingError ? (
             // Only without any list: a failed background refetch (a deploy, a blip) keeps the
@@ -395,28 +388,23 @@ export function Component() {
                 </Button>
               }
             />
-          ) : visible.length === 0 &&
-            isEmptyFolder({
-              folderOpen: Boolean(openFolder),
-              query,
-              decksInFolder: inScope.length,
-            }) ? (
+          ) : visible.length === 0 && awaitingContent ? (
+            <DeckCollectionSkeleton view={view} count={3} />
+          ) : visible.length === 0 && searchingContent && contentSearch.isError ? (
+            // Not „Keine Treffer“: nobody looked through the slides and comments.
             <EmptyState
-              title="Der Ordner ist leer"
-              message={
-                mayCreate
-                  ? 'Ziehe Präsentationen in der Übersicht auf den Ordner oder nutze „Verschieben …“ im Menü einer Präsentation.'
-                  : 'Hier wurden noch keine Präsentationen einsortiert.'
+              title="Die Suche hat nicht geklappt"
+              message={contentSearch.error.message}
+              action={
+                <Button
+                  variant="secondary"
+                  icon="refresh"
+                  onClick={() => void contentSearch.refetch()}
+                >
+                  Erneut versuchen
+                </Button>
               }
             />
-          ) : visible.length === 0 &&
-            onlyFolderTiles({
-              tab,
-              atTop,
-              folderCount: folders.length,
-              deckCount: decks.length,
-            }) ? null : visible.length === 0 && awaitingContent ? (
-            <DeckCollectionSkeleton view={view} count={3} />
           ) : visible.length === 0 ? (
             <NoResults hasDecks={decks.length > 0} query={query} tab={tab} onAdd={goToNew} />
           ) : (
@@ -438,7 +426,7 @@ export function Component() {
         aria-hidden
         className={cn(
           'pointer-events-none fixed inset-3 z-(--z-panel) flex items-center justify-center rounded-panel border-2 border-dashed border-fg transition-opacity duration-200',
-          dragOver ? 'opacity-100' : 'opacity-0',
+          dragOver && mayCreate && !blocked ? 'opacity-100' : 'opacity-0',
         )}
       >
         <span className="drop-glow absolute inset-0 rounded-panel" />
@@ -471,29 +459,17 @@ export function Component() {
         />
       )}
       {bulk.dialog}
-      {folderDialog.state && (
-        <FolderNameDialog
-          title={folderDialog.state.mode === 'create' ? 'Neuer Ordner' : 'Ordner umbenennen'}
-          initialName={folderDialog.state.mode === 'rename' ? folderDialog.state.folder.name : ''}
-          submitLabel={folderDialog.state.mode === 'create' ? 'Anlegen' : 'Umbenennen'}
-          pending={folderDialog.pending}
-          error={folderDialog.error}
-          onClose={folderDialog.close}
-          onSubmit={folderDialog.submit}
-        />
-      )}
-      {deletingFolder && (
-        <DeleteFolderDialog
-          workspaceId={workspace.id}
-          folder={deletingFolder}
-          onClose={() => setDeletingFolder(null)}
-          onDeleted={() => {
-            showToast(`Ordner „${deletingFolder.name}“ gelöscht`);
-            setDeletingFolder(null);
-          }}
-        />
-      )}
       {selection.box}
+      <HomeChat
+        workspace={workspace}
+        // What it found is seen at once: every presentation, the search set to its words.
+        onFilter={(words) => {
+          setTab('all');
+          setSearchContent(true);
+          setQuery(words);
+        }}
+        toast={showToast}
+      />
       <Toast toast={toast} />
     </div>
   );

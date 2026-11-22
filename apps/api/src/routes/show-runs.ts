@@ -41,7 +41,13 @@ export function showRunRoutes(deps: AppDeps) {
       const stored = slide.thumbnailUrl.split('?')[0]?.replace(/^\/files\//, '') ?? '';
       const key =
         thumbnails.get(slide.slideId) ??
-        (stored.startsWith(`decks/${row.deckId}/`) && isValidKey(stored) ? stored : null);
+        // A slide's picture only: the address came from the client, and a deck's files, material
+        // and recordings lie under the same prefix.
+        (stored.startsWith(`decks/${row.deckId}/`) &&
+        /^decks\/[^/]+\/[^/]+\/slides\/[^/]+$/.test(stored) &&
+        isValidKey(stored)
+          ? stored
+          : null);
       return { ...slide, thumbnailUrl: key ? fileUrl(key) : '' };
     }),
     id: row.id,
@@ -114,6 +120,7 @@ export function showRunRoutes(deps: AppDeps) {
               at: deps.clock.now(),
               summary: input.run,
               recordingKey: key,
+              recordedBy: c.var.viewer.author.id,
             })
             .returning();
           const older = await tx

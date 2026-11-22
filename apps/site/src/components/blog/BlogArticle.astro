@@ -1,0 +1,335 @@
+---
+import { Avatar } from '@/ui/Avatar';
+import { render } from 'astro:content';
+import Category from '~/components/blog/Category.astro';
+import Cover from '~/components/blog/Cover.astro';
+import { ACCENT_CSS, FOUNDER, formatDate, postPage, postSlug, type Post } from '~/components/blog/posts';
+import Button from '~/components/Button.astro';
+import Base from '~/layouts/Base.astro';
+import { localPage, type Lang } from '~/i18n';
+import { BLOG } from '~/i18n/blog';
+import { APP_URL } from '~/lib/links';
+
+/** An article in a language (`postPaths` hands over the post and its language's list). */
+interface Props {
+  post: Post;
+  posts: Post[];
+  lang: Lang;
+}
+
+const { post, posts, lang } = Astro.props;
+const w = BLOG[lang];
+const { data } = post;
+const { Content, headings } = await render(post);
+const accent = ACCENT_CSS[data.accent];
+const related = data.related
+  .map((slug) => posts.find((other) => postSlug(other) === slug))
+  .filter((other) => other !== undefined);
+const toc = [
+  ...(data.shortAnswer ? [{ slug: 'short-answer', text: w.shortAnswer }] : []),
+  ...headings.filter((heading) => heading.depth === 2),
+  ...(data.faq.length > 0 ? [{ slug: 'faq', text: w.faq }] : []),
+];
+const meta = [formatDate(data.date, lang), data.readingTime, data.updated && w.updated.replace('{date}', formatDate(data.updated, lang))]
+  .filter(Boolean)
+  .join('  |  ');
+const tagPlural = w.tagsPlural[data.tag];
+---
+
+<Base app="office" lang={lang} translated={`blog/${postSlug(post)}`} title={data.title} description={data.description}>
+  <section class="relative isolate flex flex-col items-center px-4 pt-16 pb-12 md:px-16 md:pt-24" data-section>
+    <div class="flex w-full max-w-[880px] flex-col items-start gap-5">
+      <p class="font-mono text-xs whitespace-pre text-fg-subtle">
+        <a href={localPage(lang, 'blog')} class="hover:text-fg">{w.title}</a>  /  {tagPlural}
+      </p>
+      <Category tag={data.tag} accent={data.accent} lang={lang} />
+      <h1 class="ar-title" data-reveal style="--i: 1">{data.title}</h1>
+      <div class="flex flex-wrap items-center gap-3" data-reveal style="--i: 2">
+        <Avatar author={FOUNDER} size={24} nativeTitle={false} />
+        <span class="text-sm font-medium whitespace-pre text-fg">{data.author} | {data.role}</span>
+        <span class="font-mono text-xs whitespace-pre-wrap text-fg-subtle">{meta}</span>
+      </div>
+      <div class="mt-4 w-full" data-reveal style="--i: 3">
+        <Cover post={post} size="wide" class="ar-cover" />
+      </div>
+    </div>
+  </section>
+
+  <section class="flex justify-center gap-14 px-4 pt-6 pb-12 md:px-16" data-section>
+    <nav aria-label={w.toc} class="sticky top-6 hidden w-[200px] shrink-0 flex-col gap-3 self-start pt-2 xl:flex" data-toc>
+      <p class="text-caption font-medium tracking-wide uppercase text-fg-faint">{w.toc}</p>
+      {
+        toc.map((item) => (
+          <a
+            href={`#${item.slug}`}
+            data-toc-link={item.slug}
+            class="toc-link border-l-2 border-transparent py-0.5 pl-2.5 text-sm text-fg-subtle transition-colors hover:text-fg"
+            style={`--toc: ${accent}`}
+          >
+            {item.text}
+          </a>
+        ))
+      }
+    </nav>
+
+    <article class="flex w-full max-w-[680px] min-w-0 flex-col gap-7">
+      {
+        data.shortAnswer && (
+          <div
+            id="short-answer"
+            class="ar-short flex scroll-mt-6 flex-col gap-3 px-7 py-6"
+            style={`--accent: ${accent}`}
+            data-reveal
+          >
+            <p class="text-caption font-medium tracking-wide uppercase text-fg-subtle">{w.shortAnswer}</p>
+            <p class="text-[17px] leading-[1.65] text-fg">{data.shortAnswer.text}</p>
+            <ul class="flex flex-col gap-3">
+              {data.shortAnswer.facts.map((fact) => (
+                <li class="flex gap-2.5 text-[15px] text-fg-muted">
+                  <span class="text-sm font-bold text-(--brand-line)" aria-hidden="true">✓</span>
+                  {fact}
+                </li>
+              ))}
+            </ul>
+          </div>
+        )
+      }
+
+      <div class="article-body" data-reveal style="--i: 2">
+        <Content />
+      </div>
+
+      {
+        data.faq.length > 0 && (
+          <div class="flex flex-col gap-7">
+            <h2 id="faq" class="scroll-mt-6 text-[30px] leading-[1.2] font-bold tracking-[-0.02em] text-fg">{w.faqTitle}</h2>
+            <div class="overflow-hidden rounded-[20px] ring-hairline">
+              {data.faq.map((item, i) => (
+                <details class="faq group border-hairline px-6 py-5 [&:not(:first-child)]:border-t" open={i === 0}>
+                  <summary class="flex cursor-pointer list-none items-center gap-3 text-base font-semibold text-fg [&::-webkit-details-marker]:hidden">
+                    <span class="flex-1">{item.q}</span>
+                    <span class="text-lg font-normal text-fg-subtle group-open:hidden" aria-hidden="true">+</span>
+                    <span class="hidden text-lg font-normal text-fg-subtle group-open:inline" aria-hidden="true">–</span>
+                  </summary>
+                  <p class="mt-2.5 text-[15px] leading-[1.65] text-fg-muted">{item.a}</p>
+                </details>
+              ))}
+            </div>
+          </div>
+        )
+      }
+
+      <div class="ar-author flex items-start gap-3">
+        <Avatar author={FOUNDER} size={24} nativeTitle={false} />
+        <div class="ar-author-bubble flex flex-col gap-1">
+          <p class="text-[15px] font-semibold text-fg">{w.writtenBy.replace('{name}', data.author)}</p>
+          <p class="text-sm text-fg-subtle">{w.founder}</p>
+        </div>
+      </div>
+    </article>
+
+    <aside
+      class="ar-cta sticky top-24 hidden w-[240px] shrink-0 flex-col gap-3.5 self-start p-6 lg:flex"
+      data-reveal
+      style="--i: 3"
+    >
+      <p class="text-[19px] leading-[1.2] font-bold tracking-[-0.02em]">{w.cta.title}</p>
+      <p class="text-sm leading-[1.5] text-white/75">{w.cta.text}</p>
+      <Button href={`${APP_URL}/`} size="md" variant="inverse" class="w-full">{w.cta.button}</Button>
+    </aside>
+  </section>
+
+  {
+    related.length > 0 && (
+      <section class="relative isolate flex flex-col gap-5 px-4 pt-12 pb-4 md:px-16" data-section>
+        <h2 class="text-[32px] font-bold tracking-[-0.03em] text-fg">{w.more}</h2>
+        <div class="grid gap-6 md:grid-cols-3">
+          {related.map((other, i) => (
+            <a
+              href={postPage(other, lang)}
+              class="ar-related flex flex-col items-start gap-3 p-6"
+              data-reveal
+              style={`--i: ${i}`}
+            >
+              <Category tag={other.data.tag} accent={other.data.accent} lang={lang} />
+              <p class="text-lg leading-[1.3] font-semibold">{other.data.title}</p>
+            </a>
+          ))}
+        </div>
+      </section>
+    )
+  }
+</Base>
+
+<style>
+  .ar-title {
+    font-size: clamp(30px, 3.6vw, 54px);
+    font-weight: 700;
+    line-height: 1.06;
+    letter-spacing: -0.03em;
+    text-wrap: balance;
+    color: var(--color-fg);
+  }
+  :global(.cv.is-wide.ar-cover) {
+    aspect-ratio: 2 / 1;
+  }
+  :global(.ar-cover .cv-big) {
+    font-size: clamp(80px, 10vw, 150px);
+  }
+  /* Short answer: a card with the post's accent down its left edge. */
+  .ar-short {
+    border-left: 3px solid var(--accent);
+    border-radius: 20px;
+    background: var(--color-surface-1);
+    box-shadow: inset 0 0 0 1px var(--color-hairline);
+  }
+  /* The author signs off with a comment. */
+  .ar-author-bubble {
+    padding: 14px 18px;
+    border-radius: 4px 20px 20px 20px;
+    background: var(--color-surface-1);
+    box-shadow: inset 0 0 0 1px var(--color-hairline);
+  }
+  /* The call to action: a small night-dark tile with the glow in the page's colour, like the end of every page. */
+  .ar-cta {
+    border-radius: 24px;
+    background: var(--brand-aura);
+    color: #fff;
+  }
+  .ar-related {
+    border-radius: 24px;
+    background: #131315;
+    color: #fff;
+    box-shadow: inset 0 0 0 1px rgb(255 255 255 / 0.08);
+    transition: background-color 200ms;
+  }
+  .ar-related:hover {
+    background: #1b1b1e;
+  }
+  .toc-link[aria-current='true'] {
+    border-color: var(--toc);
+    color: var(--color-fg);
+  }
+
+  /* Markdown body: paragraphs, h2s and the comparison table in the article look. */
+  .article-body {
+    display: flex;
+    flex-direction: column;
+    gap: 28px;
+  }
+  .article-body :global(p) {
+    font-size: 17px;
+    line-height: 1.7;
+    color: var(--color-fg-muted);
+  }
+  .article-body :global(h2) {
+    scroll-margin-top: 24px;
+    font-size: 30px;
+    font-weight: 700;
+    line-height: 1.2;
+    letter-spacing: -0.02em;
+    color: var(--color-fg);
+  }
+  .article-body :global(a) {
+    color: var(--color-fg);
+    text-decoration: underline;
+    text-decoration-color: var(--brand-line);
+    text-underline-offset: 4px;
+  }
+  .article-body :global(a:hover) {
+    color: var(--brand-line);
+  }
+  .article-body :global(strong) {
+    font-weight: 600;
+    color: var(--color-fg);
+  }
+  .article-body :global(ul),
+  .article-body :global(ol) {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    padding-left: 1.4em;
+    font-size: 17px;
+    line-height: 1.7;
+    color: var(--color-fg-muted);
+  }
+  .article-body :global(ul) {
+    list-style: disc;
+  }
+  .article-body :global(ol) {
+    list-style: decimal;
+  }
+  .article-body :global(li::marker) {
+    color: var(--color-fg-subtle);
+  }
+  .article-body :global(code) {
+    padding: 2px 6px;
+    border-radius: 6px;
+    background: var(--color-surface-2);
+    font-family: var(--font-mono);
+    font-size: 0.88em;
+    color: var(--color-fg);
+  }
+  .article-body :global(table) {
+    width: 100%;
+    border-collapse: separate;
+    border-spacing: 0;
+    overflow: hidden;
+    border-radius: 16px;
+    box-shadow: inset 0 0 0 1px var(--color-hairline);
+    font-size: 15px;
+  }
+  .article-body :global(th) {
+    background: var(--color-surface-2);
+    padding: 14px 20px;
+    text-align: left;
+    font-family: var(--font-mono);
+    font-size: 12px;
+    font-weight: 500;
+    color: var(--color-fg-subtle);
+  }
+  .article-body :global(td) {
+    padding: 14px 20px;
+    color: var(--color-fg);
+  }
+  .article-body :global(td:first-child) {
+    font-weight: 500;
+  }
+  .article-body :global(td:nth-child(2)) {
+    color: var(--color-fg-subtle);
+  }
+  .article-body :global(tbody tr:nth-child(odd)) {
+    background: var(--color-glass);
+  }
+  .article-body :global(.ok) {
+    color: var(--brand-line);
+  }
+  @media (max-width: 640px) {
+    .article-body :global(th),
+    .article-body :global(td) {
+      padding: 12px;
+    }
+  }
+</style>
+
+<script>
+  // Table of contents: mark the section being read.
+  const links = [...document.querySelectorAll<HTMLAnchorElement>('[data-toc-link]')];
+  const targets = links
+    .map((link) => document.getElementById(link.dataset.tocLink ?? ''))
+    .filter((el): el is HTMLElement => el !== null);
+  if (links.length > 0 && 'IntersectionObserver' in window) {
+    const observer = new IntersectionObserver(
+      (entries) => {
+        for (const entry of entries) {
+          if (!entry.isIntersecting) continue;
+          for (const link of links) {
+            link.setAttribute('aria-current', String(link.dataset.tocLink === entry.target.id));
+          }
+        }
+      },
+      { rootMargin: '0px 0px -70% 0px' },
+    );
+    targets.forEach((target) => observer.observe(target));
+  }
+</script>

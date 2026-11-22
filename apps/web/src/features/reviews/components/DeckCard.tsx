@@ -17,7 +17,13 @@ import { usePinnedDecks } from '../hooks/usePinnedDecks';
 import { useDeckContextMenu } from '../hooks/useDeckContextMenu';
 import { DeckActions } from './DeckActions';
 import { DeckTitleInput } from './DeckTitleInput';
-import { DeckStatusBadge, ImportOverlay, OriginChips, SlideCountChip } from './DeckBits';
+import {
+  DeckPlaceLine,
+  DeckStatusBadge,
+  ImportOverlay,
+  OriginChips,
+  SlideCountChip,
+} from './DeckBits';
 import { OpenCommentsButton } from './OpenComments';
 import { SearchHit } from './SearchHit';
 import { SlideThumbnail } from './SlideThumbnail';
@@ -167,7 +173,7 @@ export function DeckCard({ deck, selected = false, onNotify, searchHit }: DeckIt
           pending={isImporting(deck)}
           glow
           // Same trigger as the frame.
-          glowClassName="group-has-[[data-deck-hover]:hover]:scale-105 group-has-[[data-deck-hover]:hover]:opacity-60 group-has-[a:focus-visible]:opacity-60"
+          glowClassName="group-has-[[data-deck-hover]:hover]:opacity-60 group-has-[a:focus-visible]:opacity-60"
           className={cn(
             'rounded-panel ring-2 ring-transparent transition-[box-shadow,scale] duration-300',
             'group-has-[[data-deck-hover]:hover]:scale-[0.97] group-has-[[data-deck-hover]:hover]:ring-fg',
@@ -221,6 +227,7 @@ export function DeckCard({ deck, selected = false, onNotify, searchHit }: DeckIt
           className="ml-auto shrink-0 pl-1.5"
         />
       </div>
+      <DeckPlaceLine deck={deck} className="-mt-2" />
       {searchHit && <SearchHit result={searchHit} className="-mt-1.5 line-clamp-2" />}
     </article>
   );
@@ -246,7 +253,8 @@ export function DeckRow({ deck, selected = false, onNotify, searchHit }: DeckIte
       )}
     >
       <div className="flex items-center gap-4">
-        <div className="relative w-24 shrink-0">
+        {/* The picture and the title drag the row; the rest of it draws the selection box. */}
+        <div data-grip className="relative w-24 shrink-0">
           <SlideThumbnail
             src={deck.thumbnailUrl}
             pending={isImporting(deck)}
@@ -263,6 +271,7 @@ export function DeckRow({ deck, selected = false, onNotify, searchHit }: DeckIte
             <PinnedMark deck={deck} />
             <RestrictedMark deck={deck} />
             <h3
+              data-grip
               className={cn(
                 'text-sm font-medium text-fg',
                 renaming ? 'min-w-0 flex-1' : 'truncate',
@@ -283,6 +292,7 @@ export function DeckRow({ deck, selected = false, onNotify, searchHit }: DeckIte
             </h3>
             <DeckStatusBadge deck={deck} />
           </div>
+          <DeckPlaceLine deck={deck} />
           {searchHit && <SearchHit result={searchHit} className="truncate text-xs" />}
         </div>
 

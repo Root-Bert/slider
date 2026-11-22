@@ -46,14 +46,15 @@ export async function uploadInParts<T>(
 
 /**
  * What a file sent in parts is for: a deck file (new deck or version), a comment's recording, or
- * a file for a deck's board (the material page).
+ * a file for a board (the material page) – a deck's or a text document's.
  */
 export type PartsTarget =
   | { workspaceId: string }
   | { deckId: string }
   | { purpose: 'recording'; deckId: string }
   | { purpose: 'recording'; commentId: string }
-  | { purpose: 'material'; deckId: string };
+  | { purpose: 'material'; deckId: string }
+  | { purpose: 'material'; documentId: string };
 
 /**
  * The file's parts sent over tus, resumed where an earlier try stopped; resolves with the

@@ -7,7 +7,7 @@ import {
 } from '@slider/shared';
 import JSZip from 'jszip';
 import { describe, expect, it } from 'vitest';
-import { listLabels } from '@slider/shared/live-text';
+import { listLabels, listOf } from '@slider/shared/live-text';
 import { OdpDocument, OdpError, placedBox } from '../src';
 import { OdpArchive } from '../src/archive';
 
@@ -218,6 +218,46 @@ describe('writing live elements', () => {
       expect(live.paragraphs[4]?.bullet).toMatchObject({ at: 27, width: 27, size: 20 });
       expect(live.paragraphs[3]?.runs[0]).toMatchObject({ text: 'zwei', strike: true });
       expect(live.paragraphs.every((p) => p.lineSpacing.value === 1.5)).toBe(true);
+
+      // A bullet or numbering picked: that level drawn with it where the list sits – a shape in
+      // Inter, as large as the text –, the others as they were; written again as read, nothing
+      // changes; the bullet it had comes back (⌘Z).
+      const again = await roundtrip(document);
+      const read = (doc: typeof again) =>
+        byName(doc, 1, 'Content 2').live!.paragraphs.map((paragraph) => ({
+          align: paragraph.align,
+          runs: paragraph.runs,
+          list: listOf(paragraph),
+        }));
+      const was = read(again);
+      expect(was.map((p) => p.list)).toEqual([
+        { kind: 'bullet', level: 1, char: '•' },
+        null,
+        { kind: 'number', level: 1, number: '1' },
+        { kind: 'number', level: 1, number: '1' },
+        { kind: 'number', level: 2, number: '1' },
+        { kind: 'number', level: 1, number: '1' },
+      ]);
+      const picked = was.map((p, i) =>
+        i === 0
+          ? { ...p, list: { kind: 'bullet' as const, level: 1, char: '✓' } }
+          : i === 4
+            ? { ...p, list: { kind: 'number' as const, level: 2, number: 'a' as const } }
+            : p,
+      );
+      again.apply([{ type: 'setRichText', elementId: content.id, paragraphs: picked }]);
+      const signed = await roundtrip(again);
+      const shown = byName(signed, 1, 'Content 2').live!.paragraphs;
+      expect(listLabels(shown)).toEqual(['✓', null, '1.', '2.', 'a.', '3.']);
+      expect(shown[0]?.bullet).toMatchObject({ font: 'Inter', size: 20, width: 18 });
+      expect(shown[4]?.bullet).toMatchObject({ at: 27, width: 27 });
+      const same = read(signed);
+      signed.apply([{ type: 'setRichText', elementId: content.id, paragraphs: same }]);
+      expect(read(await roundtrip(signed))).toEqual(same);
+      signed.apply([{ type: 'setRichText', elementId: content.id, paragraphs: was }]);
+      const back = byName(await roundtrip(signed), 1, 'Content 2').live!.paragraphs;
+      expect(listLabels(back)).toEqual(['•', null, '1.', '2.', '1.', '3.']);
+      expect(back[0]?.bullet).toMatchObject({ font: 'Arial', width: 18 });
     }
     // Shares equal styles instead of writing them again.
     {

@@ -7,6 +7,7 @@ import {
   type WorkspaceFont,
   type WorkspaceFontUpload,
   type WorkspaceRole,
+  zipEntriesAtMost,
 } from '@slider/shared';
 import { deckEdits, decks, revisions, workspaceFonts, type WorkspaceFontRow } from '../db/schema';
 import type { AppDeps } from '../deps';
@@ -29,6 +30,8 @@ import { requireRole } from './workspaces/roles';
 const FONT_NAME = /\.(ttf|otf)$/i;
 /** Entries of one zip looked at at most, and the bytes they may unpack to together. */
 const MAX_ZIP_ENTRIES = 500;
+/** Entries a zip may list at all (font families come with licences, specimens, web files). */
+const MAX_ZIP_LISTED = 20_000;
 const MAX_ZIP_BYTES = 200 * 1024 ** 2;
 
 /** Native inflation enforces an output cap before collecting an oversized result. */
@@ -152,6 +155,8 @@ async function fontFiles(files: readonly { name: string; bytes: Uint8Array }[]) 
     }
     let zip: JSZip;
     try {
+      // Counted before it is opened: a small zip can list millions of entries.
+      if (!zipEntriesAtMost(file.bytes, MAX_ZIP_LISTED)) throw new Error('too many entries');
       zip = await JSZip.loadAsync(file.bytes);
     } catch {
       skipped.push({ name: file.name, reason: 'Das Zip ließ sich nicht öffnen.' });

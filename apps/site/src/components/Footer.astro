@@ -1,9 +1,10 @@
 ---
-import { Logo } from '@/ui/Logo';
-import { LANG_NAMES, localPage, t, type Lang } from '~/i18n';
+import Mark from './Mark.astro';
+import { LANG_NAMES, appPage, localPage, s, t, type Lang } from '~/i18n';
+import { APPS, APP_NAMES } from '~/lib/apps';
 import { APP_URL, BERTRO_URL, CHANGELOG_URL, REPO_URL, page } from '~/lib/links';
 
-/** Site / Footer: logo, link columns and the language switch (where the page has versions). */
+/** Site / Footer: the office's mark, link columns and the language switch (where the page has versions). */
 interface Props {
   lang: Lang;
   versions: { lang: Lang; href: string }[];
@@ -11,39 +12,39 @@ interface Props {
 
 const { lang, versions } = Astro.props;
 const words = t(lang);
+const suite = s(lang);
 const columns = [
   {
-    title: words.footer.product,
+    title: suite.footer.apps,
+    links: [...APPS.map((id) => [APP_NAMES[id], appPage(id, lang)])],
+  },
+  {
+    title: suite.footer.more,
     links: [
-      [words.nav.pricing, localPage(lang, 'pricing')],
-      [words.nav.blog, page('blog')],
+      // Posts are English only.
+      [suite.footer.blog, localPage(lang, 'blog')],
+      [suite.footer.source, REPO_URL],
+      [suite.footer.changelog, CHANGELOG_URL],
       [words.nav.login, `${APP_URL}/`],
     ],
   },
   {
-    title: words.footer.run,
+    title: suite.footer.company,
     links: [
-      [words.footer.source, REPO_URL],
-      [words.footer.changelog, CHANGELOG_URL],
-    ],
-  },
-  {
-    title: words.footer.company,
-    links: [
-      ['bertro.dev', BERTRO_URL],
-      [words.footer.contact, page('kontakt')],
+      [suite.footer.about, BERTRO_URL],
+      [suite.footer.contact, page('kontakt')],
       ['Impressum', page('impressum')],
       ['Datenschutz', page('datenschutz')],
     ],
   },
-] as const;
+];
 ---
 
-<footer class="mt-32 border-t border-hairline px-4 md:mt-44 md:px-8">
-  <div class="mx-auto grid max-w-[1440px] gap-12 py-12 md:grid-cols-[1.4fr_repeat(3,1fr)] md:py-16">
-    <div class="flex flex-col items-start gap-4">
-      <Logo />
-      <p class="text-[26px] leading-[1.15] font-semibold tracking-[-0.02em] text-fg">{words.footer.tagline}</p>
+<footer class="mt-40 border-t border-hairline px-4 md:mt-64 md:px-8">
+  <div class="mx-auto grid max-w-[1440px] gap-12 py-12 md:grid-cols-[1.4fr_repeat(3,1fr)] md:py-20">
+    <div class="flex flex-col items-start gap-5">
+      <Mark app="office" size={36} />
+      <p class="text-[26px] leading-[1.15] font-semibold tracking-[-0.02em] text-fg">{suite.footer.tagline}</p>
       {
         versions.length > 0 && (
           <nav aria-label={words.nav.language} class="mt-2 flex gap-4">

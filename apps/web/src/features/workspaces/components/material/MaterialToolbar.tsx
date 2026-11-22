@@ -21,6 +21,20 @@ const SOURCE_OPTIONS = [
   { value: 'workspace', label: 'Workspace-Schriften' },
 ] satisfies { value: FontSource; label: string }[];
 
+/** Whose words „Wörter“ shows: the workspace's, or one's own (they go along into every workspace). */
+export type WordSource = 'workspace' | 'own';
+const WORD_SOURCE_OPTIONS = [
+  { value: 'workspace', label: 'Workspace-Wörter' },
+  { value: 'own', label: 'Eigene Wörter' },
+] satisfies { value: WordSource; label: string }[];
+
+/** The same for „Vorlagen“: Slider's own and the workspace's. */
+const MASTER_SOURCE_OPTIONS = [
+  { value: 'all', label: 'Alle Vorlagen' },
+  { value: 'slider', label: 'Slider-Vorlagen' },
+  { value: 'workspace', label: 'Workspace-Vorlagen' },
+] satisfies { value: FontSource; label: string }[];
+
 /** Which symbols „Symbole“ shows – named as the editor's symbol search names them. */
 const ICON_KIND_OPTIONS = [{ value: 'all', label: 'Alle Symbole' }, ...ICON_KINDS] satisfies {
   value: IconFilter;
@@ -85,9 +99,14 @@ interface MaterialToolbarProps {
   onSortChange: (sort: MaterialSort) => void;
   view: MaterialView;
   onViewChange: (view: MaterialView) => void;
-  /** „Schriften“ only: whose fonts, picked left of the sort select. */
+  /** „Schriften“ and „Vorlagen“: whose, picked left of the sort select. */
   source: FontSource;
   onSourceChange: (source: FontSource) => void;
+  /** „Vorlagen“ has whose to pick – not in Writer, whose templates are its own. */
+  masterSources?: boolean;
+  /** „Wörter“ only, the same way. */
+  wordSource: WordSource;
+  onWordSourceChange: (source: WordSource) => void;
   /** „Symbole“ only, the same way: icons, pictograms or both. */
   iconKind: IconFilter;
   onIconKindChange: (kind: IconFilter) => void;
@@ -110,6 +129,9 @@ export function MaterialToolbar({
   onViewChange,
   source,
   onSourceChange,
+  masterSources = true,
+  wordSource,
+  onWordSourceChange,
   iconKind,
   onIconKindChange,
   action,
@@ -153,6 +175,24 @@ export function MaterialToolbar({
               value={source}
               onChange={onSourceChange}
               options={SOURCE_OPTIONS}
+            />
+          )}
+          {kind === 'masters' && masterSources && (
+            <Select
+              aria-label="Vorlagen von"
+              size="toolbar"
+              value={source}
+              onChange={onSourceChange}
+              options={MASTER_SOURCE_OPTIONS}
+            />
+          )}
+          {kind === 'words' && (
+            <Select
+              aria-label="Wörter von"
+              size="toolbar"
+              value={wordSource}
+              onChange={onWordSourceChange}
+              options={WORD_SOURCE_OPTIONS}
             />
           )}
           {kind === 'words' ? null : kind === 'icons' ? (

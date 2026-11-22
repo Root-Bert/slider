@@ -10,6 +10,8 @@ import {
   LINK_CREDENTIALS_MESSAGE,
   linkHasCredentials,
   parseShareLink,
+  SLIDER_TEMPLATE_PREFIX,
+  cloudTargetInputSchema,
   updateDeckAccessInputSchema,
   updateDeckInputSchema,
   type Deck,
@@ -46,11 +48,15 @@ import {
   createDeckFromFile,
   deleteDeck,
   listDeckPeople,
+  listTrashedDecks,
   listWorkspaceDecks,
+  restoreDeck,
   toDeckDto,
+  trashDeck,
   updateDeck,
 } from '../services/decks';
-import { getDeckAccess, updateDeckAccess } from '../services/deck-access';
+import { getDeckAccess } from '../services/deck-access';
+import { placeDeck, placeNew, setDeckAccess } from '../services/deck-places';
 import { searchDecks } from '../services/deck-search';
 import { assertDeckSlot } from '../services/plans';
 import { listSlides } from '../services/slides';
@@ -75,6 +81,9 @@ const blankBodySchema = z.object({
   workspaceId: z.string().max(100).optional(),
   /** Made from this design of the workspace (`workspace_masters`) instead of Slider's own. */
   masterId: z.string().max(100).optional(),
+  /** Made from a folder or an area in Cloud: it lies there (`placeNew`), else in one's own files. */
+  parentId: z.string().max(100).optional(),
+  areaId: z.string().max(100).optional(),
 });
 /** A new empty deck's file – its title is "Neue Präsentation". */
 const BLANK_DECK_FILE_NAME = 'Neue Präsentation.odp';
@@ -142,7 +151,7 @@ const findDeckWithContent = (
     ),
   );
 
-const existingDeckDto = async (deps: AppDeps, viewer: Viewer, deck: DeckRow) =>
+export const existingDeckDto = async (deps: AppDeps, viewer: Viewer, deck: DeckRow) =>
   toDeckDto(deps.db, deck, { access: await viewerAccess(deps.db, viewer) });
 
 /** `?workspaceId=` → that workspace (members only); without it: all my workspaces. */
@@ -204,6 +213,7 @@ async function importRemote(
       nextcloudConnectionId,
     },
   );
+  await placeNew(deps, viewer, deck.id);
   return { deck, created: true };
 }
 
@@ -217,6 +227,8 @@ export async function createUploadedDeck(
   viewer: Viewer,
   requestedWorkspaceId: string | undefined,
   file: { fileName: string; original: Uint8Array },
+  /** `false`: its maker says where it lies (a file in Cloud opened as a presentation). */
+  place = true,
 ): Promise<{ deck: Deck; created: boolean }> {
   const workspaceId = await resolveUploadWorkspace(deps, viewer.author.id, requestedWorkspaceId);
   const bytes = await toDeckBytes(file.fileName, file.original, deps.documentPdf);
@@ -231,6 +243,7 @@ export async function createUploadedDeck(
     { ownerId: viewer.author.id, workspaceId },
     { fileName: file.fileName, bytes, sourceSha256, source: 'upload' },
   );
+  if (place) await placeNew(deps, viewer, deck.id);
   return { deck, created: true };
 }
 
@@ -294,6 +307,15 @@ export function decksRoutes(deps: AppDeps) {
         const access = await viewerAccess(deps.db, viewer);
         const workspaceIds = await workspaceIdsOf(deps, viewer, access, c.req.query('workspaceId'));
         return c.json(await listWorkspaceDecks(deps, workspaceIds, access));
+      })
+
+      /** The trash: deleted presentations the caller may bring back. Before `/decks/:deckId`. */
+      .get('/decks/trash', viewer, async (c) => {
+        const { viewer } = c.var;
+        requireOwner(viewer);
+        const access = await viewerAccess(deps.db, viewer);
+        const workspaceIds = await workspaceIdsOf(deps, viewer, access, c.req.query('workspaceId'));
+        return c.json(await listTrashedDecks(deps, workspaceIds, access));
       })
 
       /**
@@ -375,7 +397,12 @@ export function decksRoutes(deps: AppDeps) {
       .post('/decks/blank', viewer, imports, async (c) => {
         const { viewer } = c.var;
         requireOwner(viewer);
-        const { workspaceId: requested, masterId } = await readJson(c, blankBodySchema);
+        const {
+          workspaceId: requested,
+          masterId,
+          parentId,
+          areaId,
+        } = await readJson(c, blankBodySchema);
         const workspaceId = await resolveUploadWorkspace(deps, viewer.author.id, requested);
         // Without a design: drawn ahead, ready at once (`BlankDecks`) – else imported.
         const prepared = masterId ? null : await deps.blankDecks?.next();
@@ -389,12 +416,14 @@ export function decksRoutes(deps: AppDeps) {
             fileName: BLANK_DECK_FILE_NAME,
             bytes,
             source: 'upload',
-            masterId: masterId ?? null,
+            // One of Slider's own is no design of the workspace: nothing to link.
+            masterId: masterId?.startsWith(SLIDER_TEMPLATE_PREFIX) ? null : (masterId ?? null),
             ready: prepared?.ready,
           },
         );
         // Folie 1 offers to build it with the AI while it is still blank.
         await offerCreation(deps.db, deck.id);
+        await placeNew(deps, viewer, deck.id, { parentId, areaId });
         return c.json(deck, 201);
       })
 
@@ -495,6 +524,34 @@ export function decksRoutes(deps: AppDeps) {
 
       .delete('/decks/:deckId', viewer, async (c) => {
         const deck = await requireDeckAccess(deps, c.var.viewer, c.req.param('deckId'), 'own');
+        // Into the trash. A template being designed has none: it goes for good.
+        if (deck.isTemplate || c.var.viewer.kind !== 'owner') await deleteDeck(deps, deck.id);
+        else await trashDeck(deps, deck.id, c.var.viewer.author.id);
+        return c.body(null, 204);
+      })
+
+      /** „Wiederherstellen“: back from the trash. */
+      .post('/decks/:deckId/restore', viewer, async (c) => {
+        const deck = await requireDeckAccess(
+          deps,
+          c.var.viewer,
+          c.req.param('deckId'),
+          'own',
+          'trash',
+        );
+        await restoreDeck(deps, deck.id);
+        return c.body(null, 204);
+      })
+
+      /** „Endgültig löschen“: out of the trash, gone for everyone. */
+      .delete('/decks/:deckId/trash', viewer, async (c) => {
+        const deck = await requireDeckAccess(
+          deps,
+          c.var.viewer,
+          c.req.param('deckId'),
+          'own',
+          'trash',
+        );
         await deleteDeck(deps, deck.id);
         return c.body(null, 204);
       })
@@ -508,7 +565,15 @@ export function decksRoutes(deps: AppDeps) {
       .put('/decks/:deckId/access', viewer, async (c) => {
         const deck = await requireDeckAccess(deps, c.var.viewer, c.req.param('deckId'), 'own');
         const input = await readJson(c, updateDeckAccessInputSchema);
-        return c.json(await updateDeckAccess(deps, deck, input));
+        return c.json(await setDeckAccess(deps, c.var.viewer, deck, input));
+      })
+
+      /** „Speicherort“: where the presentation lies in Cloud (`services/deck-places`). */
+      .put('/decks/:deckId/place', viewer, async (c) => {
+        const deck = await requireDeckAccess(deps, c.var.viewer, c.req.param('deckId'), 'own');
+        await placeDeck(deps, c.var.viewer, deck, await readJson(c, cloudTargetInputSchema));
+        const [placed] = await deps.db.select().from(decks).where(eq(decks.id, deck.id));
+        return c.json(await existingDeckDto(deps, c.var.viewer, placed ?? deck));
       })
 
       .get('/decks/:deckId/people', viewer, async (c) => {

@@ -8,6 +8,7 @@ import {
   isPdfBytes,
   readBodyCapped,
   redirectTarget,
+  safeFetch,
   streamBodyCapped,
   type LookupAll,
 } from '../src/sources/safe-fetch';
@@ -159,6 +160,66 @@ describe('responses', () => {
     expect(redirectTarget(redirect(304, '/x'), from)).toBeNull();
     expect(redirectTarget(redirect(302), from)).toBeNull();
     expect(redirectTarget(redirect(302, 'http://[broken'), from)).toBeNull();
+
+    // Sent on to another server, the login stays behind; a body is not sent on at all.
+    const options = (fetch: (input: string | URL, init?: RequestInit) => Promise<Response>) => ({
+      fetch,
+      lookup: publicLookup,
+      maxBytes: 1024,
+    });
+    const seen: { host: string; authorization: string | null; accept: string | null }[] = [];
+    const hops = options(async (input, init) => {
+      const headers = new Headers(init?.headers);
+      seen.push({
+        host: headers.get('host') ?? new URL(String(input)).host,
+        authorization: headers.get('authorization'),
+        accept: headers.get('accept'),
+      });
+      return seen.length < 3
+        ? redirect(302, seen.length === 1 ? '/next' : 'https://cdn.example/file')
+        : new Response('ok');
+    });
+    const init = { headers: { Authorization: 'Bearer geheim', Accept: 'text/plain' } };
+    await safeFetch(new URL('https://example.com/a'), hops, init);
+    expect(seen.map((hop) => [hop.host, hop.authorization, hop.accept])).toEqual([
+      ['example.com', 'Bearer geheim', 'text/plain'],
+      ['example.com', 'Bearer geheim', 'text/plain'],
+      ['cdn.example', null, 'text/plain'],
+    ]);
+    expect(
+      await codeOf(
+        safeFetch(
+          new URL('https://example.com/a'),
+          options(async () => redirect(307, 'https://cdn.example/file')),
+          { method: 'POST', body: 'x' },
+        ),
+      ),
+    ).toBe('source_unreachable');
+    // The same server's `https` is no other server (one in the own network, asked over `http`):
+    // login and body go along – not to another port, and never back down to `http`.
+    const upgraded = async (from: string, to: string) => {
+      const logins: (string | null)[] = [];
+      const fetch = {
+        ...options(async (_input, sent) => {
+          logins.push(new Headers(sent?.headers).get('authorization'));
+          return logins.length === 1 ? redirect(307, to) : new Response('ok');
+        }),
+        trusted: () => true,
+      };
+      const post = { method: 'POST', body: 'x', headers: { Authorization: 'Bearer geheim' } };
+      const code = await codeOf(safeFetch(new URL(from), fetch, post));
+      return code === 'resolved' ? logins : code;
+    };
+    expect(await upgraded('http://example.com/a', 'https://example.com/a')).toEqual([
+      'Bearer geheim',
+      'Bearer geheim',
+    ]);
+    expect(await upgraded('http://example.com/a', 'https://example.com:8443/a')).toBe(
+      'source_unreachable',
+    );
+    expect(await upgraded('https://example.com/a', 'http://example.com/a')).toBe(
+      'source_unreachable',
+    );
 
     const streamOf = (chunks: Uint8Array[], fail = false) =>
       new ReadableStream<Uint8Array>({

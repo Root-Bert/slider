@@ -29,8 +29,8 @@ export function TrackDots({ className, style }: { className?: string; style?: CS
           type="button"
           role="tab"
           aria-selected={level === track}
-          aria-label={trackName(level)}
-          title={trackName(level)}
+          aria-label={trackName(level, stack)}
+          title={trackName(level, stack)}
           onClick={() => go(level)}
           className="group flex size-2.5 items-center justify-center"
         >

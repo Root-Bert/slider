@@ -1,3 +1,4 @@
+import { deckPlaceWords } from './deck-place-words';
 import {
   and,
   asc,
@@ -5,7 +6,9 @@ import {
   desc,
   eq,
   inArray,
+  isNotNull,
   isNull,
+  lt,
   max,
   min,
   or,
@@ -14,17 +17,21 @@ import {
 } from 'drizzle-orm';
 import {
   DEFAULT_AI_NAME,
+  aiNameOf,
   type Author,
   type Deck,
+  type DeckPlace,
   type DeckSource,
   type DeckTemplate,
   type TemplateColor,
   type UpdateDeckInput,
+  DECK_TRASH_DAYS,
 } from '@slider/shared';
 import { openToViewer, permissionsFor, type DeckViewerAccess } from '../auth/access';
 import { displayAuthor, ownerAuthor } from '../authors';
 import type { Executor } from '../db/client';
 import {
+  cloudNodes,
   comments,
   deckAccessGrants,
   decks,
@@ -39,6 +46,7 @@ import {
 } from '../db/schema';
 import type { AppDeps } from '../deps';
 import { sha256Hex } from '../import/common';
+import { purgeRow } from './cloud/nodes';
 import { readPolicy, ruleFor } from './integration-keys';
 import { deckFileExtension } from '../import/odp-deck';
 import { pdfMakerOf } from '../import/pdf-maker';
@@ -72,6 +80,9 @@ export async function toDeckDtos(
     ...new Set(rows.flatMap((row) => (row.masterId && !row.isTemplate ? [row.masterId] : []))),
   ];
 
+  const places = options.access
+    ? await deckPlaceWords(db, options.access.userId, rows)
+    : new Map<string, DeckPlace>();
   const [
     owners,
     revisionNumbers,
@@ -209,7 +220,7 @@ export async function toDeckDtos(
   const aiByWorkspace = new Map(
     ais.map((ai) => [
       ai.id,
-      { name: ai.name ?? DEFAULT_AI_NAME, available: Boolean(ai.oldKey) || keyWorks(ai.id) },
+      { name: aiNameOf(ai.name), available: Boolean(ai.oldKey) || keyWorks(ai.id) },
     ]),
   );
 
@@ -229,6 +240,7 @@ export async function toDeckDtos(
       createdAt: row.createdAt.toISOString(),
       updatedAt: row.updatedAt.toISOString(),
       archivedAt: row.archivedAt?.toISOString() ?? null,
+      deletedAt: row.deletedAt?.toISOString() ?? null,
       revisionNumber: numberByRevision.get(revisionId) ?? 0,
       slideCount: slideCountByRevision.get(revisionId) ?? 0,
       openCommentCount: openCountByDeck.get(row.id) ?? 0,
@@ -246,6 +258,8 @@ export async function toDeckDtos(
       permissions,
       folderId: row.folderId,
       restricted: row.restrictedAt !== null,
+      cloudNodeId: row.cloudNodeId,
+      place: places.get(row.id) ?? null,
       template: row.isTemplate ? (row.templateDesign ?? EMPTY_TEMPLATE) : null,
       colors: { template: templateColors(row), custom: row.customColors },
       grid: !row.isTemplate && row.masterId ? (gridByMaster.get(row.masterId) ?? null) : null,
@@ -345,6 +359,92 @@ export async function listWorkspaceDecks(
     )
     .orderBy(desc(decks.updatedAt));
   return toDeckDtos(db, rows, { access });
+}
+
+/**
+ * „Löschen“: into the trash – out of every list and unreachable, yet whole, until someone
+ * restores it or the trash clears it (`sweepDeckTrash`, `DECK_TRASH_DAYS`). One trash for both
+ * apps: its file in Cloud lies in „Gelöscht“ with it (and deleting that file brings the
+ * presentation here – `cloud/nodes.ts` `trashNodes`).
+ */
+export async function trashDeck(
+  deps: Pick<AppDeps, 'db' | 'clock'>,
+  deckId: string,
+  userId: string,
+) {
+  const now = deps.clock.now();
+  const [deck] = await deps.db
+    .update(decks)
+    .set({ deletedAt: now, deletedBy: userId })
+    .where(eq(decks.id, deckId))
+    .returning({ nodeId: decks.cloudNodeId });
+  if (!deck?.nodeId) return;
+  await deps.db
+    .update(cloudNodes)
+    .set({ deletedAt: now, deletedBy: userId, deletedRootId: deck.nodeId })
+    .where(and(eq(cloudNodes.id, deck.nodeId), isNull(cloudNodes.deletedAt)));
+}
+
+/**
+ * Back from the trash, where and as it was – its file in Cloud with it: where it lay, or at the
+ * top of its place when the folder it lay in is gone or deleted.
+ */
+export async function restoreDeck({ db }: Pick<AppDeps, 'db'>, deckId: string) {
+  const [deck] = await db
+    .update(decks)
+    .set({ deletedAt: null, deletedBy: null })
+    .where(eq(decks.id, deckId))
+    .returning({ nodeId: decks.cloudNodeId });
+  if (!deck?.nodeId) return;
+  const [node] = await db.select().from(cloudNodes).where(eq(cloudNodes.id, deck.nodeId));
+  if (!node?.deletedAt) return;
+  const [parent] = node.parentId
+    ? await db
+        .select({ deletedAt: cloudNodes.deletedAt, deletedRootId: cloudNodes.deletedRootId })
+        .from(cloudNodes)
+        .where(eq(cloudNodes.id, node.parentId))
+    : [];
+  await db
+    .update(cloudNodes)
+    .set({
+      deletedAt: null,
+      deletedBy: null,
+      deletedRootId: null,
+      parentId: parent && !parent.deletedAt ? node.parentId : null,
+    })
+    .where(eq(cloudNodes.id, node.id));
+}
+
+/**
+ * The trash of these workspaces, last deleted first: what the caller may bring back – their own
+ * presentations, and as an admin the workspace's.
+ */
+export async function listTrashedDecks(
+  { db }: Pick<AppDeps, 'db'>,
+  workspaceIds: readonly string[],
+  access: DeckViewerAccess,
+): Promise<Deck[]> {
+  if (workspaceIds.length === 0) return [];
+  const rows = await db
+    .select()
+    .from(decks)
+    .where(
+      and(
+        inArray(decks.workspaceId, [...workspaceIds]),
+        eq(decks.isTemplate, false),
+        isNotNull(decks.deletedAt),
+      ),
+    )
+    .orderBy(desc(decks.deletedAt));
+  const dtos = await toDeckDtos(db, rows, { access });
+  return dtos.filter((deck) => deck.permissions.canManage);
+}
+
+/** Clears the trash of what lay in it longer than `DECK_TRASH_DAYS` (hourly, `enforceRetention`). */
+export async function sweepDeckTrash(deps: AppDeps): Promise<void> {
+  const before = new Date(deps.clock.now().getTime() - DECK_TRASH_DAYS * 86_400_000);
+  const old = await deps.db.select({ id: decks.id }).from(decks).where(lt(decks.deletedAt, before));
+  for (const { id } of old) await deleteDeck(deps, id, lt(decks.deletedAt, before));
 }
 
 /** Records activity on a deck so the overview sorts it to the top. */
@@ -512,8 +612,14 @@ export async function deleteDeck(deps: AppDeps, deckId: string, condition?: SQL)
   const gone = await deps.db
     .delete(decks)
     .where(and(eq(decks.id, deckId), condition))
-    .returning({ id: decks.id });
+    .returning({ id: decks.id, nodeId: decks.cloudNodeId });
   if (condition && gone.length === 0) return false;
+  // Its file in Cloud is the presentation's own: gone with it.
+  const nodeId = gone[0]?.nodeId;
+  if (nodeId) {
+    const [node] = await deps.db.select().from(cloudNodes).where(eq(cloudNodes.id, nodeId));
+    if (node) await purgeRow(deps, node);
+  }
   await deleteBlobs(deps, deckBlobs(blobKeys.deckPrefix(deckId)));
   return true;
 }

@@ -1,0 +1,44 @@
+{
+  "appId": "dev.bertro.cloud",
+  "productName": "The Office Cloud",
+  "artifactName": "Cloud-${arch}.${ext}",
+  "directories": { "output": "dist/cloud" },
+  "extraMetadata": {
+    "name": "cloud-desktop",
+    "productName": "The Office Cloud",
+    "main": "cloud/main.mjs",
+    "description": "Cloud as a desktop app: your files in a window and as a place in the Finder."
+  },
+  "files": ["cloud/**", "!cloud/builder.json", "tabbar/**", "tabs.mjs", "package.json"],
+  "mac": {
+    "category": "public.app-category.productivity",
+    "target": ["dmg", "zip"],
+    "hardenedRuntime": true,
+    "entitlements": "entitlements.mac.plist",
+    "entitlementsInherit": "entitlements.mac.plist",
+    "notarize": true,
+    "darkModeSupport": true,
+    "icon": "cloud/icon.png",
+    "extendInfo": {
+      "CFBundleDisplayName": "The Office Cloud",
+      "NSMicrophoneUsageDescription": "Für Anrufe, Sprach- und Videokommentare und um mit der KI zu sprechen.",
+      "NSCameraUsageDescription": "Für Videoanrufe und Videokommentare."
+    }
+  },
+  "linux": {
+    "target": ["AppImage", "deb"],
+    "category": "Office",
+    "executableName": "cloud",
+    "icon": "cloud/icon.png"
+  },
+  "afterPack": "cloud/after-pack.cjs",
+  "electronFuses": {
+    "runAsNode": false,
+    "enableNodeOptionsEnvironmentVariable": false,
+    "enableNodeCliInspectArguments": false,
+    "onlyLoadAppFromAsar": true,
+    "enableEmbeddedAsarIntegrityValidation": true,
+    "resetAdHocDarwinSignature": true
+  },
+  "protocols": [{ "name": "Cloud", "schemes": ["slider-cloud"] }]
+}

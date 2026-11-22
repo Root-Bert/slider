@@ -72,7 +72,7 @@ export function LoginOptions({ config, returnTo }: { config: AuthProviders; retu
       <div className="flex w-full animate-pop-in flex-col gap-3">
         <Notice tone="success" title="Schau in dein Postfach">
           Wir haben einen Link an <strong className="text-fg">{confirmEmail}</strong> geschickt.
-          Klick ihn an, dann ist dein Konto da. Er gilt eine Stunde.
+          Klick ihn in diesem Browser an, dann geht es weiter. Er gilt eine Stunde.
         </Notice>
         <Button variant="ghost" size="sm" className="mx-auto" onClick={() => setConfirmEmail(null)}>
           Zurück

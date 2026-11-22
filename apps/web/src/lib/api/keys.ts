@@ -7,12 +7,12 @@ export const queryKeys = {
   /** Every workspace's deck list – invalidate this after a deck was created or changed. */
   deckLists: ['decks', 'list'] as const,
   deckList: (workspaceId: string) => ['decks', 'list', workspaceId] as const,
+  deckTrash: (workspaceId: string) => ['decks', 'trash', workspaceId] as const,
   deck: (deckId: string) => ['decks', deckId] as const,
   /** Text search through a workspace's slides and comments (BER-175); under `decks`, so changes refresh it. */
   deckSearch: (workspaceId: string, query: string) =>
     ['decks', 'search', workspaceId, query] as const,
   /** The folders of one workspace – outside `decks`, so deck invalidation leaves them alone. */
-  folders: (workspaceId: string) => ['folders', workspaceId] as const,
   slides: (deckId: string) => ['decks', deckId, 'slides'] as const,
   comments: (deckId: string) => ['decks', deckId, 'comments'] as const,
   /** The deck's board (the material page): its files, notes and links. */
@@ -87,6 +87,8 @@ export const workspaceKeys = {
   fonts: (workspaceId: string) => ['workspaces', workspaceId, 'fonts'] as const,
   /** The workspace's slide masters (uploaded company designs). */
   masters: (workspaceId: string) => ['workspaces', workspaceId, 'masters'] as const,
+  /** The templates Slider brings along: the same for every workspace. */
+  sliderTemplates: ['slider-templates'] as const,
   join: (token: string) => ['join', token] as const,
   passkeys: ['account', 'passkeys'] as const,
   /** „KI-Apps“: AI apps let into the account over MCP. */

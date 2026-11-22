@@ -5,7 +5,7 @@ import { useJoinPreview, useMe } from '@/lib/api';
 import { CenteredCard, CenteredLayout } from '@/shell/layouts/CenteredLayout';
 import { Icon, LoadingState } from '@/ui';
 import { AccountMenu } from './components/AccountMenu';
-import { Invitation, ReviewsLink } from './components/JoinParts';
+import { Invitation, StartLink } from './components/JoinParts';
 
 /** `/join/:token` – preview of a workspace invitation; sign in, then join (BER-129). */
 export function Component() {
@@ -37,7 +37,7 @@ export function Component() {
               : preview.error.message
           }
         >
-          {signedIn && <ReviewsLink />}
+          {signedIn && <StartLink />}
         </CenteredCard>
       ) : (
         <Invitation token={token} preview={preview.data} signedIn={signedIn} />

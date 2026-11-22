@@ -20,6 +20,14 @@ Parity script (from `apps/web`): `bun --tsconfig-override=tsconfig.app.json scri
   content font names need a content.xml declaration; placeholders have 0 padding. Where:
   `packages/odp/src/blank.ts`, `live.ts` (`StyleIndex`, `standardUnder`,
   `inheritAutomaticParents`). Check: live-parity on a new blank deck and `--sample`; odp tests.
+- **A list takes the bullet or numbering picked** – eight bullets, five ways to count, in a menu on
+  right click on the list buttons (`ContextMenu`; Esc closes it alone, typing goes on after),
+  per line while typing; the shapes are drawn in Inter (most
+  text fonts lack them), the list's level otherwise as it was; ⌘Z brings the old one back; a
+  bullet the editor only made up (list button, ⇥) is `assumed` and never asked for, so a
+  template's own bullets stay. Where: `textListSchema` (`char`, `number`), `listOf`,
+  `listBulletFont`, `withList`, `live-write.ts` `signedListStyle`. Check: odp `live.test.ts`,
+  web `model.test.ts`; live-parity on a deck with each bullet picked (0.75 %).
 - **soffice finds Slider's fonts** – every run (pool and single) gets `fontconfigEnv` →
   `fonts/google`. Where: `apps/api/src/import/libreoffice.ts`, `office-pool.ts`. Check: blank deck
   renders in Inter, not Liberation/serif.
@@ -63,6 +71,19 @@ Parity script (from `apps/web`): `bun --tsconfig-override=tsconfig.app.json scri
   Where: `packages/odp/src/lines.ts`, `LineFrame.tsx`, `ElementView`, `turnedLine`. Check: odp
   `live.test.ts`, `undo-ops.test.ts`, `live-parity --sample --compose` (lines slide),
   `bun run e2e:live` (6b).
+
+- **The room around a slide zoomed out is worked in** (Figma's canvas round a frame) – what lies
+  off the slide is drawn whole and sharp there, in Bearbeiten by the compositor (`open`: only the
+  ground is cut, the corners covered), in Prüfen as the server's pictures (`OffSlideLayer`);
+  picked, moved, a frame drawn, a picture dropped, a click on the free room lets go; comments too
+  (pin, area, sticker, drawing – `aroundPointSchema` / `aroundRectSchema`, bounds as an element's
+  box). The layers stay as large as the slide, only where they are hit reaches out (`slide-room`,
+  `--room-*` from `SlideFrame`); a pointer is read on the slide or in that room (`toSlidePoint`,
+  `slideRoom`). At 100 % there is no room: nothing new goes off the slide, a mark wholly beside
+  it shows only while looked at. Where: `SlideFrame`, `SlideCompositor`, `lib/geometry.ts`,
+  `useInsertFrame`, `AnnotationLayer`. Check: zoom out (⌃ + wheel), drag an element off the slide
+  and back, draw a frame and click a comment beside it; `rect-edit.test`, api `comments.test`;
+  `bun run e2e:live`.
 
 ## Editing behaviour
 
@@ -136,11 +157,21 @@ Parity script (from `apps/web`): `bun --tsconfig-override=tsconfig.app.json scri
   AI in it stands; applied again, done again. Where: `ai-proposals.ts` `resolveThread`/`reopenThread`,
   `shared/shapes.ts`, `voice/session.ts` `joinOpenThread`/`stopRunsIn`, `useSendAiBox`. Check:
   `voice.test.ts`, `viewer-state.test.ts`.
-- **The AI makes new elements as a person does** – shapes, text, lines, copies, new slide content
-  via `change_elements` / quick edits → `quickPlan` → the editor's `addElement`/`copyElement` (ids
-  `sl…`, browser-drawn, typable); an empty list placeholder filled shows bullets; XML only for
-  tables, charts, pictures, gradients. Where: `voice/quick-edits.ts`, `ai-proposals.ts`,
+- **The AI makes new elements as a person does** – shapes, text, lines, copies, pictures, icons,
+  new slide content via `change_elements` / quick edits → `quickPlan` → the editor's
+  `addElement`/`copyElement`/`addImage` (ids `sl…`, browser-drawn, typable); an empty list
+  placeholder filled shows bullets; a picture or gradient as a shape's fill via `setShapeStyle`
+  fills (a picture cut to the shape: `composite`); icons carry their `symbol` (searched and drawn
+  from the editor's sets, `@slider/shared/icons`, `services/icons.ts`, Dockerfile copies the sets);
+  XML only for tables and charts. Where: `voice/quick-edits.ts`, `ai-proposals.ts`,
   `quick-requests.ts`, `voice/router.ts`. Check: api `ai-proposals.test.ts`, `voice.test.ts`.
+- **Entrances play by themselves and survive LibreOffice** – `setEntrance` writes LibreOffice's
+  presets (`ooo-entrance-*`) into the page's main sequence, the first group `smil:begin="next"`,
+  each after the one before or with it (no clicks; foreign effects kept); copied with the slide,
+  gone with the element. The show plays them after the transition from the slide's layers (edit
+  rights; else the plain picture), the morph leaving new entrance elements to them. Where:
+  `odp/src/entrance.ts`, `presentation/EntranceStage.tsx`, `lib/entrances.ts`,
+  `editing/EntranceControls.tsx`. Check: odp `document.test.ts`, web `morph.test.ts`.
 - **A sticker is a comment, also for the AI** – sent alone its text is the body (counted, listed,
   but no card under the slide until it has a comment of its own, a reply or the AI's answer –
   `isBareSticker`, `useCommentThreads`);
@@ -210,3 +241,44 @@ Parity script (from `apps/web`): `bun --tsconfig-override=tsconfig.app.json scri
   kept server-side, newest five per deck; leaving before the end or closing the tab stores no run.
   Where: `routes/show-runs.ts`, `presentation/lib/show-runs.ts`. Check: api
   `deck-creation.test.ts` (uploads, ranges, retention, retry); e2e `04-keyboard.spec.ts`.
+
+## Cloud (the workspace's files)
+
+- **What goes up comes down byte for byte, and nothing is overwritten** – a second upload of a
+  name is the file's next version, earlier ones stay to look at and bring back; deleting keeps
+  30 days. Where: `services/cloud/files.ts`, `nodes.ts`, `sweep.ts`. Check: api `cloud.test.ts`.
+- **One's own files are one's own** – not even workspace admins see them (members and admins
+  have them; who only looks or comments has none and may only look, whatever a share says).
+  Sharing by hand is off unless `CLOUD_SHARING=true`; a share (a presentation's chosen people) opens the
+  shared file or folder and what is in it, never what lies above or beside it; links for people outside are off
+  unless the instance sets `CLOUD_PUBLIC_LINKS=true` (then: only its file or folder, read only,
+  until it expires or is removed; turned off again, old links open nothing). Where: `services/cloud/context.ts`,
+  `shares.ts`. Check: api `cloud.test.ts` (rights, link).
+- **Uploaded files run nothing in Slider's origin** – only pictures, video, audio and PDFs are
+  sent as what they are; text as plain text, the rest as a download, with a sandbox CSP. Where:
+  `routes/cloud.ts` `inlineType` / `sendVersion`. Check: api `cloud.test.ts`.
+
+## Writer (text documents)
+
+- **The file stays a real text file, and what Writer does not know stays in it** – an edit is
+  written as single operations into the file's XML; unknown content is locked in the editor,
+  never dropped. Where: `packages/odt/src/document.ts`, `services/documents.ts`. Check:
+  `packages/odt/test/document.test.ts`, api `documents.test.ts`.
+- **What is typed is what is saved and what others see** – the editor sends the steps between
+  two states of its model; undo is the older state sent the same way. Where:
+  `features/writer/lib/model.ts` (`stepsBetween`, `applySteps`), `editor/engine.ts`. Check: web
+  `features/writer/lib/model.test.ts`.
+- **The layout: pages left one under the other, the sheet in the middle, comments left and
+  right of it, tools on the right** – and the sheet never jumps when comments come or go (the
+  room beside it is always kept). Where: `features/writer/editor/Editor.tsx`. Check: look at it
+  (docs/agent-notes.md, Writer).
+
+## Reader (PDFs)
+
+- **The PDF file is never changed** – what is filled in, typed, ticked and signed lies over it
+  (`pdf_marks`) and is baked in only for export and print. Where: `services/pdfs.ts`,
+  `services/pdf-bake.ts`. Check: api `pdfs.test.ts`.
+- **What is filled in is what is exported and what others see** – one mark per field
+  (`field:<name>`), sent through the viewer's outbox (`viewer/marks.ts`), live to everyone on the
+  PDF; a field sized „fit to the box“ gets the same size on screen and in the file. Check: api
+  `pdfs.test.ts`, e2e `14-reader.spec.ts`.

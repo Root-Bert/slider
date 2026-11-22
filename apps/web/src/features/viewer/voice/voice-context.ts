@@ -1,4 +1,4 @@
-import type { VoiceSession } from '@slider/shared';
+import type { DocumentVoiceSession, VoiceSession } from '@slider/shared';
 import { createContext, useContext } from 'react';
 import type { LiveCaption } from './lib/caption';
 
@@ -11,7 +11,8 @@ export interface VoiceState {
   speaking: boolean;
   /** Pieces sent and not yet decided on. */
   sending: number;
-  session: VoiceSession | null;
+  /** A deck's session – or, in Writer, a document's (`WriterVoiceProvider`). */
+  session: VoiceSession | DocumentVoiceSession | null;
   /** Why it could not start or stopped. */
   error: string | null;
   /**

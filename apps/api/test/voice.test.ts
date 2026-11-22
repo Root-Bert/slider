@@ -6,16 +6,25 @@ import {
   commentSchema,
   deckEditStateSchema,
   deckSchema,
+  documentVoiceInfoSchema,
+  documentVoiceSessionSchema,
   instanceAiUsageSchema,
   slideSchema,
   voiceLiveSchema,
   voiceSessionSchema,
+  writerCommentSchema,
+  writerDocumentSchema,
+  writerOpenedSchema,
+  type DocumentVoiceSegmentMeta,
   type VoiceSegmentMeta,
   type VoiceSession,
 } from '@slider/shared';
 import { comments, workspaceMembers } from '../src/db/schema';
 import { workspaceSpeechConnection } from '../src/services/integration-keys';
 import { clearOf, placesAgree } from '../src/services/voice/quick-edits';
+import { documentAiIdle } from '../src/services/document-ai';
+import { anchorFor, readDocumentActions } from '../src/services/voice/document-router';
+import { endAllDocumentVoiceSessions } from '../src/services/voice/document-session';
 import { readActions } from '../src/services/voice/router';
 import { endAllVoiceSessions } from '../src/services/voice/session';
 import { createTestContext, signedInUser, type TestContext } from './helpers';
@@ -26,6 +35,7 @@ import { DEMO_ODP, fakeOdpPdf, odpForm } from './odp-helpers';
 let ctx: TestContext | undefined;
 afterEach(async () => {
   endAllVoiceSessions();
+  endAllDocumentVoiceSessions();
   await ctx?.cleanup();
   ctx = undefined;
 });
@@ -34,9 +44,10 @@ type Act = { actions: Record<string, unknown>[] };
 
 /**
  * Anthropic: the router's answers in turn (`act`), the editing AI changes nothing – once `held`
- * is open (`hold.until`), it answers when that settles.
+ * is open (`hold.until`), it answers when that settles. `editor`: what the editing AI answers
+ * instead, in turn.
  */
-function fakeAnthropic(router: Act[]) {
+function fakeAnthropic(router: Act[], editor: unknown[][] = []) {
   const seen: Anthropic.Beta.MessageCreateParams[] = [];
   const hold: { until: Promise<void> | null } = { until: null };
   const reply = (content: unknown[], stop: string) => ({
@@ -76,7 +87,9 @@ function fakeAnthropic(router: Act[]) {
                   ],
                   'tool_use',
                 )
-              : reply([{ type: 'text', text: 'Verstanden.', citations: null }], 'end_turn');
+              : editor.length > 0
+                ? reply(editor.shift()!, 'tool_use')
+                : reply([{ type: 'text', text: 'Verstanden.', citations: null }], 'end_turn');
             const until = isRouter ? null : hold.until;
             return {
               finalMessage: async () => {
@@ -293,9 +306,10 @@ describe('speaking to the AI', { timeout: 90_000 }, () => {
     expect(String((transcribed[0]!.get('file') as File).name)).toBe('speech-0.wav');
     expect(transcribedAt[0]).toBe('https://api.mistral.ai/v1/audio/transcriptions');
     // Mistral listens for terms (`context_bias`) instead of a prompt.
-    expect(transcribed[0]!.getAll('context_bias')).toEqual(
-      expect.arrayContaining(['Slider', 'alignen', deck.title]),
-    );
+    // Single words only – Mistral refuses a term with a space or a comma.
+    const bias = transcribed[0]!.getAll('context_bias').map(String);
+    expect(bias).toEqual(expect.arrayContaining(['Slider', 'alignen', ...deck.title.split(/\s+/)]));
+    expect(bias.filter((term) => /[\s,]/.test(term))).toEqual([]);
     expect(transcribed[0]!.get('prompt')).toBeNull();
     // The router saw the slide's elements and where the pointer rested.
     const routed = JSON.stringify(anthropic.seen[0]!.messages);
@@ -872,6 +886,11 @@ describe('speaking to the AI', { timeout: 90_000 }, () => {
     await context.deps.db
       .insert(workspaceMembers)
       .values({ workspaceId: context.workspaceId, userId: mia.user.id, role: 'member' });
+    // New, the deck was its maker's alone: opened to the workspace.
+    await context.request(`/api/decks/${deck.id}/access`, {
+      method: 'PUT',
+      json: { restricted: false, userIds: [] },
+    });
     const hers = await context.request(`/api/decks/${deck.id}/voice`, {
       method: 'POST',
       cookie: mia.cookie,
@@ -891,5 +910,268 @@ describe('speaking to the AI', { timeout: 90_000 }, () => {
     expect(
       (await context.request(`/api/voice/${herSession.id}`, { cookie: mia.cookie })).status,
     ).toBe(404);
+  });
+
+  it('does the same over a text document: comments at the words meant, each finished one to the document’s AI, additions, taken back, scrolled – for those who may comment', async () => {
+    // Where a spoken comment stands: the words quoted, else the words picked, else the paragraph.
+    const paragraph = { id: 'p1', text: 'Hallo  große\nWelt, hallo Mond' };
+    expect(anchorFor(paragraph, '„GROSSE welt“', null)).toMatchObject({ start: 0, end: 29 });
+    expect(anchorFor(paragraph, ' Große Welt …', null)).toEqual({
+      paragraphId: 'p1',
+      start: 7,
+      end: 17,
+      quote: 'große\nWelt',
+    });
+    const picked = { paragraphId: 'p1', start: 25, end: 99, text: 'Mond' };
+    expect(anchorFor(paragraph, 'steht nicht da', picked)).toMatchObject({
+      start: 25,
+      end: 29,
+      quote: 'Mond',
+    });
+    expect(anchorFor(paragraph, null, { ...picked, paragraphId: 'p2' })).toMatchObject({
+      start: 0,
+      end: 29,
+      quote: paragraph.text,
+    });
+    expect(anchorFor(paragraph, '(a+b)', { ...picked, start: 3, end: 3 }).end).toBe(29);
+    expect(
+      readDocumentActions(
+        JSON.stringify({
+          actions: [
+            { type: 'new', paragraph: 'p1', quote: ' Welt ', text: ' Kürzer ', finished: true },
+            { type: 'go_to_slide', slide: 2 },
+            { type: 'scroll_to', paragraph: 'p9' },
+          ],
+        }),
+      ),
+    ).toEqual([
+      { type: 'new', paragraph: 'p1', quote: 'Welt', text: 'Kürzer', finished: true },
+      { type: 'scroll_to', paragraph: 'p9', quote: null, text: null },
+    ]);
+
+    const heard = [
+      'Das hier kürzer.',
+      'Und freundlicher.',
+      'Geh zum Titel, und das hier raus.',
+      'Vergiss das, wir sind fertig.',
+    ];
+    const router: Act[] = [];
+    const editor: unknown[][] = [];
+    const anthropic = fakeAnthropic(router, editor);
+    ctx = await createTestContext({
+      anthropic: anthropic.client,
+      instanceAdmin: true,
+      config: { speech: { url: 'http://stt:8000/v1', model: 'whisper-large-v3-turbo' } },
+      aiFetch: async (url) =>
+        url.endsWith('/audio/transcriptions')
+          ? Response.json({ text: heard.shift() ?? '' })
+          : Response.json({ data: [{ id: 'whisper-large-v3-turbo' }] }),
+    });
+    const context = ctx;
+    const document = writerDocumentSchema.parse(
+      await (
+        await context.request('/api/documents', {
+          method: 'POST',
+          json: { workspaceId: context.workspaceId, title: 'Bericht', template: 'report' },
+        })
+      ).json(),
+    );
+    const edited = await context.request(`/api/documents/${document.id}/edits`, {
+      method: 'POST',
+      json: {
+        clientEditId: crypto.randomUUID(),
+        operations: [
+          {
+            type: 'setParagraph',
+            id: 'w3',
+            paragraph: { kind: 'text', runs: [{ text: 'Hallo große Welt' }] },
+          },
+        ],
+      },
+    });
+    expect(edited.status).toBe(200);
+    const texts = async () =>
+      writerOpenedSchema
+        .parse(await (await context.request(`/api/documents/${document.id}`)).json())
+        .content.blocks.map((block) =>
+          block.type === 'paragraph' ? block.runs.map((run) => run.text).join('') : '',
+        );
+    const info = async () =>
+      documentVoiceInfoSchema.parse(
+        await (await context.request(`/api/documents/${document.id}/voice`)).json(),
+      );
+    // Without an AI it is not offered and does not start.
+    expect(await info()).toEqual({ name: 'KI', available: false });
+    const start = (cookie?: string) =>
+      context.request(`/api/documents/${document.id}/voice`, { method: 'POST', cookie });
+    expect((await start()).status).toBe(409);
+    await context.request(`/api/workspaces/${context.workspaceId}/integrations/keys`, {
+      method: 'POST',
+      json: { kind: 'ai', provider: 'anthropic', apiKey: 'sk-ant-api03-good-AbCdEfGhIjKlMnOpQrSt' },
+    });
+    expect((await info()).available).toBe(true);
+    await context.request('/api/instance/integrations/keys', {
+      method: 'POST',
+      json: { kind: 'voice', provider: 'mistral', apiKey: 'mistral-good-12345678' },
+    });
+    const started = await start();
+    expect(started.status).toBe(201);
+    const session = documentVoiceSessionSchema.parse(await started.json());
+    expect(session).toMatchObject({ documentId: document.id, aiEdits: true, items: [] });
+
+    let seq = 0;
+    const say = async (
+      context_: Partial<DocumentVoiceSegmentMeta['context']> = {},
+      sessionId = session.id,
+      cookie?: string,
+    ) => {
+      const meta: DocumentVoiceSegmentMeta = {
+        seq,
+        startMs: seq * 3000,
+        endMs: seq * 3000 + 2000,
+        context: {
+          paragraphs: ['w1', 'w2', 'w3'].map((paragraphId) => ({ paragraphId, ms: 2000 })),
+          pointer: [],
+          selection: null,
+          ...context_,
+        },
+      };
+      seq += 1;
+      const form = new FormData();
+      form.set('meta', JSON.stringify(meta));
+      form.set('audio', wav(), 'speech.wav');
+      const res = await context.request(`/api/voice/${sessionId}/segments`, {
+        method: 'POST',
+        body: form,
+        cookie,
+      });
+      expect(res.status).toBe(200);
+      return documentVoiceSessionSchema.parse(await res.json());
+    };
+    const current = async () =>
+      documentVoiceSessionSchema.parse(
+        await (await context.request(`/api/voice/${session.id}`)).json(),
+      );
+    const documentComments = async () =>
+      writerCommentSchema
+        .array()
+        .parse(await (await context.request(`/api/documents/${document.id}/comments`)).json());
+
+    // A request about some words, complete in one piece: a comment at them, handed to the AI,
+    // which rewrites the paragraph.
+    router.push({
+      actions: [
+        { type: 'new', paragraph: 'w3', quote: 'Große  Welt', text: 'Kürzer.', finished: true },
+      ],
+    });
+    editor.push([
+      {
+        type: 'tool_use',
+        id: 'toolu_e1',
+        name: 'edit_document',
+        input: { changes: [{ action: 'replace', id: 'w3', text: 'Hallo Welt' }], summary: 'Kurz.' },
+      },
+    ]);
+    let state = await say({ pointer: [{ paragraphId: 'w3', ms: 1500 }] });
+    expect(state.items).toMatchObject([{ paragraphId: 'w3', text: 'Kürzer.' }]);
+    expect(state.segments[0]).toMatchObject({ text: 'Das hier kürzer.', status: 'done' });
+    const [root] = await documentComments();
+    expect(root).toMatchObject({
+      body: 'Kürzer.',
+      anchor: { paragraphId: 'w3', start: 6, end: 16, quote: 'große Welt' },
+    });
+    // The router saw the paragraphs in the window with their ids and where the pointer rested.
+    const routed = JSON.stringify(anthropic.seen[0]!.messages);
+    expect(routed).toContain('<p id=\\"w3\\">Hallo große Welt</p>');
+    expect(routed).toContain('The pointer rested 1.5 s on paragraph w3.');
+    await vi.waitFor(async () => expect((await current()).items[0]!.state).toBe('applied'), {
+      timeout: 30_000,
+      interval: 50,
+    });
+    expect((await texts())[2]).toBe('Hallo Welt');
+
+    // An addition is a reply in its thread, asked with it (here the AI only answers).
+    router.push({ actions: [{ type: 'add_to', item: 'K1', text: 'Und freundlicher.' }] });
+    await say();
+    await vi.waitFor(
+      async () =>
+        expect((await current()).items.map((item) => item.state)).toEqual(['applied', 'answered']),
+      { timeout: 30_000, interval: 50 },
+    );
+    expect((await documentComments()).map((each) => each.parentId)).toEqual([null, root!.id]);
+
+    // „Mach das rückgängig“ takes the AI's change back; a place asked for is a command; without
+    // a paragraph named the comment stands at the words picked; „vergiss das“ deletes it.
+    router.push({
+      actions: [
+        { type: 'undo', item: 'K1' },
+        { type: 'scroll_to', paragraph: 'w1' },
+        { type: 'scroll_to', paragraph: 'gibt-es-nicht' },
+        { type: 'new', text: 'Das hier raus.' },
+      ],
+    });
+    state = await say({ selection: { paragraphId: 'w3', start: 0, end: 5, text: 'Hallo' } });
+    expect(state.commands.map((each) => each.command)).toEqual([
+      { type: 'scrollTo', paragraphId: 'w1' },
+    ]);
+    expect(state.items[2]).toMatchObject({ state: 'draft', paragraphId: 'w3' });
+    await vi.waitFor(async () => expect((await texts())[2]).toBe('Hallo große Welt'), {
+      timeout: 30_000,
+      interval: 50,
+    });
+    expect((await documentComments()).at(-1)!.anchor).toMatchObject({
+      start: 0,
+      end: 5,
+      quote: 'Hallo',
+    });
+    router.push({ actions: [{ type: 'drop', item: 'K3' }, { type: 'stop_session' }] });
+    state = await say();
+    expect(state.commands.at(-1)!.command).toEqual({ type: 'stop' });
+    await vi.waitFor(async () => expect(await documentComments()).toHaveLength(2), {
+      timeout: 30_000,
+      interval: 50,
+    });
+    const ended = documentVoiceSessionSchema.parse(
+      await (await context.request(`/api/voice/${session.id}/end`, { method: 'POST' })).json(),
+    );
+    expect(ended.ended).toBe(true);
+    expect(ended.items.map((item) => item.state)).toEqual(['reverted', 'answered', 'dropped']);
+    await documentAiIdle();
+
+    // Who may only comment: the comments stay comments. Who is no longer in the workspace: no
+    // session.
+    const mia = await signedInUser(context, { name: 'Mia', email: 'mia@firma.de' });
+    await context.deps.db
+      .insert(workspaceMembers)
+      .values({ workspaceId: context.workspaceId, userId: mia.user.id, role: 'reviewer' });
+    // New, the document was its maker's alone: into the workspace's area.
+    const { areas } = (await (
+      await context.request(`/api/workspaces/${context.workspaceId}/cloud`)
+    ).json()) as { areas: { id: string; root: boolean }[] };
+    await context.request('/api/cloud/nodes/move', {
+      method: 'POST',
+      json: { ids: [document.id], areaId: areas.find((area) => area.root)?.id },
+    });
+    const hers = documentVoiceSessionSchema.parse(await (await start(mia.cookie)).json());
+    expect(hers.aiEdits).toBe(false);
+    expect((await context.request(`/api/voice/${hers.id}`)).status).toBe(403);
+    heard.push('Stimmt das?');
+    router.push({
+      actions: [{ type: 'new', paragraph: 'w2', text: 'Stimmt das?', finished: true }],
+    });
+    seq = 0;
+    const said = await say({}, hers.id, mia.cookie);
+    expect(said.items).toMatchObject([{ state: 'comment', paragraphId: 'w2' }]);
+    await context.request(`/api/workspaces/${context.workspaceId}/members/${mia.user.id}`, {
+      method: 'DELETE',
+    });
+    expect(
+      [403, 404].includes(
+        (await context.request(`/api/voice/${hers.id}`, { cookie: mia.cookie })).status,
+      ),
+    ).toBe(true);
+    expect((await context.request(`/api/voice/${hers.id}`, { cookie: mia.cookie })).status).toBe(
+      404,
+    );
   });
 });

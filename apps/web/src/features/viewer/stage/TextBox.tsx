@@ -100,7 +100,7 @@ export function TextMark({
         done,
       );
     },
-    { onPreview, minSize: MIN_TEXT_SIZE },
+    { onPreview, minSize: MIN_TEXT_SIZE, keepOnSlide: false },
   );
   const box = edit.rect;
   const preview = edit.dragging;
@@ -286,17 +286,12 @@ export function TextBoxField({
   const onDrag = (event: ReactPointerEvent<HTMLElement>) => {
     const drag = dragRef.current;
     const slide = layerRef.current?.getBoundingClientRect();
-    const element = boxRef.current;
-    if (!drag || !slide || !element || slide.width === 0 || slide.height === 0) return;
-    const w = element.offsetWidth / slide.width;
-    const h = element.offsetHeight / slide.height;
+    if (!drag || !slide || slide.width === 0 || slide.height === 0) return;
     if (drag.kind === 'move') {
       const x = drag.x + (event.clientX - drag.pointerX) / slide.width;
       const y = drag.y + (event.clientY - drag.pointerY) / slide.height;
-      onChange({
-        x: Math.min(Math.max(0, x), Math.max(0, 1 - w)),
-        y: Math.min(Math.max(0, y), Math.max(0, 1 - h)),
-      });
+      // As far as it is dragged – off the slide too.
+      onChange({ x, y });
       return;
     }
     const next = resized(
@@ -305,6 +300,7 @@ export function TextBoxField({
       (event.clientX - slide.left) / slide.width,
       (event.clientY - slide.top) / slide.height,
       MIN_TEXT_SIZE,
+      false,
     );
     onChange({ x: next.x, y: next.y, width: next.w, minHeight: next.h });
   };
@@ -320,6 +316,8 @@ export function TextBoxField({
     onPointerCancel: endDrag,
   };
 
+  // How wide it may get: up to the slide's right edge – reaching off the slide, a slide wide.
+  const room = box.x < 0 || box.x + (box.width ?? 0) > 1 ? 1 : 1 - box.x;
   return (
     <div
       ref={layerRef}
@@ -336,8 +334,9 @@ export function TextBoxField({
           ...boxPosition(box.x, box.y, box.fontSize),
           ...textSurface(author.color),
           width: box.width === null ? 'max-content' : `${box.width * 100}%`,
-          maxWidth: `${(1 - box.x) * 100}%`,
-          minWidth: `min(${MIN_TEXT_WIDTH * 100}cqw, ${(1 - box.x) * 100}%)`,
+          // Up to the slide's right edge; begun beside the slide (zoomed out), a slide wide.
+          maxWidth: `${room * 100}%`,
+          minWidth: `min(${MIN_TEXT_WIDTH * 100}cqw, ${room * 100}%)`,
           minHeight: `${box.minHeight * 100}%`,
           // Its edge is the line of its resize brackets.
           boxShadow: 'var(--shadow-mark)',

@@ -1,6 +1,6 @@
 import { searchFold, type Deck } from '@slider/shared';
 
-export const REVIEW_TABS = ['all', 'open', 'archive'] as const;
+export const REVIEW_TABS = ['all', 'open', 'archive', 'trash'] as const;
 export type ReviewTab = (typeof REVIEW_TABS)[number];
 
 export const DECK_SORTS = ['opened', 'updated', 'name', 'comments'] as const;
@@ -19,6 +19,8 @@ const TAB_PREDICATES: Record<ReviewTab, (deck: Deck) => boolean> = {
   all: (deck) => !isArchived(deck),
   open: (deck) => !isArchived(deck) && deck.openCommentCount > 0,
   archive: isArchived,
+  // The trash has a list of its own (`TrashedDecks`).
+  trash: () => false,
 };
 
 const byUpdated = (a: Deck, b: Deck) => Date.parse(b.updatedAt) - Date.parse(a.updatedAt);
@@ -37,6 +39,9 @@ const comparators = (openedAt: OpenedAt): Record<DeckSort, (a: Deck, b: Deck) =>
   name: (a, b) => titleCollator.compare(a.title, b.title),
   comments: (a, b) => b.openCommentCount - a.openCommentCount || byUpdated(a, b),
 });
+
+/** The order a sort puts presentations in – the trash sorts by it too. */
+export const deckOrder = (sort: DeckSort, openedAt: OpenedAt) => comparators(openedAt)[sort];
 
 const neverOpened: OpenedAt = () => undefined;
 const nonePinned = () => false;
@@ -62,7 +67,7 @@ export const tabScope = (tab: ReviewTab, folder: FolderScope): FolderScope =>
 export function countByTab(
   decks: readonly Deck[],
   folder: FolderScope = '*',
-): Record<ReviewTab, number> {
+): Record<Exclude<ReviewTab, 'trash'>, number> {
   const count = (tab: ReviewTab) =>
     decks.filter((deck) => inFolder(deck, tabScope(tab, folder)) && TAB_PREDICATES[tab](deck))
       .length;
@@ -103,49 +108,4 @@ export function selectDecks(
         contentMatches?.has(deck.id) === true,
     )
     .sort((a, b) => Number(isPinned(b.id)) - Number(isPinned(a.id)) || bySort(a, b));
-}
-
-/** Decks per folder id, for the folder tiles – archived ones don't count. */
-export function countByFolder(decks: readonly Deck[]): Map<string, number> {
-  const counts = new Map<string, number>();
-  for (const deck of decks) {
-    if (!deck.folderId || !TAB_PREDICATES.all(deck)) continue;
-    counts.set(deck.folderId, (counts.get(deck.folderId) ?? 0) + 1);
-  }
-  return counts;
-}
-
-/**
- * "Der Ordner ist leer" only for an open folder without any deck – a folder whose decks just
- * don't match the tab ("Offen", "Archiv") gets the tab's own empty state instead.
- */
-export function isEmptyFolder({
-  folderOpen,
-  query,
-  decksInFolder,
-}: {
-  folderOpen: boolean;
-  query: string;
-  decksInFolder: number;
-}): boolean {
-  return folderOpen && query.trim() === '' && decksInFolder === 0;
-}
-
-/**
- * Nothing matches at the top level, but the folder tiles above are the whole answer: on "Alle",
- * every deck simply sits in a folder. Other tabs still say why nothing shows (no open comments,
- * nothing archived), because the folder tiles do not filter by tab.
- */
-export function onlyFolderTiles({
-  tab,
-  atTop,
-  folderCount,
-  deckCount,
-}: {
-  tab: ReviewTab;
-  atTop: boolean;
-  folderCount: number;
-  deckCount: number;
-}): boolean {
-  return tab === 'all' && atTop && folderCount > 0 && deckCount > 0;
 }

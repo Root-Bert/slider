@@ -6,8 +6,7 @@ updated: 2026-10-20
 tag: Comparison
 accent: powerpoint
 cover: { kind: versus, other: PowerPoint comments }
-readingTime: 8 min read
-featured: true
+readingTime: 2 min read
 shortAnswer:
   text: PowerPoint comments are fine for a quick note inside one file. For reviews with several people, outside reviewers and new versions, Slider keeps every comment on the exact spot of the slide, adds voice and video, and carries feedback across versions.
   facts:
@@ -18,7 +17,7 @@ faq:
   - q: Do reviewers need a Slider account?
     a: Yes, a free one. You invite them to your workspace by mail or link as reviewers, so they can view and comment but not change your decks.
   - q: Is Slider free?
-    a: 'Yes, for small teams: as many decks as you like, up to 5 people and 2 GB storage, no credit card needed. Bigger teams pay one flat price per workspace, and you can self-host Slider for free, without limits.'
+    a: 'Yes, for small teams: as many decks as you like, up to 5 people and 20 GB storage, no credit card needed. Bigger teams pay one flat price per workspace, and you can self-host Slider for free, without limits.'
 related:
   - slider-vs-google-slides-comments
   - best-presentation-feedback-tools-2026

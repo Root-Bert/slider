@@ -7,7 +7,12 @@ import { fileURLToPath, pathToFileURL } from 'node:url';
 import { OdpDocument, isOdpBytes, type EmbeddedFont } from '@slider/odp';
 import { withoutExternalLinks } from '@slider/pptx';
 import JSZip from 'jszip';
-import { OFFICE_FONT_SUBSTITUTES, officeFontFor } from '@slider/shared';
+import {
+  OFFICE_FONT_SUBSTITUTES,
+  inflateEntry,
+  officeFontFor,
+  zipEntriesAtMost,
+} from '@slider/shared';
 import type { Logger } from '../logger';
 import { isPdfBytes } from '../sources/safe-fetch';
 import { PoolUnavailable, type OfficePool, type PoolPriority } from './office-pool';
@@ -159,6 +164,9 @@ function fontReplacements(fonts: readonly string[] = [], own: readonly string[] 
     .join('\n');
 }
 
+/** Entries a deck's zip may list before it is opened to look for fonts (the import refuses more). */
+const MAX_DECK_ZIP_ENTRIES = 20_000;
+
 /**
  * Families an ODP brings along (embedded fonts: a `style:font-face` with a source in the file,
  * as `OdpDocument.embedFonts` adds them) – drawn as themselves, never replaced.
@@ -167,30 +175,67 @@ export async function embeddedFonts(bytes: Uint8Array): Promise<string[]> {
   if (!isOdpBytes(bytes)) return [];
   let styles: string;
   try {
-    styles = (await (await JSZip.loadAsync(bytes)).file('styles.xml')?.async('string')) ?? '';
+    if (!zipEntriesAtMost(bytes, MAX_DECK_ZIP_ENTRIES)) return [];
+    const entry = (await JSZip.loadAsync(bytes)).file('styles.xml');
+    styles = entry ? await xmlText('styles.xml', entry, { left: MAX_FONT_XML_PART }) : '';
   } catch {
     return [];
   }
-  const pattern =
-    /<style:font-face\b[^>]*\bsvg:font-family="([^"]{1,100})"[^>]*>\s*<svg:font-face-src>/g;
-  return [...styles.matchAll(pattern)].map((match) =>
-    (match[1] as string).replace(/&apos;|&quot;|['"]/g, '').trim(),
+  // Tag by tag (each read once): a pattern over the whole file with two open ends would take
+  // minutes on a font face with thousands of attributes.
+  const families: string[] = [];
+  for (const face of styles.matchAll(/<style:font-face\s[^>]*>/g)) {
+    const tag = face[0];
+    if (tag.length > 4000 || tag.endsWith('/>')) continue;
+    const after = styles.slice(face.index + tag.length, face.index + tag.length + 200);
+    if (!/^\s*<svg:font-face-src>/.test(after)) continue;
+    const family = /\ssvg:font-family="([^"]{1,100})"/.exec(tag)?.[1];
+    if (family) families.push(family.replace(/&apos;|&quot;|['"]/g, '').trim());
+  }
+  return families;
+}
+
+/** One XML part may unpack to this much, and all of a file's together (`deckFonts`). */
+const MAX_FONT_XML_PART = 64 * 1024 * 1024;
+const MAX_FONT_XML_TOTAL = 256 * 1024 * 1024;
+
+/**
+ * An XML part's text within a budget (`inflateEntry`: never more than the part declares): a
+ * small upload must not unpack to gigabytes here.
+ */
+async function xmlText(name: string, entry: object, budget: { left: number }): Promise<string> {
+  const bytes = await inflateEntry(
+    name,
+    entry,
+    Math.min(MAX_FONT_XML_PART, budget.left),
+    (message) => new Error(message),
   );
+  budget.left -= bytes.length;
+  return new TextDecoder().decode(bytes);
 }
 
 /** Font names a deck (ODP or PowerPoint) uses – at most a few hundred, from its XML parts. */
 export async function deckFonts(bytes: Uint8Array): Promise<string[]> {
   let zip: JSZip;
   try {
+    if (!zipEntriesAtMost(bytes, MAX_DECK_ZIP_ENTRIES)) return [];
     zip = await JSZip.loadAsync(bytes);
   } catch {
     return [];
   }
   const fonts = new Set<string>();
   const pattern = /(?:fo:font-family|svg:font-family|style:font-name|typeface)="([^"]{1,100})"/g;
+  const budget = { left: MAX_FONT_XML_TOTAL };
   for (const file of Object.values(zip.files)) {
     if (file.dir || !file.name.endsWith('.xml')) continue;
-    for (const match of (await file.async('string')).matchAll(pattern)) {
+    let xml: string;
+    try {
+      xml = await xmlText(file.name, file, budget);
+    } catch {
+      // Too large to be read for its fonts: what was found so far stands.
+      return [...fonts];
+    }
+    for (const match of xml.matchAll(pattern)) {
       const name = (match[1] as string).replace(/&apos;|&quot;|['"]/g, '').trim();
       // `+mn-lt`: a theme font, named in the theme itself.
       if (name && !name.startsWith('+')) fonts.add(name);
@@ -504,6 +549,42 @@ export function createMaterialPdf(options: LibreOfficeOptions): MaterialToPdf {
   };
 }
 
+/**
+ * What Writer takes in by making a text document (.odt) of it, with the one import filter each
+ * is read with.
+ */
+export const TEXT_DOCUMENT_FILTERS = {
+  docx: 'MS Word 2007 XML',
+  docm: 'MS Word 2007 XML VBA',
+  doc: 'MS Word 97',
+  rtf: 'Rich Text Format',
+  txt: 'Text (encoded):UTF8',
+  md: 'Text (encoded):UTF8',
+} as const;
+export type TextDocumentKind = keyof typeof TEXT_DOCUMENT_FILTERS;
+export type DocumentToOdt = (bytes: Uint8Array, kind: TextDocumentKind) => Promise<Uint8Array>;
+
+/** A Word or text file as a text document – Office files without their external links. */
+export function createTextDocumentOdt(options: LibreOfficeOptions): DocumentToOdt {
+  const convert = converter(options);
+  return async (bytes, kind) => {
+    const ooxml = kind === 'docx' || kind === 'docm';
+    try {
+      return await convert(
+        ooxml ? await withoutExternalLinks(bytes) : bytes,
+        kind,
+        TEXT_DOCUMENT_FILTERS[kind],
+        'odt:writer8',
+      );
+    } catch (error) {
+      if (!(error instanceof ConversionAborted)) {
+        options.log.warn(`LibreOffice could not make a text document of a .${kind} file`, error);
+      }
+      throw error;
+    }
+  };
+}
+
 const DECK_EXTENSIONS = new Set(['odp', 'pptx', 'pptm', 'ppsx']);
 
 function converter({
@@ -570,13 +651,17 @@ function converter({
         dir,
         env,
       );
+      // `odt:writer8` → `deck.odt`.
+      const made = target.split(':')[0] ?? 'pdf';
       let pdf: Uint8Array;
       try {
-        pdf = new Uint8Array(await readFile(path.join(outDir, 'deck.pdf')));
+        pdf = new Uint8Array(await readFile(path.join(outDir, `deck.${made}`)));
       } catch {
-        throw new ConversionFailed('LibreOffice wrote no PDF');
+        throw new ConversionFailed(`LibreOffice wrote no ${made.toUpperCase()}`);
       }
-      if (!isPdfBytes(pdf)) throw new ConversionFailed('LibreOffice wrote no valid PDF');
+      if (made === 'pdf' && !isPdfBytes(pdf)) {
+        throw new ConversionFailed('LibreOffice wrote no valid PDF');
+      }
       return pdf;
     } finally {
       await rm(dir, { recursive: true, force: true }).catch((error: unknown) =>

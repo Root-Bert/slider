@@ -1,8 +1,6 @@
 ---
 /**
- * A link styled as the website's button: a solid pill with an arrow (primary, or white on Slider
- * blue: inverse), an outlined pill (secondary) or plain text (ghost). Solid ones sit on their own
- * paler copy, down and to the left, the way the logo stacks two slides; hovering lifts them off it.
+ * A link styled as the website's button: a solid pill with an arrow (primary in the page's colour, or white on a dark tile: inverse), an outlined pill (secondary) or plain text (ghost).
  */
 interface Props {
   href: string;
@@ -33,7 +31,8 @@ const external = /^https?:|^mailto:/.test(href);
       background-color 150ms,
       color 150ms,
       box-shadow 200ms var(--ease-emphasized),
-      translate 200ms var(--ease-emphasized);
+      filter 150ms,
+      scale 150ms;
   }
   .site-btn-lg {
     height: 52px;
@@ -45,30 +44,26 @@ const external = /^https?:|^mailto:/.test(href);
     padding: 0 18px;
     font-size: 14px;
   }
-  /* Slider blue: the reviewers' blue, the one colour the brand owns. */
+  /* The page's colour (`--brand-*`, site.css): the app's own, the gradient on the office's pages. */
   .site-btn-primary {
-    --stack: color-mix(in srgb, var(--color-accent-blue) 45%, transparent);
-    background: var(--color-accent-blue);
-    color: #fff;
+    background: var(--brand-fill);
+    color: var(--brand-on);
+    box-shadow: inset 0 0 0 1px var(--brand-edge);
   }
   .site-btn-inverse {
-    --stack: rgb(255 255 255 / 0.4);
     background: #fff;
-    color: var(--color-accent-blue);
-  }
-  .site-btn-primary,
-  .site-btn-inverse {
-    box-shadow: -4px 4px 0 var(--stack);
+    color: var(--brand-ink);
   }
   .site-btn-primary:hover,
   .site-btn-inverse:hover {
-    translate: 2px -2px;
-    box-shadow: -7px 7px 0 var(--stack);
+    filter: brightness(1.1);
+  }
+  .site-btn-inverse:hover {
+    filter: brightness(0.94);
   }
   .site-btn-primary:active,
   .site-btn-inverse:active {
-    translate: none;
-    box-shadow: -2px 2px 0 var(--stack);
+    scale: 0.98;
   }
   .site-btn-secondary {
     color: var(--color-fg);

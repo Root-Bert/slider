@@ -54,6 +54,7 @@ import { carryShapeIds } from '../import/pdf-boxes';
 import { isPdfPage, openDeckFile } from '../import/pdf-deck';
 import { PdfTimedOut } from '../import/pdf-jobs';
 import { mergeSyncState } from './state';
+import { scheduleDeckFile } from '../services/cloud/files';
 import { newRevisionToLiveTexts } from '../services/edits/live-texts';
 
 type SlideVersionRow = typeof slideVersions.$inferSelect;
@@ -417,6 +418,8 @@ export async function importSyncRevision(deps: ImportDeps, job: ImportJob): Prom
       });
     });
     deps.log.info(`Deck ${deckId}: revision ${revision.number} imported`);
+    // Its file in Cloud is the new version's file from now on.
+    scheduleDeckFile(deps, deckId);
     // Texts typed in together right now get what the new file changed in them.
     const [previousFile] = previousRevisionId
       ? await db

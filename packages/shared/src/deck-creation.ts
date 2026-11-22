@@ -51,6 +51,10 @@ export const outlineSlideSchema = z.object({
   message: z.string(),
   /** What kind of slide: „Titel“, „Aufzählung“, „Zahlen“, „Bild und Text“ … in the deck's language. */
   layout: z.string(),
+  /** What picture it shows (and how), or „none“ – for the AI building it. */
+  picture: z.string().optional(),
+  /** How it comes in: a transition, a morph from the slide before and what travels. */
+  motion: z.string().optional(),
 });
 export type OutlineSlide = z.infer<typeof outlineSlideSchema>;
 

@@ -1,3 +1,4 @@
+import { DECK_TRASH_DAYS } from '@slider/shared';
 import { Button } from '@/ui';
 import type { ReviewTab } from '../lib/deck-filters';
 import { EmptyState } from './EmptyState';
@@ -44,8 +45,9 @@ export function NoResults({
   }
   const messages: Record<ReviewTab, string> = {
     all: 'Alle Präsentationen sind archiviert.',
-    open: 'Keine offenen Kommentare – alles erledigt.',
+    open: 'Keine offenen Kommentare, alles erledigt.',
     archive: 'Archivierte Präsentationen erscheinen hier.',
+    trash: `Was du löschst, liegt hier noch ${DECK_TRASH_DAYS} Tage.`,
   };
   return <EmptyState title="Hier ist nichts" message={messages[tab]} />;
 }

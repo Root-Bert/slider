@@ -1,5 +1,6 @@
 import {
   bigint,
+  check,
   boolean,
   doublePrecision,
   foreignKey,
@@ -16,6 +17,22 @@ import {
 } from 'drizzle-orm/pg-core';
 import { sql } from 'drizzle-orm';
 import type {
+  CloudAreaColor,
+  ReaderAnchor,
+  ReaderMarkBody,
+  CloudAreaVisibility,
+  CloudAgentFileKind,
+  ApiSettings,
+  CloudConnectionKind,
+  CloudConnectionState,
+  CloudConnectionTool,
+  CloudAgentRepeatRule,
+  CloudAgentWatch,
+  CloudAgentUndo,
+  CloudAgentFileStatus,
+  CloudEventKind,
+  CloudNodeKind,
+  CloudShareRole,
   ShowRun,
   AppConnectionKind,
   MaterialChatAnswerState,
@@ -59,6 +76,28 @@ import type {
   TemplateColor,
   TranscriptStatus,
   WorkspaceRole,
+  WriterAiState,
+  WriterAnchor,
+  WriterOperation,
+  SenderChannelKind,
+  Author as CallPerson,
+  CallRecordLine,
+  CallRecordNotes,
+  CallRecordNotesState,
+  CallRecordOrder,
+  SenderMessageMail,
+  SenderDraftTarget,
+  MailAccountState,
+  MailSignIn,
+  MailAuth,
+  MailFolderRole,
+  MailContext,
+  MailSummary,
+  MailContextState,
+  MailPerson,
+  TodoPriority,
+  TodoSource,
+  TodoStatus,
 } from '@slider/shared';
 import { encryptedJson, encryptedJsonList, encryptedText } from './encrypted-columns';
 import type { PdfMaker } from '../import/pdf-maker';
@@ -137,6 +176,16 @@ export const users = pgTable('users', {
    * and memberships stay; unblocking lets it in again.
    */
   blockedAt: timestamptz('blocked_at'),
+  /**
+   * The voice agents speak with in the calls where this person called them or brought them in
+   * (a Mistral voice's slug, personal settings); `null`: a German one.
+   */
+  callVoice: text('call_voice'),
+  /**
+   * How often this person's mailboxes are read from their servers, in minutes (Einstellungen ›
+   * Mail › Aktualisieren): `null` the clock's round, every minute; 0 only when asked.
+   */
+  mailSyncMinutes: integer('mail_sync_minutes'),
 });
 
 /**
@@ -471,6 +520,10 @@ export const workspaces = pgTable('workspaces', {
   aiKeyError: text('ai_key_error'),
   /** What its admins named the AI; `null`: `KI`. */
   aiName: text('ai_name'),
+  /** An agent writes along in every call and sends notes and tasks afterwards (admins turn it off). */
+  callNotes: boolean('call_notes').notNull().default(true),
+  /** How its agents look (`AGENT_AVATAR_STYLES`), picked by its admins. */
+  agentAvatars: text('agent_avatars').notNull().default('flowers'),
   /**
    * Per kind, the model it runs the instance's key on, where the instance lets it pick one – for
    * that key only: once the instance sets another active, the instance's model applies again.
@@ -796,6 +849,9 @@ export const decks = pgTable(
     createdAt: createdAt(),
     updatedAt: timestamptz('updated_at').notNull().defaultNow(),
     archivedAt: timestamptz('archived_at'),
+    /** In the trash since then, put there by `deletedBy` (plain id – the row outlives the account). */
+    deletedAt: timestamptz('deleted_at'),
+    deletedBy: text('deleted_by'),
     importState: jsonb('import_state').$type<ImportState>().notNull(),
     currentRevisionId: text('current_revision_id').references((): AnyPgColumn => revisions.id, {
       onDelete: 'set null',
@@ -806,6 +862,14 @@ export const decks = pgTable(
     lastViewedAt: timestamptz('last_viewed_at'),
     /** The folder it is sorted into; `null` = not in a folder. Deleting the folder keeps the deck. */
     folderId: text('folder_id').references(() => deckFolders.id, { onDelete: 'set null' }),
+    /**
+     * Where it lies in Cloud: the file that stands for it there (`services/deck-places.ts`).
+     * Its folder says who sees the deck – one's own files: its owner alone. `null`: no place yet
+     * (decks from before), open to the workspace as ever.
+     */
+    cloudNodeId: text('cloud_node_id').references((): AnyPgColumn => cloudNodes.id, {
+      onDelete: 'set null',
+    }),
     /**
      * Retired with OneDrive/SharePoint: the Microsoft account an old deck synced through. Always
      * `null` once `retireFileConnections` ran; the column stays for that cleanup only.
@@ -883,6 +947,7 @@ export const decks = pgTable(
     index('decks_google_connection_idx').on(t.googleConnectionId),
     // For the `on delete set null` of deleted revisions and folders: no scan of every deck.
     index('decks_current_revision_idx').on(t.currentRevisionId),
+    uniqueIndex('decks_cloud_node_idx').on(t.cloudNodeId),
     index('decks_folder_idx').on(t.folderId),
     index('decks_master_idx').on(t.masterId),
   ],
@@ -1418,9 +1483,9 @@ export const deckMaterials = pgTable(
   'deck_materials',
   {
     id: text('id').primaryKey(),
-    deckId: text('deck_id')
-      .notNull()
-      .references(() => decks.id, { onDelete: 'cascade' }),
+    deckId: text('deck_id').references(() => decks.id, { onDelete: 'cascade' }),
+    /** A Writer document's board instead of a deck's: exactly one of the two is set. */
+    documentId: text('document_id').references(() => cloudNodes.id, { onDelete: 'cascade' }),
     /** Snapshot of who put it down, like `comments.author`. */
     author: jsonb('author').$type<Author>().notNull(),
     /** The file's name; encrypted at rest (BER-149). */
@@ -1450,7 +1515,11 @@ export const deckMaterials = pgTable(
     createdAt: createdAt(),
     updatedAt: timestamptz('updated_at').notNull().defaultNow(),
   },
-  (t) => [index('deck_materials_deck_idx').on(t.deckId, t.createdAt)],
+  (t) => [
+    index('deck_materials_deck_idx').on(t.deckId, t.createdAt),
+    index('deck_materials_document_idx').on(t.documentId, t.createdAt),
+    check('deck_materials_owner_check', sql`num_nonnulls(${t.deckId}, ${t.documentId}) = 1`),
+  ],
 );
 
 /** Notes and links on a deck's material page, beside its files. */
@@ -1458,9 +1527,9 @@ export const deckBoardItems = pgTable(
   'deck_board_items',
   {
     id: text('id').primaryKey(),
-    deckId: text('deck_id')
-      .notNull()
-      .references(() => decks.id, { onDelete: 'cascade' }),
+    deckId: text('deck_id').references(() => decks.id, { onDelete: 'cascade' }),
+    /** A Writer document's board instead of a deck's: exactly one of the two is set. */
+    documentId: text('document_id').references(() => cloudNodes.id, { onDelete: 'cascade' }),
     author: jsonb('author').$type<Author>().notNull(),
     kind: text('kind').$type<BoardItemKind>().notNull(),
     /** A note's text, a link's title. Encrypted; blank stays blank. */
@@ -1484,7 +1553,11 @@ export const deckBoardItems = pgTable(
     createdAt: createdAt(),
     updatedAt: timestamptz('updated_at').notNull().defaultNow(),
   },
-  (t) => [index('deck_board_items_deck_idx').on(t.deckId, t.createdAt)],
+  (t) => [
+    index('deck_board_items_deck_idx').on(t.deckId, t.createdAt),
+    index('deck_board_items_document_idx').on(t.documentId, t.createdAt),
+    check('deck_board_items_owner_check', sql`num_nonnulls(${t.deckId}, ${t.documentId}) = 1`),
+  ],
 );
 
 /**
@@ -1498,9 +1571,9 @@ export const materialQuestions = pgTable(
   'material_questions',
   {
     id: text('id').primaryKey(),
-    deckId: text('deck_id')
-      .notNull()
-      .references(() => decks.id, { onDelete: 'cascade' }),
+    deckId: text('deck_id').references(() => decks.id, { onDelete: 'cascade' }),
+    /** A Writer document's board instead of a deck's: exactly one of the two is set. */
+    documentId: text('document_id').references(() => cloudNodes.id, { onDelete: 'cascade' }),
     /** The note asked (`deck_board_items`): its answer goes with it. */
     noteId: text('note_id')
       .notNull()
@@ -1522,6 +1595,8 @@ export const materialQuestions = pgTable(
   (t) => [
     index('material_questions_note_idx').on(t.noteId, t.createdAt),
     index('material_questions_deck_idx').on(t.deckId, t.createdAt),
+    index('material_questions_document_idx').on(t.documentId, t.createdAt),
+    check('material_questions_owner_check', sql`num_nonnulls(${t.deckId}, ${t.documentId}) = 1`),
   ],
 );
 export type MaterialQuestionRow = typeof materialQuestions.$inferSelect;
@@ -1535,9 +1610,9 @@ export const materialChats = pgTable(
   'material_chats',
   {
     id: text('id').primaryKey(),
-    deckId: text('deck_id')
-      .notNull()
-      .references(() => decks.id, { onDelete: 'cascade' }),
+    deckId: text('deck_id').references(() => decks.id, { onDelete: 'cascade' }),
+    /** A Writer document's board instead of a deck's: exactly one of the two is set. */
+    documentId: text('document_id').references(() => cloudNodes.id, { onDelete: 'cascade' }),
     userId: text('user_id')
       .notNull()
       .references(() => users.id, { onDelete: 'cascade' }),
@@ -1547,7 +1622,11 @@ export const materialChats = pgTable(
     /** Its latest message: the list sorts by it. */
     updatedAt: timestamptz('updated_at').notNull().defaultNow(),
   },
-  (t) => [index('material_chats_deck_user_idx').on(t.deckId, t.userId, t.updatedAt)],
+  (t) => [
+    index('material_chats_deck_user_idx').on(t.deckId, t.userId, t.updatedAt),
+    index('material_chats_document_idx').on(t.documentId, t.userId, t.updatedAt),
+    check('material_chats_owner_check', sql`num_nonnulls(${t.deckId}, ${t.documentId}) = 1`),
+  ],
 );
 export type MaterialChatRow = typeof materialChats.$inferSelect;
 
@@ -1582,9 +1661,9 @@ export const materialChunks = pgTable(
     materialId: text('material_id')
       .notNull()
       .references(() => deckMaterials.id, { onDelete: 'cascade' }),
-    deckId: text('deck_id')
-      .notNull()
-      .references(() => decks.id, { onDelete: 'cascade' }),
+    deckId: text('deck_id').references(() => decks.id, { onDelete: 'cascade' }),
+    /** A Writer document's board instead of a deck's: exactly one of the two is set. */
+    documentId: text('document_id').references(() => cloudNodes.id, { onDelete: 'cascade' }),
     seq: integer('seq').notNull(),
     /** The page (1-based) it is from; `null` for a sheet or a text file. */
     page: integer('page'),
@@ -1595,6 +1674,8 @@ export const materialChunks = pgTable(
   (t) => [
     primaryKey({ columns: [t.materialId, t.seq] }),
     index('material_chunks_deck_idx').on(t.deckId),
+    index('material_chunks_document_idx').on(t.documentId),
+    check('material_chunks_owner_check', sql`num_nonnulls(${t.deckId}, ${t.documentId}) = 1`),
   ],
 );
 
@@ -1705,6 +1786,8 @@ export const showRuns = pgTable(
     at: timestamptz('at').notNull(),
     summary: encryptedJson<ShowRun>('show_runs', 'summary').notNull(),
     recordingKey: text('recording_key'),
+    /** Who saved the run: their recording is theirs (data export, deleted with the account). */
+    recordedBy: text('recorded_by').references(() => users.id, { onDelete: 'set null' }),
   },
   (table) => [
     index('show_runs_deck_idx').on(table.deckId),
@@ -1715,3 +1798,1264 @@ export const showRuns = pgTable(
     }).onDelete('cascade'),
   ],
 );
+
+// ── Cloud: the workspace's files ────────────────────────────────────────────
+
+/**
+ * An area („Bereich“) of a workspace's files: a team's place with a colour and people, in place
+ * of a folder tree someone has to keep. `visibility` `workspace`: everyone in the workspace sees
+ * it; `members`: only the people named for it (`cloud_area_members`) and the workspace's admins.
+ */
+export const cloudAreas = pgTable(
+  'cloud_areas',
+  {
+    id: text('id').primaryKey(),
+    workspaceId: text('workspace_id')
+      .notNull()
+      .references(() => workspaces.id, { onDelete: 'cascade' }),
+    /**
+     * The area it lies under in the side bar („Unterbereich“); `null`: at the top. Only where it
+     * is listed: its people, its visibility and its files are its own.
+     */
+    parentId: text('parent_id').references((): AnyPgColumn => cloudAreas.id, {
+      onDelete: 'cascade',
+    }),
+    name: text('name').notNull(),
+    description: text('description').notNull().default(''),
+    color: text('color').$type<CloudAreaColor>().notNull(),
+    visibility: text('visibility').$type<CloudAreaVisibility>().notNull().default('workspace'),
+    /** Order in the side bar; new ones go last. */
+    position: integer('position').notNull().default(0),
+    createdBy: text('created_by').references(() => users.id, { onDelete: 'set null' }),
+    /**
+     * The workspace itself as an area, one each, there from the start: called as the workspace
+     * is, open to it, its people are the workspace's. Not deleted, not renamed; the other areas
+     * are listed under it.
+     */
+    root: boolean('root').notNull().default(false),
+    createdAt: createdAt(),
+  },
+  (t) => [
+    index('cloud_areas_workspace_idx').on(t.workspaceId),
+    uniqueIndex('cloud_areas_root_idx')
+      .on(t.workspaceId)
+      .where(sql`${t.root}`),
+  ],
+);
+export type CloudAreaRow = typeof cloudAreas.$inferSelect;
+
+/** The people of an area, and what they do there („Leitung Vertrieb“). */
+export const cloudAreaMembers = pgTable(
+  'cloud_area_members',
+  {
+    areaId: text('area_id')
+      .notNull()
+      .references(() => cloudAreas.id, { onDelete: 'cascade' }),
+    userId: text('user_id')
+      .notNull()
+      .references(() => users.id, { onDelete: 'cascade' }),
+    title: text('title'),
+    createdAt: createdAt(),
+  },
+  (t) => [
+    primaryKey({ columns: [t.areaId, t.userId] }),
+    index('cloud_area_members_user_idx').on(t.userId),
+  ],
+);
+
+/**
+ * A file or a folder. In an area (`area_id`) or, without one, in its owner's own files („Meine
+ * Dateien“ – nobody else sees them unless shared). The name is encrypted at rest like a deck's
+ * title, so listing, sorting and searching by name happen in the server, not in SQL.
+ *
+ * A file's bytes are its versions (`cloud_versions`); `size_bytes` is the current one's.
+ * Deleted: `deleted_at` on it and on everything in it, `deleted_root_id` naming what was deleted
+ * (itself, or the folder that took it along) – restoring brings back exactly that.
+ */
+export const cloudNodes = pgTable(
+  'cloud_nodes',
+  {
+    id: text('id').primaryKey(),
+    workspaceId: text('workspace_id')
+      .notNull()
+      .references(() => workspaces.id, { onDelete: 'cascade' }),
+    areaId: text('area_id').references(() => cloudAreas.id, { onDelete: 'cascade' }),
+    /** A folder's own colour (an accent or `#rrggbb`); `null`: the plain one. */
+    color: text('color').$type<CloudAreaColor>(),
+    /**
+     * Who put it there. In one's own files also whose it is; `null` once that account is gone –
+     * such files of nobody are cleared by the sweep.
+     */
+    ownerId: text('owner_id').references(() => users.id, { onDelete: 'set null' }),
+    parentId: text('parent_id').references((): AnyPgColumn => cloudNodes.id, {
+      onDelete: 'cascade',
+    }),
+    kind: text('kind').$type<CloudNodeKind>().notNull(),
+    name: encryptedText('cloud_nodes', 'name').notNull(),
+    /** Lower case, without the dot; `''` for none and for folders. Plain: filters count by it. */
+    extension: text('extension').notNull().default(''),
+    mimeType: text('mime_type'),
+    sizeBytes: bigint('size_bytes', { mode: 'number' }).notNull().default(0),
+    currentVersionId: text('current_version_id'),
+    versionCount: integer('version_count').notNull().default(0),
+    /** The small picture of the current version: not tried, there, or not possible. */
+    thumbnail: text('thumbnail').$type<'none' | 'ready' | 'failed'>().notNull().default('none'),
+    createdAt: createdAt(),
+    updatedAt: timestamptz('updated_at').notNull().defaultNow(),
+    updatedBy: text('updated_by').references(() => users.id, { onDelete: 'set null' }),
+    deletedAt: timestamptz('deleted_at'),
+    deletedBy: text('deleted_by').references(() => users.id, { onDelete: 'set null' }),
+    deletedRootId: text('deleted_root_id'),
+    /**
+     * When it last changed for someone keeping a copy (name, place, bytes, deleted): set by a
+     * trigger from the database's clock, never by the code – `services/cloud/sync.ts` reads it.
+     */
+    changedAt: timestamptz('changed_at').notNull().defaultNow(),
+    /**
+     * Where it lay before it last moved (area, owner, folder): set by a trigger, never by the
+     * code. A computer is told to drop it from there only if it could see it there.
+     */
+    leftAreaId: text('left_area_id'),
+    leftOwnerId: text('left_owner_id'),
+    leftParentId: text('left_parent_id'),
+  },
+  (t) => [
+    index('cloud_nodes_changed_idx').on(t.workspaceId, t.changedAt, t.id),
+    index('cloud_nodes_parent_idx').on(t.parentId),
+    index('cloud_nodes_workspace_idx').on(t.workspaceId, t.deletedAt),
+    index('cloud_nodes_area_idx').on(t.areaId),
+    index('cloud_nodes_owner_idx').on(t.ownerId),
+    index('cloud_nodes_deleted_root_idx').on(t.deletedRootId),
+  ],
+);
+export type CloudNodeRow = typeof cloudNodes.$inferSelect;
+
+/**
+ * Files and folders that are gone for good, written by a trigger when their row goes (also with
+ * their area or workspace – hence no foreign keys). A computer keeping copies learns from it what
+ * to drop; rows go after `CLOUD_REMOVED_DAYS`.
+ */
+export const cloudRemoved = pgTable(
+  'cloud_removed',
+  {
+    nodeId: text('node_id').primaryKey(),
+    workspaceId: text('workspace_id').notNull(),
+    removedAt: timestamptz('removed_at').notNull().defaultNow(),
+    /** Where it lay (by the trigger): told only to who could see it there. */
+    areaId: text('area_id'),
+    ownerId: text('owner_id'),
+    parentId: text('parent_id'),
+    /** `false`: removed before the place was kept (0145) – told to everyone, as then. */
+    placeKnown: boolean('place_known').notNull().default(false),
+  },
+  (t) => [index('cloud_removed_workspace_idx').on(t.workspaceId, t.removedAt)],
+);
+
+/**
+ * One version („Fassung“) of a file: its bytes in blob storage under
+ * `workspaces/<id>/cloud/<nodeId>/<versionId>`. Every upload over a file makes one; older ones
+ * without a name go after `CLOUD_VERSION_DAYS`.
+ */
+export const cloudVersions = pgTable(
+  'cloud_versions',
+  {
+    id: text('id').primaryKey(),
+    nodeId: text('node_id')
+      .notNull()
+      .references(() => cloudNodes.id, { onDelete: 'cascade' }),
+    /** As the node's: storage adds up per workspace without a join. */
+    workspaceId: text('workspace_id')
+      .notNull()
+      .references(() => workspaces.id, { onDelete: 'cascade' }),
+    number: integer('number').notNull(),
+    storageKey: text('storage_key').notNull(),
+    sizeBytes: bigint('size_bytes', { mode: 'number' }).notNull(),
+    sha256: text('sha256').notNull(),
+    mimeType: text('mime_type'),
+    /** A named version stays for good. */
+    label: encryptedText('cloud_versions', 'label'),
+    /** Made by bringing this earlier version back. */
+    restoredFrom: integer('restored_from'),
+    /** The PDF drawn of an office file to show it: not tried, there, or not possible. */
+    preview: text('preview').$type<'none' | 'ready' | 'failed'>().notNull().default('none'),
+    createdBy: text('created_by').references(() => users.id, { onDelete: 'set null' }),
+    createdAt: createdAt(),
+  },
+  (t) => [
+    uniqueIndex('cloud_versions_node_number_idx').on(t.nodeId, t.number),
+    index('cloud_versions_workspace_idx').on(t.workspaceId),
+  ],
+);
+export type CloudVersionRow = typeof cloudVersions.$inferSelect;
+
+/**
+ * „Mit Stern“: each person's own. Out of the app for now – nothing reads or writes it; the table
+ * stays so the stars set so far are there when it comes back.
+ */
+export const cloudStars = pgTable(
+  'cloud_stars',
+  {
+    userId: text('user_id')
+      .notNull()
+      .references(() => users.id, { onDelete: 'cascade' }),
+    nodeId: text('node_id')
+      .notNull()
+      .references(() => cloudNodes.id, { onDelete: 'cascade' }),
+    createdAt: createdAt(),
+  },
+  (t) => [primaryKey({ columns: [t.userId, t.nodeId] })],
+);
+
+/** „Anpinnen“: the folders each person keeps in the side bar. */
+export const cloudPins = pgTable(
+  'cloud_pins',
+  {
+    userId: text('user_id')
+      .notNull()
+      .references(() => users.id, { onDelete: 'cascade' }),
+    nodeId: text('node_id')
+      .notNull()
+      .references(() => cloudNodes.id, { onDelete: 'cascade' }),
+    createdAt: createdAt(),
+  },
+  (t) => [primaryKey({ columns: [t.userId, t.nodeId] })],
+);
+
+/** What each person opened last – „Zuletzt“. */
+export const cloudRecents = pgTable(
+  'cloud_recents',
+  {
+    userId: text('user_id')
+      .notNull()
+      .references(() => users.id, { onDelete: 'cascade' }),
+    nodeId: text('node_id')
+      .notNull()
+      .references(() => cloudNodes.id, { onDelete: 'cascade' }),
+    at: timestamptz('at').notNull(),
+  },
+  (t) => [
+    primaryKey({ columns: [t.userId, t.nodeId] }),
+    index('cloud_recents_user_idx').on(t.userId, t.at),
+  ],
+);
+
+/**
+ * A file or folder shared beyond where it lies: with a member of the workspace (`user`), or by
+ * a link anyone holding it opens (`link`) – read only, until `expires_at`. Of a link only the
+ * hash is looked up; the link itself is kept sealed so it can be copied again.
+ */
+export const cloudShares = pgTable(
+  'cloud_shares',
+  {
+    id: text('id').primaryKey(),
+    workspaceId: text('workspace_id')
+      .notNull()
+      .references(() => workspaces.id, { onDelete: 'cascade' }),
+    nodeId: text('node_id')
+      .notNull()
+      .references(() => cloudNodes.id, { onDelete: 'cascade' }),
+    kind: text('kind').$type<'user' | 'link'>().notNull(),
+    userId: text('user_id').references(() => users.id, { onDelete: 'cascade' }),
+    role: text('role').$type<CloudShareRole>().notNull().default('view'),
+    tokenHash: text('token_hash').unique(),
+    token: encryptedText('cloud_shares', 'token'),
+    expiresAt: timestamptz('expires_at'),
+    /** A link: how often it was opened. */
+    opens: integer('opens').notNull().default(0),
+    /** A person's share: when they first saw it in „Geteilt“. */
+    seenAt: timestamptz('seen_at'),
+    createdBy: text('created_by').references(() => users.id, { onDelete: 'set null' }),
+    createdAt: createdAt(),
+  },
+  (t) => [
+    index('cloud_shares_node_idx').on(t.nodeId),
+    index('cloud_shares_user_idx').on(t.userId),
+    index('cloud_shares_workspace_idx').on(t.workspaceId),
+  ],
+);
+export type CloudShareRow = typeof cloudShares.$inferSelect;
+
+/**
+ * What happened to the files („Aktivität“). Names as they were then, sealed. An event in
+ * someone's own files carries `space_owner_id`: only they (and whoever the file is shared with)
+ * see it. Several of a kind at once (twelve files dropped) fold into one (`more`, `group_key`).
+ */
+export const cloudEvents = pgTable(
+  'cloud_events',
+  {
+    id: text('id').primaryKey(),
+    workspaceId: text('workspace_id')
+      .notNull()
+      .references(() => workspaces.id, { onDelete: 'cascade' }),
+    areaId: text('area_id').references(() => cloudAreas.id, { onDelete: 'cascade' }),
+    spaceOwnerId: text('space_owner_id').references(() => users.id, { onDelete: 'cascade' }),
+    nodeId: text('node_id').references(() => cloudNodes.id, { onDelete: 'set null' }),
+    actorId: text('actor_id').references(() => users.id, { onDelete: 'set null' }),
+    kind: text('kind').$type<CloudEventKind>().notNull(),
+    name: encryptedText('cloud_events', 'name').notNull(),
+    nodeKind: text('node_kind').$type<CloudNodeKind>(),
+    detail: encryptedText('cloud_events', 'detail'),
+    more: integer('more').notNull().default(0),
+    groupKey: text('group_key'),
+    createdAt: createdAt(),
+  },
+  (t) => [
+    index('cloud_events_workspace_idx').on(t.workspaceId, t.createdAt),
+    index('cloud_events_node_idx').on(t.nodeId, t.createdAt),
+  ],
+);
+export type CloudEventRow = typeof cloudEvents.$inferSelect;
+
+/**
+ * „Agenten“ (`cloud-agents.ts` in shared): an order to the AI that works across the workspace's
+ * files, kept as a chat everyone in the workspace sees. It works as `user_id`, who gave it.
+ */
+export const cloudAgents = pgTable(
+  'cloud_agents',
+  {
+    id: text('id').primaryKey(),
+    workspaceId: text('workspace_id')
+      .notNull()
+      .references(() => workspaces.id, { onDelete: 'cascade' }),
+    userId: text('user_id')
+      .notNull()
+      .references(() => users.id, { onDelete: 'cascade' }),
+    /** The start of its first message, or what it named its chat (`name_chat`). */
+    title: encryptedText('cloud_agents', 'title').notNull(),
+    /** Its owner named it: the agent names it no more. */
+    named: boolean('named').notNull().default(false),
+    /** Its owner's alone until they share it: with its area (`areaId`), or the workspace. */
+    shared: boolean('shared').notNull().default(false),
+    /**
+     * The area it stands in. `shared` there: everyone who sees that area sees it; otherwise
+     * its owner's alone, in that area. `null`: its owner's, or – `shared` – the workspace's.
+     * An area deleted, it is its owner's alone again (`deleteArea`).
+     */
+    areaId: text('area_id').references(() => cloudAreas.id, { onDelete: 'set null' }),
+    /** The rhythm of an order it takes up again by itself; `null`: it works when written to. */
+    repeat: jsonb('repeat').$type<CloudAgentRepeatRule>(),
+    /** That order's words. */
+    repeatText: encryptedText('cloud_agents', 'repeat_text'),
+    /** When it runs next: the server looks for those that are due. */
+    nextRunAt: timestamptz('next_run_at'),
+    /** What it keeps an eye on to work by itself (`cloud-agent-auto.ts`); `null`: nothing. */
+    watches: jsonb('watches').$type<CloudAgentWatch[]>(),
+    /** Changes up to here are dealt with – or its own: what it did while working is no news. */
+    watchedAt: timestamptz('watched_at'),
+    /** Its owner paused what it does by itself: the repeated order and the watches stay. */
+    paused: boolean('paused').notNull().default(false),
+    createdAt: createdAt(),
+    /** Its latest message: the list sorts by it. */
+    updatedAt: timestamptz('updated_at').notNull().defaultNow(),
+  },
+  (t) => [
+    index('cloud_agents_workspace_idx').on(t.workspaceId, t.updatedAt),
+    index('cloud_agents_next_run_idx').on(t.nextRunAt),
+    index('cloud_agents_area_idx').on(t.areaId),
+  ],
+);
+export type CloudAgentRow = typeof cloudAgents.$inferSelect;
+
+/**
+ * The chats of an agent: several people (and several chats) work on the same thing, with one
+ * desk. The first has the agent's own id and its title (`title` null); further ones are opened
+ * beside it and seen by everyone the agent is shared with.
+ */
+export const cloudAgentChats = pgTable(
+  'cloud_agent_chats',
+  {
+    id: text('id').primaryKey(),
+    agentId: text('agent_id')
+      .notNull()
+      .references(() => cloudAgents.id, { onDelete: 'cascade' }),
+    /** Who opened it. */
+    userId: text('user_id')
+      .notNull()
+      .references(() => users.id, { onDelete: 'cascade' }),
+    /** What it is about; `null`: the start of its first message (the first chat: the agent's). */
+    title: encryptedText('cloud_agent_chats', 'title'),
+    createdAt: createdAt(),
+  },
+  (t) => [index('cloud_agent_chats_agent_idx').on(t.agentId, t.createdAt)],
+);
+export type CloudAgentChatRow = typeof cloudAgentChats.$inferSelect;
+
+/** An agent's messages in order (`seq`): the people's and the agent's answers, as they ended. */
+export const cloudAgentMessages = pgTable(
+  'cloud_agent_messages',
+  {
+    id: text('id').primaryKey(),
+    agentId: text('agent_id')
+      .notNull()
+      .references(() => cloudAgents.id, { onDelete: 'cascade' }),
+    chatId: text('chat_id')
+      .notNull()
+      .references(() => cloudAgentChats.id, { onDelete: 'cascade' }),
+    /** Who wrote it (a person's message); gone or from before chats were shared: `null`. */
+    userId: text('user_id').references(() => users.id, { onDelete: 'set null' }),
+    /** A note the agent of another chat of this agent left here (`role` assistant). */
+    fromChatId: text('from_chat_id'),
+    /** A call with the agent (`role` assistant): one entry, its text what the agent remembers of it. */
+    callId: text('call_id').references((): AnyPgColumn => callRecords.id, { onDelete: 'cascade' }),
+    seq: integer('seq').notNull(),
+    role: text('role').$type<'user' | 'assistant'>().notNull(),
+    text: encryptedText('cloud_agent_messages', 'text').notNull(),
+    /** How the agent's answer ended; `null` for the person's message. */
+    state: text('state').$type<MaterialChatAnswerState>(),
+    error: text('error'),
+    createdAt: createdAt(),
+  },
+  (t) => [uniqueIndex('cloud_agent_messages_agent_seq_idx').on(t.agentId, t.seq)],
+);
+
+/**
+ * A call that is over, as it was written down (`services/call-records.ts`): who was in it, every
+ * turn – people's and the agent's –, what was sent to agents, and the notes the AI writes once
+ * after it. A conversation's call is seen by who sees the conversation; one's own call with an
+ * agent stands in its chat (`cloud_agent_messages.call_id`) and is seen by who sees the agent.
+ * `person_ids`: who was in it, plain (export, deletion); names and words are sealed.
+ */
+export const callRecords = pgTable(
+  'call_records',
+  {
+    id: text('id').primaryKey(),
+    workspaceId: text('workspace_id')
+      .notNull()
+      .references(() => workspaces.id, { onDelete: 'cascade' }),
+    channelId: text('channel_id').references(() => senderChannels.id, { onDelete: 'cascade' }),
+    agentId: text('agent_id').references(() => cloudAgents.id, { onDelete: 'cascade' }),
+    areaId: text('area_id').references(() => cloudAreas.id, { onDelete: 'set null' }),
+    kind: text('kind').$type<SenderChannelKind>().notNull(),
+    title: encryptedText('call_records', 'title').notNull(),
+    startedBy: text('started_by').references(() => users.id, { onDelete: 'set null' }),
+    personIds: jsonb('person_ids').$type<string[]>().notNull().default([]),
+    people: encryptedJson<CallPerson[]>('call_records', 'people').notNull(),
+    lines: encryptedJson<CallRecordLine[]>('call_records', 'lines').notNull(),
+    orders: encryptedJsonList<CallRecordOrder>('call_records', 'orders').notNull(),
+    notes: encryptedJson<CallRecordNotes>('call_records', 'notes'),
+    notesState: text('notes_state').$type<CallRecordNotesState>().notNull().default('pending'),
+    startedAt: timestamptz('started_at').notNull(),
+    endedAt: timestamptz('ended_at').notNull(),
+    createdAt: createdAt(),
+  },
+  (t) => [
+    index('call_records_channel_idx').on(t.channelId),
+    index('call_records_agent_idx').on(t.agentId),
+  ],
+);
+export type CallRecordRow = typeof callRecords.$inferSelect;
+
+/**
+ * An agent's desk („Desktop“): what it wrote and what it wants done, apart from the files until
+ * the person takes it over. `node_id`: the file or folder it is about (changed, moved, renamed,
+ * deleted), later what a new one became; a new one and a move say where to (`parent_id`,
+ * `area_id`, `desk_parent_id`, none: the person's own files).
+ */
+export const cloudAgentFiles = pgTable(
+  'cloud_agent_files',
+  {
+    id: text('id').primaryKey(),
+    agentId: text('agent_id')
+      .notNull()
+      .references(() => cloudAgents.id, { onDelete: 'cascade' }),
+    kind: text('kind').$type<CloudAgentFileKind>().notNull(),
+    status: text('status').$type<CloudAgentFileStatus>().notNull().default('open'),
+    name: encryptedText('cloud_agent_files', 'name').notNull(),
+    content: encryptedText('cloud_agent_files', 'content').notNull(),
+    nodeId: text('node_id').references(() => cloudNodes.id, { onDelete: 'set null' }),
+    parentId: text('parent_id').references(() => cloudNodes.id, { onDelete: 'set null' }),
+    areaId: text('area_id').references(() => cloudAreas.id, { onDelete: 'set null' }),
+    /** A folder on this desk the thing goes into, instead of a place in the files. */
+    deskParentId: text('desk_parent_id'),
+    /** The presentation the agent works on: a new one, or its copy of `original_deck_id`. */
+    deckId: text('deck_id').references(() => decks.id, { onDelete: 'set null' }),
+    originalDeckId: text('original_deck_id').references(() => decks.id, { onDelete: 'set null' }),
+    /** Done at once by the agent, and how its person takes it back; `null`: no way back. */
+    undo: jsonb('undo').$type<CloudAgentUndo>(),
+    createdAt: createdAt(),
+    updatedAt: timestamptz('updated_at').notNull().defaultNow(),
+  },
+  (t) => [index('cloud_agent_files_agent_idx').on(t.agentId, t.createdAt)],
+);
+export type CloudAgentFileRow = typeof cloudAgentFiles.$inferSelect;
+
+/** How a connection signs in: a key the person gave, or what OAuth keeps for it. */
+export interface CloudConnectionAuth {
+  /** A key the person gave – an API's token, header key or password. */
+  token?: string;
+  /** An API's user, with its password in `token` (`basic`). */
+  user?: string;
+  /** The client the service registered for this connection, its tokens, as the MCP SDK reads them. */
+  client?: Record<string, unknown>;
+  tokens?: Record<string, unknown>;
+  /** A sign-in under way: the PKCE verifier and the `state` its way back must bring. */
+  verifier?: string;
+  state?: string;
+  /** Where the service's sign-in lives, as found when one was started. */
+  discovery?: Record<string, unknown>;
+}
+
+/**
+ * „Verbindungen“: a service outside (an MCP server by its address, or – `kind` `api` – a plain
+ * HTTP API by its base address) a person connected so that their agents work there too. It is
+ * that person's – their sign-in – in one workspace; whoever writes to an agent has their own at
+ * hand, never another's. `tools`: what the service offered when last asked (an API's operations
+ * from its OpenAPI description). `may_change`: the person said agents may change things there,
+ * not only read. `api`: an API's sign-in kind and description; its secret lies in `auth`.
+ */
+export const cloudConnections = pgTable(
+  'cloud_connections',
+  {
+    id: text('id').primaryKey(),
+    workspaceId: text('workspace_id')
+      .notNull()
+      .references(() => workspaces.id, { onDelete: 'cascade' }),
+    userId: text('user_id')
+      .notNull()
+      .references(() => users.id, { onDelete: 'cascade' }),
+    name: encryptedText('cloud_connections', 'name').notNull(),
+    url: encryptedText('cloud_connections', 'url').notNull(),
+    kind: text('kind').$type<CloudConnectionKind>().notNull().default('mcp'),
+    api: encryptedJson<ApiSettings>('cloud_connections', 'api'),
+    auth: encryptedJson<CloudConnectionAuth>('cloud_connections', 'auth').notNull(),
+    state: text('state').$type<CloudConnectionState>().notNull(),
+    error: text('error'),
+    tools: encryptedJson<CloudConnectionTool[]>('cloud_connections', 'tools').notNull(),
+    mayChange: boolean('may_change').notNull().default(false),
+    createdAt: createdAt(),
+    updatedAt: timestamptz('updated_at').notNull().defaultNow(),
+  },
+  (t) => [index('cloud_connections_person_idx').on(t.workspaceId, t.userId)],
+);
+export type CloudConnectionRow = typeof cloudConnections.$inferSelect;
+
+// ── Writer: text documents ──────────────────────────────────────────────────
+/*
+ * A document is a file in Cloud (`cloud_nodes`, an .odt): its bytes, versions, place, rights and
+ * trash are Cloud's. These tables hold what Writer adds – the count of its steps, what was
+ * written in the last minutes (one version, not one per keystroke), and the comments.
+ */
+export const documents = pgTable('documents', {
+  nodeId: text('node_id')
+    .primaryKey()
+    .references(() => cloudNodes.id, { onDelete: 'cascade' }),
+  /** Counts the steps written into it: who has it open hears each with its number. */
+  editSeq: integer('edit_seq').notNull().default(0),
+  /** The version Writer made last, by whom and since when: further typing replaces it. */
+  draftVersionId: text('draft_version_id'),
+  draftBy: text('draft_by').references(() => users.id, { onDelete: 'set null' }),
+  draftAt: timestamptz('draft_at'),
+});
+export type DocumentRow = typeof documents.$inferSelect;
+
+/** Steps written, by the id their browser gave them: one sent twice is written once. */
+export const documentEdits = pgTable(
+  'document_edits',
+  {
+    id: text('id').primaryKey(),
+    documentId: text('document_id')
+      .notNull()
+      .references(() => cloudNodes.id, { onDelete: 'cascade' }),
+    clientEditId: text('client_edit_id').notNull(),
+    seq: integer('seq').notNull(),
+    dropped: jsonb('dropped').$type<number[]>().notNull().default([]),
+    createdAt: createdAt(),
+  },
+  (t) => [uniqueIndex('document_edits_client_idx').on(t.documentId, t.clientEditId)],
+);
+
+export const documentComments = pgTable(
+  'document_comments',
+  {
+    id: text('id').primaryKey(),
+    documentId: text('document_id')
+      .notNull()
+      .references(() => cloudNodes.id, { onDelete: 'cascade' }),
+    parentId: text('parent_id').references((): AnyPgColumn => documentComments.id, {
+      onDelete: 'cascade',
+    }),
+    authorId: text('author_id').references(() => users.id, { onDelete: 'set null' }),
+    body: encryptedText('document_comments', 'body').notNull(),
+    /** Where it points; `null` on an answer. */
+    anchor: encryptedJson<WriterAnchor>('document_comments', 'anchor'),
+    status: text('status').$type<'open' | 'done'>().notNull().default('open'),
+    resolvedBy: text('resolved_by').references(() => users.id, { onDelete: 'set null' }),
+    resolvedAt: timestamptz('resolved_at'),
+    createdAt: createdAt(),
+    updatedAt: timestamptz('updated_at').notNull().defaultNow(),
+  },
+  (t) => [index('document_comments_document_idx').on(t.documentId, t.createdAt)],
+);
+export type DocumentCommentRow = typeof documentComments.$inferSelect;
+
+/** Reactions to a text document's comments (👍 / 👎 / egal), as `commentReactions`. */
+export const documentCommentReactions = pgTable(
+  'document_comment_reactions',
+  {
+    commentId: text('comment_id')
+      .notNull()
+      .references(() => documentComments.id, { onDelete: 'cascade' }),
+    userId: text('user_id')
+      .notNull()
+      .references(() => users.id, { onDelete: 'cascade' }),
+    /** Snapshot of the author at reaction time, like `comments.author`. */
+    author: jsonb('author').$type<Author>().notNull(),
+    kind: text('kind').$type<CommentReactionKind>().notNull(),
+    createdAt: createdAt(),
+  },
+  (t) => [
+    primaryKey({ columns: [t.commentId, t.userId] }),
+    index('document_comment_reactions_user_idx').on(t.userId),
+  ],
+);
+
+/** A comment handed to the AI and what came of it (`services/document-ai`). */
+export const documentAiProposals = pgTable(
+  'document_ai_proposals',
+  {
+    id: text('id').primaryKey(),
+    documentId: text('document_id')
+      .notNull()
+      .references(() => cloudNodes.id, { onDelete: 'cascade' }),
+    commentId: text('comment_id')
+      .notNull()
+      .references(() => documentComments.id, { onDelete: 'cascade' }),
+    createdBy: text('created_by').references(() => users.id, { onDelete: 'set null' }),
+    status: text('status').$type<WriterAiState>().notNull().default('running'),
+    summary: encryptedText('document_ai_proposals', 'summary').notNull().default(''),
+    error: text('error'),
+    /** The steps that take its change back, and the ones that apply it again. */
+    undo: encryptedJson<WriterOperation[]>('document_ai_proposals', 'undo'),
+    redo: encryptedJson<WriterOperation[]>('document_ai_proposals', 'redo'),
+    createdAt: createdAt(),
+    updatedAt: timestamptz('updated_at').notNull().defaultNow(),
+  },
+  (t) => [index('document_ai_proposals_document_idx').on(t.documentId, t.createdAt)],
+);
+export type DocumentAiProposalRow = typeof documentAiProposals.$inferSelect;
+
+// ── Reader: PDFs ────────────────────────────────────────────────────────────
+/*
+ * A PDF is a file in Cloud and stays as it came. These tables hold what Reader lays over it:
+ * what was filled in (`pdf_marks`), the comments, what the AI did under them, and the signatures
+ * a person keeps to put down again.
+ */
+
+/** One thing filled in on a PDF: a form field's value, or text, a tick, a signature on a page. */
+export const pdfMarks = pgTable(
+  'pdf_marks',
+  {
+    pdfId: text('pdf_id')
+      .notNull()
+      .references(() => cloudNodes.id, { onDelete: 'cascade' }),
+    /** The browser's id; a form field's is `field:<name>`, one per field. */
+    id: text('id').notNull(),
+    body: encryptedJson<ReaderMarkBody>('pdf_marks', 'body').notNull(),
+    authorId: text('author_id').references(() => users.id, { onDelete: 'set null' }),
+    updatedAt: timestamptz('updated_at').notNull().defaultNow(),
+  },
+  (t) => [primaryKey({ columns: [t.pdfId, t.id] })],
+);
+export type PdfMarkRow = typeof pdfMarks.$inferSelect;
+
+export const pdfComments = pgTable(
+  'pdf_comments',
+  {
+    id: text('id').primaryKey(),
+    pdfId: text('pdf_id')
+      .notNull()
+      .references(() => cloudNodes.id, { onDelete: 'cascade' }),
+    parentId: text('parent_id').references((): AnyPgColumn => pdfComments.id, {
+      onDelete: 'cascade',
+    }),
+    authorId: text('author_id').references(() => users.id, { onDelete: 'set null' }),
+    body: encryptedText('pdf_comments', 'body').notNull(),
+    /** Where it points; `null` on an answer. */
+    anchor: encryptedJson<ReaderAnchor>('pdf_comments', 'anchor'),
+    status: text('status').$type<'open' | 'done'>().notNull().default('open'),
+    resolvedBy: text('resolved_by').references(() => users.id, { onDelete: 'set null' }),
+    resolvedAt: timestamptz('resolved_at'),
+    createdAt: createdAt(),
+    updatedAt: timestamptz('updated_at').notNull().defaultNow(),
+  },
+  (t) => [index('pdf_comments_pdf_idx').on(t.pdfId, t.createdAt)],
+);
+export type PdfCommentRow = typeof pdfComments.$inferSelect;
+
+/** A mark as it stood before and after the AI filled it in: `null` is none. */
+export interface PdfAiChange {
+  id: string;
+  before: ReaderMarkBody | null;
+  after: ReaderMarkBody | null;
+}
+
+/** A comment handed to the AI and what came of it (`services/pdf-ai`). */
+export const pdfAiProposals = pgTable(
+  'pdf_ai_proposals',
+  {
+    id: text('id').primaryKey(),
+    pdfId: text('pdf_id')
+      .notNull()
+      .references(() => cloudNodes.id, { onDelete: 'cascade' }),
+    commentId: text('comment_id')
+      .notNull()
+      .references(() => pdfComments.id, { onDelete: 'cascade' }),
+    createdBy: text('created_by').references(() => users.id, { onDelete: 'set null' }),
+    status: text('status').$type<WriterAiState>().notNull().default('running'),
+    summary: encryptedText('pdf_ai_proposals', 'summary').notNull().default(''),
+    error: text('error'),
+    changes: encryptedJsonList<PdfAiChange>('pdf_ai_proposals', 'changes').notNull().default([]),
+    createdAt: createdAt(),
+    updatedAt: timestamptz('updated_at').notNull().defaultNow(),
+  },
+  (t) => [index('pdf_ai_proposals_pdf_idx').on(t.pdfId, t.createdAt)],
+);
+export type PdfAiProposalRow = typeof pdfAiProposals.$inferSelect;
+
+/** Signatures a person keeps, to put down on any PDF again. */
+export const readerSignatures = pgTable(
+  'reader_signatures',
+  {
+    id: text('id').primaryKey(),
+    userId: text('user_id')
+      .notNull()
+      .references(() => users.id, { onDelete: 'cascade' }),
+    image: encryptedText('reader_signatures', 'image').notNull(),
+    width: integer('width').notNull(),
+    height: integer('height').notNull(),
+    createdAt: createdAt(),
+  },
+  (t) => [index('reader_signatures_user_idx').on(t.userId, t.createdAt)],
+);
+export type ReaderSignatureRow = typeof readerSignatures.$inferSelect;
+
+/**
+ * Sender's conversations (`packages/shared/src/sender.ts`): an area's own channel (`area`, one
+ * each, made when first listed), further channels inside an area (`channel`), groups and
+ * direct conversations. Who sees an area sees its channels; a group's or a direct one's people
+ * are `sender_members`.
+ */
+export const senderChannels = pgTable(
+  'sender_channels',
+  {
+    id: text('id').primaryKey(),
+    workspaceId: text('workspace_id')
+      .notNull()
+      .references(() => workspaces.id, { onDelete: 'cascade' }),
+    kind: text('kind').$type<SenderChannelKind>().notNull(),
+    areaId: text('area_id').references(() => cloudAreas.id, { onDelete: 'cascade' }),
+    /** A channel's or group's; `''` for an area's own (it carries the area's) and direct ones. */
+    name: text('name').notNull().default(''),
+    topic: text('topic').notNull().default(''),
+    createdBy: text('created_by').references(() => users.id, { onDelete: 'set null' }),
+    /** A direct conversation's two people, sorted and joined: one per pair. */
+    directKey: text('direct_key'),
+    /**
+     * The agent tagged here with `@Agent`: an area's own (made when first tagged), or the one
+     * added to a group or direct conversation. It reads along only when tagged.
+     */
+    agentId: text('agent_id').references(() => cloudAgents.id, { onDelete: 'set null' }),
+    /** The seq of its latest message. */
+    lastSeq: integer('last_seq').notNull().default(0),
+    createdAt: createdAt(),
+    /** Its latest message: the side bar sorts by it. */
+    updatedAt: timestamptz('updated_at').notNull().defaultNow(),
+  },
+  (t) => [
+    index('sender_channels_workspace_idx').on(t.workspaceId),
+    uniqueIndex('sender_channels_area_idx')
+      .on(t.areaId)
+      .where(sql`${t.kind} = 'area'`),
+    uniqueIndex('sender_channels_direct_idx').on(t.workspaceId, t.directKey),
+  ],
+);
+export type SenderChannelRow = typeof senderChannels.$inferSelect;
+
+/**
+ * The people of a group or direct conversation – and, for every conversation, how far a person
+ * has read (an area's channel gets its row when first read).
+ */
+export const senderMembers = pgTable(
+  'sender_members',
+  {
+    channelId: text('channel_id')
+      .notNull()
+      .references(() => senderChannels.id, { onDelete: 'cascade' }),
+    userId: text('user_id')
+      .notNull()
+      .references(() => users.id, { onDelete: 'cascade' }),
+    readSeq: integer('read_seq').notNull().default(0),
+    createdAt: createdAt(),
+  },
+  (t) => [
+    primaryKey({ columns: [t.channelId, t.userId] }),
+    index('sender_members_user_idx').on(t.userId),
+  ],
+);
+
+/** A conversation's messages in order (`seq`), by a person or an agent. */
+export const senderMessages = pgTable(
+  'sender_messages',
+  {
+    id: text('id').primaryKey(),
+    channelId: text('channel_id')
+      .notNull()
+      .references(() => senderChannels.id, { onDelete: 'cascade' }),
+    seq: integer('seq').notNull(),
+    userId: text('user_id').references(() => users.id, { onDelete: 'set null' }),
+    agentId: text('agent_id').references(() => cloudAgents.id, { onDelete: 'set null' }),
+    text: encryptedText('sender_messages', 'text').notNull(),
+    /** It came as a colleague's mail to a mailbox here (`mail_messages`): its subject. */
+    mail: encryptedJson<SenderMessageMail>('sender_messages', 'mail'),
+    /** Those whose name it carries („@Anna“): their unread count says so. */
+    mentions: jsonb('mentions').$type<string[]>().notNull().default([]),
+    editedAt: timestamptz('edited_at'),
+    /** Deleted by its author: the place stays („Gelöscht“), the words go. */
+    deletedAt: timestamptz('deleted_at'),
+    /** A call in the conversation, over: the entry that opens its page (`call_records`). */
+    callId: text('call_id').references((): AnyPgColumn => callRecords.id, { onDelete: 'cascade' }),
+    createdAt: createdAt(),
+  },
+  (t) => [uniqueIndex('sender_messages_channel_seq_idx').on(t.channelId, t.seq)],
+);
+export type SenderMessageRow = typeof senderMessages.$inferSelect;
+
+/** How far a person has read an agent's answers in Sender (its messages' seq). */
+export const senderAgentReads = pgTable(
+  'sender_agent_reads',
+  {
+    agentId: text('agent_id')
+      .notNull()
+      .references(() => cloudAgents.id, { onDelete: 'cascade' }),
+    userId: text('user_id')
+      .notNull()
+      .references(() => users.id, { onDelete: 'cascade' }),
+    readSeq: integer('read_seq').notNull().default(0),
+  },
+  (t) => [primaryKey({ columns: [t.agentId, t.userId] })],
+);
+
+// ── Mail: a person's mailboxes, woven into Sender ───────────────────────────
+
+/**
+ * Where a mailbox's folders were read up to (IMAP `UIDVALIDITY` and the next UID); `modseq`: the
+ * folder's change counter then (CONDSTORE, only where mails count unread) – the next round asks
+ * the read state only of what changed since.
+ */
+export interface MailSyncState {
+  [folder: string]: { validity: string; next: number; modseq?: string };
+}
+
+/** A folder of a mailbox as kept: its key (a special one's role, else its path), name, role. */
+export interface MailFolderEntry {
+  key: string;
+  path: string;
+  name: string;
+  role: MailFolderRole | null;
+}
+
+/**
+ * A mailbox of a person in a workspace: IMAP to read, SMTP to send. Its sign-in is theirs alone,
+ * sealed. `sync`: how far each read folder is read.
+ */
+export const mailAccounts = pgTable(
+  'mail_accounts',
+  {
+    id: text('id').primaryKey(),
+    workspaceId: text('workspace_id')
+      .notNull()
+      .references(() => workspaces.id, { onDelete: 'cascade' }),
+    userId: text('user_id')
+      .notNull()
+      .references(() => users.id, { onDelete: 'cascade' }),
+    address: encryptedText('mail_accounts', 'address').notNull(),
+    name: encryptedText('mail_accounts', 'name').notNull(),
+    /** What its person called it („Arbeit“); `null`: its default name (`mailboxLabels`). */
+    label: encryptedText('mail_accounts', 'label'),
+    imapHost: text('imap_host').notNull(),
+    imapPort: integer('imap_port').notNull(),
+    imapSecure: boolean('imap_secure').notNull(),
+    smtpHost: text('smtp_host').notNull(),
+    smtpPort: integer('smtp_port').notNull(),
+    smtpSecure: boolean('smtp_secure').notNull(),
+    username: encryptedText('mail_accounts', 'username').notNull(),
+    /** Empty for a mailbox signed in through its provider (`auth` not `password`). */
+    password: encryptedText('mail_accounts', 'password').notNull(),
+    /**
+     * `password`, or `microsoft` / `google`: „Mit Microsoft/Google anmelden“ (OAuth, XOAUTH2 to
+     * IMAP and SMTP – `mail/oauth.ts`).
+     */
+    auth: text('auth').$type<MailSignIn>().notNull().default('password'),
+    /**
+     * The provider's refresh token, sealed like the password; `null` once the provider refused
+     * it (state `signin`: its person signs in anew). The access token lives in memory only.
+     */
+    refreshToken: encryptedText('mail_accounts', 'refresh_token'),
+    state: text('state').$type<MailAccountState>().notNull().default('new'),
+    error: text('error'),
+    sync: jsonb('sync').$type<MailSyncState>().notNull().default({}),
+    /** Its folders as the last round found them (`mail/servers.ts` `foldersToRead`), in order. */
+    folders: jsonb('folders').$type<MailFolderEntry[]>().notNull().default([]),
+    /** Whether the workspace's AI reads each new mail by itself (`mail-context`). */
+    aiReads: boolean('ai_reads').notNull().default(true),
+    /**
+     * Its inbox's latest mails read once more since mails keep their HTML (0151): `ingestMail`
+     * fills it in for those known already (`syncMailAccount`).
+     */
+    htmlRead: boolean('html_read').notNull().default(false),
+    lastSyncAt: timestamptz('last_sync_at'),
+    createdAt: createdAt(),
+    updatedAt: timestamptz('updated_at').notNull().defaultNow(),
+  },
+  (t) => [index('mail_accounts_person_idx').on(t.workspaceId, t.userId)],
+);
+export type MailAccountRow = typeof mailAccounts.$inferSelect;
+
+/**
+ * A mail conversation: the mails that answer one another (by `Message-ID`, `In-Reply-To`,
+ * `References`). `read_at`: when its person last read or answered it here (what is unread is each
+ * mail's `seen`). `context`: what the AI made of it (shown to its right).
+ */
+export const mailThreads = pgTable(
+  'mail_threads',
+  {
+    id: text('id').primaryKey(),
+    accountId: text('account_id')
+      .notNull()
+      .references(() => mailAccounts.id, { onDelete: 'cascade' }),
+    subject: encryptedText('mail_threads', 'subject').notNull(),
+    spam: boolean('spam').notNull().default(false),
+    lastAt: timestamptz('last_at').notNull(),
+    readAt: timestamptz('read_at'),
+    context: encryptedJson<MailContext>('mail_threads', 'context'),
+    contextState: text('context_state').$type<MailContextState>().notNull().default('none'),
+    createdAt: createdAt(),
+  },
+  (t) => [index('mail_threads_account_idx').on(t.accountId, t.lastAt)],
+);
+export type MailThreadRow = typeof mailThreads.$inferSelect;
+
+/** An attachment as kept: its bytes lie under `key` in the blob store. */
+export interface MailAttachmentRow {
+  id: string;
+  name: string;
+  type: string;
+  size: number;
+  key: string;
+  /** Put into Cloud from the AI panel – that file (`mail-insights`: where the next one goes). */
+  nodeId?: string;
+}
+
+/**
+ * A picture the mail's HTML shows from the mail itself (`cid:`) – no attachment one files; its
+ * bytes lie under `key` in the blob store, served by the attachment route.
+ */
+export interface MailInlineImageRow {
+  id: string;
+  /** Its `Content-ID`, without the angle brackets. */
+  cid: string;
+  type: string;
+  size: number;
+  key: string;
+}
+
+/**
+ * A mail read from (or sent through) a mailbox. A colleague's that went into a chat has no
+ * conversation here (`thread_id` null) but the chat's message (`sender_message_id`) – read again,
+ * it is known and not posted twice.
+ */
+export const mailMessages = pgTable(
+  'mail_messages',
+  {
+    id: text('id').primaryKey(),
+    accountId: text('account_id')
+      .notNull()
+      .references(() => mailAccounts.id, { onDelete: 'cascade' }),
+    threadId: text('thread_id').references(() => mailThreads.id, { onDelete: 'cascade' }),
+    senderMessageId: text('sender_message_id').references(() => senderMessages.id, {
+      onDelete: 'set null',
+    }),
+    /** Where it came in first: a folder's key (`inbox`, `spam`, `sent` … or its path). */
+    folder: text('folder').notNull(),
+    /** Every folder it lies in – a mail can lie in several (Gmail's labels, a copy). */
+    folders: jsonb('folders').$type<string[]>().notNull().default([]),
+    uid: integer('uid'),
+    /** Its `Message-ID` header – how answers find it. */
+    messageId: text('message_id').notNull(),
+    inReplyTo: text('in_reply_to'),
+    references: jsonb('references').$type<string[]>().notNull().default([]),
+    from: encryptedJson<MailPerson>('mail_messages', 'from').notNull(),
+    to: encryptedJsonList<MailPerson>('mail_messages', 'to').notNull(),
+    cc: encryptedJsonList<MailPerson>('mail_messages', 'cc').notNull(),
+    subject: encryptedText('mail_messages', 'subject').notNull(),
+    text: encryptedText('mail_messages', 'text').notNull(),
+    /**
+     * Its HTML part, sanitized (`services/mail-html.ts`) – shown as the mail looks; the text stays
+     * what the AI, search and answers read. `null`: none, or too large. Before 0151 none.
+     */
+    html: encryptedText('mail_messages', 'html'),
+    /** The pictures its HTML shows from the mail itself (`cid:`). */
+    inlineImages: encryptedJsonList<MailInlineImageRow>('mail_messages', 'inline_images')
+      .notNull()
+      .default(sql`'[]'::jsonb`),
+    attachments: encryptedJsonList<MailAttachmentRow>('mail_messages', 'attachments').notNull(),
+    /**
+     * Their bytes and the inline pictures', in the clear for the workspace's storage
+     * (`workspace-storage`); 0 before 0136.
+     */
+    attachmentBytes: bigint('attachment_bytes', { mode: 'number' }).notNull().default(0),
+    auth: text('auth').$type<MailAuth>().notNull().default('none'),
+    outgoing: boolean('outgoing').notNull().default(false),
+    /**
+     * Read – as on the server (`\Seen`, asked each round), or read here. Unread counts only where
+     * new mail arrives (inbox/spam); what one wrote or found in another folder is read.
+     */
+    seen: boolean('seen').notNull().default(false),
+    /** Read or unread here, not yet set on the server (by `folder` + `uid`) – the next round tries. */
+    seenPending: boolean('seen_pending').notNull().default(false),
+    /** Its blind copies – only on a mail written here (a received one never shows them). */
+    bcc: encryptedJsonList<MailPerson>('mail_messages', 'bcc')
+      .notNull()
+      .default(sql`'[]'::jsonb`),
+    /**
+     * Written here and still in the outbox (`services/mail-outbox.ts`): `queued` until `sendAt`
+     * (taken back meanwhile, it goes), `sending` while it goes out, `failed` with `sendError` –
+     * sent again or taken back. `null`: sent, or received.
+     */
+    sendState: text('send_state').$type<'queued' | 'sending' | 'failed'>(),
+    sendAt: timestamptz('send_at'),
+    sendError: text('send_error'),
+    sentAt: timestamptz('sent_at').notNull(),
+    createdAt: createdAt(),
+  },
+  (t) => [
+    uniqueIndex('mail_messages_account_message_idx').on(t.accountId, t.messageId),
+    index('mail_messages_outbox_idx')
+      .on(t.sendAt)
+      .where(sql`${t.sendState} is not null`),
+    index('mail_messages_thread_idx').on(t.threadId, t.sentAt),
+    index('mail_messages_seen_pending_idx')
+      .on(t.accountId)
+      .where(sql`${t.seenPending}`),
+  ],
+);
+export type MailMessageRow = typeof mailMessages.$inferSelect;
+
+/**
+ * What the AI wrote about a mail conversation in its panel (`services/mail-insights.ts`), for its
+ * person: kept while the latest mail is `version`, so opening it again asks the model nothing;
+ * dropped after 14 days by the retention job, with the conversation and with the account.
+ */
+export const mailInsights = pgTable(
+  'mail_insights',
+  {
+    threadId: text('thread_id')
+      .primaryKey()
+      .references(() => mailThreads.id, { onDelete: 'cascade' }),
+    userId: text('user_id')
+      .notNull()
+      .references(() => users.id, { onDelete: 'cascade' }),
+    version: text('version').notNull(),
+    payload: encryptedJson<MailSummary>('mail_insights', 'payload').notNull(),
+    createdAt: createdAt(),
+  },
+  (t) => [index('mail_insights_created_idx').on(t.createdAt)],
+);
+
+/**
+ * A file put on a mail being written (`POST /mail/accounts/:id/uploads`): it waits until the mail
+ * goes and becomes its attachment; never sent, gone after seven days (`sweepMailUploads`). Its
+ * bytes lie under the mailbox (`mail/<account>/`), gone with it.
+ */
+export const mailUploads = pgTable(
+  'mail_uploads',
+  {
+    id: text('id').primaryKey(),
+    accountId: text('account_id')
+      .notNull()
+      .references(() => mailAccounts.id, { onDelete: 'cascade' }),
+    name: encryptedText('mail_uploads', 'name').notNull(),
+    type: text('type').notNull(),
+    size: integer('size').notNull(),
+    key: text('key').notNull(),
+    createdAt: createdAt(),
+  },
+  (t) => [index('mail_uploads_created_idx').on(t.createdAt)],
+);
+
+/**
+ * What a person wrote and did not send – in a conversation, to an agent, as a mail – kept for
+ * their account, so it waits on every device (`services/drafts.ts`). Theirs alone: no one else
+ * reads it, not even the workspace's admins. `key`: the client's (a conversation's id, `mail:…`,
+ * `agent:…`, `agent-new:…`, `mail-new:…`); the newer `updated_at` wins.
+ */
+export const senderDrafts = pgTable(
+  'sender_drafts',
+  {
+    id: text('id').primaryKey(),
+    userId: text('user_id')
+      .notNull()
+      .references(() => users.id, { onDelete: 'cascade' }),
+    workspaceId: text('workspace_id')
+      .notNull()
+      .references(() => workspaces.id, { onDelete: 'cascade' }),
+    key: text('key').notNull(),
+    /** Where it goes (`conversation`, `mail`, `agent`, `agent-new`, `mail-new`) – the list's sort. */
+    kind: text('kind').$type<SenderDraftTarget['kind']>().notNull(),
+    /** Its place and names (an agent's, a mail's subject, an address), sealed like its words. */
+    target: encryptedJson<SenderDraftTarget>('sender_drafts', 'target').notNull(),
+    text: encryptedText('sender_drafts', 'text').notNull(),
+    updatedAt: timestamptz('updated_at').notNull(),
+  },
+  (t) => [uniqueIndex('sender_drafts_person_key_idx').on(t.userId, t.workspaceId, t.key)],
+);
+export type SenderDraftRow = typeof senderDrafts.$inferSelect;
+
+/**
+ * „Anpinnen“ in Sender (`services/sender-pins.ts`): what a person keeps at the top of their lists
+ * – a conversation, an agent (both in the chats), a mail conversation (in the mail list) – the
+ * latest pinned first. Exactly one of the three; theirs alone, gone with them and with it.
+ */
+export const senderPins = pgTable(
+  'sender_pins',
+  {
+    id: text('id').primaryKey(),
+    userId: text('user_id')
+      .notNull()
+      .references(() => users.id, { onDelete: 'cascade' }),
+    channelId: text('channel_id').references(() => senderChannels.id, { onDelete: 'cascade' }),
+    agentId: text('agent_id').references(() => cloudAgents.id, { onDelete: 'cascade' }),
+    threadId: text('thread_id').references(() => mailThreads.id, { onDelete: 'cascade' }),
+    pinnedAt: timestamptz('pinned_at').notNull(),
+  },
+  (t) => [
+    uniqueIndex('sender_pins_channel_idx').on(t.userId, t.channelId),
+    uniqueIndex('sender_pins_agent_idx').on(t.userId, t.agentId),
+    uniqueIndex('sender_pins_thread_idx').on(t.userId, t.threadId),
+    check(
+      'sender_pins_target_check',
+      sql`num_nonnulls(${t.channelId}, ${t.agentId}, ${t.threadId}) = 1`,
+    ),
+  ],
+);
+
+/**
+ * A to-do (`@slider/shared` todos): an area's – whoever sees the area sees and, editing there,
+ * changes it – or, without an area, its owner's alone. Title, words and where it came from are
+ * encrypted at rest; numbered per workspace („#12“).
+ */
+export const todos = pgTable(
+  'todos',
+  {
+    id: text('id').primaryKey(),
+    workspaceId: text('workspace_id')
+      .notNull()
+      .references(() => workspaces.id, { onDelete: 'cascade' }),
+    areaId: text('area_id').references(() => cloudAreas.id, { onDelete: 'cascade' }),
+    /** One's own (no area): whose; goes with their account. */
+    ownerId: text('owner_id').references(() => users.id, { onDelete: 'cascade' }),
+    number: integer('number').notNull(),
+    title: encryptedText('todos', 'title').notNull(),
+    description: encryptedText('todos', 'description').notNull(),
+    status: text('status').$type<TodoStatus>().notNull().default('todo'),
+    priority: integer('priority').$type<TodoPriority>().notNull().default(0),
+    assigneeId: text('assignee_id').references(() => users.id, { onDelete: 'set null' }),
+    /** An agent sent on it (`sendAgentOnTodo`): it works on it, its avatar beside it. */
+    assigneeAgentId: text('assignee_agent_id').references(() => cloudAgents.id, {
+      onDelete: 'set null',
+    }),
+    /** `YYYY-MM-DD`. */
+    dueOn: text('due_on'),
+    source: encryptedJson<TodoSource>('todos', 'source'),
+    createdBy: text('created_by').references(() => users.id, { onDelete: 'set null' }),
+    createdByAgent: text('created_by_agent').references(() => cloudAgents.id, {
+      onDelete: 'set null',
+    }),
+    completedAt: timestamptz('completed_at'),
+    createdAt: createdAt(),
+    updatedAt: timestamptz('updated_at').notNull().defaultNow(),
+  },
+  (t) => [
+    uniqueIndex('todos_number_idx').on(t.workspaceId, t.number),
+    index('todos_area_idx').on(t.areaId),
+    index('todos_owner_idx').on(t.ownerId),
+    index('todos_assignee_idx').on(t.assigneeId),
+  ],
+);
+export type TodoRow = typeof todos.$inferSelect;
+
+/**
+ * Calendars (`@slider/shared` calendar): an area's (each area has one, made when first looked at
+ * – `parent_id` null, no mail account), one's private one (`owner_id`, no area), sub-calendars
+ * under either (`parent_id`, area and owner taken over from the one above), and a mail account's
+ * (`mail_account_id`, the provider's `remote_id`; their events are read live, never kept here).
+ */
+export const calendars = pgTable(
+  'calendars',
+  {
+    id: text('id').primaryKey(),
+    workspaceId: text('workspace_id')
+      .notNull()
+      .references(() => workspaces.id, { onDelete: 'cascade' }),
+    areaId: text('area_id').references(() => cloudAreas.id, { onDelete: 'cascade' }),
+    ownerId: text('owner_id').references(() => users.id, { onDelete: 'cascade' }),
+    parentId: text('parent_id').references((): AnyPgColumn => calendars.id, {
+      onDelete: 'cascade',
+    }),
+    mailAccountId: text('mail_account_id').references(() => mailAccounts.id, {
+      onDelete: 'cascade',
+    }),
+    /** A mail account's calendar at its provider (CalDAV: its URL, often with the address). */
+    remoteId: encryptedText('calendars', 'remote_id'),
+    /** Empty for an area's own (it is called as the area) and one's private one („Privat“). */
+    name: encryptedText('calendars', 'name').notNull(),
+    /** `null`: the area's colour (an area's own), blue (private). */
+    color: text('color'),
+    createdBy: text('created_by').references(() => users.id, { onDelete: 'set null' }),
+    createdAt: createdAt(),
+    updatedAt: timestamptz('updated_at').notNull().defaultNow(),
+  },
+  (t) => [
+    index('calendars_workspace_idx').on(t.workspaceId),
+    index('calendars_parent_idx').on(t.parentId),
+    // One own calendar per area and one private per person: two asking at once make one.
+    uniqueIndex('calendars_area_root_idx')
+      .on(t.areaId)
+      .where(sql`${t.parentId} IS NULL AND ${t.mailAccountId} IS NULL AND ${t.areaId} IS NOT NULL`),
+    uniqueIndex('calendars_private_root_idx')
+      .on(t.workspaceId, t.ownerId)
+      .where(
+        sql`${t.parentId} IS NULL AND ${t.mailAccountId} IS NULL AND ${t.areaId} IS NULL AND ${t.ownerId} IS NOT NULL`,
+      ),
+  ],
+);
+export type CalendarRow = typeof calendars.$inferSelect;
+
+/** An event in one of Slider's own calendars (a mail calendar's stay at the provider). */
+export const calendarEvents = pgTable(
+  'calendar_events',
+  {
+    id: text('id').primaryKey(),
+    workspaceId: text('workspace_id')
+      .notNull()
+      .references(() => workspaces.id, { onDelete: 'cascade' }),
+    calendarId: text('calendar_id')
+      .notNull()
+      .references(() => calendars.id, { onDelete: 'cascade' }),
+    title: encryptedText('calendar_events', 'title').notNull(),
+    location: encryptedText('calendar_events', 'location').notNull(),
+    notes: encryptedText('calendar_events', 'notes').notNull(),
+    allDay: boolean('all_day').notNull().default(false),
+    /** All-day: the days' midnights in UTC (the end exclusive), so ranges compare alike. */
+    startsAt: timestamptz('starts_at').notNull(),
+    endsAt: timestamptz('ends_at').notNull(),
+    createdBy: text('created_by').references(() => users.id, { onDelete: 'set null' }),
+    createdAt: createdAt(),
+    updatedAt: timestamptz('updated_at').notNull().defaultNow(),
+  },
+  (t) => [
+    index('calendar_events_calendar_idx').on(t.calendarId, t.startsAt),
+    index('calendar_events_range_idx').on(t.workspaceId, t.startsAt, t.endsAt),
+  ],
+);
+export type CalendarEventRow = typeof calendarEvents.$inferSelect;

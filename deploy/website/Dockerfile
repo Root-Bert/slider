@@ -1,11 +1,8 @@
 # syntax=docker/dockerfile:1
 #
-# The product website (apps/site) as a small static-file container behind the Caddy of
-# deploy/docker-compose.yml – only on the server that hosts bertro.dev/slider, never part of a
+# The website of the office and its apps (apps/site) as a small static-file container behind the Caddy of
+# deploy/docker-compose.yml – only on the server that hosts bertro.dev, never part of a
 # self-hosted Slider. Built by docker-compose.website.yml (context: the repository root).
-#
-# The files sit under /srv/slider, the path they are served at: Caddy's directory redirects
-# (/slider/blog → /slider/blog/) then keep the prefix.
 
 ARG BUN_VERSION=1.3.13
 ARG NODE_VERSION=22
@@ -22,6 +19,8 @@ COPY apps/site/package.json apps/site/
 COPY packages/shared/package.json packages/shared/
 COPY packages/pptx/package.json packages/pptx/
 COPY packages/odp/package.json packages/odp/
+COPY packages/odt/package.json packages/odt/
+COPY packages/templates/package.json packages/templates/
 COPY --from=node /usr/local/bin/node /usr/local/bin/node
 # All workspaces: the site renders the app's components (apps/web/src) with the app's dependencies.
 RUN bun install --frozen-lockfile
@@ -34,6 +33,5 @@ RUN cd apps/site && bun run build
 # ── Static files ─────────────────────────────────────────────────────────────────────────────
 FROM caddy:2
 COPY deploy/website/Caddyfile /etc/caddy/Caddyfile
-COPY --from=build /app/apps/site/dist /srv/slider
-# The personal page at the domain root (apps/home: one static page, no build).
-COPY apps/home /srv
+# The personal page at /me comes along (apps/site/public/me: one static page, no build).
+COPY --from=build /app/apps/site/dist /srv

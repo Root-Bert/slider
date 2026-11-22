@@ -1,4 +1,4 @@
-import type { KeyboardEvent } from 'react';
+import type { KeyboardEvent, ReactNode } from 'react';
 import { cn } from './cn';
 import { Icon, type IconName } from './Icon';
 
@@ -8,6 +8,10 @@ export interface Segment<T extends string> {
   count?: number;
   /** Shown before the label. */
   icon?: IconName;
+  /** A picture of its own before the label instead of an icon (a workspace's mark, an area's dot). */
+  lead?: ReactNode;
+  /** Only its icon or picture shows; the label names it for screen readers and on hover. */
+  iconOnly?: boolean;
   /** Not selectable here, e.g. a feature this browser lacks; `title` says why. */
   disabled?: boolean;
   title?: string;
@@ -123,6 +127,7 @@ export function SegmentedControl<T extends string>({
           value={segment.value}
           selected={segment.value === value}
           icon={segment.icon}
+          lead={segment.lead}
           count={segment.count}
           disabled={segment.disabled}
           title={segment.title}
@@ -132,7 +137,7 @@ export function SegmentedControl<T extends string>({
           role={tabs ? 'tab' : 'radio'}
           tabIndex={segment.value === focusable ? 0 : -1}
           fill={fill}
-          iconOnly={iconOnly}
+          iconOnly={iconOnly || segment.iconOnly}
         >
           {segment.label}
         </FilterChip>
@@ -144,6 +149,7 @@ export function SegmentedControl<T extends string>({
 interface FilterChipProps {
   selected: boolean;
   icon?: IconName | undefined;
+  lead?: ReactNode | undefined;
   count?: number | undefined;
   disabled?: boolean | undefined;
   title?: string | undefined;
@@ -189,6 +195,7 @@ const toneClasses: Record<SegmentTone, { selected: string; idle: string }> = {
 export function FilterChip({
   selected,
   icon,
+  lead,
   count,
   disabled = false,
   title,
@@ -230,7 +237,7 @@ export function FilterChip({
             : states.idle,
       )}
     >
-      {icon && <Icon name={icon} size={ICON_PX[size]} />}
+      {lead ?? (icon && <Icon name={icon} size={ICON_PX[size]} />)}
       {!iconOnly &&
         (size === 'md' ? (
           // The selected md chip is font-medium: an invisible medium copy holds that width, so

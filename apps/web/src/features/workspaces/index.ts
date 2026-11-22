@@ -4,14 +4,16 @@ export { OnlineMembers } from './components/OnlineMembers';
 export { OtherAccounts } from './components/OtherAccounts';
 export { PlanBadge } from './components/PlanUsage';
 export { UsageOverview } from './components/UsageOverview';
+export { CloudUsage } from './components/CloudUsage';
 export { WorkspaceMark } from './components/WorkspaceMark';
+export { HeaderPopover } from './components/HeaderPopover';
 export { WorkspaceSwitcher } from './components/WorkspaceSwitcher';
-export { IntegrationsButton } from './components/IntegrationsButton';
 export { ViewToolbar } from './components/ViewToolbar';
 export { ViewSearch } from './components/ViewSearch';
-export { WordCollection, WordCollectionSkeleton } from './components/material/WordCollection';
-export { WorkspaceViews } from './components/WorkspaceViews';
-export { useActiveWorkspace, useWorkspace } from './hooks/useWorkspace';
+export { ViewTitles, VIEW_NAMES, WorkspaceViews } from './components/WorkspaceViews';
+export { startViewSwitch, useViewSwitchTop, VIEW_LINK_CLASS } from './components/viewSwitch';
+export { useActiveWorkspace, useStartWorkspace, useWorkspace } from './hooks/useWorkspace';
+export { useAgentAvatars } from './hooks/useAgentAvatars';
 export { pickWorkspace, readLastWorkspaceId, rememberWorkspace } from './lib/last-workspace';
 export {
   deckLimitMessage,

@@ -33,7 +33,7 @@ import {
  * access) and „Token erstellen“ for apps that take a token instead of signing in.
  */
 
-const COPY_LABELS = { idle: 'Kopieren', copied: 'Kopiert ✓', failed: 'Nicht kopiert' } as const;
+const COPY_LABELS = { idle: 'Kopieren', copied: 'Kopiert', failed: 'Nicht kopiert' } as const;
 
 /** A read-only line to copy: the MCP address, a token, a command. */
 export function CopyField({
@@ -80,7 +80,7 @@ export function AppConnectionsSection({ onNotify }: { onNotify: ShowToast }) {
     <Section
       id="ki-apps"
       title="KI-Apps"
-      description="Claude, ChatGPT und andere KI-Apps lesen deine Präsentationen, Kommentare und das Material und legen Recherchen als Notizen auf das Board – mit deinen Rechten. Sie verbinden sich über MCP."
+      description="Claude, ChatGPT und andere KI-Apps handeln mit deinen Rechten: Sie lesen, ändern und löschen Präsentationen, Dateien und Material, teilen sie und ändern, wer sie sehen darf. Sie verbinden sich über MCP."
       aside={
         <Button variant="secondary" size="sm" icon="key" onClick={() => setCreating(true)}>
           Token erstellen

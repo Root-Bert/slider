@@ -23,6 +23,7 @@ export {
   removeWorkspaceLogo,
   renameWorkspace,
   resolveUploadWorkspace,
+  setAgentAvatars,
   setWorkspaceLogo,
 } from './workspaces';
 export { listMembers, removeMember, updateMemberRole } from './members';

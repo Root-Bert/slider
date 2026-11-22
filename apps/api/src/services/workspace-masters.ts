@@ -3,6 +3,7 @@ import { and, count, desc, eq, inArray, isNull, sql } from 'drizzle-orm';
 import { OdpDocument, blankOdp, isOdpBytes, type OdpDesign } from '@slider/odp';
 import { openPptx } from '@slider/pptx';
 import {
+  SLIDER_TEMPLATE_PREFIX,
   WORKSPACE_MASTER_MAX_SETS,
   layoutGridOf,
   layoutGuidesOf,
@@ -28,6 +29,7 @@ import type { Executor } from '../db/client';
 import { runLater } from '../background-work';
 import type { AppDeps } from '../deps';
 import { badRequest, notFound } from '../http/errors';
+import { sliderTemplateFile } from './slider-templates';
 import { ConversionAborted, deckFonts, fontSubstituteFor } from '../import/libreoffice';
 import {
   masterFileColors,
@@ -400,8 +402,26 @@ export async function deckFileFromMaster(
   return deckBytesFromMaster(deps, workspaceId, masterId);
 }
 
+/** The file of the workspace's ODP design `masterId`; `null` when it is gone. */
+async function ownMasterFile(
+  deps: Pick<AppDeps, 'db' | 'storage'>,
+  workspaceId: string,
+  masterId: string,
+): Promise<Uint8Array | null> {
+  const [row] = await deps.db
+    .select()
+    .from(workspaceMasters)
+    .where(and(eq(workspaceMasters.workspaceId, workspaceId), eq(workspaceMasters.id, masterId)));
+  if (!row) return null;
+  if (row.format !== 'odp') {
+    throw badRequest('Aus dieser Vorlage lässt sich noch keine Präsentation erstellen.');
+  }
+  return deps.storage.get(row.fileKey);
+}
+
 /**
- * A new deck's file of the workspace's design `masterId`: one slide of its first layout. Who
+ * A new deck's file of the design `masterId` – the workspace's, or one of Slider's own
+ * (`slider:<slug>`): one slide of its first layout. Who
  * may ask is checked by the caller (a new deck: who may upload; a deck built from the prompt on
  * Folie 1: who edits it).
  */
@@ -410,15 +430,10 @@ export async function deckBytesFromMaster(
   workspaceId: string,
   masterId: string,
 ): Promise<Uint8Array> {
-  const [row] = await deps.db
-    .select()
-    .from(workspaceMasters)
-    .where(and(eq(workspaceMasters.workspaceId, workspaceId), eq(workspaceMasters.id, masterId)));
-  if (!row) throw notFound('Diese Vorlage gibt es nicht (mehr).');
-  if (row.format !== 'odp') {
-    throw badRequest('Aus dieser Vorlage lässt sich noch keine Präsentation erstellen.');
-  }
-  const bytes = await deps.storage.get(row.fileKey);
+  const bytes = masterId.startsWith(SLIDER_TEMPLATE_PREFIX)
+    ? // One of Slider's own: a file, the same for every workspace.
+      await sliderTemplateFile(deps, masterId)
+    : await ownMasterFile(deps, workspaceId, masterId);
   if (!bytes) throw notFound('Diese Vorlage gibt es nicht (mehr).');
   const document = await OdpDocument.open(bytes);
   // A design is kept as a template; the deck is a presentation (older designs already are).
@@ -468,11 +483,12 @@ export async function linkDeckMaster(
 }
 
 /**
- * The workspace's templates `operations` take a layout from (`addSlide` with a `design`), open
- * for `apply`. One gone, or a PowerPoint one, is left out: its operation then does not fit.
+ * The templates `operations` take a layout from (`addSlide` with a `design`) – the workspace's or
+ * Slider's own – open for `apply`. One gone, or a PowerPoint one, is left out: its operation
+ * then does not fit.
  */
 export async function loadDesigns(
-  deps: Pick<AppDeps, 'db' | 'storage'>,
+  deps: Pick<AppDeps, 'db' | 'storage' | 'config'>,
   workspaceId: string,
   operations: readonly SlideOperation[],
 ): Promise<Map<string, OdpDesign>> {
@@ -485,10 +501,16 @@ export async function loadDesigns(
   ];
   const designs = new Map<string, OdpDesign>();
   if (ids.length === 0) return designs;
+  const own = ids.filter((id) => !id.startsWith(SLIDER_TEMPLATE_PREFIX));
+  for (const id of ids) {
+    const bytes = await sliderTemplateFile(deps, id);
+    if (bytes) designs.set(id, await (await OdpDocument.open(bytes)).design());
+  }
+  if (own.length === 0) return designs;
   const rows = await deps.db
     .select()
     .from(workspaceMasters)
-    .where(and(eq(workspaceMasters.workspaceId, workspaceId), inArray(workspaceMasters.id, ids)));
+    .where(and(eq(workspaceMasters.workspaceId, workspaceId), inArray(workspaceMasters.id, own)));
   for (const row of rows) {
     if (row.format !== 'odp') continue;
     const bytes = await deps.storage.get(row.fileKey);

@@ -1,19 +1,22 @@
 ---
-import { ACCENT_CSS, type PostAccent } from './posts';
+import { ACCENT_CSS, type Post, type PostAccent } from './posts';
+import type { Lang } from '~/i18n';
+import { BLOG } from '~/i18n/blog';
 
 /** A post's category chip: tinted accent with the tag in mono capitals. */
 interface Props {
-  tag: string;
+  tag: Post['data']['tag'];
   accent: PostAccent;
+  lang?: Lang;
 }
 
-const { tag, accent } = Astro.props;
+const { tag, accent, lang = 'en' } = Astro.props;
 const color = ACCENT_CSS[accent];
 ---
 
 <span
-  class="inline-flex shrink-0 items-center rounded-badge px-2 py-[3px] text-caption font-medium tracking-wide uppercase"
+  class="inline-flex shrink-0 items-center rounded-badge px-2 py-[3px] font-mono text-[11px] font-medium tracking-wide uppercase"
   style={`color: ${color}; background: color-mix(in srgb, ${color} 15%, transparent)`}
 >
-  {tag}
+  {BLOG[lang].tags[tag]}
 </span>

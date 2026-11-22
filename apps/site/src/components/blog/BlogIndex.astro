@@ -1,0 +1,332 @@
+---
+import Highlight from '~/components/Highlight.astro';
+import Cover from '~/components/blog/Cover.astro';
+import PostCard from '~/components/blog/PostCard.astro';
+import PostMeta from '~/components/blog/PostMeta.astro';
+import { postPage, publishedPosts, tagKey } from '~/components/blog/posts';
+import type { Lang } from '~/i18n';
+import { BLOG } from '~/i18n/blog';
+import Base from '~/layouts/Base.astro';
+import { CONTACT_URL } from '~/lib/links';
+
+/** The blog's index in a language: the newest article large, the others in a grid, newest first. */
+interface Props {
+  lang: Lang;
+}
+
+const { lang } = Astro.props;
+const w = BLOG[lang];
+const posts = await publishedPosts(lang);
+const [featured, ...rest] = posts;
+const filters = [['all', w.all], ...Object.entries(w.tagsPlural).map(([tag, label]) => [tagKey(tag), label])] as [string, string][];
+---
+
+<Base
+  app="office"
+  lang={lang}
+  translated="blog"
+  title={w.title}
+  description={w.sub}
+>
+  <section class="bl bl-hero" data-section>
+    <p class="bl-kind" data-reveal><strong>{w.title}</strong>  |  {w.kind}</p>
+    <h1 class="bl-title" data-reveal style="--i: 1">{w.head[0]} <Highlight by="Rose">{w.head[1]}</Highlight></h1>
+    <p class="bl-sub" data-reveal style="--i: 2">{w.sub}</p>
+    <div class="bl-tools" data-reveal style="--i: 3">
+      <div class="bl-filters" role="group" aria-label={w.filter}>
+        {
+          filters.map(([key, label]) => (
+            <button type="button" data-filter={key} aria-pressed={key === 'all' ? 'true' : 'false'}>
+              {label}
+            </button>
+          ))
+        }
+      </div>
+      <label class="bl-search focus-field">
+        <span aria-hidden="true">⌕</span>
+        <span class="sr-only">{w.search}</span>
+        <input type="search" data-search placeholder={w.search} />
+      </label>
+    </div>
+  </section>
+
+  {
+    featured && (
+      <section class="bl" data-section>
+        <a
+          href={postPage(featured, lang)}
+          class="bl-featured"
+          data-reveal
+          data-post
+          data-tag={tagKey(featured.data.tag)}
+          data-text={`${featured.data.title} ${featured.data.description}`.toLowerCase()}
+        >
+          <Cover post={featured} size="wide" />
+          <div class="bl-featured-text">
+            <PostMeta post={featured} lang={lang} />
+            <h2>{featured.data.title}</h2>
+            <p>{featured.data.description}</p>
+            <span class="bl-more">{featured.data.tag === 'Comparison' ? w.readComparison : w.readArticle} <span aria-hidden="true">→</span></span>
+          </div>
+        </a>
+      </section>
+    )
+  }
+
+  <section class="bl" data-section>
+    <div class="bl-grid">
+      {rest.map((post, i) => <PostCard post={post} lang={lang} index={i} />)}
+      <a
+        href={`${CONTACT_URL}?subject=${encodeURIComponent(w.open.subject)}`}
+        class="post-card bl-open"
+        data-reveal
+        data-post
+        data-tag="customer-story"
+        data-text={`${w.open.title} ${w.open.text}`.toLowerCase()}
+        style={`--i: ${rest.length}`}
+      >
+        <div class="bl-open-cover" aria-hidden="true"><span>“</span></div>
+        <div class="post-card-text">
+          <div class="flex flex-wrap items-center gap-2.5">
+            <span class="bl-open-tag">{w.tags['Customer story']}</span>
+            <span class="font-mono text-xs text-white/55">{w.open.note}</span>
+          </div>
+          <h3>{w.open.title}</h3>
+          <p>{w.open.text}</p>
+        </div>
+      </a>
+    </div>
+    <p class="mt-10 hidden text-center text-sm text-fg-subtle" data-empty>{w.empty}</p>
+  </section>
+</Base>
+
+<style>
+  .bl {
+    max-width: 1680px;
+    margin: 0 auto;
+    padding: 0 clamp(12px, 1.6vw, 24px);
+  }
+  .bl-hero {
+    padding-top: clamp(64px, 9vw, 150px);
+    padding-inline: max(32px, calc((100vw - 1440px) / 2 + 32px));
+  }
+  .bl-kind {
+    font-family: var(--font-mono);
+    font-size: 13px;
+    white-space: pre-wrap;
+    color: var(--color-fg-subtle);
+  }
+  .bl-kind strong {
+    font-weight: 500;
+    color: var(--brand-line);
+  }
+  .bl-title {
+    margin-top: 24px;
+    /* Small enough on a phone that the selected phrase stays on one line. */
+    font-size: clamp(28px, 5vw, 76px);
+    font-weight: 700;
+    line-height: 1.12;
+    letter-spacing: -0.03em;
+    color: var(--color-fg);
+  }
+  .bl-sub {
+    max-width: 32em;
+    margin-top: clamp(28px, 3vw, 44px);
+    font-size: clamp(17px, 1.5vw, 21px);
+    line-height: 1.6;
+    color: var(--color-fg-muted);
+    text-wrap: pretty;
+  }
+  .bl-tools {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 16px;
+    margin: clamp(48px, 5vw, 80px) 0 clamp(40px, 4vw, 64px);
+  }
+  .bl-filters {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+  }
+  .bl-filters button {
+    height: 40px;
+    padding: 0 16px;
+    border-radius: 999px;
+    font-size: 14px;
+    font-weight: 500;
+    color: var(--color-fg-muted);
+    box-shadow: inset 0 0 0 1px var(--color-hairline-strong);
+    cursor: pointer;
+    transition:
+      color 150ms,
+      background-color 150ms;
+  }
+  .bl-filters button:hover {
+    color: var(--color-fg);
+  }
+  .bl-filters button[aria-pressed='true'] {
+    background: var(--color-fg);
+    color: var(--color-canvas);
+    box-shadow: none;
+  }
+  .bl-search {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    width: 280px;
+    height: 40px;
+    margin-left: auto;
+    padding: 0 16px;
+    border-radius: 999px;
+    color: var(--color-fg-subtle);
+    box-shadow: inset 0 0 0 1px var(--color-hairline-strong);
+  }
+  .bl-search input {
+    width: 100%;
+    background: transparent;
+    font-size: 14px;
+    color: var(--color-fg);
+    outline: none;
+  }
+  .bl-search input::placeholder {
+    color: var(--color-fg-subtle);
+  }
+
+  /* The featured post: one wide night-dark tile, its cover on the left, the words beside it. */
+  .bl-featured {
+    --cv-radius: 0;
+    display: grid;
+    grid-template-columns: 11fr 9fr;
+    overflow: hidden;
+    border-radius: clamp(24px, 3vw, 44px);
+    background: #131315;
+    color: #fff;
+    box-shadow: inset 0 0 0 1px rgb(255 255 255 / 0.08);
+  }
+  .bl-featured :global(.cv) {
+    height: 100%;
+    min-height: clamp(260px, 30vw, 480px);
+    aspect-ratio: auto;
+  }
+  .bl-featured-text {
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    gap: 22px;
+    padding: clamp(28px, 4vw, 72px);
+  }
+  .bl-featured h2 {
+    font-size: clamp(24px, 2.3vw, 36px);
+    font-weight: 700;
+    line-height: 1.1;
+    letter-spacing: -0.03em;
+    text-wrap: balance;
+  }
+  .bl-featured p {
+    font-size: clamp(16px, 1.3vw, 19px);
+    line-height: 1.55;
+    color: rgb(255 255 255 / 0.66);
+  }
+  .bl-more {
+    font-size: 16px;
+    font-weight: 600;
+  }
+  .bl-more span {
+    display: inline-block;
+    transition: translate 200ms var(--ease-emphasized);
+  }
+  .bl-featured:hover .bl-more span {
+    translate: 3px 0;
+  }
+
+  .bl-grid {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: clamp(12px, 1.6vw, 24px);
+    margin-top: clamp(12px, 1.6vw, 24px);
+  }
+  /* The open call: the same card, a quotation mark waiting for your story. */
+  .bl-open-cover {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    aspect-ratio: 16 / 10;
+    background:
+      radial-gradient(70% 78% at 50% 50%, color-mix(in srgb, var(--color-accent-green) 30%, transparent), transparent 100%),
+      #0b0b0d;
+  }
+  .bl-open-cover span {
+    padding-top: 0.42em;
+    font-size: 150px;
+    font-weight: 700;
+    line-height: 0.6;
+    color: var(--color-accent-green);
+    transition: scale 500ms var(--ease-emphasized);
+  }
+  .bl-open:hover .bl-open-cover span {
+    scale: 1.06;
+  }
+  .bl-open-tag {
+    padding: 3px 8px;
+    border-radius: 6px;
+    background: color-mix(in srgb, var(--color-accent-green) 15%, transparent);
+    font-family: var(--font-mono);
+    font-size: 11px;
+    font-weight: 500;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+    color: var(--color-accent-green);
+  }
+
+  @media (max-width: 1023px) {
+    .bl-featured {
+      grid-template-columns: minmax(0, 1fr);
+    }
+    .bl-grid {
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+  }
+  @media (max-width: 767px) {
+    .bl-hero {
+      padding-inline: 16px;
+    }
+    .bl-search {
+      width: 100%;
+      margin-left: 0;
+    }
+    .bl-grid {
+      grid-template-columns: minmax(0, 1fr);
+    }
+  }
+</style>
+
+<script>
+  // Filter chips + search over the cards (all posts are on this one page).
+  const cards = [...document.querySelectorAll<HTMLElement>('[data-post]')];
+  const chips = [...document.querySelectorAll<HTMLButtonElement>('[data-filter]')];
+  const search = document.querySelector<HTMLInputElement>('[data-search]');
+  const empty = document.querySelector<HTMLElement>('[data-empty]');
+  let tag = 'all';
+
+  function apply() {
+    const query = search?.value.trim().toLowerCase() ?? '';
+    let shown = 0;
+    for (const card of cards) {
+      const match =
+        (tag === 'all' || card.dataset.tag === tag) && (!query || card.dataset.text?.includes(query));
+      card.hidden = !match;
+      if (match) shown++;
+    }
+    empty?.classList.toggle('hidden', shown > 0);
+  }
+
+  for (const chip of chips) {
+    chip.addEventListener('click', () => {
+      tag = chip.dataset.filter ?? 'all';
+      for (const other of chips) other.setAttribute('aria-pressed', String(other === chip));
+      apply();
+    });
+  }
+  search?.addEventListener('input', apply);
+</script>

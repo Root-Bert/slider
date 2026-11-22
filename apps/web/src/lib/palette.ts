@@ -40,6 +40,9 @@ export const GENERATED_AVATAR_GROUNDS: readonly string[] = [
   'b57bff',
 ];
 
+/** Pale grounds behind DiceBear's „Cameo“ heads (agents' pictures), hex without `#` like above. */
+export const CAMEO_GROUNDS: readonly string[] = ['fde4ec', 'fdebd3', 'e6f4d7', 'dcf0f7', 'ebe4fb'];
+
 /**
  * The current value of a CSS custom property on `:root` (e.g. `readToken('--color-accent-red',
  * GLASS_SOLID)`), or `fallback` when it is unset or there is no DOM (tests, SSR).

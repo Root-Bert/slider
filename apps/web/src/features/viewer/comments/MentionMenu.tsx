@@ -14,6 +14,7 @@ export function MentionMenu({ mentions }: { mentions: Mentions }) {
       id={listId}
       role="listbox"
       aria-label="Person erwähnen"
+      data-popover-panel=""
       className="glass-elevated absolute bottom-full left-0 z-(--z-popover) mb-2 flex max-h-56 w-full max-w-64 animate-pop-in flex-col overflow-y-auto rounded-control p-1"
     >
       {people.map((person, index) => (

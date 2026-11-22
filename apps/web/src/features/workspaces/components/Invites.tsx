@@ -190,7 +190,7 @@ export function InviteList({ workspace, onNotify }: { workspace: Workspace; onNo
 
 const COPY_LABELS = {
   idle: 'Link kopieren',
-  copied: 'Kopiert ✓',
+  copied: 'Kopiert',
   failed: 'Nicht kopiert',
 } as const;
 

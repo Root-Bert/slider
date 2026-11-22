@@ -1,4 +1,7 @@
 import type {
+  AgentAvatarStyle,
+  MeResponse,
+  SliderTemplate,
   Deck,
   UpdateDeckTemplateInput,
   Author,
@@ -52,6 +55,51 @@ export function useRenameWorkspace(workspaceId: string) {
   return useMutation({
     mutationFn: (name: string) => api.patch<Workspace>(`/workspaces/${workspaceId}`, { name }),
     onSuccess: () => reloadMe(),
+  });
+}
+
+/**
+ * Admins only: how the workspace's agents look. Shown everywhere at once (the workspace in
+ * `/me`); a refusal brings the server's choice back.
+ */
+export function useSetAgentAvatars(workspaceId: string) {
+  const queryClient = useQueryClient();
+  // Patched in place, not refetched: `/me` has observers without a fetch of their own (calls).
+  const patch = (change: (workspace: Workspace) => Workspace) =>
+    queryClient.setQueryData<MeResponse>(
+      queryKeys.me,
+      (me) =>
+        me && {
+          ...me,
+          workspaces: me.workspaces?.map((workspace) =>
+            workspace.id === workspaceId ? change(workspace) : workspace,
+          ),
+        },
+    );
+  const mutationKey = ['agent-avatars', workspaceId];
+  return useMutation({
+    mutationKey,
+    // One pick after another, in the order made: the last one stays.
+    scope: { id: `agent-avatars:${workspaceId}` },
+    mutationFn: (style: AgentAvatarStyle) =>
+      api.put<Workspace>(`/workspaces/${workspaceId}/agent-avatars`, { style }),
+    onMutate: async (style) => {
+      await queryClient.cancelQueries({ queryKey: queryKeys.me });
+      const before = queryClient
+        .getQueryData<MeResponse>(queryKeys.me)
+        ?.workspaces?.find((workspace) => workspace.id === workspaceId)?.agentAvatars;
+      patch((workspace) => ({ ...workspace, agentAvatars: style }));
+      return { before };
+    },
+    onSuccess: (saved) => {
+      // A pick still to come is shown already – this answer would take it back.
+      if (queryClient.isMutating({ mutationKey }) > 1) return;
+      patch(() => saved);
+    },
+    onError: (_error, _style, context) => {
+      const before = context?.before;
+      if (before) patch((workspace) => ({ ...workspace, agentAvatars: before }));
+    },
   });
 }
 
@@ -127,6 +175,14 @@ export const useWorkspaceMasters = (workspaceId: string, enabled = true) =>
     queryKey: workspaceKeys.masters(workspaceId),
     queryFn: () => api.get<WorkspaceMaster[]>(`/workspaces/${workspaceId}/masters`),
     enabled,
+  });
+
+/** The templates Slider brings along, for „Folie einfügen“; they change with a release only. */
+export const useSliderTemplates = () =>
+  useQuery({
+    queryKey: workspaceKeys.sliderTemplates,
+    queryFn: () => api.get<SliderTemplate[]>('/slider-templates'),
+    staleTime: Infinity,
   });
 
 /** Members and admins: one design, a template (`.otp`, `.potx`); its layouts are drawn. */

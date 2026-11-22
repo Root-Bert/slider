@@ -1,7 +1,10 @@
 import { useState } from 'react';
-import { INSTANCE_INTERVALS } from '@slider/shared';
+import { useSearchParams } from 'react-router';
+import { INSTANCE_INTERVALS, STORAGE_CATEGORIES } from '@slider/shared';
 import { accentColor } from '@/lib/accent';
+import { APP_SCOPES, appScopeOf, type AppScope } from '@/lib/apps';
 import { routes } from '@/lib/routes';
+import { AppTabs } from '@/shell/AppTabs';
 import {
   timelineQuery,
   useInstanceAiUsage,
@@ -11,10 +14,20 @@ import {
 } from '@/lib/api';
 import { SettingsLayout } from '@/shell/layouts/SettingsLayout';
 import { useAccount } from '@/features/auth';
-import { ButtonLink, ErrorText, LoadingState, Notice, SegmentedControl, useToast } from '@/ui';
+import {
+  ButtonLink,
+  cn,
+  ErrorText,
+  GlassPanel,
+  LoadingState,
+  Notice,
+  SegmentedControl,
+  useToast,
+} from '@/ui';
 import { DirectoryCard } from './components/DirectoryCard';
 import { GrowthChart } from './components/GrowthChart';
 import { HistoryStrip } from './components/HistoryStrip';
+import { formatFileSize } from '@/lib/format';
 import { AiUsageSection } from './components/AiUsageSection';
 import { ActivityCard, LargestCard, StatusCard, StorageCard } from './components/InsightCards';
 import { KpiTile } from './components/KpiTile';
@@ -45,10 +58,19 @@ export function Component() {
   const { user } = useAccount();
   const [toast, showToast] = useToast();
   const [metric, setMetric] = useState<Metric>('users');
-  const history = useInstanceHistory();
+  // `?app=cloud|slider`: one app's part of the instance; else all of it.
+  const [searchParams, setSearchParams] = useSearchParams();
+  const scope = appScopeOf(searchParams.get('app'));
+  const all = scope === 'all';
+  // Someone else sees only the notice: nothing is asked of the instance (it would answer 403).
+  const admin = user.isInstanceAdmin;
+  const history = useInstanceHistory(admin);
   const view = useTimeWindow(history.data ? Date.parse(history.data.from) : undefined);
   // Following the time, the numbers keep up by themselves: a new account shows within moments.
-  const refresh = { refetchInterval: view.live ? LIVE_REFRESH_MS : (false as const) };
+  const refresh = {
+    refetchInterval: view.live ? LIVE_REFRESH_MS : (false as const),
+    enabled: admin,
+  };
   const overview = useInstanceOverview(refresh);
   const windowQuery = useThrottled(timelineQuery(view.interval, view.end), WINDOW_THROTTLE_MS);
   const timeline = useInstanceTimeline(windowQuery, refresh);
@@ -67,6 +89,9 @@ export function Component() {
     }`;
   const share = (part: number, whole: number) =>
     `${whole > 0 ? Math.round((part / whole) * 100) : 0} %`;
+  const storageTotal = data
+    ? STORAGE_CATEGORIES.reduce((sum, key) => sum + data.storage[key], 0)
+    : 0;
   const error = overview.error ?? timeline.error;
 
   return (
@@ -74,18 +99,13 @@ export function Component() {
       docTitle="Instanz | Slider"
       title="Instanz"
       subtitle={window.location.host}
-      back={{ to: routes.reviews() }}
+      back="app"
       width="wide"
       toast={toast}
       actions={
         user.isInstanceAdmin && (
-          <ButtonLink
-            to={routes.setup()}
-            variant="secondary"
-            size="sm"
-            icon="settings"
-            iconSize={16}
-          >
+          // As high as Cloud's page actions („Neuer Bereich“, „Hochladen“).
+          <ButtonLink to={routes.setup()} variant="secondary" icon="settings">
             Instanz-Einstellungen
           </ButtonLink>
         )
@@ -97,46 +117,97 @@ export function Component() {
         </Notice>
       ) : (
         <>
-          {/* The window's width scopes everything created over time; one row, above the charts. */}
-          <SegmentedControl
-            label="Zeitraum"
-            size="md"
-            track="soft"
-            segments={INTERVAL_SEGMENTS}
-            value={view.interval}
-            onChange={view.chooseInterval}
-            className="self-start"
+          <AppTabs<AppScope>
+            label="Gesamt oder eine App"
+            value={scope}
+            onChange={(next) =>
+              setSearchParams(next === 'all' ? {} : { app: next }, { replace: true })
+            }
+            segments={APP_SCOPES}
           />
+          {/* The window's width scopes everything created over time; one row, above the charts. */}
+          <GlassPanel className="self-start p-1">
+            <SegmentedControl
+              label="Zeitraum"
+              segments={INTERVAL_SEGMENTS}
+              value={view.interval}
+              onChange={view.chooseInterval}
+            />
+          </GlassPanel>
           {error ? (
             <ErrorText role="alert">{error.message}</ErrorText>
           ) : !data || !timeline.data ? (
             <LoadingState padding="lg" />
+          ) : scope === 'cloud' ? (
+            <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
+              <KpiTile
+                label="Dateien"
+                value={formatCount(data.files)}
+                delta="in allen Workspaces"
+              />
+              <KpiTile
+                label="Speicher in der Cloud"
+                value={formatFileSize(data.storage.files)}
+                delta={`${share(data.storage.files, storageTotal)} des Speichers`}
+              />
+              <KpiTile
+                label="Dateien je Workspace"
+                value={formatCount(
+                  data.workspaces.total > 0 ? Math.round(data.files / data.workspaces.total) : 0,
+                )}
+                delta={`${formatCount(data.workspaces.total)} Workspaces`}
+              />
+              <KpiTile
+                label="Größe je Datei"
+                value={formatFileSize(data.files > 0 ? data.storage.files / data.files : 0)}
+                delta="im Schnitt"
+              />
+            </div>
           ) : (
             <div className="flex flex-col gap-4">
-              <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
-                <KpiTile
-                  label="Personen"
-                  value={formatCount(data.users.total)}
-                  delta={added('users')}
-                  trend={trend('users')}
-                />
-                <KpiTile
-                  label="Aktiv in 30 Tagen"
-                  value={formatCount(data.users.active)}
-                  delta={`${share(data.users.active, data.users.total)} aller Personen`}
-                />
-                <KpiTile
-                  label="Workspaces"
-                  value={formatCount(data.workspaces.total)}
-                  delta={added('workspaces')}
-                  trend={trend('workspaces')}
-                />
+              <div
+                className={cn('grid grid-cols-2 gap-4', all ? 'lg:grid-cols-5' : 'lg:grid-cols-2')}
+              >
+                {all && (
+                  <>
+                    <KpiTile
+                      label="Personen"
+                      value={formatCount(data.users.total)}
+                      delta={added('users')}
+                      trend={trend('users')}
+                    />
+                    <KpiTile
+                      label="Aktiv in 30 Tagen"
+                      value={formatCount(data.users.active)}
+                      delta={`${share(data.users.active, data.users.total)} aller Personen`}
+                    />
+                    <KpiTile
+                      label="Workspaces"
+                      value={formatCount(data.workspaces.total)}
+                      delta={added('workspaces')}
+                      trend={trend('workspaces')}
+                    />
+                  </>
+                )}
                 <KpiTile
                   label="Präsentationen"
                   value={formatCount(data.decks)}
                   delta={added('decks')}
                   trend={trend('decks')}
                 />
+                {all ? (
+                  <KpiTile
+                    label="Dateien"
+                    value={formatCount(data.files)}
+                    delta={`${formatFileSize(data.storage.files)} in der Cloud`}
+                  />
+                ) : (
+                  <KpiTile
+                    label="Speicher in Slider"
+                    value={formatFileSize(storageTotal - data.storage.files)}
+                    delta={`${share(storageTotal - data.storage.files, storageTotal)} des Speichers`}
+                  />
+                )}
               </div>
               <div className="grid gap-4 lg:grid-cols-3">
                 <div ref={chartRef} className="lg:col-span-2">
@@ -162,13 +233,15 @@ export function Component() {
                     )}
                   </GrowthChart>
                 </div>
-                <StorageCard overview={data} />
+                <StorageCard overview={data} app={all ? undefined : 'slider'} />
               </div>
-              <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
-                <ActivityCard overview={data} />
-                <StatusCard overview={data} />
-                <LargestCard overview={data} />
-              </div>
+              {all && (
+                <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
+                  <ActivityCard overview={data} />
+                  <StatusCard overview={data} />
+                  <LargestCard overview={data} />
+                </div>
+              )}
               {aiUsage.data && (
                 <AiUsageSection
                   usage={aiUsage.data}
@@ -177,7 +250,9 @@ export function Component() {
               )}
             </div>
           )}
-          <DirectoryCard plans={data?.plans ?? false} userId={user.id} onNotify={showToast} />
+          {all && (
+            <DirectoryCard plans={data?.plans ?? false} userId={user.id} onNotify={showToast} />
+          )}
         </>
       )}
     </SettingsLayout>

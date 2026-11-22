@@ -238,6 +238,8 @@ export const storageBreakdownSchema = z.object({
   /** Slide images and thumbnails. */
   slideImages: z.number().int().nonnegative(),
   other: z.number().int().nonnegative(),
+  /** Cloud: the workspace's own files, every stored version of them. */
+  files: z.number().int().nonnegative().default(0),
 });
 export type StorageBreakdown = z.infer<typeof storageBreakdownSchema>;
 export const STORAGE_CATEGORIES = [
@@ -246,6 +248,7 @@ export const STORAGE_CATEGORIES = [
   'images',
   'videos',
   'audio',
+  'files',
   'other',
 ] as const satisfies readonly (keyof StorageBreakdown)[];
 export type StorageCategory = (typeof STORAGE_CATEGORIES)[number];
@@ -338,6 +341,22 @@ export type MeLimits = z.infer<typeof meLimitsSchema>;
 
 // ── Workspaces ──────────────────────────────────────────────────────────────
 
+/**
+ * The pictures a workspace's agents get, each seeded by the agent's id and drawn in the browser
+ * from a bundled style (no service is asked): `flowers` – „Glaze Flowers“, Slider's own (CC0);
+ * `cameo` – DiceBear's „Cameo“ (CC0). A value stored that is offered no more reads as the first.
+ */
+export const AGENT_AVATAR_STYLES = ['flowers', 'cameo'] as const;
+export const agentAvatarStyleSchema = z.enum(AGENT_AVATAR_STYLES);
+export type AgentAvatarStyle = z.infer<typeof agentAvatarStyleSchema>;
+export const DEFAULT_AGENT_AVATARS: AgentAvatarStyle = 'flowers';
+/** A stored style, or the default one for a value offered no more. */
+export const agentAvatarsOf = (value: string | null | undefined): AgentAvatarStyle =>
+  agentAvatarStyleSchema.safeParse(value).data ?? DEFAULT_AGENT_AVATARS;
+/** `PUT /workspaces/:id/agent-avatars` (admins). */
+export const updateAgentAvatarsInputSchema = z.object({ style: agentAvatarStyleSchema });
+export type UpdateAgentAvatarsInput = z.infer<typeof updateAgentAvatarsInputSchema>;
+
 /** A workspace – "Workspace" in the UI too (BER-130). */
 export const workspaceSchema = z.object({
   id: z.string(),
@@ -370,6 +389,10 @@ export const workspaceSchema = z.object({
    * only leaving works.
    */
   blocked: z.boolean(),
+  /** What the workspace calls its AI („KI“ until an admin names it). */
+  aiName: z.string().optional(),
+  /** How its agents look everywhere they are drawn – its admins pick. */
+  agentAvatars: agentAvatarStyleSchema,
 });
 export type Workspace = z.infer<typeof workspaceSchema>;
 
@@ -509,7 +532,7 @@ export type WorkspaceFontUpload = z.infer<typeof workspaceFontUploadSchema>;
 /** One design file uploaded as slide masters. */
 export const WORKSPACE_MASTER_MAX_BYTES = 100 * 1024 ** 2;
 /** Designs one workspace may have. */
-export const WORKSPACE_MASTER_MAX_SETS = 50;
+export const WORKSPACE_MASTER_MAX_SETS = 100;
 
 /** A layout of an uploaded design, drawn with placeholders saying "Titel" and "Text". */
 export const workspaceMasterLayoutSchema = z.object({
@@ -549,6 +572,27 @@ export const workspaceMasterSchema = z.object({
   createdAt: z.iso.datetime(),
 });
 export type WorkspaceMaster = z.infer<typeof workspaceMasterSchema>;
+
+/** What the `design.id` of an `addSlide` starts with when the layout is one of Slider's own. */
+export const SLIDER_TEMPLATE_PREFIX = 'slider:';
+
+/**
+ * `GET /slider-templates`: a template Slider brings along – the same on every instance, for the
+ * „Slider“ source of „Folie einfügen“. `id` is what an `addSlide` names as its `design`.
+ */
+export const sliderTemplateSchema = z.object({
+  id: z.string(),
+  name: z.string(),
+  /** What it is listed under: „Kunststil“, „Plakat“ … */
+  group: z.string(),
+  description: z.string(),
+  tags: z.array(z.string()),
+  /** Width / height of its slides. */
+  aspectRatio: z.number().positive(),
+  /** Each drawn with sample content. */
+  layouts: z.array(z.object({ name: z.string(), thumbnailUrl: z.string() })),
+});
+export type SliderTemplate = z.infer<typeof sliderTemplateSchema>;
 
 /**
  * `GET /decks/:id/layouts`: the layouts of a deck's own design – the master pages in its file –

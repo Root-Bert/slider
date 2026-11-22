@@ -5,7 +5,8 @@
   "type": "module",
   "exports": {
     ".": "./src/index.ts",
-    "./live-text": "./src/live-text.ts"
+    "./live-text": "./src/live-text.ts",
+    "./icons": "./src/icons.ts"
   },
   "scripts": {
     "typecheck": "tsc -p tsconfig.json"

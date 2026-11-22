@@ -5,21 +5,31 @@ import tailwindcss from '@tailwindcss/vite';
 import { defineConfig } from 'astro/config';
 
 /*
- * The product website: static pages under bertro.dev/slider, the app itself runs on
- * slider.bertro.dev. Avatars, cursors and the logo are the app's own React components
- * (apps/web/src), rendered to plain HTML at build time – no React in the browser.
+ * The website of the office and its four apps: static pages at bertro.dev (`/office`, `/slider`,
+ * `/writer`, `/solver`, `/cloud`), the personal page at `/me` (`public/me`, one static file). The
+ * apps themselves run elsewhere (Slider on slider.bertro.dev). Avatars and cursors are the app's
+ * own React components (apps/web/src), rendered to plain HTML at build time – no React in the
+ * browser.
  */
 export default defineConfig({
   site: 'https://bertro.dev',
-  base: '/slider',
   trailingSlash: 'ignore',
   integrations: [react()],
-  // Product and Vision went into the homepage.
-  redirects: { '/product': '/slider/', '/vision': '/slider/' },
+  redirects: {
+    // The domain opens on the office.
+    '/': '/office/',
+    // Plans are the office's: one plan covers every app.
+    '/slider/pricing': '/office/#plans',
+    '/slider/de/pricing': '/office/de/#plans',
+    '/slider/fr/pricing': '/office/fr/#plans',
+    // Product and Vision went into Slider's homepage.
+    '/slider/product': '/slider/',
+    '/slider/vision': '/slider/',
+  },
   // Astro's dev toolbar sits as a purple bar over the footer in `astro dev`.
   devToolbar: { enabled: false },
   vite: {
-    plugins: [tailwindcss(), sliderApiInDev()],
+    plugins: [tailwindcss(), sliderApiInDev(), personalPageInDev()],
     // The same browsers as the app's Vite build: CSS gets the prefixes Safari 16 still needs (e.g.
     // -webkit-backdrop-filter for the glass surfaces).
     build: { cssTarget: ['chrome111', 'edge111', 'firefox128', 'safari16.4'] },
@@ -34,10 +44,25 @@ export default defineConfig({
 });
 
 /**
+ * In `astro dev`, `/me` shows the personal page: Vite serves `public/me/index.html` only under its
+ * full name, Caddy (deploy/website/Caddyfile) finds a folder's index.html by itself.
+ */
+function personalPageInDev() {
+  return {
+    name: 'personal-page-in-dev',
+    configureServer(server) {
+      server.middlewares.use((req, _res, next) => {
+        if (req.url === '/me' || req.url === '/me/') req.url = '/me/index.html';
+        next();
+      });
+    },
+  };
+}
+
+/**
  * In `astro dev`, `/slider/api/…` (contact form, live comments) goes to the local Slider API, as
- * Caddy does in production (deploy/website/website.caddy). Astro 7 serves its base path before
- * Vite's `server.proxy` ever sees a request, so this is a middleware of its own; it streams, so the
- * live comments' event stream passes through.
+ * Caddy does in production (deploy/website/website.caddy). A middleware of its own instead of
+ * Vite's `server.proxy`: it streams, so the live comments' event stream passes through.
  */
 function sliderApiInDev() {
   const target = new URL(process.env.SLIDER_API_URL ?? 'http://localhost:8787');
@@ -45,7 +70,6 @@ function sliderApiInDev() {
     name: 'slider-api-in-dev',
     configureServer(server) {
       server.middlewares.use((req, res, next) => {
-        // Astro has taken the base off by now (`/api/…`); with it, should that ever change.
         const path = req.url?.replace(/^\/slider(?=\/api\/)/, '');
         if (!path?.startsWith('/api/')) return next();
         const upstream = request(

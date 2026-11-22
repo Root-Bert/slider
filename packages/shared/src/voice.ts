@@ -182,3 +182,68 @@ export const voiceClipMetaSchema = z.object({
   peaks: z.array(z.number().min(0).max(1)).max(MAX_MEDIA_PEAKS),
 });
 export type VoiceClipMeta = z.infer<typeof voiceClipMetaSchema>;
+
+// ── Speaking to the AI in a document (Writer) ───────────────────────────────
+
+/*
+ * The same in a text document: the person talks while going through the text, each piece goes
+ * to the server with the paragraphs that stood in the window, where the caret was and what the
+ * pointer rested on; the comments stand at the words meant, the document's AI works on each
+ * finished one. A document's comments carry no recordings.
+ */
+
+const paragraphTime = z.object({
+  paragraphId: z.string().max(100),
+  ms: z.number().int().nonnegative().max(600_000),
+});
+
+/** What was on screen of a document while a piece of speech was said. */
+export const documentVoiceContextSchema = z.object({
+  /** The paragraphs in the window, with how long each one was (ms). */
+  paragraphs: z.array(paragraphTime).max(120),
+  /** The paragraphs the pointer rested on, longest first. */
+  pointer: z.array(paragraphTime).max(20),
+  /** The caret (`start` = `end`) or the words picked, in the paragraph they begin in. */
+  selection: z
+    .object({
+      paragraphId: z.string().max(100),
+      start: z.number().int().nonnegative(),
+      end: z.number().int().nonnegative(),
+      /** The words picked, of that paragraph – '' for a caret. */
+      text: z.string().max(600),
+    })
+    .nullable(),
+});
+export type DocumentVoiceContext = z.infer<typeof documentVoiceContextSchema>;
+
+/** The form field `meta` next to a piece's audio, in a document's session. */
+export const documentVoiceSegmentMetaSchema = voiceSegmentMetaSchema
+  .omit({ context: true })
+  .extend({ context: documentVoiceContextSchema });
+export type DocumentVoiceSegmentMeta = z.infer<typeof documentVoiceSegmentMetaSchema>;
+
+/** A comment said in a document's session: it stands at a paragraph, not on a slide. */
+export const documentVoiceItemSchema = voiceItemSchema
+  .omit({ slideId: true, hasRecording: true })
+  .extend({ paragraphId: z.string().nullable() });
+export type DocumentVoiceItem = z.infer<typeof documentVoiceItemSchema>;
+
+export const documentVoiceCommandSchema = z.discriminatedUnion('type', [
+  /** „Geh zum Fazit“: that paragraph is brought into the window. */
+  z.object({ type: z.literal('scrollTo'), paragraphId: z.string() }),
+  z.object({ type: z.literal('stop') }),
+]);
+export type DocumentVoiceCommand = z.infer<typeof documentVoiceCommandSchema>;
+
+export const documentVoiceSessionSchema = voiceSessionSchema
+  .omit({ deckId: true, items: true, commands: true })
+  .extend({
+    documentId: z.string(),
+    items: z.array(documentVoiceItemSchema),
+    commands: z.array(z.object({ id: z.number().int(), command: documentVoiceCommandSchema })),
+  });
+export type DocumentVoiceSession = z.infer<typeof documentVoiceSessionSchema>;
+
+/** `GET /documents/:documentId/voice`: the document's AI by name, and whether it can be spoken to. */
+export const documentVoiceInfoSchema = z.object({ name: z.string(), available: z.boolean() });
+export type DocumentVoiceInfo = z.infer<typeof documentVoiceInfoSchema>;

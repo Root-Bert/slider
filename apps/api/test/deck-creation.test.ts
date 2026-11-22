@@ -11,6 +11,8 @@ import {
   deckSchema,
   type DeckCreation,
 } from '@slider/shared';
+import { eq } from 'drizzle-orm';
+import { cloudEvents, cloudNodes, decks } from '../src/db/schema';
 import { LiveHub } from '../src/realtime/live-hub';
 import { creationAtWork } from '../src/services/deck-creation';
 import { createTestContext, type TestContext } from './helpers';
@@ -121,6 +123,42 @@ describe('deck creation', { timeout: 120_000 }, () => {
 
     const deckId = await blank();
     expect(await creation(deckId)).toMatchObject({ status: 'offered', prompt: true, built: 0 });
+    // A new presentation has a place from the start: its maker's own files, only theirs.
+    const [made] = await context.deps.db.select().from(decks).where(eq(decks.id, deckId));
+    const [file] = await context.deps.db
+      .select({ areaId: cloudNodes.areaId, ownerId: cloudNodes.ownerId })
+      .from(cloudNodes)
+      .where(eq(cloudNodes.id, made?.cloudNodeId ?? ''));
+    expect([file, made?.restrictedAt !== null]).toEqual([
+      { areaId: null, ownerId: made?.ownerId },
+      true,
+    ]);
+    // Made from an area in Cloud (`/neu?bereich=`): it lies there at once – never moved after,
+    // so the activity says nothing of a move.
+    const team = (await (
+      await context.request(`/api/workspaces/${context.workspaceId}/cloud/areas`, {
+        method: 'POST',
+        json: { name: 'Team', color: 'cyan' },
+      })
+    ).json()) as { id: string };
+    const inArea = deckSchema.parse(
+      await (
+        await context.request('/api/decks/blank', { method: 'POST', json: { areaId: team.id } })
+      ).json(),
+    );
+    const [areaDeck] = await context.deps.db.select().from(decks).where(eq(decks.id, inArea.id));
+    const [areaFile] = await context.deps.db
+      .select({ areaId: cloudNodes.areaId })
+      .from(cloudNodes)
+      .where(eq(cloudNodes.id, areaDeck?.cloudNodeId ?? ''));
+    const moves = await context.deps.db
+      .select({ kind: cloudEvents.kind })
+      .from(cloudEvents)
+      .where(eq(cloudEvents.nodeId, areaDeck?.cloudNodeId ?? ''));
+    expect([areaFile?.areaId, moves.some((each) => each.kind === 'moved')]).toEqual([
+      team.id,
+      false,
+    ]);
 
     // A spreadsheet in the material, over tus as the board takes files.
     const csv = new TextEncoder().encode('Quartal,Umsatz\nQ1,1200\nQ2,1850\n');
@@ -183,9 +221,16 @@ describe('deck creation', { timeout: 120_000 }, () => {
         return message(
           [
             call('write_outline', {
+              idea: { motif: 'Balkenlinie', pictures: 'keine', motion: 'Balken wächst per Morph' },
               slides: [
                 { title: 'Umsatz 2026', message: 'Wir wachsen.', layout: 'Titelfolie' },
-                { title: 'Q2: 1850', message: 'Q2 schlägt Q1.', layout: 'Zahlen' },
+                {
+                  title: 'Q2: 1850',
+                  message: 'Q2 schlägt Q1.',
+                  layout: 'Zahlen',
+                  picture: 'none',
+                  motion: 'morph from the slide before',
+                },
               ],
             }),
           ],
@@ -195,6 +240,8 @@ describe('deck creation', { timeout: 120_000 }, () => {
       async (body) => {
         outlineSeen = await creation(deckId);
         expect(lastResults(body)).toContain('Build slide 1 of 2');
+        // The design idea goes along with every slide asked for.
+        expect(lastResults(body)).toContain('motif: Balkenlinie');
         return message([call('insert_slide', { after: 1, master: 'Default' })], 'tool_use');
       },
       message(
@@ -209,7 +256,9 @@ describe('deck creation', { timeout: 120_000 }, () => {
         'tool_use',
       ),
       said('Titelfolie steht.'),
-      async () => {
+      async (body) => {
+        // A morph slide is started as a copy of the one before.
+        expect(lastResults(body)).toContain('insert_slide copy_of 1');
         // Slide 2 at work: „Abbrechen“ – slide 1 stays, nothing more is asked.
         asked();
         await held;
@@ -251,6 +300,9 @@ describe('deck creation', { timeout: 120_000 }, () => {
     const opening = JSON.stringify(first.messages[0]);
     expect(opening).toContain('Umsatz 2026 für den Vorstand');
     expect(opening).toContain('project status report');
+    // The kind says how much it shows in pictures and how it moves.
+    expect(opening).toContain('Pictures: No photos.');
+    expect(opening).toContain('Motion: None or fade');
     expect(opening).toContain('zahlen.csv');
     const names = first.tools?.map((tool) => ('name' in tool ? tool.name : ''));
     expect(names).toEqual(
@@ -353,7 +405,8 @@ describe('deck creation', { timeout: 120_000 }, () => {
     expect(layouts.length).toBeGreaterThan(1);
 
     // Completed presentations survive a different browser; retention removes the oldest file.
-    const thumbnail = `decks/${deckId}/summary-thumbnail.png`;
+    // Shaped as a slide's picture: only those links are renewed.
+    const thumbnail = `decks/${deckId}/rev/slides/summary-thumbnail.png`;
     await context.deps.storage.put(thumbnail, new Uint8Array([1, 2, 3]));
     const run = {
       at: new Date().toISOString(),

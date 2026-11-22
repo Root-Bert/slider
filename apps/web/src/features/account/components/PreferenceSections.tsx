@@ -1,6 +1,14 @@
-import { useId, useState } from 'react';
+import { useEffect, useId, useState } from 'react';
 import type { AccentColor } from '@slider/shared';
 import { useUpdateMe } from '@/lib/api';
+import {
+  AppMark,
+  AppTag,
+  cloudBridge,
+  type AppWhere,
+  type CloudApps,
+  type PlacedApp,
+} from '@/features/cloud';
 import { loadStoredBoxMode, storeBoxMode } from '@/lib/preferences/box-mode';
 import {
   loadWorkPreferences,
@@ -10,7 +18,7 @@ import {
 } from '@/lib/preferences/work-preferences';
 import { ColorSwatches, Icon, Section, SegmentedControl, Toggle, type ShowToast } from '@/ui';
 
-/** Sections of `/einstellungen`: your colour and how decks open ("Arbeiten"). */
+/** Sections of `/einstellungen`: your colour and how presentations open (Slider's part). */
 
 // ── Colour ──────────────────────────────────────────────────────────────────
 
@@ -50,7 +58,97 @@ export function ColorPicker({ color, onNotify }: { color: AccentColor; onNotify:
   );
 }
 
-// ── Arbeiten ────────────────────────────────────────────────────────────────
+// ── Präsentationen ────────────────────────────────────────────────────────────────
+
+// ── Apps ────────────────────────────────────────────────────────────────────
+
+const APP_ROWS: { app: PlacedApp; name: string; what: string }[] = [
+  { app: 'slider', name: 'Slider', what: 'Präsentationen' },
+  { app: 'writer', name: 'Writer', what: 'Dokumente' },
+  { app: 'reader', name: 'Reader', what: 'PDFs' },
+  { app: 'sender', name: 'Sender', what: 'Nachrichten' },
+];
+
+/**
+ * Cloud's app only: where each app's pages open – in Cloud, a tab of that window with the whole
+ * app in it, or in the app of its own, where that is installed (desktop/cloud/main.mjs keeps
+ * it, per computer). Without the app there is nothing to pick: its pages open in Cloud.
+ */
+export function AppsSection() {
+  const [apps, setApps] = useState<CloudApps | null>(null);
+  useEffect(() => {
+    let live = true;
+    void cloudBridge()
+      ?.apps?.()
+      .then((said) => {
+        if (live && said) setApps(said);
+      })
+      .catch(() => undefined);
+    return () => {
+      live = false;
+    };
+  }, []);
+  if (!apps) return null;
+  const pick = (app: PlacedApp, where: AppWhere) => {
+    const now = apps[app];
+    if (now) setApps({ ...apps, [app]: { ...now, where } });
+    void cloudBridge()
+      ?.setApp?.(app, where)
+      .then((said) => {
+        if (said) setApps(said);
+      })
+      .catch(() => undefined);
+  };
+  return (
+    <Section
+      id="apps"
+      title="Apps"
+      aside={<AppTag app="cloud" />}
+      description="Wo sich Präsentationen, Dokumente, PDFs und Nachrichten öffnen. In Cloud heißt in einem Tab dieses Fensters, mit allem, was die App kann. Gilt für diesen Computer."
+    >
+      <div className="flex flex-col divide-y divide-hairline">
+        {APP_ROWS.flatMap(({ app, name, what }) => {
+          const placed = apps[app];
+          // An older Cloud app does not place this one yet: nothing to pick.
+          if (!placed) return [];
+          return [
+            <div
+              key={app}
+              className="flex flex-wrap items-center justify-between gap-3 py-3 first:pt-0 last:pb-0"
+            >
+              <span className="flex min-w-0 items-center gap-3">
+                <span className="flex size-5 shrink-0 items-center justify-center">
+                  <AppMark app={app} width={18} />
+                </span>
+                <span className="flex min-w-0 flex-col">
+                  <span className="text-sm text-fg">{what}</span>
+                  <span className="text-xs text-fg-subtle">
+                    {placed.installed
+                      ? `In Cloud oder in ${name}`
+                      : `Öffnen sich in Cloud, ${name} ist nicht installiert`}
+                  </span>
+                </span>
+              </span>
+              {placed.installed && (
+                <SegmentedControl<AppWhere>
+                  label={`${what} öffnen`}
+                  size="sm"
+                  track="soft"
+                  segments={[
+                    { value: 'tab', label: 'In Cloud' },
+                    { value: 'own', label: `In ${name}` },
+                  ]}
+                  value={placed.where}
+                  onChange={(where) => pick(app, where)}
+                />
+              )}
+            </div>,
+          ];
+        })}
+      </div>
+    </Section>
+  );
+}
 
 /**
  * How every deck opens. Per browser (like the split): the switches in the viewer change only the
@@ -68,7 +166,9 @@ export function WorkSection() {
 
   return (
     <Section
-      title="Arbeiten"
+      id="arbeiten"
+      title="Präsentationen"
+      aside={<AppTag app="slider" />}
       description="So öffnet sich jede Präsentation. Gilt für diesen Browser – in der Präsentation selbst kannst du alles weiterhin umschalten."
     >
       <div className="flex flex-col divide-y divide-hairline">
@@ -142,6 +242,8 @@ export function WorkSection() {
           </span>
           <SegmentedControl<StatusFilter>
             label="Kommentare beim Öffnen"
+            size="sm"
+            track="soft"
             value={preferences.statusFilter}
             onChange={(statusFilter) => update({ statusFilter })}
             segments={[

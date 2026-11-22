@@ -65,11 +65,15 @@ async function passesRestriction(
  */
 export function openToViewer(access: DeckViewerAccess): SQL {
   const adminOf = [...access.roles].flatMap(([id, role]) => (role === 'admin' ? [id] : []));
-  return or(
-    isNull(decks.restrictedAt),
-    eq(decks.ownerId, access.userId),
-    adminOf.length > 0 ? inArray(decks.workspaceId, adminOf) : undefined,
-    sql`exists (select 1 from ${deckAccessGrants} where ${deckAccessGrants.deckId} = ${decks.id} and ${deckAccessGrants.userId} = ${access.userId})`,
+  // Deleted ones are in the trash, in no list.
+  return and(
+    isNull(decks.deletedAt),
+    or(
+      isNull(decks.restrictedAt),
+      eq(decks.ownerId, access.userId),
+      adminOf.length > 0 ? inArray(decks.workspaceId, adminOf) : undefined,
+      sql`exists (select 1 from ${deckAccessGrants} where ${deckAccessGrants.deckId} = ${decks.id} and ${deckAccessGrants.userId} = ${access.userId})`,
+    ),
   )!;
 }
 
@@ -92,9 +96,11 @@ export async function deckAccess(
   viewer: Viewer,
   deckId: string,
   right: DeckRight,
+  /** `trash`: the deck must lie in the trash (restoring, deleting for good); else it must not. */
+  where: 'live' | 'trash' = 'live',
 ): Promise<{ deck: DeckRow; permissions: DeckPermissions }> {
   const [deck] = await db.select().from(decks).where(eq(decks.id, deckId));
-  if (!deck) throw deckNotFound();
+  if (!deck || (deck.deletedAt !== null) !== (where === 'trash')) throw deckNotFound();
   const member = await membership(db, deck.workspaceId, viewer.author.id);
   if (!member) throw deckNotFound();
   if (member.blocked) throw workspaceBlocked();
@@ -120,8 +126,9 @@ export async function requireDeckAccess(
   viewer: Viewer,
   deckId: string,
   right: DeckRight,
+  where: 'live' | 'trash' = 'live',
 ): Promise<DeckRow> {
-  return (await deckAccess(deps, viewer, deckId, right)).deck;
+  return (await deckAccess(deps, viewer, deckId, right, where)).deck;
 }
 
 /**

@@ -127,7 +127,7 @@ export function deriveViewerData(
     canComment: deck.permissions.canComment,
     threads,
     threadById: new Map(threads.map((thread) => [thread.id, thread])),
-    threadsBySlide: groupThreadsBySlide(threads, slides),
+    threadsBySlide: withVariantThreads(groupThreadsBySlide(threads, slides), threads, variantsOf),
     gapThreads: gapThreadsByGap(threads, slides),
     participantNames: names,
     // A deleted account keeps its "@Gelöschtes Konto" in old text, but nobody can mention it now;
@@ -150,6 +150,26 @@ export function deriveViewerData(
 }
 
 /**
+ * A variant's comments under its own id beside the slides' – its pins on its frame (its track,
+ * the overview) and its cards under it. `groupThreadsBySlide` knows only the slides.
+ */
+function withVariantThreads(
+  groups: Map<string, Thread[]>,
+  threads: readonly Thread[],
+  variantsOf: ReadonlyMap<string, Slide[]>,
+): Map<string, Thread[]> {
+  const variantIds = new Set([...variantsOf.values()].flat().map((variant) => variant.id));
+  if (variantIds.size === 0) return groups;
+  for (const id of variantIds) groups.set(id, []);
+  for (const thread of threads) {
+    const { slideId, anchor } = thread.root;
+    if (slideId && anchor.type !== 'gap' && variantIds.has(slideId))
+      groups.get(slideId)!.push(thread);
+  }
+  return groups;
+}
+
+/**
  * The deck as it shows while slides hidden in PowerPoint stay out of sight: they and their
  * comments leave the track, the minimap and the counts. A deck with nothing but hidden slides
  * keeps them – an empty viewer would help nobody.
@@ -162,7 +182,11 @@ export function withoutHiddenSlides(data: ViewerData): ViewerData {
     ...data,
     slides,
     slideIndex: new Map(slides.map((slide, index) => [slide.id, index])),
-    threadsBySlide: groupThreadsBySlide(data.threads, slides),
+    threadsBySlide: withVariantThreads(
+      groupThreadsBySlide(data.threads, slides),
+      data.threads,
+      data.variantsOf,
+    ),
     gapThreads: gapThreadsByGap(data.threads, slides),
   };
 }

@@ -59,6 +59,7 @@ const COLUMNS = {
   name: { label: 'Workspace' },
   members: { label: 'Personen', numeric: true },
   decks: { label: 'Präsentationen', numeric: true },
+  files: { label: 'Dateien', numeric: true, className: 'max-lg:hidden' },
   storage: { label: 'Speicher', numeric: true },
   plan: { label: 'Plan' },
   created: { label: 'Seit', className: 'max-md:hidden' },
@@ -156,6 +157,12 @@ function WorkspaceRow({
       </td>
       <td className={cell(COLUMNS.members)}>{workspace.memberCount}</td>
       <td className={cell(COLUMNS.decks)}>{workspace.deckCount}</td>
+      <td
+        className={cell(COLUMNS.files)}
+        title={`${formatFileSize(workspace.fileBytes)} in der Cloud`}
+      >
+        {workspace.fileCount.toLocaleString('de-DE')}
+      </td>
       <td className={cell(COLUMNS.storage)}>{formatFileSize(workspace.storageBytes)}</td>
       {plans && (
         <td className={cell(COLUMNS.plan)}>

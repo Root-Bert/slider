@@ -1,6 +1,6 @@
 import { z } from 'zod';
 import type { SlideOperation } from './editing';
-import { pointSchema, type Author } from './model';
+import { aroundPointSchema, type Author } from './model';
 
 /**
  * Realtime in the viewer (BER-104): who is in a deck right now, on which slide, where their
@@ -15,7 +15,7 @@ const liveId = z.string().min(1).max(200);
  * lays the deck out for its own window, so plain pixels would land elsewhere. Off the slides the
  * cursor is hidden.
  */
-export const liveCursorSchema = z.object({ slideId: liveId, point: pointSchema });
+export const liveCursorSchema = z.object({ slideId: liveId, point: aroundPointSchema });
 export type LiveCursor = z.infer<typeof liveCursorSchema>;
 
 // ── Typing together (`@slider/shared/live-text`) ────────────────────────────

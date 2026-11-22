@@ -2,6 +2,7 @@ import type { Rect, SlideLayers } from '@slider/shared';
 import { useState } from 'react';
 import { useSlideLayers } from '@/lib/api';
 import { useViewerData } from '../state/viewer-data';
+import { useComposed } from './compose/composed';
 import { useEditing } from './editing-context';
 import { usePreviewAmong } from './preview-store';
 
@@ -44,15 +45,18 @@ function roundedHole(hole: Rect): string {
 }
 
 /**
- * What lies off the slide, zoomed out (for whoever can edit the deck – reviewing too): each element's picture where it reaches
- * beyond the slide's edge, slightly soft (kept in the file, but no one sees it there) – the slide's own picture shows the rest. Drawn
- * whole by the server (`slideLayers`); one moved since keeps its last picture, moved along.
+ * What lies off the slide, zoomed out (for whoever can edit the deck – reviewing too): each
+ * element's picture where it reaches beyond the slide's edge, as it looks (kept in the file, shown
+ * nowhere else) – the slide's own picture shows the rest. Drawn whole by the server
+ * (`slideLayers`); one moved since keeps its last picture, moved along. Bearbeiten draws them
+ * itself once the slide is composed (`SlideCompositor` `open`): then this steps back.
  * `frame`: the part of the slide's coordinates its frame shows (wider than the slide).
  */
 export function OffSlideLayer({ slideId, frame }: { slideId: string; frame: Rect }) {
   const editing = useEditing();
   const { deck } = useViewerData();
   const seq = editing.state?.seq;
+  const composed = useComposed(slideId);
   const elements = editing.available ? editing.elementsOf(slideId) : [];
   const preview = usePreviewAmong(elements.map((element) => element.id));
   const boxOf = (id: string, bbox: Rect) => (preview?.elementId === id ? preview.rect : bbox);
@@ -77,7 +81,7 @@ export function OffSlideLayer({ slideId, frame }: { slideId: string; frame: Rect
     }
     setKnown({ from: data, pictures });
   }
-  if (off.length === 0) return null;
+  if (off.length === 0 || (editing.active && composed)) return null;
   // The slide, cut out of the frame with its rounded corners: only what lies around it shows –
   // whatever its picture is doing (fading in, swapped).
   const clipPath = roundedHole({
@@ -125,8 +129,7 @@ export function OffSlideLayer({ slideId, frame }: { slideId: string; frame: Rect
             src={picture.url}
             alt=""
             draggable={false}
-            // Slightly soft: not quite part of the slide.
-            className="absolute max-w-none blur-[1.5px]"
+            className="absolute max-w-none"
             style={place}
           />
         );

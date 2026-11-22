@@ -1,0 +1,11 @@
+---
+import Product from '~/components/product/Product.astro';
+import { s } from '~/i18n';
+import Base from '~/layouts/Base.astro';
+
+const words = s('en').apps.solver;
+---
+
+<Base app="solver" lang="en" translated="" fullTitle={words.metaTitle} description={words.metaDescription}>
+  <Product app="solver" lang="en" />
+</Base>

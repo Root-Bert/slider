@@ -23,6 +23,7 @@ const ana = { id: 'ana', name: 'Ana', type: 'owner', color: 'blue' } as Author;
 const note = (id: string, text: string): BoardItem => ({
   id,
   deckId: 'd1',
+  documentId: null,
   author: ana,
   kind: 'box',
   text,
@@ -43,7 +44,24 @@ function memoryStore(): OutboxStore<BoardEntry> & { entries: Map<string, BoardEn
     entries,
     keep: async (entry) => void entries.set(entry.id, entry),
     drop: async (id) => void entries.delete(id),
-    takeOver: async () => ({ entries: [], outdated: 0 }),
+    // A closed tab's: a deck's entry as kept before documents had a board (no `kind`).
+    takeOver: async (_userId, deckId) => ({
+      entries:
+        deckId === 'd2'
+          ? [
+              {
+                v: 1,
+                id: 'old',
+                deckId: 'd2',
+                userId: 'ana',
+                tab: 'closed',
+                at: 1,
+                action: { type: 'delete', itemId: 'n9' },
+              },
+            ]
+          : [],
+      outdated: 0,
+    }),
     release: () => {},
     keptOf: async () => [...entries.keys()],
     onForgotten: () => () => {},
@@ -83,6 +101,12 @@ describe('the board outbox', () => {
     });
     outbox.enqueue('d1', 'ana', { type: 'delete', itemId: 'n3' });
     await vi.waitFor(() => expect(store.entries.size).toBe(3));
+    // A deck's entries are kept as ever: its id, no kind.
+    expect([...store.entries.values()].map((entry) => [entry.deckId, 'kind' in entry])).toEqual([
+      ['d1', false],
+      ['d1', false],
+      ['d1', false],
+    ]);
 
     // Shown at once over the server's board; the note deleted before it went is gone for good.
     const shown = withQueued(server, outbox.queued('d1'));
@@ -199,6 +223,30 @@ describe('the board outbox', () => {
     ]);
     expect(settled.filter(Boolean)).toHaveLength(1);
     expect(store.entries.size).toBe(0);
+
+    // A text document's board: the same queue, kept with its kind, sent to the document's routes;
+    // an entry a closed tab left without a kind is a deck's.
+    fail = null;
+    sent.length = 0;
+    const ofDocument = { ...note('w-n1', 'Im Dokument'), deckId: null, documentId: 'w1' };
+    outbox.enqueue(
+      'w1',
+      'ana',
+      { type: 'create', item: ofDocument, input: { ...ofDocument, kind: 'note', url: null } },
+      'document',
+    );
+    expect([...store.entries.values()].map((entry) => [entry.deckId, entry.kind])).toEqual([
+      ['w1', 'document'],
+    ]);
+    outbox.enqueue('w1', 'ana', { type: 'delete', itemId: 'w-n0' }, 'document');
+    outbox.resume('d2', 'ana');
+    await vi.waitFor(() =>
+      expect(sent.map((call) => `${call.method} ${call.path}`).sort()).toEqual([
+        'DELETE /decks/d2/board/n9',
+        'DELETE /documents/w1/board/w-n0',
+        'POST /documents/w1/board/items',
+      ]),
+    );
     Reflect.deleteProperty(navigator, 'onLine');
     vi.unstubAllGlobals();
   });

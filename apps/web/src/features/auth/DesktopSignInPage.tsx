@@ -5,6 +5,15 @@ import { CenteredCard, CenteredLayout } from '@/shell/layouts/CenteredLayout';
 import { routes } from '@/lib/routes';
 import { Button, ErrorText, Icon, TextLink } from '@/ui';
 
+/** The apps that sign in here (`DESKTOP_SCHEMES`), as people read them. */
+const APP_NAMES = {
+  slider: 'Slider',
+  cloud: 'Cloud',
+  writer: 'Writer',
+  reader: 'Reader',
+  sender: 'Sender',
+} as const;
+
 /**
  * `/desktop-anmelden?challenge=…&state=…` – „Anmelden“ in the desktop app opens it in the
  * browser (BER-201). Signed in (the account gate sees to that), one click hands the app a
@@ -17,6 +26,15 @@ export function Component() {
   const state = params.get('state') ?? '';
   // „Weiteres Konto hinzufügen“ in the app: the account goes to its pages, beside the others.
   const add = params.get('add') === '1';
+  // `app=cloud` / `app=writer` / `app=reader` / `app=sender`: that app asked (`desktop/cloud`,
+  // `desktop/writer`, `desktop/reader`, `desktop/sender`), the code goes to its scheme.
+  const asked = params.get('app');
+  const app =
+    asked === 'cloud' || asked === 'writer' || asked === 'reader' || asked === 'sender'
+      ? asked
+      : 'slider';
+  const name = APP_NAMES[app];
+  const docTitle = `${name} Desktop | ${name}`;
   const { data: me } = useMe();
   const [link, setLink] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
@@ -24,11 +42,11 @@ export function Component() {
 
   if (!challenge || !state) {
     return (
-      <CenteredLayout docTitle="Slider Desktop | Slider">
+      <CenteredLayout docTitle={docTitle}>
         <CenteredCard
           icon={<Icon name="desktopWindows" size={28} />}
           title="Dieser Link ist unvollständig"
-          message="Starte die Anmeldung in der Slider-App noch einmal über „Anmelden“."
+          message={`Starte die Anmeldung in der ${name}-App noch einmal über „Anmelden“.`}
         />
       </CenteredLayout>
     );
@@ -38,7 +56,7 @@ export function Component() {
     setBusy(true);
     setError(null);
     try {
-      const target = await handCodeToDesktop(challenge, state);
+      const target = await handCodeToDesktop(challenge, state, app);
       setLink(target);
       window.location.assign(target);
     } catch (caught) {
@@ -50,14 +68,14 @@ export function Component() {
 
   if (link) {
     return (
-      <CenteredLayout docTitle="Slider Desktop | Slider">
+      <CenteredLayout docTitle={docTitle}>
         <CenteredCard
           icon={<Icon name="checkCircle" size={28} />}
           title="Zurück zur App"
           message={
             add
-              ? 'Das Konto ist jetzt in der Slider-App. Du kannst dieses Fenster schließen.'
-              : 'Die Slider-App ist jetzt angemeldet. Du kannst dieses Fenster schließen.'
+              ? `Das Konto ist jetzt in der ${name}-App. Du kannst dieses Fenster schließen.`
+              : `Die ${name}-App ist jetzt angemeldet. Du kannst dieses Fenster schließen.`
           }
         >
           <Button
@@ -65,7 +83,7 @@ export function Component() {
             className="w-full"
             onClick={() => window.location.assign(link)}
           >
-            Slider-App öffnen
+            {name}-App öffnen
           </Button>
         </CenteredCard>
       </CenteredLayout>
@@ -73,10 +91,10 @@ export function Component() {
   }
 
   return (
-    <CenteredLayout docTitle="Slider Desktop | Slider">
+    <CenteredLayout docTitle={docTitle}>
       <CenteredCard
         icon={<Icon name="desktopWindows" size={28} />}
-        title={add ? 'Konto zur Slider-App hinzufügen' : 'In der Slider-App anmelden'}
+        title={add ? `Konto zur ${name}-App hinzufügen` : `In der ${name}-App anmelden`}
         message={
           me?.user
             ? add

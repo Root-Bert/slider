@@ -8,7 +8,7 @@ import {
   type MouseEvent,
 } from 'react';
 import { cn } from '@/ui';
-import { useReaction, type ReactionTarget } from './hooks/useCommentReaction';
+import { useReaction, type ReactionState, type ReactionTarget } from './hooks/useCommentReaction';
 import { REACTION_COLORS, REACTION_LABELS } from './lib/reactions';
 import { ReactionGlyph } from './ReactionGlyph';
 
@@ -44,7 +44,19 @@ export function ReactionChips({
   all?: boolean;
   className?: string;
 }) {
-  const { mine, canReact, toggle, byKind } = useReaction(target);
+  return <ReactionChipsOf state={useReaction(target)} all={all} className={className} />;
+}
+
+/** The chips for reactions held elsewhere (`reactionState`) – a document's comment (Writer). */
+export function ReactionChipsOf({
+  state: { mine, canReact, toggle, byKind },
+  all = false,
+  className,
+}: {
+  state: ReactionState;
+  all?: boolean;
+  className?: string;
+}) {
   const { pick, burstOf } = useBurstToggle(toggle, mine);
   const kinds = COMMENT_REACTIONS.filter((kind) => (all && canReact) || byKind(kind).length > 0);
   if (kinds.length === 0) return null;
@@ -127,7 +139,19 @@ export function ReactionPicker({
    */
   className?: string;
 }) {
-  const { mine, canReact, toggle } = useReaction(target);
+  return <ReactionPickerOf state={useReaction(target)} floating={floating} className={className} />;
+}
+
+/** The picker for reactions held elsewhere (`reactionState`) – a document's comment (Writer). */
+export function ReactionPickerOf({
+  state: { mine, canReact, toggle },
+  className = 'bottom-full left-0 mb-1',
+  floating = false,
+}: {
+  state: ReactionState;
+  floating?: boolean;
+  className?: string;
+}) {
   const { pick, burstOf } = useBurstToggle(toggle, mine);
   const floats = floating && CAN_FLOAT;
   const anchorName = `--reaction-picker-${useId().replace(/[^a-zA-Z0-9]/g, '')}`;

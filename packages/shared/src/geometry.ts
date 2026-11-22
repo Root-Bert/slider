@@ -22,6 +22,15 @@ export const clamp01 = (value: number): number => clamp(value, 0, 1);
 
 export const clampPoint = (point: Point): Point => ({ x: clamp01(point.x), y: clamp01(point.y) });
 
+/** The whole slide. */
+export const SLIDE_RECT: Rect = { x: 0, y: 0, w: 1, h: 1 };
+
+/** `point` kept inside `room` – the slide, or the slide with what shows around it. */
+export const clampPointIn = (point: Point, room: Rect): Point => ({
+  x: clamp(point.x, room.x, room.x + room.w),
+  y: clamp(point.y, room.y, room.y + room.h),
+});
+
 /** The part of a rect on the slide – elements may hang off it, anchors only live on it. */
 export function clampRect(rect: Rect): Rect {
   const x = clamp01(rect.x);
@@ -42,10 +51,11 @@ export const rectCorners = ({ x, y, w, h }: Rect): Point[] => [
   { x, y: y + h },
 ];
 
-/** Builds a normalised rect from two arbitrary corner points (e.g. drag start and end). */
-export function rectFromPoints(a: Point, b: Point): Rect {
-  const start = clampPoint(a);
-  const end = clampPoint(b);
+/**
+ * Builds a normalised rect from two arbitrary corner points (e.g. drag start and end) – as they
+ * are: where they may lie (the slide, the room shown around it) is kept where they are read.
+ */
+export function rectFromPoints(start: Point, end: Point): Rect {
   return {
     x: Math.min(start.x, end.x),
     y: Math.min(start.y, end.y),

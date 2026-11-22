@@ -1,8 +1,6 @@
-import type { DragEvent } from 'react';
 import type { Deck, DeckSearchResult } from '@slider/shared';
 import { selectableItemProps, type SelectableItems } from '@/lib/collection-selection';
 import { collectionGridClass, type ShowToast } from '@/ui';
-import { setDraggedDecks } from '../lib/deck-drag';
 import { DeckCard, DeckRow } from './DeckCard';
 
 export type DeckView = 'grid' | 'list';
@@ -29,15 +27,6 @@ export function DeckCollection({
 }: DeckCollectionProps) {
   const Item = view === 'grid' ? DeckCard : DeckRow;
   const selection = { selected, onModifiedClick, onSelectionMenu };
-  // Onto a folder tile: the whole selection when the deck is part of it, else just this deck.
-  const onDragStart = (deck: Deck) => (event: DragEvent) => {
-    const ids = selected.has(deck.id)
-      ? decks
-          .filter((each) => selected.has(each.id) && each.permissions.canManage)
-          .map((each) => each.id)
-      : [deck.id];
-    setDraggedDecks(event, ids);
-  };
   return (
     <ul
       className={
@@ -49,7 +38,6 @@ export function DeckCollection({
           key={deck.id}
           className="min-w-0"
           {...selectableItemProps(deck.id, selection, OWN_CONTROLS)}
-          onDragStart={deck.permissions.canManage ? onDragStart(deck) : undefined}
         >
           <Item
             deck={deck}

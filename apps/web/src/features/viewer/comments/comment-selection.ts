@@ -4,8 +4,9 @@ export interface CommentSelection {
   /** Threads selected under the slides (by thread id), for actions on several at once. */
   selected: ReadonlySet<string>;
   /**
-   * A click on a card with ⌘/Ctrl or Shift, or any click while some are selected: toggles it (as
-   * the decks in "Präsentationen" do) and says so; false – the card opens as usual.
+   * A click on a card with ⌘/Ctrl or Shift (toggles it, as the decks in "Präsentationen" do), or
+   * a plain one while several are selected (that one alone), and says so; false – the card opens
+   * as usual.
    */
   onModifiedClick: (
     threadId: string,

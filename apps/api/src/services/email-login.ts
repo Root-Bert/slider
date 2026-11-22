@@ -226,6 +226,11 @@ export async function redeemEmailCode(
   browser: string | undefined,
   /** Counts a try at the links of `email`; `false`: too many – they are used up. */
   mayTry: (email: string) => boolean,
+  /**
+   * Counts a try at `email` for the day; `false`: too many – no code is taken for it, its links
+   * stay and the link in the mail still signs in.
+   */
+  mayTryToday: (email: string) => boolean,
 ): Promise<{ email: string; inviteToken: string | null; returnTo: string }> {
   const now = deps.clock.now();
   const open = browser
@@ -237,13 +242,34 @@ export async function redeemEmailCode(
     : undefined;
   const links = open
     ? await deps.db
-        .select({ tokenHash: loginLinks.tokenHash, email: loginLinks.email })
+        .select({
+          tokenHash: loginLinks.tokenHash,
+          email: loginLinks.email,
+          expiresAt: loginLinks.expiresAt,
+        })
         .from(loginLinks)
         .where(open)
     : [];
+  // Only the newest mail's code counts for an address: several mails asked for give a guess no
+  // more codes to hit.
+  const newest = new Map<string, (typeof links)[number]>();
+  for (const link of links) {
+    const known = newest.get(link.email);
+    if (!known || link.expiresAt > known.expiresAt) newest.set(link.email, link);
+  }
+  const addresses = [...new Set(links.map((link) => link.email))];
+  // A new mail each hour would give ten tries more each time – so the tries also count per day,
+  // and past them only the link itself signs in.
+  if (addresses.some((email) => !mayTryToday(email))) {
+    throw new ApiError(
+      429,
+      'rate_limited',
+      'Zu viele falsche Codes für heute. Melde dich bitte über den Link in der Mail an.',
+    );
+  }
   // Guessing: a fresh browser key per mail asked for would give ten tries each – so the tries
   // count per address, and past them this browser's links are gone (the link in the mail too).
-  if (open && [...new Set(links.map((link) => link.email))].some((email) => !mayTry(email))) {
+  if (open && addresses.some((email) => !mayTry(email))) {
     await deps.db.update(loginLinks).set({ usedAt: now }).where(open);
     throw new ApiError(
       429,
@@ -251,7 +277,9 @@ export async function redeemEmailCode(
       'Zu viele falsche Codes. Fordere bitte einen neuen Link an.',
     );
   }
-  const match = links.find((link) => emailLoginCode(deps.config.secret, link.tokenHash) === code);
+  const match = [...newest.values()].find(
+    (link) => emailLoginCode(deps.config.secret, link.tokenHash) === code,
+  );
   if (!match) {
     throw badRequest(
       'Der Code stimmt nicht oder ist abgelaufen. Schau in die neueste Mail oder fordere einen neuen an.',

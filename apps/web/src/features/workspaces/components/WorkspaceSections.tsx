@@ -301,7 +301,7 @@ export function LeaveSection({ workspace, userId }: { workspace: Workspace; user
         onConfirm={() =>
           leave.mutate(
             { userId, successor: mustHandOver ? successor?.userId : undefined },
-            { onSuccess: () => void navigate(routes.reviews(), { replace: true }) },
+            { onSuccess: () => void navigate(routes.home(), { replace: true }) },
           )
         }
       >
@@ -394,7 +394,7 @@ export function DeleteSection({ workspace }: { workspace: Workspace }) {
         error={remove.error?.message}
         onConfirm={() =>
           remove.mutate(undefined, {
-            onSuccess: () => void navigate(routes.reviews(), { replace: true }),
+            onSuccess: () => void navigate(routes.home(), { replace: true }),
           })
         }
       >

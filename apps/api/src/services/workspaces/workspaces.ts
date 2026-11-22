@@ -1,11 +1,27 @@
 import { and, asc, count, eq, inArray, isNull, sql } from 'drizzle-orm';
-import type { Workspace, WorkspaceRole } from '@slider/shared';
+import {
+  agentAvatarsOf,
+  aiNameOf,
+  type AgentAvatarStyle,
+  type Workspace,
+  type WorkspaceRole,
+} from '@slider/shared';
 import type { Executor } from '../../db/client';
-import { decks, users, workspaceMembers, workspaces, type WorkspaceRow } from '../../db/schema';
+import {
+  cloudConnections,
+  decks,
+  mailAccounts,
+  users,
+  workspaceMembers,
+  workspaces,
+  type WorkspaceRow,
+} from '../../db/schema';
 import type { AppDeps } from '../../deps';
 import { badRequest, isUniqueViolation } from '../../http/errors';
 import { blobKeys, fileUrl } from '../../storage/blob-storage';
-import { deleteBlobs, storageBlobs } from '../blob-deletions';
+import { deleteBlobs, mailBlobs, storageBlobs } from '../blob-deletions';
+import { revokeCloudConnection } from '../cloud-connections';
+import { workspaceBoardBlobs } from '../cloud/blobs';
 import { deleteDeck } from '../decks';
 import { billingNames, toBillingDto } from '../billing';
 import { assertMayDeletePaid } from '../billing-owner';
@@ -206,6 +222,8 @@ async function toWorkspaceDtos(
       joinDomain: workspace.joinDomain,
       audiencePending: workspace.audiencePending,
       blocked: workspace.blockedAt !== null,
+      aiName: aiNameOf(workspace.aiName),
+      agentAvatars: agentAvatarsOf(workspace.agentAvatars),
     };
   });
 }
@@ -242,6 +260,27 @@ export async function renameWorkspace(
 ): Promise<Workspace> {
   await requireRole(deps.db, workspaceId, userId, 'admin');
   await deps.db.update(workspaces).set({ name }).where(eq(workspaces.id, workspaceId));
+  return getWorkspace(deps, userId, workspaceId);
+}
+
+/** Admins only: how the workspace's agents look, for everyone in it. */
+export async function setAgentAvatars(
+  deps: WorkspaceDeps,
+  userId: string,
+  workspaceId: string,
+  style: AgentAvatarStyle,
+): Promise<Workspace> {
+  await requireRole(
+    deps.db,
+    workspaceId,
+    userId,
+    'admin',
+    'Nur Admins können ändern, wie die Agenten aussehen.',
+  );
+  await deps.db
+    .update(workspaces)
+    .set({ agentAvatars: style })
+    .where(eq(workspaces.id, workspaceId));
   return getWorkspace(deps, userId, workspaceId);
 }
 
@@ -340,8 +379,23 @@ export async function purgeWorkspace(deps: AppDeps, workspaceId: string): Promis
     .from(decks)
     .where(eq(decks.workspaceId, workspaceId));
   for (const deck of deckRows) await deleteDeck(deps, deck.id);
+  // Its mailboxes go with it (`on delete cascade`), their attachments here.
+  const mailboxes = await deps.db
+    .select({ id: mailAccounts.id })
+    .from(mailAccounts)
+    .where(eq(mailAccounts.workspaceId, workspaceId));
   await deleteBlobs(deps, [
     { store: 'storage', key: blobKeys.workspacePrefix(workspaceId), prefix: true },
+    // What lies on the boards of its text documents (media store, a prefix per document).
+    ...(await workspaceBoardBlobs(deps.db, workspaceId)),
+    ...mailBlobs(mailboxes.map((row) => row.id)),
   ]);
+  // Its people's connections in Cloud go with it (`on delete cascade`): their sign-ins are
+  // handed back to the services first (best effort, never throws).
+  const connections = await deps.db
+    .select()
+    .from(cloudConnections)
+    .where(eq(cloudConnections.workspaceId, workspaceId));
+  for (const row of connections) await revokeCloudConnection(deps, row);
   await deps.db.delete(workspaces).where(eq(workspaces.id, workspaceId));
 }

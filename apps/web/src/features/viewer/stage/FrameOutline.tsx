@@ -107,7 +107,9 @@ export function FrameOutline({
   const handles: FrameHandle[] = dome ? [...corners, 'turn'] : [...corners];
   const opening = useOpening(handles, near);
   const eased: BracketOpening = Object.fromEntries(
-    handles.map((handle) => [handle, ease(opening[handle] ?? 1)]),
+    // A handle that just came (the box hovered) starts closed and opens only when near –
+    // open for a frame, every corner flashed up.
+    handles.map((handle) => [handle, ease(opening[handle] ?? (near ? 0 : 1))]),
   );
   const line = shape ?? frameOutline(width * scale, height * scale, corners, dome, eased);
   const marks = shape ? handleMarks(width * scale, height * scale, corners, dome, eased) : '';

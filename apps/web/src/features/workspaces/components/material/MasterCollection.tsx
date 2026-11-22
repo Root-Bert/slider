@@ -2,7 +2,7 @@ import { useState, type MouseEvent, type ReactNode } from 'react';
 import { Link } from 'react-router';
 import type { WorkspaceMaster } from '@slider/shared';
 import { selectableItemProps, type SelectableItems } from '@/lib/collection-selection';
-import { routes } from '@/lib/routes';
+import { useLibrary } from '@/lib/apps';
 import {
   Button,
   cn,
@@ -55,6 +55,7 @@ export function MasterCollection({
   onSelectionMenu,
 }: MasterCollectionProps) {
   const selection = { selected, onModifiedClick, onSelectionMenu };
+  const library = useLibrary();
   const [renaming, setRenaming] = useState<string | null>(null);
   const [menu, setMenu] = useState<{
     at: { x: number; y: number };
@@ -94,7 +95,7 @@ export function MasterCollection({
               selected={selected.has(master.id)}
               create={createActionFor?.(master) ?? null}
               actions={allActions(master)}
-              to={routes.workspaceMaster(workspaceId, master.id)}
+              to={library.master(workspaceId, master.id)}
               name={
                 renaming === master.id ? (
                   <MasterNameInput

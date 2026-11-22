@@ -7,7 +7,7 @@ const accent = z.enum(['powerpoint', 'cyan', 'green', 'violet', 'yellow', 'blue'
 
 /** What the cover shows – drawn in code, no images. */
 const cover = z.discriminatedUnion('kind', [
-  z.object({ kind: z.literal('versus'), other: z.string() }),
+  z.object({ kind: z.literal('versus'), other: z.string(), self: z.string().default('Slider') }),
   z.object({ kind: z.literal('ranking') }),
   z.object({ kind: z.literal('version'), label: z.string() }),
   z.object({ kind: z.literal('slide') }),

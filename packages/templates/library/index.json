@@ -1,0 +1,5551 @@
+[
+  {
+    "slug": "aquarell",
+    "name": "Aquarell",
+    "group": "Kunststil",
+    "tags": [
+      "Aquarell",
+      "Wasserfarbe",
+      "Lavierung",
+      "Tusche",
+      "hell",
+      "ruhig",
+      "leicht",
+      "Natur",
+      "Skizzenbuch"
+    ],
+    "description": "Weißes Aquarellpapier mit durchscheinenden Lavierungen, die ineinanderlaufen, und feinen Tuschelinien.",
+    "fonts": {
+      "head": "Lora",
+      "body": "Quicksand"
+    },
+    "colors": [
+      {
+        "color": "#fdfcf8",
+        "name": "Hintergrund 1"
+      },
+      {
+        "color": "#2b3a4a",
+        "name": "Text 1"
+      },
+      {
+        "color": "#f1eee4",
+        "name": "Hintergrund 2"
+      },
+      {
+        "color": "#667382",
+        "name": "Text 2"
+      },
+      {
+        "color": "#4b86bb",
+        "name": "Akzent 1"
+      },
+      {
+        "color": "#4fb0a2",
+        "name": "Akzent 2"
+      },
+      {
+        "color": "#e58692",
+        "name": "Akzent 3"
+      },
+      {
+        "color": "#e3ad49",
+        "name": "Akzent 4"
+      },
+      {
+        "color": "#957fc4",
+        "name": "Akzent 5"
+      },
+      {
+        "color": "#86b562",
+        "name": "Akzent 6"
+      }
+    ],
+    "aspectRatio": 1.7777777777777777,
+    "layouts": [
+      "Titel",
+      "Abschnitt",
+      "Inhalt",
+      "Text und Bild",
+      "Zwei Spalten",
+      "Kennzahl",
+      "Zitat",
+      "Bild",
+      "Schluss"
+    ],
+    "file": "aquarell.otp",
+    "bytes": 344453
+  },
+  {
+    "slug": "architektur",
+    "name": "Architektur",
+    "group": "Bereich",
+    "tags": [
+      "Architektur",
+      "Entwurf",
+      "Bauen",
+      "Plan",
+      "Beton",
+      "Linien",
+      "reduziert",
+      "Wettbewerb"
+    ],
+    "description": "Die Präsentation eines Architekturbüros: Weiß und Betongrau, haarfeine schwarze Linien, Grundriss, Maßketten und eine rote Schnittlinie.",
+    "fonts": {
+      "head": "Jost",
+      "body": "Inter"
+    },
+    "colors": [
+      {
+        "color": "#ffffff",
+        "name": "Hintergrund 1"
+      },
+      {
+        "color": "#141414",
+        "name": "Text 1"
+      },
+      {
+        "color": "#eceae5",
+        "name": "Hintergrund 2"
+      },
+      {
+        "color": "#6d6a65",
+        "name": "Text 2"
+      },
+      {
+        "color": "#cfccc5",
+        "name": "Akzent 1"
+      },
+      {
+        "color": "#c8442e",
+        "name": "Akzent 2"
+      },
+      {
+        "color": "#8a8780",
+        "name": "Akzent 3"
+      },
+      {
+        "color": "#b9b6ae",
+        "name": "Akzent 4"
+      },
+      {
+        "color": "#d8cdb8",
+        "name": "Akzent 5"
+      },
+      {
+        "color": "#8fa0a8",
+        "name": "Akzent 6"
+      }
+    ],
+    "aspectRatio": 1.7777777777777777,
+    "layouts": [
+      "Titel",
+      "Abschnitt",
+      "Inhalt",
+      "Text und Bild",
+      "Zwei Spalten",
+      "Kennzahl",
+      "Zitat",
+      "Bild",
+      "Schluss"
+    ],
+    "file": "architektur.otp",
+    "bytes": 8900
+  },
+  {
+    "slug": "art-deco",
+    "name": "Art déco",
+    "group": "Kunststil",
+    "tags": [
+      "Art déco",
+      "Gold",
+      "elegant",
+      "festlich",
+      "Zwanzigerjahre",
+      "Gala",
+      "symmetrisch"
+    ],
+    "description": "Goldene Linien auf Nachtblau, Smaragd und Schwarz: Fächer, Sonnenstrahlen und gestufte Rahmen.",
+    "fonts": {
+      "head": "Cinzel",
+      "body": "Josefin Sans"
+    },
+    "colors": [
+      {
+        "color": "#0d1b2b",
+        "name": "Hintergrund 1"
+      },
+      {
+        "color": "#f4ecd9",
+        "name": "Text 1"
+      },
+      {
+        "color": "#17304a",
+        "name": "Hintergrund 2"
+      },
+      {
+        "color": "#ead8a6",
+        "name": "Text 2"
+      },
+      {
+        "color": "#c9a55b",
+        "name": "Akzent 1"
+      },
+      {
+        "color": "#0d3a33",
+        "name": "Akzent 2"
+      },
+      {
+        "color": "#8f7438",
+        "name": "Akzent 3"
+      },
+      {
+        "color": "#0a0a0b",
+        "name": "Akzent 4"
+      },
+      {
+        "color": "#7b2d3b",
+        "name": "Akzent 5"
+      },
+      {
+        "color": "#2f7a78",
+        "name": "Akzent 6"
+      }
+    ],
+    "aspectRatio": 1.7777777777777777,
+    "layouts": [
+      "Titel",
+      "Abschnitt",
+      "Inhalt",
+      "Text und Bild",
+      "Zwei Spalten",
+      "Kennzahl",
+      "Zitat",
+      "Bild",
+      "Schluss"
+    ],
+    "file": "art-deco.otp",
+    "bytes": 12607
+  },
+  {
+    "slug": "aurora",
+    "name": "Aurora",
+    "group": "Designtrend",
+    "tags": [
+      "Aurora",
+      "Nordlicht",
+      "dunkel",
+      "Technik",
+      "Keynote",
+      "Verlauf",
+      "leuchtend",
+      "modern"
+    ],
+    "description": "Nachthimmel mit Polarlicht: leuchtende Schleier in Violett, Türkis und Magenta, feine weiße Schrift und Haarlinien.",
+    "fonts": {
+      "head": "Sora",
+      "body": "Inter"
+    },
+    "colors": [
+      {
+        "color": "#070814",
+        "name": "Hintergrund 1"
+      },
+      {
+        "color": "#f5f7ff",
+        "name": "Text 1"
+      },
+      {
+        "color": "#15183a",
+        "name": "Hintergrund 2"
+      },
+      {
+        "color": "#aab2d8",
+        "name": "Text 2"
+      },
+      {
+        "color": "#8b6cff",
+        "name": "Akzent 1"
+      },
+      {
+        "color": "#2fe6c8",
+        "name": "Akzent 2"
+      },
+      {
+        "color": "#ff4fa8",
+        "name": "Akzent 3"
+      },
+      {
+        "color": "#4f8cff",
+        "name": "Akzent 4"
+      },
+      {
+        "color": "#a4ffc9",
+        "name": "Akzent 5"
+      },
+      {
+        "color": "#ffc978",
+        "name": "Akzent 6"
+      }
+    ],
+    "aspectRatio": 1.7777777777777777,
+    "layouts": [
+      "Titel",
+      "Abschnitt",
+      "Inhalt",
+      "Text und Bild",
+      "Zwei Spalten",
+      "Kennzahl",
+      "Zitat",
+      "Bild",
+      "Schluss"
+    ],
+    "file": "aurora.otp",
+    "bytes": 426855
+  },
+  {
+    "slug": "bauhaus",
+    "name": "Bauhaus",
+    "group": "Kunststil",
+    "tags": [
+      "Bauhaus",
+      "Geometrie",
+      "Grundfarben",
+      "Moderne",
+      "klar",
+      "Architektur",
+      "Design"
+    ],
+    "description": "Kreis, Quadrat und Dreieck in Rot, Gelb und Blau: strenge Geometrie auf warmem Weiß.",
+    "fonts": {
+      "head": "Jost",
+      "body": "Jost"
+    },
+    "colors": [
+      {
+        "color": "#f3eee2",
+        "name": "Hintergrund 1"
+      },
+      {
+        "color": "#161616",
+        "name": "Text 1"
+      },
+      {
+        "color": "#e4ddcc",
+        "name": "Hintergrund 2"
+      },
+      {
+        "color": "#4a4741",
+        "name": "Text 2"
+      },
+      {
+        "color": "#d7281c",
+        "name": "Akzent 1"
+      },
+      {
+        "color": "#f1b40a",
+        "name": "Akzent 2"
+      },
+      {
+        "color": "#1c4c9c",
+        "name": "Akzent 3"
+      },
+      {
+        "color": "#b9b3a6",
+        "name": "Akzent 4"
+      },
+      {
+        "color": "#e2572b",
+        "name": "Akzent 5"
+      },
+      {
+        "color": "#2f7d6b",
+        "name": "Akzent 6"
+      }
+    ],
+    "aspectRatio": 1.7777777777777777,
+    "layouts": [
+      "Titel",
+      "Abschnitt",
+      "Inhalt",
+      "Text und Bild",
+      "Zwei Spalten",
+      "Kennzahl",
+      "Zitat",
+      "Bild",
+      "Schluss"
+    ],
+    "file": "bauhaus.otp",
+    "bytes": 6139
+  },
+  {
+    "slug": "bento",
+    "name": "Bento",
+    "group": "Designtrend",
+    "tags": [
+      "Bento",
+      "Kacheln",
+      "Raster",
+      "aufgeräumt",
+      "Produkt",
+      "Bericht",
+      "modern",
+      "ruhig"
+    ],
+    "description": "Ein Raster aus runden Kacheln auf ruhigem Grund: jede Kachel eine Farbe, ein Gedanke, genaue Abstände.",
+    "fonts": {
+      "head": "Geist",
+      "body": "Geist"
+    },
+    "colors": [
+      {
+        "color": "#eeede8",
+        "name": "Hintergrund 1"
+      },
+      {
+        "color": "#1c1c1e",
+        "name": "Text 1"
+      },
+      {
+        "color": "#ffffff",
+        "name": "Hintergrund 2"
+      },
+      {
+        "color": "#6c6c72",
+        "name": "Text 2"
+      },
+      {
+        "color": "#ff5a2b",
+        "name": "Akzent 1"
+      },
+      {
+        "color": "#cfe2c6",
+        "name": "Akzent 2"
+      },
+      {
+        "color": "#cddcf4",
+        "name": "Akzent 3"
+      },
+      {
+        "color": "#f8d3b6",
+        "name": "Akzent 4"
+      },
+      {
+        "color": "#ddd4f3",
+        "name": "Akzent 5"
+      },
+      {
+        "color": "#f4e6a2",
+        "name": "Akzent 6"
+      }
+    ],
+    "aspectRatio": 1.7777777777777777,
+    "layouts": [
+      "Titel",
+      "Abschnitt",
+      "Inhalt",
+      "Text und Bild",
+      "Zwei Spalten",
+      "Kennzahl",
+      "Zitat",
+      "Bild",
+      "Schluss"
+    ],
+    "file": "bento.otp",
+    "bytes": 8073
+  },
+  {
+    "slug": "beratung",
+    "name": "Beratung",
+    "group": "Bereich",
+    "tags": [
+      "Beratung",
+      "Strategie",
+      "Management",
+      "sachlich",
+      "Navy",
+      "Analyse",
+      "Vorstand",
+      "Bericht"
+    ],
+    "description": "Die Seite der Beratung: eine Aussage als ganzer Satz oben links, feine Linien, Tiefblau und eine Signalfarbe.",
+    "fonts": {
+      "head": "Public Sans",
+      "body": "Source Sans 3"
+    },
+    "colors": [
+      {
+        "color": "#ffffff",
+        "name": "Hintergrund 1"
+      },
+      {
+        "color": "#0b1f3f",
+        "name": "Text 1"
+      },
+      {
+        "color": "#eef1f6",
+        "name": "Hintergrund 2"
+      },
+      {
+        "color": "#51607a",
+        "name": "Text 2"
+      },
+      {
+        "color": "#f2542d",
+        "name": "Akzent 1"
+      },
+      {
+        "color": "#2c4a7c",
+        "name": "Akzent 2"
+      },
+      {
+        "color": "#8fa6c9",
+        "name": "Akzent 3"
+      },
+      {
+        "color": "#1f8a8a",
+        "name": "Akzent 4"
+      },
+      {
+        "color": "#d9b66a",
+        "name": "Akzent 5"
+      },
+      {
+        "color": "#c3cad6",
+        "name": "Akzent 6"
+      }
+    ],
+    "aspectRatio": 1.7777777777777777,
+    "layouts": [
+      "Titel",
+      "Abschnitt",
+      "Inhalt",
+      "Text und Bild",
+      "Zwei Spalten",
+      "Kennzahl",
+      "Zitat",
+      "Bild",
+      "Schluss",
+      "Drei Spalten"
+    ],
+    "file": "beratung.otp",
+    "bytes": 8035
+  },
+  {
+    "slug": "blaupause",
+    "name": "Blaupause",
+    "group": "Bereich",
+    "tags": [
+      "Blaupause",
+      "Technik",
+      "Ingenieur",
+      "Konstruktion",
+      "Raster",
+      "Zeichnung",
+      "blau",
+      "Planung"
+    ],
+    "description": "Ein Zeichenblatt aus dem Konstruktionsbüro: Blaupausenblau mit feinem Raster, Maschinenteile in weißer Linie, Maßlinien und Schriftfeld.",
+    "fonts": {
+      "head": "Barlow Condensed",
+      "body": "IBM Plex Mono"
+    },
+    "colors": [
+      {
+        "color": "#12408c",
+        "name": "Hintergrund 1"
+      },
+      {
+        "color": "#ffffff",
+        "name": "Text 1"
+      },
+      {
+        "color": "#0b2a63",
+        "name": "Hintergrund 2"
+      },
+      {
+        "color": "#bcd4f7",
+        "name": "Text 2"
+      },
+      {
+        "color": "#ffd34d",
+        "name": "Akzent 1"
+      },
+      {
+        "color": "#ff8a66",
+        "name": "Akzent 2"
+      },
+      {
+        "color": "#72d6ff",
+        "name": "Akzent 3"
+      },
+      {
+        "color": "#9fe6b8",
+        "name": "Akzent 4"
+      },
+      {
+        "color": "#c9b8ff",
+        "name": "Akzent 5"
+      },
+      {
+        "color": "#e9f1fd",
+        "name": "Akzent 6"
+      }
+    ],
+    "aspectRatio": 1.7777777777777777,
+    "layouts": [
+      "Titel",
+      "Abschnitt",
+      "Inhalt",
+      "Text und Bild",
+      "Zwei Spalten",
+      "Kennzahl",
+      "Zitat",
+      "Bild",
+      "Schluss"
+    ],
+    "file": "blaupause.otp",
+    "bytes": 177529
+  },
+  {
+    "slug": "boho",
+    "name": "Boho",
+    "group": "Farbenfroh",
+    "tags": [
+      "Boho",
+      "Terrakotta",
+      "warm",
+      "Bögen",
+      "Sonne",
+      "Erdtöne",
+      "Interior",
+      "Lifestyle"
+    ],
+    "description": "Warme Erdtöne auf gesprenkeltem Papier: Bögen, Regenbögen, Sonnen mit feinen Strahlen und Kiesel.",
+    "fonts": {
+      "head": "DM Serif Display",
+      "body": "Jost"
+    },
+    "colors": [
+      {
+        "color": "#f6eddd",
+        "name": "Hintergrund 1"
+      },
+      {
+        "color": "#4a2d21",
+        "name": "Text 1"
+      },
+      {
+        "color": "#efc6b3",
+        "name": "Hintergrund 2"
+      },
+      {
+        "color": "#7d6253",
+        "name": "Text 2"
+      },
+      {
+        "color": "#c4623f",
+        "name": "Akzent 1"
+      },
+      {
+        "color": "#dca243",
+        "name": "Akzent 2"
+      },
+      {
+        "color": "#9dab8b",
+        "name": "Akzent 3"
+      },
+      {
+        "color": "#d98e7a",
+        "name": "Akzent 4"
+      },
+      {
+        "color": "#9c452b",
+        "name": "Akzent 5"
+      },
+      {
+        "color": "#cbd3ba",
+        "name": "Akzent 6"
+      }
+    ],
+    "aspectRatio": 1.7777777777777777,
+    "layouts": [
+      "Titel",
+      "Abschnitt",
+      "Inhalt",
+      "Text und Bild",
+      "Zwei Spalten",
+      "Kennzahl",
+      "Zitat",
+      "Bild",
+      "Schluss"
+    ],
+    "file": "boho.otp",
+    "bytes": 53470
+  },
+  {
+    "slug": "bonbon",
+    "name": "Bonbon",
+    "group": "Farbenfroh",
+    "tags": [
+      "Pastell",
+      "süß",
+      "verspielt",
+      "rund",
+      "freundlich",
+      "Kinder",
+      "Feier",
+      "Café"
+    ],
+    "description": "Pastell wie im Süßwarenladen: Minze, Pfirsich und Flieder, runde Formen, Streusel und glänzende Drops.",
+    "fonts": {
+      "head": "Fredoka",
+      "body": "Quicksand"
+    },
+    "colors": [
+      {
+        "color": "#fffaf3",
+        "name": "Hintergrund 1"
+      },
+      {
+        "color": "#4b2a63",
+        "name": "Text 1"
+      },
+      {
+        "color": "#ddd0ff",
+        "name": "Hintergrund 2"
+      },
+      {
+        "color": "#7a5a92",
+        "name": "Text 2"
+      },
+      {
+        "color": "#ff7fb0",
+        "name": "Akzent 1"
+      },
+      {
+        "color": "#5cbcff",
+        "name": "Akzent 2"
+      },
+      {
+        "color": "#3fd0a4",
+        "name": "Akzent 3"
+      },
+      {
+        "color": "#ffc83d",
+        "name": "Akzent 4"
+      },
+      {
+        "color": "#a78bfa",
+        "name": "Akzent 5"
+      },
+      {
+        "color": "#ff9a6b",
+        "name": "Akzent 6"
+      }
+    ],
+    "aspectRatio": 1.7777777777777777,
+    "layouts": [
+      "Titel",
+      "Abschnitt",
+      "Inhalt",
+      "Text und Bild",
+      "Zwei Spalten",
+      "Kennzahl",
+      "Zitat",
+      "Bild",
+      "Schluss"
+    ],
+    "file": "bonbon.otp",
+    "bytes": 148906
+  },
+  {
+    "slug": "botanik",
+    "name": "Botanik",
+    "group": "Kunststil",
+    "tags": [
+      "Natur",
+      "Pflanzen",
+      "ruhig",
+      "Strichzeichnung",
+      "Papier",
+      "Salbei",
+      "Garten",
+      "Wellness"
+    ],
+    "description": "Ruhige Natur auf Papier: Salbei, Moos und Ton, fein gezeichnete Zweige und Farne, viel Luft.",
+    "fonts": {
+      "head": "Fraunces",
+      "body": "Nunito Sans"
+    },
+    "colors": [
+      {
+        "color": "#f3eee2",
+        "name": "Hintergrund 1"
+      },
+      {
+        "color": "#2c3628",
+        "name": "Text 1"
+      },
+      {
+        "color": "#d7deca",
+        "name": "Hintergrund 2"
+      },
+      {
+        "color": "#676d5c",
+        "name": "Text 2"
+      },
+      {
+        "color": "#5a6946",
+        "name": "Akzent 1"
+      },
+      {
+        "color": "#a9b89b",
+        "name": "Akzent 2"
+      },
+      {
+        "color": "#b9775a",
+        "name": "Akzent 3"
+      },
+      {
+        "color": "#e7c9b6",
+        "name": "Akzent 4"
+      },
+      {
+        "color": "#c8a45e",
+        "name": "Akzent 5"
+      },
+      {
+        "color": "#8a9a93",
+        "name": "Akzent 6"
+      }
+    ],
+    "aspectRatio": 1.7777777777777777,
+    "layouts": [
+      "Titel",
+      "Abschnitt",
+      "Inhalt",
+      "Text und Bild",
+      "Zwei Spalten",
+      "Kennzahl",
+      "Zitat",
+      "Bild",
+      "Schluss"
+    ],
+    "file": "botanik.otp",
+    "bytes": 73954
+  },
+  {
+    "slug": "boulevard",
+    "name": "Boulevard",
+    "group": "Zeitung",
+    "tags": [
+      "Boulevard",
+      "Schlagzeile",
+      "laut",
+      "rot",
+      "gelb",
+      "Zeitung",
+      "Pitch",
+      "Aufmerksamkeit"
+    ],
+    "description": "Wie die Titelseite eines Boulevardblatts: schreiende Schlagzeilen auf Rot, Gelb und Schwarz.",
+    "fonts": {
+      "head": "Anton",
+      "body": "Roboto Condensed"
+    },
+    "colors": [
+      {
+        "color": "#ffffff",
+        "name": "Hintergrund 1"
+      },
+      {
+        "color": "#0b0b0b",
+        "name": "Text 1"
+      },
+      {
+        "color": "#ffe500",
+        "name": "Hintergrund 2"
+      },
+      {
+        "color": "#3c3c3c",
+        "name": "Text 2"
+      },
+      {
+        "color": "#e2001a",
+        "name": "Akzent 1"
+      },
+      {
+        "color": "#a80013",
+        "name": "Akzent 2"
+      },
+      {
+        "color": "#ff8a00",
+        "name": "Akzent 3"
+      },
+      {
+        "color": "#0050b4",
+        "name": "Akzent 4"
+      },
+      {
+        "color": "#d6d6d6",
+        "name": "Akzent 5"
+      },
+      {
+        "color": "#6f6f6f",
+        "name": "Akzent 6"
+      }
+    ],
+    "aspectRatio": 1.7777777777777777,
+    "layouts": [
+      "Titel",
+      "Abschnitt",
+      "Inhalt",
+      "Text und Bild",
+      "Zwei Spalten",
+      "Kennzahl",
+      "Zitat",
+      "Bild",
+      "Schluss"
+    ],
+    "file": "boulevard.otp",
+    "bytes": 6154
+  },
+  {
+    "slug": "brutalismus",
+    "name": "Brutalismus",
+    "group": "Schwarzweiß",
+    "tags": [
+      "Schwarzweiß",
+      "Brutalismus",
+      "Web",
+      "Raster",
+      "roh",
+      "Monospace",
+      "Technik",
+      "Entwicklung"
+    ],
+    "description": "Web-Brutalismus: rohe weiße Seite, sichtbares Raster, schlichte Kästen mit dünnem schwarzem Rahmen, übergroße Ziffern und das Blau eines Links.",
+    "fonts": {
+      "head": "Space Grotesk",
+      "body": "JetBrains Mono"
+    },
+    "colors": [
+      {
+        "color": "#ffffff",
+        "name": "Hintergrund 1"
+      },
+      {
+        "color": "#000000",
+        "name": "Text 1"
+      },
+      {
+        "color": "#f2f2f2",
+        "name": "Hintergrund 2"
+      },
+      {
+        "color": "#555555",
+        "name": "Text 2"
+      },
+      {
+        "color": "#0000ee",
+        "name": "Akzent 1"
+      },
+      {
+        "color": "#222222",
+        "name": "Akzent 2"
+      },
+      {
+        "color": "#888888",
+        "name": "Akzent 3"
+      },
+      {
+        "color": "#bbbbbb",
+        "name": "Akzent 4"
+      },
+      {
+        "color": "#e4e4e4",
+        "name": "Akzent 5"
+      },
+      {
+        "color": "#551a8b",
+        "name": "Akzent 6"
+      }
+    ],
+    "aspectRatio": 1.7777777777777777,
+    "layouts": [
+      "Titel",
+      "Abschnitt",
+      "Inhalt",
+      "Text und Bild",
+      "Zwei Spalten",
+      "Kennzahl",
+      "Zitat",
+      "Bild",
+      "Schluss"
+    ],
+    "file": "brutalismus.otp",
+    "bytes": 6492
+  },
+  {
+    "slug": "clay",
+    "name": "Clay",
+    "group": "Designtrend",
+    "tags": [
+      "Clay",
+      "Claymorphism",
+      "3D",
+      "weich",
+      "Pastell",
+      "freundlich",
+      "verspielt",
+      "Workshop"
+    ],
+    "description": "Wie aus Knete geformt: aufgeblasene Pastellkugeln, Ringe und Pillen mit weichen farbigen Schatten und dicken weißen Kissen für den Text.",
+    "fonts": {
+      "head": "Fredoka",
+      "body": "Nunito"
+    },
+    "colors": [
+      {
+        "color": "#f2eaff",
+        "name": "Hintergrund 1"
+      },
+      {
+        "color": "#3d3166",
+        "name": "Text 1"
+      },
+      {
+        "color": "#ffffff",
+        "name": "Hintergrund 2"
+      },
+      {
+        "color": "#7b709e",
+        "name": "Text 2"
+      },
+      {
+        "color": "#ff9fc2",
+        "name": "Akzent 1"
+      },
+      {
+        "color": "#b59bff",
+        "name": "Akzent 2"
+      },
+      {
+        "color": "#8ccfff",
+        "name": "Akzent 3"
+      },
+      {
+        "color": "#86e2c0",
+        "name": "Akzent 4"
+      },
+      {
+        "color": "#ffd772",
+        "name": "Akzent 5"
+      },
+      {
+        "color": "#ff9d87",
+        "name": "Akzent 6"
+      }
+    ],
+    "aspectRatio": 1.7777777777777777,
+    "layouts": [
+      "Titel",
+      "Abschnitt",
+      "Inhalt",
+      "Text und Bild",
+      "Zwei Spalten",
+      "Kennzahl",
+      "Zitat",
+      "Bild",
+      "Schluss"
+    ],
+    "file": "clay.otp",
+    "bytes": 405701
+  },
+  {
+    "slug": "collage",
+    "name": "Collage",
+    "group": "Kunststil",
+    "tags": [
+      "Collage",
+      "Scrapbook",
+      "Papier",
+      "gerissen",
+      "Klebeband",
+      "handgemacht",
+      "Reise",
+      "persönlich"
+    ],
+    "description": "Eine Seite aus dem Klebebuch: Packpapier, gerissene Blätter mit weißem Rand, Kästchenpapier, bunte Schnipsel, Klebestreifen und Abzüge mit Rand.",
+    "fonts": {
+      "head": "Indie Flower",
+      "body": "Bitter"
+    },
+    "colors": [
+      {
+        "color": "#f7f1e3",
+        "name": "Hintergrund 1"
+      },
+      {
+        "color": "#2a2521",
+        "name": "Text 1"
+      },
+      {
+        "color": "#c2a078",
+        "name": "Hintergrund 2"
+      },
+      {
+        "color": "#6b5d4f",
+        "name": "Text 2"
+      },
+      {
+        "color": "#e0603f",
+        "name": "Akzent 1"
+      },
+      {
+        "color": "#e9b233",
+        "name": "Akzent 2"
+      },
+      {
+        "color": "#2e8c86",
+        "name": "Akzent 3"
+      },
+      {
+        "color": "#eaa9a2",
+        "name": "Akzent 4"
+      },
+      {
+        "color": "#2f4468",
+        "name": "Akzent 5"
+      },
+      {
+        "color": "#8a9440",
+        "name": "Akzent 6"
+      }
+    ],
+    "aspectRatio": 1.7777777777777777,
+    "layouts": [
+      "Titel",
+      "Abschnitt",
+      "Inhalt",
+      "Text und Bild",
+      "Zwei Spalten",
+      "Kennzahl",
+      "Zitat",
+      "Bild",
+      "Schluss"
+    ],
+    "file": "collage.otp",
+    "bytes": 205278
+  },
+  {
+    "slug": "de-stijl",
+    "name": "De Stijl",
+    "group": "Kunststil",
+    "tags": [
+      "De Stijl",
+      "Raster",
+      "Grundfarben",
+      "Moderne",
+      "streng",
+      "Architektur",
+      "Kunst"
+    ],
+    "description": "Ein Raster aus kräftigen schwarzen Linien mit Feldern in Rot, Gelb und Blau auf viel Weiß.",
+    "fonts": {
+      "head": "Josefin Sans",
+      "body": "Work Sans"
+    },
+    "colors": [
+      {
+        "color": "#fbfaf4",
+        "name": "Hintergrund 1"
+      },
+      {
+        "color": "#121212",
+        "name": "Text 1"
+      },
+      {
+        "color": "#d8d6ce",
+        "name": "Hintergrund 2"
+      },
+      {
+        "color": "#45443f",
+        "name": "Text 2"
+      },
+      {
+        "color": "#d6211f",
+        "name": "Akzent 1"
+      },
+      {
+        "color": "#f7cd1b",
+        "name": "Akzent 2"
+      },
+      {
+        "color": "#1b49a1",
+        "name": "Akzent 3"
+      },
+      {
+        "color": "#8c8a82",
+        "name": "Akzent 4"
+      },
+      {
+        "color": "#e8713a",
+        "name": "Akzent 5"
+      },
+      {
+        "color": "#2c6fc7",
+        "name": "Akzent 6"
+      }
+    ],
+    "aspectRatio": 1.7777777777777777,
+    "layouts": [
+      "Titel",
+      "Abschnitt",
+      "Inhalt",
+      "Text und Bild",
+      "Zwei Spalten",
+      "Kennzahl",
+      "Zitat",
+      "Bild",
+      "Schluss"
+    ],
+    "file": "de-stijl.otp",
+    "bytes": 5879
+  },
+  {
+    "slug": "editorial",
+    "name": "Editorial",
+    "group": "Kunststil",
+    "tags": [
+      "Magazin",
+      "Editorial",
+      "Serife",
+      "ruhig",
+      "elegant",
+      "Bericht",
+      "Kultur",
+      "Weißraum"
+    ],
+    "description": "Wie ein gutes Magazin: große Serifen, feine Linien, viel Weiß und ein ruhiges Grün.",
+    "fonts": {
+      "head": "Playfair Display",
+      "body": "Source Sans 3"
+    },
+    "colors": [
+      {
+        "color": "#faf8f4",
+        "name": "Hintergrund 1"
+      },
+      {
+        "color": "#161616",
+        "name": "Text 1"
+      },
+      {
+        "color": "#efebe3",
+        "name": "Hintergrund 2"
+      },
+      {
+        "color": "#6b6660",
+        "name": "Text 2"
+      },
+      {
+        "color": "#1e5a4c",
+        "name": "Akzent 1"
+      },
+      {
+        "color": "#c9b79c",
+        "name": "Akzent 2"
+      },
+      {
+        "color": "#a8573a",
+        "name": "Akzent 3"
+      },
+      {
+        "color": "#2f3a44",
+        "name": "Akzent 4"
+      },
+      {
+        "color": "#8fa69c",
+        "name": "Akzent 5"
+      },
+      {
+        "color": "#d9d3c7",
+        "name": "Akzent 6"
+      }
+    ],
+    "aspectRatio": 1.7777777777777777,
+    "layouts": [
+      "Titel",
+      "Abschnitt",
+      "Inhalt",
+      "Text und Bild",
+      "Zwei Spalten",
+      "Kennzahl",
+      "Zitat",
+      "Bild",
+      "Schluss"
+    ],
+    "file": "editorial.otp",
+    "bytes": 5794
+  },
+  {
+    "slug": "expressionismus",
+    "name": "Expressionismus",
+    "group": "Kunststil",
+    "tags": [
+      "Expressionismus",
+      "Holzschnitt",
+      "kantig",
+      "laut",
+      "dunkel",
+      "Kontrast",
+      "Stadt",
+      "Theater",
+      "Manifest"
+    ],
+    "description": "Wie ein Holzschnitt: gezackte schwarze Schnitte, kippende Flächen und harte Komplementärfarben.",
+    "fonts": {
+      "head": "Bitter",
+      "body": "Fira Sans"
+    },
+    "colors": [
+      {
+        "color": "#f1e9d6",
+        "name": "Hintergrund 1"
+      },
+      {
+        "color": "#15120f",
+        "name": "Text 1"
+      },
+      {
+        "color": "#e2d6ba",
+        "name": "Hintergrund 2"
+      },
+      {
+        "color": "#4a433a",
+        "name": "Text 2"
+      },
+      {
+        "color": "#17357e",
+        "name": "Akzent 1"
+      },
+      {
+        "color": "#f1591c",
+        "name": "Akzent 2"
+      },
+      {
+        "color": "#b5d334",
+        "name": "Akzent 3"
+      },
+      {
+        "color": "#c2202b",
+        "name": "Akzent 4"
+      },
+      {
+        "color": "#f6c61f",
+        "name": "Akzent 5"
+      },
+      {
+        "color": "#5b2a86",
+        "name": "Akzent 6"
+      }
+    ],
+    "aspectRatio": 1.7777777777777777,
+    "layouts": [
+      "Titel",
+      "Abschnitt",
+      "Inhalt",
+      "Text und Bild",
+      "Zwei Spalten",
+      "Kennzahl",
+      "Zitat",
+      "Bild",
+      "Schluss"
+    ],
+    "file": "expressionismus.otp",
+    "bytes": 114673
+  },
+  {
+    "slug": "extrablatt",
+    "name": "Extrablatt",
+    "group": "Zeitung",
+    "tags": [
+      "Extrablatt",
+      "historisch",
+      "1900",
+      "Zeitung",
+      "Sepia",
+      "Ornament",
+      "Jubiläum",
+      "nostalgisch"
+    ],
+    "description": "Wie eine Zeitung um 1900: vergilbtes Papier, Zierlinien, fette Lettern und Schraffuren in Sepia.",
+    "fonts": {
+      "head": "Abril Fatface",
+      "body": "Zilla Slab"
+    },
+    "colors": [
+      {
+        "color": "#e6d4a9",
+        "name": "Hintergrund 1"
+      },
+      {
+        "color": "#3a2816",
+        "name": "Text 1"
+      },
+      {
+        "color": "#f1e5c5",
+        "name": "Hintergrund 2"
+      },
+      {
+        "color": "#6c5233",
+        "name": "Text 2"
+      },
+      {
+        "color": "#7a2a1b",
+        "name": "Akzent 1"
+      },
+      {
+        "color": "#a98a4f",
+        "name": "Akzent 2"
+      },
+      {
+        "color": "#4b5a44",
+        "name": "Akzent 3"
+      },
+      {
+        "color": "#2f4156",
+        "name": "Akzent 4"
+      },
+      {
+        "color": "#c7ad74",
+        "name": "Akzent 5"
+      },
+      {
+        "color": "#8f6f44",
+        "name": "Akzent 6"
+      }
+    ],
+    "aspectRatio": 1.7777777777777777,
+    "layouts": [
+      "Titel",
+      "Abschnitt",
+      "Inhalt",
+      "Text und Bild",
+      "Zwei Spalten",
+      "Kennzahl",
+      "Zitat",
+      "Bild",
+      "Schluss"
+    ],
+    "file": "extrablatt.otp",
+    "bytes": 186766
+  },
+  {
+    "slug": "farbblock",
+    "name": "Farbblock",
+    "group": "Farbenfroh",
+    "tags": [
+      "Colour Blocking",
+      "Farbflächen",
+      "kräftig",
+      "modern",
+      "plakativ",
+      "Marke",
+      "Pitch"
+    ],
+    "description": "Große Flächen in unerwarteten Farbpaaren, auf jeder Folie ein anderes – sonst nichts.",
+    "fonts": {
+      "head": "Kanit",
+      "body": "Red Hat Display"
+    },
+    "colors": [
+      {
+        "color": "#f6f1e7",
+        "name": "Hintergrund 1"
+      },
+      {
+        "color": "#15141c",
+        "name": "Text 1"
+      },
+      {
+        "color": "#e9e1d0",
+        "name": "Hintergrund 2"
+      },
+      {
+        "color": "#4b4956",
+        "name": "Text 2"
+      },
+      {
+        "color": "#2340d9",
+        "name": "Akzent 1"
+      },
+      {
+        "color": "#ff7a1f",
+        "name": "Akzent 2"
+      },
+      {
+        "color": "#0b8f63",
+        "name": "Akzent 3"
+      },
+      {
+        "color": "#ff6fae",
+        "name": "Akzent 4"
+      },
+      {
+        "color": "#ffd53d",
+        "name": "Akzent 5"
+      },
+      {
+        "color": "#4d1a66",
+        "name": "Akzent 6"
+      }
+    ],
+    "aspectRatio": 1.7777777777777777,
+    "layouts": [
+      "Titel",
+      "Abschnitt",
+      "Inhalt",
+      "Text und Bild",
+      "Zwei Spalten",
+      "Kennzahl",
+      "Zitat",
+      "Bild",
+      "Schluss"
+    ],
+    "file": "farbblock.otp",
+    "bytes": 5337
+  },
+  {
+    "slug": "filmplakat",
+    "name": "Filmplakat",
+    "group": "Plakat",
+    "tags": [
+      "Film",
+      "Kino",
+      "dunkel",
+      "dramatisch",
+      "Breitbild",
+      "Premiere",
+      "Keynote",
+      "Trailer"
+    ],
+    "description": "Großes Kino im Breitbild: Nachtgründe aus Licht und Dunst, ein weit gesperrter Titel und Kleingedrucktes wie im Abspann.",
+    "fonts": {
+      "head": "Bebas Neue",
+      "body": "Oswald"
+    },
+    "colors": [
+      {
+        "color": "#0a0f14",
+        "name": "Hintergrund 1"
+      },
+      {
+        "color": "#efe6d2",
+        "name": "Text 1"
+      },
+      {
+        "color": "#16252d",
+        "name": "Hintergrund 2"
+      },
+      {
+        "color": "#a7b6bd",
+        "name": "Text 2"
+      },
+      {
+        "color": "#e9a13b",
+        "name": "Akzent 1"
+      },
+      {
+        "color": "#c2452b",
+        "name": "Akzent 2"
+      },
+      {
+        "color": "#1d4553",
+        "name": "Akzent 3"
+      },
+      {
+        "color": "#6d8f99",
+        "name": "Akzent 4"
+      },
+      {
+        "color": "#f4d9a0",
+        "name": "Akzent 5"
+      },
+      {
+        "color": "#7a1a1d",
+        "name": "Akzent 6"
+      }
+    ],
+    "aspectRatio": 1.7777777777777777,
+    "layouts": [
+      "Titel",
+      "Abschnitt",
+      "Inhalt",
+      "Text und Bild",
+      "Zwei Spalten",
+      "Kennzahl",
+      "Zitat",
+      "Bild",
+      "Schluss"
+    ],
+    "file": "filmplakat.otp",
+    "bytes": 425795
+  },
+  {
+    "slug": "finanzbericht",
+    "name": "Finanzbericht",
+    "group": "Bereich",
+    "tags": [
+      "Finanzen",
+      "Geschäftsbericht",
+      "Bilanz",
+      "Investoren",
+      "seriös",
+      "Grün",
+      "Serifen",
+      "Zahlen"
+    ],
+    "description": "Wie ein Geschäftsbericht: Tiefgrün und warmes Grau auf gebrochenem Weiß, Serifen, feine Tabellenlinien und schlanke Säulen.",
+    "fonts": {
+      "head": "Source Serif 4",
+      "body": "Source Sans 3"
+    },
+    "colors": [
+      {
+        "color": "#f6f3ec",
+        "name": "Hintergrund 1"
+      },
+      {
+        "color": "#1c2a24",
+        "name": "Text 1"
+      },
+      {
+        "color": "#ebe5d8",
+        "name": "Hintergrund 2"
+      },
+      {
+        "color": "#7d7568",
+        "name": "Text 2"
+      },
+      {
+        "color": "#103d2e",
+        "name": "Akzent 1"
+      },
+      {
+        "color": "#b08a4f",
+        "name": "Akzent 2"
+      },
+      {
+        "color": "#7fa893",
+        "name": "Akzent 3"
+      },
+      {
+        "color": "#c9c0ae",
+        "name": "Akzent 4"
+      },
+      {
+        "color": "#9a4a35",
+        "name": "Akzent 5"
+      },
+      {
+        "color": "#2a6b54",
+        "name": "Akzent 6"
+      }
+    ],
+    "aspectRatio": 1.7777777777777777,
+    "layouts": [
+      "Titel",
+      "Abschnitt",
+      "Inhalt",
+      "Text und Bild",
+      "Zwei Spalten",
+      "Kennzahl",
+      "Zitat",
+      "Bild",
+      "Schluss"
+    ],
+    "file": "finanzbericht.otp",
+    "bytes": 6657
+  },
+  {
+    "slug": "flat-design",
+    "name": "Flat Design",
+    "group": "Designtrend",
+    "tags": [
+      "Flat Design",
+      "flach",
+      "Farbflächen",
+      "lange Schatten",
+      "klar",
+      "Start-up",
+      "App"
+    ],
+    "description": "Reine Farbflächen ohne Verlauf und Tiefe, einfache geometrische Zeichen und lange, flache Schatten.",
+    "fonts": {
+      "head": "Lato",
+      "body": "Lato"
+    },
+    "colors": [
+      {
+        "color": "#f1f4f5",
+        "name": "Hintergrund 1"
+      },
+      {
+        "color": "#2a394c",
+        "name": "Text 1"
+      },
+      {
+        "color": "#dde4e7",
+        "name": "Hintergrund 2"
+      },
+      {
+        "color": "#667784",
+        "name": "Text 2"
+      },
+      {
+        "color": "#17b3a3",
+        "name": "Akzent 1"
+      },
+      {
+        "color": "#2f8fdc",
+        "name": "Akzent 2"
+      },
+      {
+        "color": "#e4533f",
+        "name": "Akzent 3"
+      },
+      {
+        "color": "#f7c520",
+        "name": "Akzent 4"
+      },
+      {
+        "color": "#8c5bb8",
+        "name": "Akzent 5"
+      },
+      {
+        "color": "#f08226",
+        "name": "Akzent 6"
+      }
+    ],
+    "aspectRatio": 1.7777777777777777,
+    "layouts": [
+      "Titel",
+      "Abschnitt",
+      "Inhalt",
+      "Text und Bild",
+      "Zwei Spalten",
+      "Kennzahl",
+      "Zitat",
+      "Bild",
+      "Schluss"
+    ],
+    "file": "flat-design.otp",
+    "bytes": 7192
+  },
+  {
+    "slug": "frutiger-aero",
+    "name": "Frutiger Aero",
+    "group": "Designtrend",
+    "tags": [
+      "Frutiger Aero",
+      "Himmel",
+      "Glas",
+      "Blasen",
+      "frisch",
+      "optimistisch",
+      "Natur",
+      "Technik"
+    ],
+    "description": "Himmelblau bis Aqua, Sonnenlicht, grüne Hügel, glänzende Blasen und Glasflächen mit weißem Schein – die helle Zuversicht der 2000er.",
+    "fonts": {
+      "head": "Varela Round",
+      "body": "Open Sans"
+    },
+    "colors": [
+      {
+        "color": "#dff8ff",
+        "name": "Hintergrund 1"
+      },
+      {
+        "color": "#0b3a66",
+        "name": "Text 1"
+      },
+      {
+        "color": "#ffffff",
+        "name": "Hintergrund 2"
+      },
+      {
+        "color": "#3d6385",
+        "name": "Text 2"
+      },
+      {
+        "color": "#1b86de",
+        "name": "Akzent 1"
+      },
+      {
+        "color": "#73c92f",
+        "name": "Akzent 2"
+      },
+      {
+        "color": "#39cfd9",
+        "name": "Akzent 3"
+      },
+      {
+        "color": "#ffd84a",
+        "name": "Akzent 4"
+      },
+      {
+        "color": "#0a56b8",
+        "name": "Akzent 5"
+      },
+      {
+        "color": "#2f9d2c",
+        "name": "Akzent 6"
+      }
+    ],
+    "aspectRatio": 1.7777777777777777,
+    "layouts": [
+      "Titel",
+      "Abschnitt",
+      "Inhalt",
+      "Text und Bild",
+      "Zwei Spalten",
+      "Kennzahl",
+      "Zitat",
+      "Bild",
+      "Schluss"
+    ],
+    "file": "frutiger-aero.otp",
+    "bytes": 722196
+  },
+  {
+    "slug": "gesundheit",
+    "name": "Gesundheit",
+    "group": "Bereich",
+    "tags": [
+      "Gesundheit",
+      "Medizin",
+      "Praxis",
+      "Pflege",
+      "freundlich",
+      "Mint",
+      "rund",
+      "Vorsorge"
+    ],
+    "description": "Für Praxis, Klinik und Pflege: klares Weiß, Mint und sanftes Blau, runde Formen, eine ruhige Pulslinie und kleine Pluszeichen.",
+    "fonts": {
+      "head": "Figtree",
+      "body": "Mulish"
+    },
+    "colors": [
+      {
+        "color": "#ffffff",
+        "name": "Hintergrund 1"
+      },
+      {
+        "color": "#12404f",
+        "name": "Text 1"
+      },
+      {
+        "color": "#dff5ee",
+        "name": "Hintergrund 2"
+      },
+      {
+        "color": "#4d6f7b",
+        "name": "Text 2"
+      },
+      {
+        "color": "#34bf9e",
+        "name": "Akzent 1"
+      },
+      {
+        "color": "#5aa7e0",
+        "name": "Akzent 2"
+      },
+      {
+        "color": "#0f5565",
+        "name": "Akzent 3"
+      },
+      {
+        "color": "#ff8f7a",
+        "name": "Akzent 4"
+      },
+      {
+        "color": "#a8e3d2",
+        "name": "Akzent 5"
+      },
+      {
+        "color": "#e4f1fb",
+        "name": "Akzent 6"
+      }
+    ],
+    "aspectRatio": 1.7777777777777777,
+    "layouts": [
+      "Titel",
+      "Abschnitt",
+      "Inhalt",
+      "Text und Bild",
+      "Zwei Spalten",
+      "Kennzahl",
+      "Zitat",
+      "Bild",
+      "Schluss"
+    ],
+    "file": "gesundheit.otp",
+    "bytes": 8861
+  },
+  {
+    "slug": "glasfenster",
+    "name": "Glasfenster",
+    "group": "Farbenfroh",
+    "tags": [
+      "Glasfenster",
+      "Mosaik",
+      "Bleiglas",
+      "Juwelentöne",
+      "dunkel",
+      "feierlich",
+      "Kultur"
+    ],
+    "description": "Bleiglas im Gegenlicht: unregelmäßige Scheiben in Juwelentönen, dunkle Ruten und ruhige Flächen für den Text.",
+    "fonts": {
+      "head": "Cinzel",
+      "body": "Lato"
+    },
+    "colors": [
+      {
+        "color": "#14121c",
+        "name": "Hintergrund 1"
+      },
+      {
+        "color": "#f6eeda",
+        "name": "Text 1"
+      },
+      {
+        "color": "#262136",
+        "name": "Hintergrund 2"
+      },
+      {
+        "color": "#cfc4a8",
+        "name": "Text 2"
+      },
+      {
+        "color": "#c4183b",
+        "name": "Akzent 1"
+      },
+      {
+        "color": "#1e50c8",
+        "name": "Akzent 2"
+      },
+      {
+        "color": "#f2a51d",
+        "name": "Akzent 3"
+      },
+      {
+        "color": "#12986a",
+        "name": "Akzent 4"
+      },
+      {
+        "color": "#7b36b2",
+        "name": "Akzent 5"
+      },
+      {
+        "color": "#17a8bd",
+        "name": "Akzent 6"
+      }
+    ],
+    "aspectRatio": 1.7777777777777777,
+    "layouts": [
+      "Titel",
+      "Abschnitt",
+      "Inhalt",
+      "Text und Bild",
+      "Zwei Spalten",
+      "Kennzahl",
+      "Zitat",
+      "Bild",
+      "Schluss"
+    ],
+    "file": "glasfenster.otp",
+    "bytes": 516059
+  },
+  {
+    "slug": "glasmorph",
+    "name": "Glasmorphismus",
+    "group": "Designtrend",
+    "tags": [
+      "Glasmorphismus",
+      "Milchglas",
+      "Farbverlauf",
+      "leuchtend",
+      "dunkel",
+      "App",
+      "Technik"
+    ],
+    "description": "Scheiben aus Milchglas mit hellem Rand über leuchtenden, verschwommenen Farbwolken; weiße Schrift auf dem Glas.",
+    "fonts": {
+      "head": "Plus Jakarta Sans",
+      "body": "Plus Jakarta Sans"
+    },
+    "colors": [
+      {
+        "color": "#17104a",
+        "name": "Hintergrund 1"
+      },
+      {
+        "color": "#ffffff",
+        "name": "Text 1"
+      },
+      {
+        "color": "#3b2b8f",
+        "name": "Hintergrund 2"
+      },
+      {
+        "color": "#d9d2f7",
+        "name": "Text 2"
+      },
+      {
+        "color": "#e23a9c",
+        "name": "Akzent 1"
+      },
+      {
+        "color": "#6d3ff2",
+        "name": "Akzent 2"
+      },
+      {
+        "color": "#1f7df5",
+        "name": "Akzent 3"
+      },
+      {
+        "color": "#1fc7d9",
+        "name": "Akzent 4"
+      },
+      {
+        "color": "#ff8c3f",
+        "name": "Akzent 5"
+      },
+      {
+        "color": "#ff9fca",
+        "name": "Akzent 6"
+      }
+    ],
+    "aspectRatio": 1.7777777777777777,
+    "layouts": [
+      "Titel",
+      "Abschnitt",
+      "Inhalt",
+      "Text und Bild",
+      "Zwei Spalten",
+      "Kennzahl",
+      "Zitat",
+      "Bild",
+      "Schluss"
+    ],
+    "file": "glasmorph.otp",
+    "bytes": 705051
+  },
+  {
+    "slug": "holo",
+    "name": "Holografisch",
+    "group": "Designtrend",
+    "tags": [
+      "Holografisch",
+      "Folie",
+      "schillernd",
+      "Pastell",
+      "Sticker",
+      "Mode",
+      "Beauty",
+      "modern"
+    ],
+    "description": "Schillernde Folie auf fast weißem Grund: perlige Regenbogenverläufe als Aufkleber, dünne schwarze Schrift und feine Linien.",
+    "fonts": {
+      "head": "Urbanist",
+      "body": "Urbanist"
+    },
+    "colors": [
+      {
+        "color": "#f5f5f8",
+        "name": "Hintergrund 1"
+      },
+      {
+        "color": "#121216",
+        "name": "Text 1"
+      },
+      {
+        "color": "#ffffff",
+        "name": "Hintergrund 2"
+      },
+      {
+        "color": "#5e5e6a",
+        "name": "Text 2"
+      },
+      {
+        "color": "#ffb1d8",
+        "name": "Akzent 1"
+      },
+      {
+        "color": "#c7b6ff",
+        "name": "Akzent 2"
+      },
+      {
+        "color": "#a6d7ff",
+        "name": "Akzent 3"
+      },
+      {
+        "color": "#a8efcf",
+        "name": "Akzent 4"
+      },
+      {
+        "color": "#fff2a0",
+        "name": "Akzent 5"
+      },
+      {
+        "color": "#ffc8a6",
+        "name": "Akzent 6"
+      }
+    ],
+    "aspectRatio": 1.7777777777777777,
+    "layouts": [
+      "Titel",
+      "Abschnitt",
+      "Inhalt",
+      "Text und Bild",
+      "Zwei Spalten",
+      "Kennzahl",
+      "Zitat",
+      "Bild",
+      "Schluss"
+    ],
+    "file": "holo.otp",
+    "bytes": 365729
+  },
+  {
+    "slug": "impressionismus",
+    "name": "Impressionismus",
+    "group": "Kunststil",
+    "tags": [
+      "Impressionismus",
+      "Malerei",
+      "Pinselstrich",
+      "Licht",
+      "Natur",
+      "Garten",
+      "hell",
+      "elegant",
+      "Kultur"
+    ],
+    "description": "Gemalte Gründe aus tausenden kurzen Pinselstrichen: See am Morgen, Garten, Teich und Feld in der Dämmerung.",
+    "fonts": {
+      "head": "Cormorant Garamond",
+      "body": "Lora"
+    },
+    "colors": [
+      {
+        "color": "#fbf6ea",
+        "name": "Hintergrund 1"
+      },
+      {
+        "color": "#2b3158",
+        "name": "Text 1"
+      },
+      {
+        "color": "#f1e8d3",
+        "name": "Hintergrund 2"
+      },
+      {
+        "color": "#555c82",
+        "name": "Text 2"
+      },
+      {
+        "color": "#6f9ed2",
+        "name": "Akzent 1"
+      },
+      {
+        "color": "#7fae7b",
+        "name": "Akzent 2"
+      },
+      {
+        "color": "#dd5f48",
+        "name": "Akzent 3"
+      },
+      {
+        "color": "#a98fcb",
+        "name": "Akzent 4"
+      },
+      {
+        "color": "#f2b25c",
+        "name": "Akzent 5"
+      },
+      {
+        "color": "#eaa5b5",
+        "name": "Akzent 6"
+      }
+    ],
+    "aspectRatio": 1.7777777777777777,
+    "layouts": [
+      "Titel",
+      "Abschnitt",
+      "Inhalt",
+      "Text und Bild",
+      "Zwei Spalten",
+      "Kennzahl",
+      "Zitat",
+      "Bild",
+      "Schluss"
+    ],
+    "file": "impressionismus.otp",
+    "bytes": 971464
+  },
+  {
+    "slug": "jugendstil",
+    "name": "Jugendstil",
+    "group": "Kunststil",
+    "tags": [
+      "Jugendstil",
+      "Art nouveau",
+      "Ornament",
+      "Ranken",
+      "floral",
+      "Gold",
+      "elegant",
+      "Einladung",
+      "Kultur"
+    ],
+    "description": "Schwingende Linien, stilisierte Ranken und feine Goldrahmen in Salbei, Pflaume und Tannengrün auf Elfenbein.",
+    "fonts": {
+      "head": "Fraunces",
+      "body": "Josefin Sans"
+    },
+    "colors": [
+      {
+        "color": "#f6f0e1",
+        "name": "Hintergrund 1"
+      },
+      {
+        "color": "#3a2433",
+        "name": "Text 1"
+      },
+      {
+        "color": "#e9dfc6",
+        "name": "Hintergrund 2"
+      },
+      {
+        "color": "#6a5560",
+        "name": "Text 2"
+      },
+      {
+        "color": "#b8964f",
+        "name": "Akzent 1"
+      },
+      {
+        "color": "#8fa286",
+        "name": "Akzent 2"
+      },
+      {
+        "color": "#6f3f5c",
+        "name": "Akzent 3"
+      },
+      {
+        "color": "#42594b",
+        "name": "Akzent 4"
+      },
+      {
+        "color": "#c9a09a",
+        "name": "Akzent 5"
+      },
+      {
+        "color": "#6f9090",
+        "name": "Akzent 6"
+      }
+    ],
+    "aspectRatio": 1.7777777777777777,
+    "layouts": [
+      "Titel",
+      "Abschnitt",
+      "Inhalt",
+      "Text und Bild",
+      "Zwei Spalten",
+      "Kennzahl",
+      "Zitat",
+      "Bild",
+      "Schluss"
+    ],
+    "file": "jugendstil.otp",
+    "bytes": 155999
+  },
+  {
+    "slug": "konstruktivismus",
+    "name": "Konstruktivismus",
+    "group": "Kunststil",
+    "tags": [
+      "Konstruktivismus",
+      "Plakat",
+      "Rot",
+      "Diagonale",
+      "dynamisch",
+      "Avantgarde",
+      "kraftvoll"
+    ],
+    "description": "Rot, Schwarz und Papier: steile Diagonalen, Keile, Balken und Kreise mit schwerer, schmaler Schrift.",
+    "fonts": {
+      "head": "Oswald",
+      "body": "Roboto Condensed"
+    },
+    "colors": [
+      {
+        "color": "#ece2cc",
+        "name": "Hintergrund 1"
+      },
+      {
+        "color": "#181513",
+        "name": "Text 1"
+      },
+      {
+        "color": "#d8ccb0",
+        "name": "Hintergrund 2"
+      },
+      {
+        "color": "#4b443b",
+        "name": "Text 2"
+      },
+      {
+        "color": "#d2281b",
+        "name": "Akzent 1"
+      },
+      {
+        "color": "#9b1b13",
+        "name": "Akzent 2"
+      },
+      {
+        "color": "#3b3632",
+        "name": "Akzent 3"
+      },
+      {
+        "color": "#c59a2a",
+        "name": "Akzent 4"
+      },
+      {
+        "color": "#8b806b",
+        "name": "Akzent 5"
+      },
+      {
+        "color": "#f7f1e3",
+        "name": "Akzent 6"
+      }
+    ],
+    "aspectRatio": 1.7777777777777777,
+    "layouts": [
+      "Titel",
+      "Abschnitt",
+      "Inhalt",
+      "Text und Bild",
+      "Zwei Spalten",
+      "Kennzahl",
+      "Zitat",
+      "Bild",
+      "Schluss"
+    ],
+    "file": "konstruktivismus.otp",
+    "bytes": 7055
+  },
+  {
+    "slug": "kontrast",
+    "name": "Kontrast",
+    "group": "Schwarzweiß",
+    "tags": [
+      "Schwarzweiß",
+      "fett",
+      "Typografie",
+      "monumental",
+      "hart",
+      "Plakat",
+      "Keynote",
+      "Statement"
+    ],
+    "description": "Reines Schwarz und Weiß: riesige fette Schrift, Flächen, die von Folie zu Folie tauschen, dicke Balken.",
+    "fonts": {
+      "head": "Archivo Black",
+      "body": "Archivo"
+    },
+    "colors": [
+      {
+        "color": "#ffffff",
+        "name": "Hintergrund 1"
+      },
+      {
+        "color": "#000000",
+        "name": "Text 1"
+      },
+      {
+        "color": "#ececec",
+        "name": "Hintergrund 2"
+      },
+      {
+        "color": "#4a4a4a",
+        "name": "Text 2"
+      },
+      {
+        "color": "#1c1c1c",
+        "name": "Akzent 1"
+      },
+      {
+        "color": "#767676",
+        "name": "Akzent 2"
+      },
+      {
+        "color": "#a3a3a3",
+        "name": "Akzent 3"
+      },
+      {
+        "color": "#cdcdcd",
+        "name": "Akzent 4"
+      },
+      {
+        "color": "#d7301f",
+        "name": "Akzent 5"
+      },
+      {
+        "color": "#b9ad98",
+        "name": "Akzent 6"
+      }
+    ],
+    "aspectRatio": 1.7777777777777777,
+    "layouts": [
+      "Titel",
+      "Abschnitt",
+      "Inhalt",
+      "Text und Bild",
+      "Zwei Spalten",
+      "Kennzahl",
+      "Zitat",
+      "Bild",
+      "Schluss"
+    ],
+    "file": "kontrast.otp",
+    "bytes": 5216
+  },
+  {
+    "slug": "konzertplakat",
+    "name": "Konzertplakat",
+    "group": "Plakat",
+    "tags": [
+      "Konzert",
+      "Siebdruck",
+      "Musik",
+      "laut",
+      "Raster",
+      "retro",
+      "Festival",
+      "Kampagne"
+    ],
+    "description": "Siebdruck vom Konzertabend: drei Farben auf rauem Papier, Sonne, Blitz und Rasterpunkte, dazu fette Schrift bis an den Rand.",
+    "fonts": {
+      "head": "Anton",
+      "body": "Karla"
+    },
+    "colors": [
+      {
+        "color": "#f2e8d3",
+        "name": "Hintergrund 1"
+      },
+      {
+        "color": "#1a2242",
+        "name": "Text 1"
+      },
+      {
+        "color": "#e7d9ba",
+        "name": "Hintergrund 2"
+      },
+      {
+        "color": "#4b5070",
+        "name": "Text 2"
+      },
+      {
+        "color": "#e5412d",
+        "name": "Akzent 1"
+      },
+      {
+        "color": "#f2b632",
+        "name": "Akzent 2"
+      },
+      {
+        "color": "#2a3a7a",
+        "name": "Akzent 3"
+      },
+      {
+        "color": "#f6d98a",
+        "name": "Akzent 4"
+      },
+      {
+        "color": "#b52e1d",
+        "name": "Akzent 5"
+      },
+      {
+        "color": "#2f8f8a",
+        "name": "Akzent 6"
+      }
+    ],
+    "aspectRatio": 1.7777777777777777,
+    "layouts": [
+      "Titel",
+      "Abschnitt",
+      "Inhalt",
+      "Text und Bild",
+      "Zwei Spalten",
+      "Kennzahl",
+      "Zitat",
+      "Bild",
+      "Schluss"
+    ],
+    "file": "konzertplakat.otp",
+    "bytes": 97706
+  },
+  {
+    "slug": "kreidetafel",
+    "name": "Kreidetafel",
+    "group": "Bereich",
+    "tags": [
+      "Kreide",
+      "Tafel",
+      "Schule",
+      "Unterricht",
+      "Lernen",
+      "handgezeichnet",
+      "Workshop",
+      "dunkel"
+    ],
+    "description": "Eine Schultafel: grüngrauer Schiefer mit Kreidestaub, Rahmen, Pfeile und kleine Zeichnungen in weißer und bunter Kreide, Schrift von Hand.",
+    "fonts": {
+      "head": "Caveat",
+      "body": "Nunito"
+    },
+    "colors": [
+      {
+        "color": "#2b4640",
+        "name": "Hintergrund 1"
+      },
+      {
+        "color": "#f4f0e4",
+        "name": "Text 1"
+      },
+      {
+        "color": "#1f342f",
+        "name": "Hintergrund 2"
+      },
+      {
+        "color": "#c5cfc6",
+        "name": "Text 2"
+      },
+      {
+        "color": "#f7e07a",
+        "name": "Akzent 1"
+      },
+      {
+        "color": "#f4a9b8",
+        "name": "Akzent 2"
+      },
+      {
+        "color": "#9fd4ec",
+        "name": "Akzent 3"
+      },
+      {
+        "color": "#b9e3a2",
+        "name": "Akzent 4"
+      },
+      {
+        "color": "#f6b97c",
+        "name": "Akzent 5"
+      },
+      {
+        "color": "#8a6644",
+        "name": "Akzent 6"
+      }
+    ],
+    "aspectRatio": 1.7777777777777777,
+    "layouts": [
+      "Titel",
+      "Abschnitt",
+      "Inhalt",
+      "Text und Bild",
+      "Zwei Spalten",
+      "Kennzahl",
+      "Zitat",
+      "Bild",
+      "Schluss"
+    ],
+    "file": "kreidetafel.otp",
+    "bytes": 335194
+  },
+  {
+    "slug": "kubismus",
+    "name": "Kubismus",
+    "group": "Kunststil",
+    "tags": [
+      "Kubismus",
+      "Facetten",
+      "Collage",
+      "geometrisch",
+      "gedämpft",
+      "Ocker",
+      "Stillleben",
+      "Atelier",
+      "Architektur"
+    ],
+    "description": "Zerlegte, sich überlagernde Flächen in Ocker, Graublau und Braun mit feinen Konstruktionslinien und einem Stillleben.",
+    "fonts": {
+      "head": "Bricolage Grotesque",
+      "body": "Source Serif 4"
+    },
+    "colors": [
+      {
+        "color": "#ebe3d2",
+        "name": "Hintergrund 1"
+      },
+      {
+        "color": "#231e19",
+        "name": "Text 1"
+      },
+      {
+        "color": "#d9ccb2",
+        "name": "Hintergrund 2"
+      },
+      {
+        "color": "#5f564b",
+        "name": "Text 2"
+      },
+      {
+        "color": "#c8963e",
+        "name": "Akzent 1"
+      },
+      {
+        "color": "#7f95a6",
+        "name": "Akzent 2"
+      },
+      {
+        "color": "#6b4a32",
+        "name": "Akzent 3"
+      },
+      {
+        "color": "#3f5566",
+        "name": "Akzent 4"
+      },
+      {
+        "color": "#8c8a68",
+        "name": "Akzent 5"
+      },
+      {
+        "color": "#a8552f",
+        "name": "Akzent 6"
+      }
+    ],
+    "aspectRatio": 1.7777777777777777,
+    "layouts": [
+      "Titel",
+      "Abschnitt",
+      "Inhalt",
+      "Text und Bild",
+      "Zwei Spalten",
+      "Kennzahl",
+      "Zitat",
+      "Bild",
+      "Schluss"
+    ],
+    "file": "kubismus.otp",
+    "bytes": 173139
+  },
+  {
+    "slug": "landschaft",
+    "name": "Landschaft",
+    "group": "Kunststil",
+    "tags": [
+      "Landschaft",
+      "Berge",
+      "Natur",
+      "Nebel",
+      "See",
+      "Höhenlinien",
+      "ruhig",
+      "Reise",
+      "Outdoor"
+    ],
+    "description": "Gemalte Bergketten im Dunst, Tannenlinien und Seen – jede Folie eine andere Tageszeit, dazu Höhenlinien wie auf einer Karte.",
+    "fonts": {
+      "head": "DM Serif Display",
+      "body": "DM Sans"
+    },
+    "colors": [
+      {
+        "color": "#f5f0e6",
+        "name": "Hintergrund 1"
+      },
+      {
+        "color": "#1d2940",
+        "name": "Text 1"
+      },
+      {
+        "color": "#dfe7e4",
+        "name": "Hintergrund 2"
+      },
+      {
+        "color": "#566477",
+        "name": "Text 2"
+      },
+      {
+        "color": "#3c6a5c",
+        "name": "Akzent 1"
+      },
+      {
+        "color": "#4e8ca3",
+        "name": "Akzent 2"
+      },
+      {
+        "color": "#eeb055",
+        "name": "Akzent 3"
+      },
+      {
+        "color": "#e5a092",
+        "name": "Akzent 4"
+      },
+      {
+        "color": "#764f73",
+        "name": "Akzent 5"
+      },
+      {
+        "color": "#22355a",
+        "name": "Akzent 6"
+      }
+    ],
+    "aspectRatio": 1.7777777777777777,
+    "layouts": [
+      "Titel",
+      "Abschnitt",
+      "Inhalt",
+      "Text und Bild",
+      "Zwei Spalten",
+      "Kennzahl",
+      "Zitat",
+      "Bild",
+      "Schluss"
+    ],
+    "file": "landschaft.otp",
+    "bytes": 1042012
+  },
+  {
+    "slug": "luxus",
+    "name": "Luxus",
+    "group": "Bereich",
+    "tags": [
+      "Luxus",
+      "Gold",
+      "Schwarz",
+      "Marmor",
+      "edel",
+      "Hotel",
+      "Schmuck",
+      "Mode",
+      "Premium"
+    ],
+    "description": "Schwarzer Marmor und Blattgold: tiefe dunkle Flächen mit goldener Ader, hauchdünne Linien, feine Serifenschrift und viel Raum.",
+    "fonts": {
+      "head": "Cormorant Garamond",
+      "body": "Cormorant Garamond"
+    },
+    "colors": [
+      {
+        "color": "#0c0b0a",
+        "name": "Hintergrund 1"
+      },
+      {
+        "color": "#f2e9d6",
+        "name": "Text 1"
+      },
+      {
+        "color": "#1c1916",
+        "name": "Hintergrund 2"
+      },
+      {
+        "color": "#b5a688",
+        "name": "Text 2"
+      },
+      {
+        "color": "#c9a45c",
+        "name": "Akzent 1"
+      },
+      {
+        "color": "#ecd9a0",
+        "name": "Akzent 2"
+      },
+      {
+        "color": "#8c6a3a",
+        "name": "Akzent 3"
+      },
+      {
+        "color": "#d9b9a8",
+        "name": "Akzent 4"
+      },
+      {
+        "color": "#6a2230",
+        "name": "Akzent 5"
+      },
+      {
+        "color": "#24493f",
+        "name": "Akzent 6"
+      }
+    ],
+    "aspectRatio": 1.7777777777777777,
+    "layouts": [
+      "Titel",
+      "Abschnitt",
+      "Inhalt",
+      "Text und Bild",
+      "Zwei Spalten",
+      "Kennzahl",
+      "Zitat",
+      "Bild",
+      "Schluss"
+    ],
+    "file": "luxus.otp",
+    "bytes": 204890
+  },
+  {
+    "slug": "material",
+    "name": "Material",
+    "group": "Designtrend",
+    "tags": [
+      "Material",
+      "Karten",
+      "Schatten",
+      "Raster",
+      "App",
+      "Produkt",
+      "sachlich",
+      "Technik"
+    ],
+    "description": "Papier und Tinte: weiße Karten mit weichem Schatten auf grauem Grund, eine farbige Kopfleiste und ein runder Knopf in der Akzentfarbe.",
+    "fonts": {
+      "head": "Roboto",
+      "body": "Roboto"
+    },
+    "colors": [
+      {
+        "color": "#eceef2",
+        "name": "Hintergrund 1"
+      },
+      {
+        "color": "#1f2330",
+        "name": "Text 1"
+      },
+      {
+        "color": "#ffffff",
+        "name": "Hintergrund 2"
+      },
+      {
+        "color": "#5c6272",
+        "name": "Text 2"
+      },
+      {
+        "color": "#3b4cc0",
+        "name": "Akzent 1"
+      },
+      {
+        "color": "#ff4f6e",
+        "name": "Akzent 2"
+      },
+      {
+        "color": "#ffb31a",
+        "name": "Akzent 3"
+      },
+      {
+        "color": "#00a591",
+        "name": "Akzent 4"
+      },
+      {
+        "color": "#2aa5ee",
+        "name": "Akzent 5"
+      },
+      {
+        "color": "#2a3794",
+        "name": "Akzent 6"
+      }
+    ],
+    "aspectRatio": 1.7777777777777777,
+    "layouts": [
+      "Titel",
+      "Abschnitt",
+      "Inhalt",
+      "Text und Bild",
+      "Zwei Spalten",
+      "Kennzahl",
+      "Zitat",
+      "Bild",
+      "Schluss"
+    ],
+    "file": "material.otp",
+    "bytes": 6267
+  },
+  {
+    "slug": "memphis",
+    "name": "Memphis",
+    "group": "Kunststil",
+    "tags": [
+      "Memphis",
+      "Achtziger",
+      "verspielt",
+      "bunt",
+      "Muster",
+      "Konfetti",
+      "Workshop"
+    ],
+    "description": "Achtzigerjahre zum Anfassen: Schlangenlinien, Zickzack, Konfetti und Punkte in Pink, Türkis und Gelb.",
+    "fonts": {
+      "head": "Righteous",
+      "body": "Poppins"
+    },
+    "colors": [
+      {
+        "color": "#fffdf8",
+        "name": "Hintergrund 1"
+      },
+      {
+        "color": "#151515",
+        "name": "Text 1"
+      },
+      {
+        "color": "#d6f4f0",
+        "name": "Hintergrund 2"
+      },
+      {
+        "color": "#3f3d46",
+        "name": "Text 2"
+      },
+      {
+        "color": "#ff4f97",
+        "name": "Akzent 1"
+      },
+      {
+        "color": "#17c3bd",
+        "name": "Akzent 2"
+      },
+      {
+        "color": "#ffd332",
+        "name": "Akzent 3"
+      },
+      {
+        "color": "#6c4cf1",
+        "name": "Akzent 4"
+      },
+      {
+        "color": "#ff7a4d",
+        "name": "Akzent 5"
+      },
+      {
+        "color": "#fff1b3",
+        "name": "Akzent 6"
+      }
+    ],
+    "aspectRatio": 1.7777777777777777,
+    "layouts": [
+      "Titel",
+      "Abschnitt",
+      "Inhalt",
+      "Text und Bild",
+      "Zwei Spalten",
+      "Kennzahl",
+      "Zitat",
+      "Bild",
+      "Schluss"
+    ],
+    "file": "memphis.otp",
+    "bytes": 18578
+  },
+  {
+    "slug": "mid-century",
+    "name": "Mid-Century",
+    "group": "Kunststil",
+    "tags": [
+      "Mid-Century",
+      "Fünfziger",
+      "Retro",
+      "Nierentisch",
+      "Bumerang",
+      "Atomzeitalter",
+      "warm",
+      "Wohnen",
+      "Design"
+    ],
+    "description": "Die Moderne der Fünfziger: Nierenformen, Bumerangs, Sternstrahlen und Pendelleuchten in Senf, Petrol, Rostorange und Oliv auf Creme.",
+    "fonts": {
+      "head": "DM Serif Display",
+      "body": "Josefin Sans"
+    },
+    "colors": [
+      {
+        "color": "#f5ecd7",
+        "name": "Hintergrund 1"
+      },
+      {
+        "color": "#2b2622",
+        "name": "Text 1"
+      },
+      {
+        "color": "#eadbb8",
+        "name": "Hintergrund 2"
+      },
+      {
+        "color": "#5f5146",
+        "name": "Text 2"
+      },
+      {
+        "color": "#dba51c",
+        "name": "Akzent 1"
+      },
+      {
+        "color": "#1e7574",
+        "name": "Akzent 2"
+      },
+      {
+        "color": "#c9521f",
+        "name": "Akzent 3"
+      },
+      {
+        "color": "#7b7a35",
+        "name": "Akzent 4"
+      },
+      {
+        "color": "#8dbcae",
+        "name": "Akzent 5"
+      },
+      {
+        "color": "#8a3a1c",
+        "name": "Akzent 6"
+      }
+    ],
+    "aspectRatio": 1.7777777777777777,
+    "layouts": [
+      "Titel",
+      "Abschnitt",
+      "Inhalt",
+      "Text und Bild",
+      "Zwei Spalten",
+      "Kennzahl",
+      "Zitat",
+      "Bild",
+      "Schluss"
+    ],
+    "file": "mid-century.otp",
+    "bytes": 10896
+  },
+  {
+    "slug": "minimal",
+    "name": "Minimal",
+    "group": "Schwarzweiß",
+    "tags": [
+      "Schwarzweiß",
+      "minimal",
+      "ruhig",
+      "reduziert",
+      "Weißraum",
+      "elegant",
+      "Architektur",
+      "Design"
+    ],
+    "description": "Die leiseste Vorlage: Weiß, weite Ränder, kleine genaue Schrift, eine Haarlinie und ein Punkt.",
+    "fonts": {
+      "head": "Manrope",
+      "body": "Manrope"
+    },
+    "colors": [
+      {
+        "color": "#ffffff",
+        "name": "Hintergrund 1"
+      },
+      {
+        "color": "#111111",
+        "name": "Text 1"
+      },
+      {
+        "color": "#f5f5f3",
+        "name": "Hintergrund 2"
+      },
+      {
+        "color": "#8a8a8a",
+        "name": "Text 2"
+      },
+      {
+        "color": "#3a3a3a",
+        "name": "Akzent 1"
+      },
+      {
+        "color": "#5f5f5f",
+        "name": "Akzent 2"
+      },
+      {
+        "color": "#b3b3b3",
+        "name": "Akzent 3"
+      },
+      {
+        "color": "#dadada",
+        "name": "Akzent 4"
+      },
+      {
+        "color": "#c2573f",
+        "name": "Akzent 5"
+      },
+      {
+        "color": "#2f4b5c",
+        "name": "Akzent 6"
+      }
+    ],
+    "aspectRatio": 1.7777777777777777,
+    "layouts": [
+      "Titel",
+      "Abschnitt",
+      "Inhalt",
+      "Text und Bild",
+      "Zwei Spalten",
+      "Kennzahl",
+      "Zitat",
+      "Bild",
+      "Schluss"
+    ],
+    "file": "minimal.otp",
+    "bytes": 5098
+  },
+  {
+    "slug": "mode-editorial",
+    "name": "Mode",
+    "group": "Kunststil",
+    "tags": [
+      "Mode",
+      "Magazin",
+      "elegant",
+      "schwarzweiß",
+      "Puder",
+      "Serife",
+      "Luxus",
+      "Lookbook"
+    ],
+    "description": "Wie ein Modemagazin: riesige feine Serifen im Anschnitt, Schwarz, Weiß und ein Puderton.",
+    "fonts": {
+      "head": "Cormorant Garamond",
+      "body": "Montserrat"
+    },
+    "colors": [
+      {
+        "color": "#fbfaf8",
+        "name": "Hintergrund 1"
+      },
+      {
+        "color": "#0e0e0e",
+        "name": "Text 1"
+      },
+      {
+        "color": "#e8d2c7",
+        "name": "Hintergrund 2"
+      },
+      {
+        "color": "#7b7572",
+        "name": "Text 2"
+      },
+      {
+        "color": "#b08a79",
+        "name": "Akzent 1"
+      },
+      {
+        "color": "#dcbdaf",
+        "name": "Akzent 2"
+      },
+      {
+        "color": "#f4ebe6",
+        "name": "Akzent 3"
+      },
+      {
+        "color": "#c9c4c0",
+        "name": "Akzent 4"
+      },
+      {
+        "color": "#4a4644",
+        "name": "Akzent 5"
+      },
+      {
+        "color": "#8c6f63",
+        "name": "Akzent 6"
+      }
+    ],
+    "aspectRatio": 1.7777777777777777,
+    "layouts": [
+      "Titel",
+      "Abschnitt",
+      "Inhalt",
+      "Text und Bild",
+      "Zwei Spalten",
+      "Kennzahl",
+      "Zitat",
+      "Bild",
+      "Schluss"
+    ],
+    "file": "mode-editorial.otp",
+    "bytes": 5787
+  },
+  {
+    "slug": "neo-brutal",
+    "name": "Neo-Brutalismus",
+    "group": "Designtrend",
+    "tags": [
+      "Neo-Brutalismus",
+      "Produkt",
+      "Start-up",
+      "flach",
+      "Sticker",
+      "bunt",
+      "frech",
+      "Web"
+    ],
+    "description": "Wie eine freche Produktseite: flache Bonbonfarben, schwarze Rahmen, harte Schatten, Karten und Pillen.",
+    "fonts": {
+      "head": "Lexend",
+      "body": "DM Sans"
+    },
+    "colors": [
+      {
+        "color": "#fff7e8",
+        "name": "Hintergrund 1"
+      },
+      {
+        "color": "#111111",
+        "name": "Text 1"
+      },
+      {
+        "color": "#ffffff",
+        "name": "Hintergrund 2"
+      },
+      {
+        "color": "#45424e",
+        "name": "Text 2"
+      },
+      {
+        "color": "#b9a6ff",
+        "name": "Akzent 1"
+      },
+      {
+        "color": "#c6f060",
+        "name": "Akzent 2"
+      },
+      {
+        "color": "#ffb48a",
+        "name": "Akzent 3"
+      },
+      {
+        "color": "#8ed4ff",
+        "name": "Akzent 4"
+      },
+      {
+        "color": "#ffe14f",
+        "name": "Akzent 5"
+      },
+      {
+        "color": "#ff8fc6",
+        "name": "Akzent 6"
+      }
+    ],
+    "aspectRatio": 1.7777777777777777,
+    "layouts": [
+      "Titel",
+      "Abschnitt",
+      "Inhalt",
+      "Text und Bild",
+      "Zwei Spalten",
+      "Kennzahl",
+      "Zitat",
+      "Bild",
+      "Schluss"
+    ],
+    "file": "neo-brutal.otp",
+    "bytes": 8805
+  },
+  {
+    "slug": "neon",
+    "name": "Neon",
+    "group": "Designtrend",
+    "tags": [
+      "Neon",
+      "Cyberpunk",
+      "Nacht",
+      "dunkel",
+      "Leuchtröhren",
+      "Technik",
+      "Gaming",
+      "Zukunft"
+    ],
+    "description": "Stadtnacht in Leuchtröhren: Magenta, Cyan und Giftgelb glühen auf fast schwarzem Grund, dazu kantige Felder und feine Skalen.",
+    "fonts": {
+      "head": "Titillium Web",
+      "body": "Titillium Web"
+    },
+    "colors": [
+      {
+        "color": "#08070f",
+        "name": "Hintergrund 1"
+      },
+      {
+        "color": "#f4f2ff",
+        "name": "Text 1"
+      },
+      {
+        "color": "#15132a",
+        "name": "Hintergrund 2"
+      },
+      {
+        "color": "#9a96c2",
+        "name": "Text 2"
+      },
+      {
+        "color": "#ff2bd6",
+        "name": "Akzent 1"
+      },
+      {
+        "color": "#19f0ff",
+        "name": "Akzent 2"
+      },
+      {
+        "color": "#e9ff1f",
+        "name": "Akzent 3"
+      },
+      {
+        "color": "#8a4dff",
+        "name": "Akzent 4"
+      },
+      {
+        "color": "#ff7a1a",
+        "name": "Akzent 5"
+      },
+      {
+        "color": "#2bff9a",
+        "name": "Akzent 6"
+      }
+    ],
+    "aspectRatio": 1.7777777777777777,
+    "layouts": [
+      "Titel",
+      "Abschnitt",
+      "Inhalt",
+      "Text und Bild",
+      "Zwei Spalten",
+      "Kennzahl",
+      "Zitat",
+      "Bild",
+      "Schluss"
+    ],
+    "file": "neon.otp",
+    "bytes": 564069
+  },
+  {
+    "slug": "neumorph",
+    "name": "Neumorphismus",
+    "group": "Designtrend",
+    "tags": [
+      "Neumorphismus",
+      "weich",
+      "hell",
+      "ruhig",
+      "Schatten",
+      "App",
+      "Bedienfeld",
+      "Technik"
+    ],
+    "description": "Alles aus einer weichen, hellen Fläche: Felder treten durch Licht oben links und Schatten unten rechts hervor oder sinken ein.",
+    "fonts": {
+      "head": "Poppins",
+      "body": "Nunito"
+    },
+    "colors": [
+      {
+        "color": "#e4e9f1",
+        "name": "Hintergrund 1"
+      },
+      {
+        "color": "#2b3445",
+        "name": "Text 1"
+      },
+      {
+        "color": "#d4dbe7",
+        "name": "Hintergrund 2"
+      },
+      {
+        "color": "#66728a",
+        "name": "Text 2"
+      },
+      {
+        "color": "#5b6ef5",
+        "name": "Akzent 1"
+      },
+      {
+        "color": "#ff7a8a",
+        "name": "Akzent 2"
+      },
+      {
+        "color": "#3fc6b0",
+        "name": "Akzent 3"
+      },
+      {
+        "color": "#f5b84b",
+        "name": "Akzent 4"
+      },
+      {
+        "color": "#9aa7bd",
+        "name": "Akzent 5"
+      },
+      {
+        "color": "#8a63e8",
+        "name": "Akzent 6"
+      }
+    ],
+    "aspectRatio": 1.7777777777777777,
+    "layouts": [
+      "Titel",
+      "Abschnitt",
+      "Inhalt",
+      "Text und Bild",
+      "Zwei Spalten",
+      "Kennzahl",
+      "Zitat",
+      "Bild",
+      "Schluss"
+    ],
+    "file": "neumorph.otp",
+    "bytes": 519398
+  },
+  {
+    "slug": "noir",
+    "name": "Noir",
+    "group": "Schwarzweiß",
+    "tags": [
+      "Schwarzweiß",
+      "dunkel",
+      "Film",
+      "Kino",
+      "elegant",
+      "Serif",
+      "Korn",
+      "Krimi",
+      "ruhig"
+    ],
+    "description": "Film noir: tiefes Schwarz mit Korn, Licht, das durch Jalousien fällt, und eine elegante Serifenschrift in gebrochenem Weiß.",
+    "fonts": {
+      "head": "Instrument Serif",
+      "body": "Inter"
+    },
+    "colors": [
+      {
+        "color": "#0b0b0c",
+        "name": "Hintergrund 1"
+      },
+      {
+        "color": "#ece6d8",
+        "name": "Text 1"
+      },
+      {
+        "color": "#1b1b1d",
+        "name": "Hintergrund 2"
+      },
+      {
+        "color": "#a39d90",
+        "name": "Text 2"
+      },
+      {
+        "color": "#2c2c2f",
+        "name": "Akzent 1"
+      },
+      {
+        "color": "#4a4a4d",
+        "name": "Akzent 2"
+      },
+      {
+        "color": "#6f6d68",
+        "name": "Akzent 3"
+      },
+      {
+        "color": "#c9c3b5",
+        "name": "Akzent 4"
+      },
+      {
+        "color": "#b0935a",
+        "name": "Akzent 5"
+      },
+      {
+        "color": "#8c3b34",
+        "name": "Akzent 6"
+      }
+    ],
+    "aspectRatio": 1.7777777777777777,
+    "layouts": [
+      "Titel",
+      "Abschnitt",
+      "Inhalt",
+      "Text und Bild",
+      "Zwei Spalten",
+      "Kennzahl",
+      "Zitat",
+      "Bild",
+      "Schluss"
+    ],
+    "file": "noir.otp",
+    "bytes": 708398
+  },
+  {
+    "slug": "op-art",
+    "name": "Op Art",
+    "group": "Schwarzweiß",
+    "tags": [
+      "Op Art",
+      "Schwarzweiß",
+      "optische Täuschung",
+      "Streifen",
+      "Geometrie",
+      "Kontrast",
+      "Design"
+    ],
+    "description": "Reines Schwarzweiß, das sich bewegt: schwingende Streifen, ein gewölbtes Schachbrett und Ringe, die in die Tiefe ziehen.",
+    "fonts": {
+      "head": "Archivo Black",
+      "body": "Archivo"
+    },
+    "colors": [
+      {
+        "color": "#ffffff",
+        "name": "Hintergrund 1"
+      },
+      {
+        "color": "#0a0a0a",
+        "name": "Text 1"
+      },
+      {
+        "color": "#efefef",
+        "name": "Hintergrund 2"
+      },
+      {
+        "color": "#4a4a4a",
+        "name": "Text 2"
+      },
+      {
+        "color": "#1f1f1f",
+        "name": "Akzent 1"
+      },
+      {
+        "color": "#6e6e6e",
+        "name": "Akzent 2"
+      },
+      {
+        "color": "#a8a8a8",
+        "name": "Akzent 3"
+      },
+      {
+        "color": "#d6d6d6",
+        "name": "Akzent 4"
+      },
+      {
+        "color": "#e4342b",
+        "name": "Akzent 5"
+      },
+      {
+        "color": "#f2c200",
+        "name": "Akzent 6"
+      }
+    ],
+    "aspectRatio": 1.7777777777777777,
+    "layouts": [
+      "Titel",
+      "Abschnitt",
+      "Inhalt",
+      "Text und Bild",
+      "Zwei Spalten",
+      "Kennzahl",
+      "Zitat",
+      "Bild",
+      "Schluss"
+    ],
+    "file": "op-art.otp",
+    "bytes": 179869
+  },
+  {
+    "slug": "pitch",
+    "name": "Pitch",
+    "group": "Bereich",
+    "tags": [
+      "Pitch",
+      "Start-up",
+      "Investoren",
+      "Gründung",
+      "Verlauf",
+      "mutig",
+      "Kennzahlen",
+      "modern"
+    ],
+    "description": "Pitch-Deck für Gründerinnen und Gründer: große Schrift, viel Weiß und ein Verlauf von Violett nach Koralle, der nur als Kapsel auftritt.",
+    "fonts": {
+      "head": "Plus Jakarta Sans",
+      "body": "Plus Jakarta Sans"
+    },
+    "colors": [
+      {
+        "color": "#ffffff",
+        "name": "Hintergrund 1"
+      },
+      {
+        "color": "#17122e",
+        "name": "Text 1"
+      },
+      {
+        "color": "#f3f0fb",
+        "name": "Hintergrund 2"
+      },
+      {
+        "color": "#6b6682",
+        "name": "Text 2"
+      },
+      {
+        "color": "#6a35f2",
+        "name": "Akzent 1"
+      },
+      {
+        "color": "#ff6a55",
+        "name": "Akzent 2"
+      },
+      {
+        "color": "#b550a4",
+        "name": "Akzent 3"
+      },
+      {
+        "color": "#b9a5ff",
+        "name": "Akzent 4"
+      },
+      {
+        "color": "#ffc247",
+        "name": "Akzent 5"
+      },
+      {
+        "color": "#2fcfa4",
+        "name": "Akzent 6"
+      }
+    ],
+    "aspectRatio": 1.7777777777777777,
+    "layouts": [
+      "Titel",
+      "Abschnitt",
+      "Inhalt",
+      "Text und Bild",
+      "Zwei Spalten",
+      "Kennzahl",
+      "Zitat",
+      "Bild",
+      "Schluss",
+      "Drei Kennzahlen"
+    ],
+    "file": "pitch.otp",
+    "bytes": 6252
+  },
+  {
+    "slug": "pixel",
+    "name": "Pixel",
+    "group": "Designtrend",
+    "tags": [
+      "Pixel",
+      "8-Bit",
+      "Spiel",
+      "Retro",
+      "Gaming",
+      "bunt",
+      "Schule",
+      "Workshop"
+    ],
+    "description": "Ein 8-Bit-Spiel: alles aus Klötzchen – Wolken, Hügel, Münzen, Herzen und Rahmen mit Treppenkanten, bei Tag und bei Nacht.",
+    "fonts": {
+      "head": "Space Mono",
+      "body": "Space Grotesk"
+    },
+    "colors": [
+      {
+        "color": "#6fd0ff",
+        "name": "Hintergrund 1"
+      },
+      {
+        "color": "#1a1c4b",
+        "name": "Text 1"
+      },
+      {
+        "color": "#ffffff",
+        "name": "Hintergrund 2"
+      },
+      {
+        "color": "#4a4f8a",
+        "name": "Text 2"
+      },
+      {
+        "color": "#ffd23f",
+        "name": "Akzent 1"
+      },
+      {
+        "color": "#ff4d5e",
+        "name": "Akzent 2"
+      },
+      {
+        "color": "#3ecf6e",
+        "name": "Akzent 3"
+      },
+      {
+        "color": "#ff8a3c",
+        "name": "Akzent 4"
+      },
+      {
+        "color": "#7a4dff",
+        "name": "Akzent 5"
+      },
+      {
+        "color": "#8a4b2a",
+        "name": "Akzent 6"
+      }
+    ],
+    "aspectRatio": 1.7777777777777777,
+    "layouts": [
+      "Titel",
+      "Abschnitt",
+      "Inhalt",
+      "Text und Bild",
+      "Zwei Spalten",
+      "Kennzahl",
+      "Zitat",
+      "Bild",
+      "Schluss"
+    ],
+    "file": "pixel.otp",
+    "bytes": 45889
+  },
+  {
+    "slug": "pointillismus",
+    "name": "Pointillismus",
+    "group": "Kunststil",
+    "tags": [
+      "Pointillismus",
+      "Punkte",
+      "Malerei",
+      "Komplementärfarben",
+      "Meer",
+      "Park",
+      "sonnig",
+      "Sommer",
+      "Kultur"
+    ],
+    "description": "Bilder aus reinen Farbtupfen, Komplementärfarben nebeneinander: Bucht, Park und Sonnenschirm auf hellem Papier.",
+    "fonts": {
+      "head": "Spectral",
+      "body": "Karla"
+    },
+    "colors": [
+      {
+        "color": "#fbf7ee",
+        "name": "Hintergrund 1"
+      },
+      {
+        "color": "#27245a",
+        "name": "Text 1"
+      },
+      {
+        "color": "#f3ead2",
+        "name": "Hintergrund 2"
+      },
+      {
+        "color": "#5a5788",
+        "name": "Text 2"
+      },
+      {
+        "color": "#2f55c0",
+        "name": "Akzent 1"
+      },
+      {
+        "color": "#f08a24",
+        "name": "Akzent 2"
+      },
+      {
+        "color": "#2f9e62",
+        "name": "Akzent 3"
+      },
+      {
+        "color": "#e2452c",
+        "name": "Akzent 4"
+      },
+      {
+        "color": "#f6c928",
+        "name": "Akzent 5"
+      },
+      {
+        "color": "#7a4fb0",
+        "name": "Akzent 6"
+      }
+    ],
+    "aspectRatio": 1.7777777777777777,
+    "layouts": [
+      "Titel",
+      "Abschnitt",
+      "Inhalt",
+      "Text und Bild",
+      "Zwei Spalten",
+      "Kennzahl",
+      "Zitat",
+      "Bild",
+      "Schluss"
+    ],
+    "file": "pointillismus.otp",
+    "bytes": 1423156
+  },
+  {
+    "slug": "pop-art",
+    "name": "Pop Art",
+    "group": "Kunststil",
+    "tags": [
+      "Pop Art",
+      "Comic",
+      "laut",
+      "farbenfroh",
+      "Rasterpunkte",
+      "Keynote",
+      "Marke"
+    ],
+    "description": "Comic im Großformat: Grundfarben, Rasterpunkte, dicke schwarze Linien und Sprechblasen.",
+    "fonts": {
+      "head": "Anton",
+      "body": "Nunito Sans"
+    },
+    "colors": [
+      {
+        "color": "#fffdf2",
+        "name": "Hintergrund 1"
+      },
+      {
+        "color": "#111111",
+        "name": "Text 1"
+      },
+      {
+        "color": "#fff3a6",
+        "name": "Hintergrund 2"
+      },
+      {
+        "color": "#3a3a3a",
+        "name": "Text 2"
+      },
+      {
+        "color": "#e8112d",
+        "name": "Akzent 1"
+      },
+      {
+        "color": "#0b6fd6",
+        "name": "Akzent 2"
+      },
+      {
+        "color": "#ffd900",
+        "name": "Akzent 3"
+      },
+      {
+        "color": "#ff5fa2",
+        "name": "Akzent 4"
+      },
+      {
+        "color": "#19c3e6",
+        "name": "Akzent 5"
+      },
+      {
+        "color": "#ff8a00",
+        "name": "Akzent 6"
+      }
+    ],
+    "aspectRatio": 1.7777777777777777,
+    "layouts": [
+      "Titel",
+      "Abschnitt",
+      "Inhalt",
+      "Text und Bild",
+      "Zwei Spalten",
+      "Kennzahl",
+      "Zitat",
+      "Bild",
+      "Schluss"
+    ],
+    "file": "pop-art.otp",
+    "bytes": 626977
+  },
+  {
+    "slug": "psychedelic",
+    "name": "Psychedelic",
+    "group": "Farbenfroh",
+    "tags": [
+      "Psychedelic",
+      "Sechziger",
+      "Konzertplakat",
+      "bunt",
+      "Wellen",
+      "Musik",
+      "Festival"
+    ],
+    "description": "Konzertplakat der Sechziger: fließende Farbbänder, schmelzende Ringe und Rahmen, die sich wölben.",
+    "fonts": {
+      "head": "Righteous",
+      "body": "Fredoka"
+    },
+    "colors": [
+      {
+        "color": "#fff3d1",
+        "name": "Hintergrund 1"
+      },
+      {
+        "color": "#2b0b45",
+        "name": "Text 1"
+      },
+      {
+        "color": "#ffd3e8",
+        "name": "Hintergrund 2"
+      },
+      {
+        "color": "#6b3a8f",
+        "name": "Text 2"
+      },
+      {
+        "color": "#e6007e",
+        "name": "Akzent 1"
+      },
+      {
+        "color": "#ff7a00",
+        "name": "Akzent 2"
+      },
+      {
+        "color": "#ffd000",
+        "name": "Akzent 3"
+      },
+      {
+        "color": "#a8e000",
+        "name": "Akzent 4"
+      },
+      {
+        "color": "#5a1aa8",
+        "name": "Akzent 5"
+      },
+      {
+        "color": "#00b3a6",
+        "name": "Akzent 6"
+      }
+    ],
+    "aspectRatio": 1.7777777777777777,
+    "layouts": [
+      "Titel",
+      "Abschnitt",
+      "Inhalt",
+      "Text und Bild",
+      "Zwei Spalten",
+      "Kennzahl",
+      "Zitat",
+      "Bild",
+      "Schluss"
+    ],
+    "file": "psychedelic.otp",
+    "bytes": 295307
+  },
+  {
+    "slug": "reiseplakat",
+    "name": "Reiseplakat",
+    "group": "Plakat",
+    "tags": [
+      "Reise",
+      "Vintage",
+      "Landschaft",
+      "Sonne",
+      "Berge",
+      "Meer",
+      "warm",
+      "Tourismus"
+    ],
+    "description": "Reiseplakat alter Schule: flächige Landschaften in gestaffelten Tönen, eine große Sonne, cremefarbener Rahmen und gesperrte Versalien.",
+    "fonts": {
+      "head": "Josefin Sans",
+      "body": "Lora"
+    },
+    "colors": [
+      {
+        "color": "#f5e9d0",
+        "name": "Hintergrund 1"
+      },
+      {
+        "color": "#17404a",
+        "name": "Text 1"
+      },
+      {
+        "color": "#e8c58a",
+        "name": "Hintergrund 2"
+      },
+      {
+        "color": "#4d6a70",
+        "name": "Text 2"
+      },
+      {
+        "color": "#ef8a2b",
+        "name": "Akzent 1"
+      },
+      {
+        "color": "#e2553a",
+        "name": "Akzent 2"
+      },
+      {
+        "color": "#2b8a92",
+        "name": "Akzent 3"
+      },
+      {
+        "color": "#f7cf6b",
+        "name": "Akzent 4"
+      },
+      {
+        "color": "#5f7fa6",
+        "name": "Akzent 5"
+      },
+      {
+        "color": "#12333a",
+        "name": "Akzent 6"
+      }
+    ],
+    "aspectRatio": 1.7777777777777777,
+    "layouts": [
+      "Titel",
+      "Abschnitt",
+      "Inhalt",
+      "Text und Bild",
+      "Zwei Spalten",
+      "Kennzahl",
+      "Zitat",
+      "Bild",
+      "Schluss"
+    ],
+    "file": "reiseplakat.otp",
+    "bytes": 26373
+  },
+  {
+    "slug": "retro-desktop",
+    "name": "Retro-Desktop",
+    "group": "Designtrend",
+    "tags": [
+      "Retro",
+      "Desktop",
+      "Neunziger",
+      "Fenster",
+      "Computer",
+      "Pixel",
+      "Nostalgie",
+      "Technik"
+    ],
+    "description": "Ein Bildschirm der Neunziger: graue Fenster mit Kanten aus Licht und Schatten, farbige Titelleisten, gerastertes Petrol.",
+    "fonts": {
+      "head": "IBM Plex Sans",
+      "body": "IBM Plex Sans"
+    },
+    "colors": [
+      {
+        "color": "#ffffff",
+        "name": "Hintergrund 1"
+      },
+      {
+        "color": "#16181d",
+        "name": "Text 1"
+      },
+      {
+        "color": "#c6c9cf",
+        "name": "Hintergrund 2"
+      },
+      {
+        "color": "#5b606b",
+        "name": "Text 2"
+      },
+      {
+        "color": "#43318f",
+        "name": "Akzent 1"
+      },
+      {
+        "color": "#1f8a8a",
+        "name": "Akzent 2"
+      },
+      {
+        "color": "#f2c230",
+        "name": "Akzent 3"
+      },
+      {
+        "color": "#d6453d",
+        "name": "Akzent 4"
+      },
+      {
+        "color": "#8f2a6b",
+        "name": "Akzent 5"
+      },
+      {
+        "color": "#f08a2e",
+        "name": "Akzent 6"
+      }
+    ],
+    "aspectRatio": 1.7777777777777777,
+    "layouts": [
+      "Titel",
+      "Abschnitt",
+      "Inhalt",
+      "Text und Bild",
+      "Zwei Spalten",
+      "Kennzahl",
+      "Zitat",
+      "Bild",
+      "Schluss"
+    ],
+    "file": "retro-desktop.otp",
+    "bytes": 14765
+  },
+  {
+    "slug": "risograph",
+    "name": "Risograph",
+    "group": "Designtrend",
+    "tags": [
+      "Risograph",
+      "Riso",
+      "Druck",
+      "Schmuckfarben",
+      "Körnung",
+      "Zine",
+      "Werkstatt",
+      "Kultur"
+    ],
+    "description": "Wie vom Schablonendrucker: Pink, Blau und Gelb übereinander gedruckt, leicht versetzt, körnig auf hellem Papier.",
+    "fonts": {
+      "head": "Bricolage Grotesque",
+      "body": "Karla"
+    },
+    "colors": [
+      {
+        "color": "#f6f1e4",
+        "name": "Hintergrund 1"
+      },
+      {
+        "color": "#1a1e4d",
+        "name": "Text 1"
+      },
+      {
+        "color": "#ffd3e6",
+        "name": "Hintergrund 2"
+      },
+      {
+        "color": "#5a5f85",
+        "name": "Text 2"
+      },
+      {
+        "color": "#ff4aa8",
+        "name": "Akzent 1"
+      },
+      {
+        "color": "#2456c4",
+        "name": "Akzent 2"
+      },
+      {
+        "color": "#ffe21a",
+        "name": "Akzent 3"
+      },
+      {
+        "color": "#3b2a9c",
+        "name": "Akzent 4"
+      },
+      {
+        "color": "#ff6a2b",
+        "name": "Akzent 5"
+      },
+      {
+        "color": "#2f8f4e",
+        "name": "Akzent 6"
+      }
+    ],
+    "aspectRatio": 1.7777777777777777,
+    "layouts": [
+      "Titel",
+      "Abschnitt",
+      "Inhalt",
+      "Text und Bild",
+      "Zwei Spalten",
+      "Kennzahl",
+      "Zitat",
+      "Bild",
+      "Schluss"
+    ],
+    "file": "risograph.otp",
+    "bytes": 1072130
+  },
+  {
+    "slug": "scherenschnitt",
+    "name": "Papierschnitt",
+    "group": "Kunststil",
+    "tags": [
+      "Papierschnitt",
+      "Scherenschnitt",
+      "Papier",
+      "Ebenen",
+      "Schatten",
+      "Diorama",
+      "weich",
+      "freundlich",
+      "Natur"
+    ],
+    "description": "Geschnittenes Papier in Lagen: weiche Schatten zwischen den Blättern geben jeder Folie Tiefe wie eine kleine Bühne.",
+    "fonts": {
+      "head": "Outfit",
+      "body": "Nunito"
+    },
+    "colors": [
+      {
+        "color": "#f7f0e3",
+        "name": "Hintergrund 1"
+      },
+      {
+        "color": "#17353c",
+        "name": "Text 1"
+      },
+      {
+        "color": "#eadfc9",
+        "name": "Hintergrund 2"
+      },
+      {
+        "color": "#4d696c",
+        "name": "Text 2"
+      },
+      {
+        "color": "#1f5a63",
+        "name": "Akzent 1"
+      },
+      {
+        "color": "#3d8c8a",
+        "name": "Akzent 2"
+      },
+      {
+        "color": "#9ccdbd",
+        "name": "Akzent 3"
+      },
+      {
+        "color": "#e2725b",
+        "name": "Akzent 4"
+      },
+      {
+        "color": "#e5ab52",
+        "name": "Akzent 5"
+      },
+      {
+        "color": "#6b4a6e",
+        "name": "Akzent 6"
+      }
+    ],
+    "aspectRatio": 1.7777777777777777,
+    "layouts": [
+      "Titel",
+      "Abschnitt",
+      "Inhalt",
+      "Text und Bild",
+      "Zwei Spalten",
+      "Kennzahl",
+      "Zitat",
+      "Bild",
+      "Schluss"
+    ],
+    "file": "scherenschnitt.otp",
+    "bytes": 27940
+  },
+  {
+    "slug": "schreibmaschine",
+    "name": "Schreibmaschine",
+    "group": "Schwarzweiß",
+    "tags": [
+      "Schwarzweiß",
+      "Schreibmaschine",
+      "Akte",
+      "Dossier",
+      "Papier",
+      "Monospace",
+      "Bericht",
+      "Recherche"
+    ],
+    "description": "Ein getipptes Dossier: gelochtes Papier mit Korn, Karteikarten, Büroklammer und Stempel, alles in Schreibmaschinenschrift, dazu ein roter Stift.",
+    "fonts": {
+      "head": "Space Mono",
+      "body": "IBM Plex Mono"
+    },
+    "colors": [
+      {
+        "color": "#f1ece0",
+        "name": "Hintergrund 1"
+      },
+      {
+        "color": "#1d1c1a",
+        "name": "Text 1"
+      },
+      {
+        "color": "#e2dccc",
+        "name": "Hintergrund 2"
+      },
+      {
+        "color": "#5f5b53",
+        "name": "Text 2"
+      },
+      {
+        "color": "#2b2a28",
+        "name": "Akzent 1"
+      },
+      {
+        "color": "#8a857a",
+        "name": "Akzent 2"
+      },
+      {
+        "color": "#b5ae9f",
+        "name": "Akzent 3"
+      },
+      {
+        "color": "#d1cabb",
+        "name": "Akzent 4"
+      },
+      {
+        "color": "#c8372d",
+        "name": "Akzent 5"
+      },
+      {
+        "color": "#f8f5ec",
+        "name": "Akzent 6"
+      }
+    ],
+    "aspectRatio": 1.7777777777777777,
+    "layouts": [
+      "Titel",
+      "Abschnitt",
+      "Inhalt",
+      "Text und Bild",
+      "Zwei Spalten",
+      "Kennzahl",
+      "Zitat",
+      "Bild",
+      "Schluss"
+    ],
+    "file": "schreibmaschine.otp",
+    "bytes": 92179
+  },
+  {
+    "slug": "schweizer-plakat",
+    "name": "Schweizer Plakat",
+    "group": "Plakat",
+    "tags": [
+      "Schweizer Stil",
+      "Raster",
+      "Typografie",
+      "sachlich",
+      "Rot",
+      "minimal",
+      "Bericht",
+      "Architektur"
+    ],
+    "description": "Sachliche Plakatgestaltung im strengen Raster: linksbündige Grotesk, Weiß, Schwarz und ein Signalrot.",
+    "fonts": {
+      "head": "Inter",
+      "body": "Inter"
+    },
+    "colors": [
+      {
+        "color": "#ffffff",
+        "name": "Hintergrund 1"
+      },
+      {
+        "color": "#121212",
+        "name": "Text 1"
+      },
+      {
+        "color": "#efece6",
+        "name": "Hintergrund 2"
+      },
+      {
+        "color": "#6b6a66",
+        "name": "Text 2"
+      },
+      {
+        "color": "#e2001a",
+        "name": "Akzent 1"
+      },
+      {
+        "color": "#a30013",
+        "name": "Akzent 2"
+      },
+      {
+        "color": "#c9c5bc",
+        "name": "Akzent 3"
+      },
+      {
+        "color": "#2f2f2d",
+        "name": "Akzent 4"
+      },
+      {
+        "color": "#f0b400",
+        "name": "Akzent 5"
+      },
+      {
+        "color": "#1d4f9c",
+        "name": "Akzent 6"
+      }
+    ],
+    "aspectRatio": 1.7777777777777777,
+    "layouts": [
+      "Titel",
+      "Abschnitt",
+      "Inhalt",
+      "Text und Bild",
+      "Zwei Spalten",
+      "Kennzahl",
+      "Zitat",
+      "Bild",
+      "Schluss"
+    ],
+    "file": "schweizer-plakat.otp",
+    "bytes": 5562
+  },
+  {
+    "slug": "skandinavisch",
+    "name": "Skandinavisch",
+    "group": "Bereich",
+    "tags": [
+      "Skandinavisch",
+      "Nordisch",
+      "Hygge",
+      "Holz",
+      "ruhig",
+      "hell",
+      "Wohnen",
+      "Interior",
+      "freundlich"
+    ],
+    "description": "Nordische Ruhe: leinenweiße Wand, ein Bord aus hellem Holz und darauf wenige schlichte Formen in Hafer, Blaugrau und Altrosa.",
+    "fonts": {
+      "head": "Newsreader",
+      "body": "Karla"
+    },
+    "colors": [
+      {
+        "color": "#f6f1e8",
+        "name": "Hintergrund 1"
+      },
+      {
+        "color": "#34373a",
+        "name": "Text 1"
+      },
+      {
+        "color": "#e7dccb",
+        "name": "Hintergrund 2"
+      },
+      {
+        "color": "#7b7770",
+        "name": "Text 2"
+      },
+      {
+        "color": "#8497a6",
+        "name": "Akzent 1"
+      },
+      {
+        "color": "#d8a79d",
+        "name": "Akzent 2"
+      },
+      {
+        "color": "#d6b98f",
+        "name": "Akzent 3"
+      },
+      {
+        "color": "#a6b29a",
+        "name": "Akzent 4"
+      },
+      {
+        "color": "#e2c682",
+        "name": "Akzent 5"
+      },
+      {
+        "color": "#4f6272",
+        "name": "Akzent 6"
+      }
+    ],
+    "aspectRatio": 1.7777777777777777,
+    "layouts": [
+      "Titel",
+      "Abschnitt",
+      "Inhalt",
+      "Text und Bild",
+      "Zwei Spalten",
+      "Kennzahl",
+      "Zitat",
+      "Bild",
+      "Schluss"
+    ],
+    "file": "skandinavisch.otp",
+    "bytes": 619528
+  },
+  {
+    "slug": "skeuomorph",
+    "name": "Skeuomorph",
+    "group": "Designtrend",
+    "tags": [
+      "Skeuomorph",
+      "Leder",
+      "Holz",
+      "Metall",
+      "Papier",
+      "Handwerk",
+      "warm",
+      "Nostalgie"
+    ],
+    "description": "Der Bildschirm als Schreibtisch: genähtes Leder, Leinen und Holz, gebürstetes Metall mit Schrauben, Papier mit Schatten und Knöpfe aus glänzendem Glas.",
+    "fonts": {
+      "head": "Merriweather",
+      "body": "Lato"
+    },
+    "colors": [
+      {
+        "color": "#f7f0df",
+        "name": "Hintergrund 1"
+      },
+      {
+        "color": "#3a2616",
+        "name": "Text 1"
+      },
+      {
+        "color": "#e4d8bf",
+        "name": "Hintergrund 2"
+      },
+      {
+        "color": "#7a6248",
+        "name": "Text 2"
+      },
+      {
+        "color": "#6b3f22",
+        "name": "Akzent 1"
+      },
+      {
+        "color": "#b9824a",
+        "name": "Akzent 2"
+      },
+      {
+        "color": "#b3272d",
+        "name": "Akzent 3"
+      },
+      {
+        "color": "#2f6fb5",
+        "name": "Akzent 4"
+      },
+      {
+        "color": "#c79a3c",
+        "name": "Akzent 5"
+      },
+      {
+        "color": "#5f7f3a",
+        "name": "Akzent 6"
+      }
+    ],
+    "aspectRatio": 1.7777777777777777,
+    "layouts": [
+      "Titel",
+      "Abschnitt",
+      "Inhalt",
+      "Text und Bild",
+      "Zwei Spalten",
+      "Kennzahl",
+      "Zitat",
+      "Bild",
+      "Schluss"
+    ],
+    "file": "skeuomorph.otp",
+    "bytes": 386552
+  },
+  {
+    "slug": "strichzeichnung",
+    "name": "Strichzeichnung",
+    "group": "Schwarzweiß",
+    "tags": [
+      "Schwarzweiß",
+      "Zeichnung",
+      "Linie",
+      "Schraffur",
+      "leicht",
+      "Kunst",
+      "Skizze",
+      "ruhig"
+    ],
+    "description": "Feine schwarze Linien auf Weiß: Gesichter, Zweige und eine Vase in einem Zug gezeichnet, Schraffur als einziger Schatten, viel Luft.",
+    "fonts": {
+      "head": "Newsreader",
+      "body": "Karla"
+    },
+    "colors": [
+      {
+        "color": "#ffffff",
+        "name": "Hintergrund 1"
+      },
+      {
+        "color": "#141414",
+        "name": "Text 1"
+      },
+      {
+        "color": "#f3f2ee",
+        "name": "Hintergrund 2"
+      },
+      {
+        "color": "#5c5c5c",
+        "name": "Text 2"
+      },
+      {
+        "color": "#2f2f2f",
+        "name": "Akzent 1"
+      },
+      {
+        "color": "#8a8a8a",
+        "name": "Akzent 2"
+      },
+      {
+        "color": "#b5b5b5",
+        "name": "Akzent 3"
+      },
+      {
+        "color": "#dcdcd8",
+        "name": "Akzent 4"
+      },
+      {
+        "color": "#b9603f",
+        "name": "Akzent 5"
+      },
+      {
+        "color": "#7d8f7a",
+        "name": "Akzent 6"
+      }
+    ],
+    "aspectRatio": 1.7777777777777777,
+    "layouts": [
+      "Titel",
+      "Abschnitt",
+      "Inhalt",
+      "Text und Bild",
+      "Zwei Spalten",
+      "Kennzahl",
+      "Zitat",
+      "Bild",
+      "Schluss"
+    ],
+    "file": "strichzeichnung.otp",
+    "bytes": 12244
+  },
+  {
+    "slug": "terminal",
+    "name": "Terminal",
+    "group": "Designtrend",
+    "tags": [
+      "Terminal",
+      "Konsole",
+      "Code",
+      "Monospace",
+      "dunkel",
+      "Technik",
+      "Entwicklung",
+      "Retro"
+    ],
+    "description": "Ein Textbildschirm: Phosphorgrün und Bernstein auf Schwarz, Zeilenraster, Prompt und Blockcursor.",
+    "fonts": {
+      "head": "JetBrains Mono",
+      "body": "JetBrains Mono"
+    },
+    "colors": [
+      {
+        "color": "#06100a",
+        "name": "Hintergrund 1"
+      },
+      {
+        "color": "#b9f7c9",
+        "name": "Text 1"
+      },
+      {
+        "color": "#0e2016",
+        "name": "Hintergrund 2"
+      },
+      {
+        "color": "#4fae6c",
+        "name": "Text 2"
+      },
+      {
+        "color": "#3dff74",
+        "name": "Akzent 1"
+      },
+      {
+        "color": "#ffb000",
+        "name": "Akzent 2"
+      },
+      {
+        "color": "#5ce1e6",
+        "name": "Akzent 3"
+      },
+      {
+        "color": "#ff5f56",
+        "name": "Akzent 4"
+      },
+      {
+        "color": "#d77bff",
+        "name": "Akzent 5"
+      },
+      {
+        "color": "#eafff0",
+        "name": "Akzent 6"
+      }
+    ],
+    "aspectRatio": 1.7777777777777777,
+    "layouts": [
+      "Titel",
+      "Abschnitt",
+      "Inhalt",
+      "Text und Bild",
+      "Zwei Spalten",
+      "Kennzahl",
+      "Zitat",
+      "Bild",
+      "Schluss"
+    ],
+    "file": "terminal.otp",
+    "bytes": 30048
+  },
+  {
+    "slug": "tropen",
+    "name": "Tropen",
+    "group": "Farbenfroh",
+    "tags": [
+      "Tropen",
+      "Dschungel",
+      "Blätter",
+      "Monstera",
+      "Hibiskus",
+      "üppig",
+      "Sommer",
+      "Reise"
+    ],
+    "description": "Üppiger Dschungel: Monstera, Palmwedel und Hibiskus wachsen in Pink, Türkis und Gelb vom Rand in die Folie.",
+    "fonts": {
+      "head": "Abril Fatface",
+      "body": "Poppins"
+    },
+    "colors": [
+      {
+        "color": "#fbf3e0",
+        "name": "Hintergrund 1"
+      },
+      {
+        "color": "#0b3326",
+        "name": "Text 1"
+      },
+      {
+        "color": "#f3e2bd",
+        "name": "Hintergrund 2"
+      },
+      {
+        "color": "#14523d",
+        "name": "Text 2"
+      },
+      {
+        "color": "#f0277a",
+        "name": "Akzent 1"
+      },
+      {
+        "color": "#13b8a8",
+        "name": "Akzent 2"
+      },
+      {
+        "color": "#ffc62b",
+        "name": "Akzent 3"
+      },
+      {
+        "color": "#2a9d55",
+        "name": "Akzent 4"
+      },
+      {
+        "color": "#ff7b3a",
+        "name": "Akzent 5"
+      },
+      {
+        "color": "#0e8f86",
+        "name": "Akzent 6"
+      }
+    ],
+    "aspectRatio": 1.7777777777777777,
+    "layouts": [
+      "Titel",
+      "Abschnitt",
+      "Inhalt",
+      "Text und Bild",
+      "Zwei Spalten",
+      "Kennzahl",
+      "Zitat",
+      "Bild",
+      "Schluss"
+    ],
+    "file": "tropen.otp",
+    "bytes": 117497
+  },
+  {
+    "slug": "tusche",
+    "name": "Tusche",
+    "group": "Schwarzweiß",
+    "tags": [
+      "Tusche",
+      "Tuschemalerei",
+      "ruhig",
+      "minimal",
+      "Reispapier",
+      "Pinsel",
+      "Zen",
+      "Kultur"
+    ],
+    "description": "Tuschemalerei auf Reispapier: trockene Pinselstriche, Berge im Nebel, viel Leere und ein kleines rotes Siegel.",
+    "fonts": {
+      "head": "Noto Serif",
+      "body": "Noto Sans"
+    },
+    "colors": [
+      {
+        "color": "#f3eee2",
+        "name": "Hintergrund 1"
+      },
+      {
+        "color": "#191817",
+        "name": "Text 1"
+      },
+      {
+        "color": "#e4dccb",
+        "name": "Hintergrund 2"
+      },
+      {
+        "color": "#5a5751",
+        "name": "Text 2"
+      },
+      {
+        "color": "#b3261a",
+        "name": "Akzent 1"
+      },
+      {
+        "color": "#3b3936",
+        "name": "Akzent 2"
+      },
+      {
+        "color": "#77736b",
+        "name": "Akzent 3"
+      },
+      {
+        "color": "#aaa497",
+        "name": "Akzent 4"
+      },
+      {
+        "color": "#c2a878",
+        "name": "Akzent 5"
+      },
+      {
+        "color": "#4d5f56",
+        "name": "Akzent 6"
+      }
+    ],
+    "aspectRatio": 1.7777777777777777,
+    "layouts": [
+      "Titel",
+      "Abschnitt",
+      "Inhalt",
+      "Text und Bild",
+      "Zwei Spalten",
+      "Kennzahl",
+      "Zitat",
+      "Bild",
+      "Schluss"
+    ],
+    "file": "tusche.otp",
+    "bytes": 169109
+  },
+  {
+    "slug": "typo-plakat",
+    "name": "Typo-Plakat",
+    "group": "Plakat",
+    "tags": [
+      "Typografie",
+      "Buchstaben",
+      "groß",
+      "Kontrast",
+      "plakativ",
+      "modern",
+      "Agentur",
+      "Keynote"
+    ],
+    "description": "Die Schrift ist das Bild: riesige angeschnittene Zeichen gegen winzigen Text, je Folie zwei Farben im Wechsel.",
+    "fonts": {
+      "head": "Anton",
+      "body": "Inter"
+    },
+    "colors": [
+      {
+        "color": "#f1eee6",
+        "name": "Hintergrund 1"
+      },
+      {
+        "color": "#111111",
+        "name": "Text 1"
+      },
+      {
+        "color": "#e0dcd0",
+        "name": "Hintergrund 2"
+      },
+      {
+        "color": "#57554f",
+        "name": "Text 2"
+      },
+      {
+        "color": "#2238ff",
+        "name": "Akzent 1"
+      },
+      {
+        "color": "#ff4a1c",
+        "name": "Akzent 2"
+      },
+      {
+        "color": "#ffd91a",
+        "name": "Akzent 3"
+      },
+      {
+        "color": "#0e1b9c",
+        "name": "Akzent 4"
+      },
+      {
+        "color": "#b9b4a6",
+        "name": "Akzent 5"
+      },
+      {
+        "color": "#ff9d80",
+        "name": "Akzent 6"
+      }
+    ],
+    "aspectRatio": 1.7777777777777777,
+    "layouts": [
+      "Titel",
+      "Abschnitt",
+      "Inhalt",
+      "Text und Bild",
+      "Zwei Spalten",
+      "Kennzahl",
+      "Zitat",
+      "Bild",
+      "Schluss"
+    ],
+    "file": "typo-plakat.otp",
+    "bytes": 5422
+  },
+  {
+    "slug": "ukiyo-e",
+    "name": "Ukiyo-e",
+    "group": "Kunststil",
+    "tags": [
+      "Ukiyo-e",
+      "Japan",
+      "Holzschnitt",
+      "ruhig",
+      "Indigo",
+      "Natur",
+      "Kultur"
+    ],
+    "description": "Ruhe wie im japanischen Holzschnitt: Indigo, rote Sonne, Berge, Wellen und Nebelbänder auf cremefarbenem Papier.",
+    "fonts": {
+      "head": "Noto Serif",
+      "body": "Noto Sans"
+    },
+    "colors": [
+      {
+        "color": "#efe4cc",
+        "name": "Hintergrund 1"
+      },
+      {
+        "color": "#2a2622",
+        "name": "Text 1"
+      },
+      {
+        "color": "#e2d4b4",
+        "name": "Hintergrund 2"
+      },
+      {
+        "color": "#5d5448",
+        "name": "Text 2"
+      },
+      {
+        "color": "#1f3b63",
+        "name": "Akzent 1"
+      },
+      {
+        "color": "#c5372c",
+        "name": "Akzent 2"
+      },
+      {
+        "color": "#4d7396",
+        "name": "Akzent 3"
+      },
+      {
+        "color": "#c99b4e",
+        "name": "Akzent 4"
+      },
+      {
+        "color": "#6f8a72",
+        "name": "Akzent 5"
+      },
+      {
+        "color": "#dfa69b",
+        "name": "Akzent 6"
+      }
+    ],
+    "aspectRatio": 1.7777777777777777,
+    "layouts": [
+      "Titel",
+      "Abschnitt",
+      "Inhalt",
+      "Text und Bild",
+      "Zwei Spalten",
+      "Kennzahl",
+      "Zitat",
+      "Bild",
+      "Schluss"
+    ],
+    "file": "ukiyo-e.otp",
+    "bytes": 170158
+  },
+  {
+    "slug": "vaporwave",
+    "name": "Vaporwave",
+    "group": "Designtrend",
+    "tags": [
+      "Vaporwave",
+      "Retro",
+      "Achtziger",
+      "Sonnenuntergang",
+      "Pastell",
+      "Synthwave",
+      "Musik"
+    ],
+    "description": "Ewige Abenddämmerung: Violett läuft in Rosa und Pfirsich, die Sonne in Streifen, der Boden ein Gitter bis zum Horizont.",
+    "fonts": {
+      "head": "Righteous",
+      "body": "Jost"
+    },
+    "colors": [
+      {
+        "color": "#fbe3f2",
+        "name": "Hintergrund 1"
+      },
+      {
+        "color": "#2b0f54",
+        "name": "Text 1"
+      },
+      {
+        "color": "#d9d4ff",
+        "name": "Hintergrund 2"
+      },
+      {
+        "color": "#6b4a9c",
+        "name": "Text 2"
+      },
+      {
+        "color": "#ff4fa3",
+        "name": "Akzent 1"
+      },
+      {
+        "color": "#2fe3e8",
+        "name": "Akzent 2"
+      },
+      {
+        "color": "#8b3dff",
+        "name": "Akzent 3"
+      },
+      {
+        "color": "#ffe45c",
+        "name": "Akzent 4"
+      },
+      {
+        "color": "#ff9a5a",
+        "name": "Akzent 5"
+      },
+      {
+        "color": "#9af5d2",
+        "name": "Akzent 6"
+      }
+    ],
+    "aspectRatio": 1.7777777777777777,
+    "layouts": [
+      "Titel",
+      "Abschnitt",
+      "Inhalt",
+      "Text und Bild",
+      "Zwei Spalten",
+      "Kennzahl",
+      "Zitat",
+      "Bild",
+      "Schluss"
+    ],
+    "file": "vaporwave.otp",
+    "bytes": 803414
+  },
+  {
+    "slug": "weltraum",
+    "name": "Weltraum",
+    "group": "Bereich",
+    "tags": [
+      "Weltraum",
+      "Sterne",
+      "Planeten",
+      "Astronomie",
+      "Nebel",
+      "Wissenschaft",
+      "dunkel",
+      "Zukunft"
+    ],
+    "description": "Tiefer Weltraum mit einem eigenen Himmel je Folie: Sternfelder, Nebel, ein Ringplanet, Sonnenaufgang am Planetenrand, Finsternis und Galaxie.",
+    "fonts": {
+      "head": "Space Grotesk",
+      "body": "Titillium Web"
+    },
+    "colors": [
+      {
+        "color": "#060915",
+        "name": "Hintergrund 1"
+      },
+      {
+        "color": "#f1f5ff",
+        "name": "Text 1"
+      },
+      {
+        "color": "#121a3a",
+        "name": "Hintergrund 2"
+      },
+      {
+        "color": "#a9b6d6",
+        "name": "Text 2"
+      },
+      {
+        "color": "#5fd2f0",
+        "name": "Akzent 1"
+      },
+      {
+        "color": "#8b6cf0",
+        "name": "Akzent 2"
+      },
+      {
+        "color": "#e060b8",
+        "name": "Akzent 3"
+      },
+      {
+        "color": "#f2b25a",
+        "name": "Akzent 4"
+      },
+      {
+        "color": "#35c2a5",
+        "name": "Akzent 5"
+      },
+      {
+        "color": "#3d7ff0",
+        "name": "Akzent 6"
+      }
+    ],
+    "aspectRatio": 1.7777777777777777,
+    "layouts": [
+      "Titel",
+      "Abschnitt",
+      "Inhalt",
+      "Text und Bild",
+      "Zwei Spalten",
+      "Kennzahl",
+      "Zitat",
+      "Bild",
+      "Schluss"
+    ],
+    "file": "weltraum.otp",
+    "bytes": 419302
+  },
+  {
+    "slug": "wissenschaft",
+    "name": "Wissenschaft",
+    "group": "Bereich",
+    "tags": [
+      "Wissenschaft",
+      "Forschung",
+      "Vortrag",
+      "Universität",
+      "Tagung",
+      "sachlich",
+      "Serifen",
+      "Abbildung"
+    ],
+    "description": "Für den Vortrag auf der Tagung: nüchterne Seiten mit weinrotem Streifen, Serifen in den Titeln, Achsen und Punktraster als Ornament.",
+    "fonts": {
+      "head": "Literata",
+      "body": "IBM Plex Sans"
+    },
+    "colors": [
+      {
+        "color": "#ffffff",
+        "name": "Hintergrund 1"
+      },
+      {
+        "color": "#1e2328",
+        "name": "Text 1"
+      },
+      {
+        "color": "#e4e5e0",
+        "name": "Hintergrund 2"
+      },
+      {
+        "color": "#5a626b",
+        "name": "Text 2"
+      },
+      {
+        "color": "#7a1f33",
+        "name": "Akzent 1"
+      },
+      {
+        "color": "#27496d",
+        "name": "Akzent 2"
+      },
+      {
+        "color": "#c48a2c",
+        "name": "Akzent 3"
+      },
+      {
+        "color": "#6f8f7b",
+        "name": "Akzent 4"
+      },
+      {
+        "color": "#2c6e73",
+        "name": "Akzent 5"
+      },
+      {
+        "color": "#a9aeb2",
+        "name": "Akzent 6"
+      }
+    ],
+    "aspectRatio": 1.7777777777777777,
+    "layouts": [
+      "Titel",
+      "Abschnitt",
+      "Inhalt",
+      "Text und Bild",
+      "Zwei Spalten",
+      "Kennzahl",
+      "Zitat",
+      "Bild",
+      "Schluss"
+    ],
+    "file": "wissenschaft.otp",
+    "bytes": 16576
+  },
+  {
+    "slug": "y2k",
+    "name": "Y2K",
+    "group": "Designtrend",
+    "tags": [
+      "Y2K",
+      "Chrom",
+      "Silber",
+      "Jahrtausendwende",
+      "glänzend",
+      "Zukunft",
+      "Pop",
+      "Mode"
+    ],
+    "description": "Jahrtausendwende: flüssiges Chrom in Tropfen und Ringen auf Silber, dazu Eisblau, Pink, mattes Glas und Funkeln.",
+    "fonts": {
+      "head": "Exo 2",
+      "body": "Outfit"
+    },
+    "colors": [
+      {
+        "color": "#e9eef5",
+        "name": "Hintergrund 1"
+      },
+      {
+        "color": "#1b2250",
+        "name": "Text 1"
+      },
+      {
+        "color": "#cfd9e8",
+        "name": "Hintergrund 2"
+      },
+      {
+        "color": "#5a6690",
+        "name": "Text 2"
+      },
+      {
+        "color": "#ff2e93",
+        "name": "Akzent 1"
+      },
+      {
+        "color": "#58b8ff",
+        "name": "Akzent 2"
+      },
+      {
+        "color": "#2b50ff",
+        "name": "Akzent 3"
+      },
+      {
+        "color": "#b79bff",
+        "name": "Akzent 4"
+      },
+      {
+        "color": "#62e6d8",
+        "name": "Akzent 5"
+      },
+      {
+        "color": "#8c9ab5",
+        "name": "Akzent 6"
+      }
+    ],
+    "aspectRatio": 1.7777777777777777,
+    "layouts": [
+      "Titel",
+      "Abschnitt",
+      "Inhalt",
+      "Text und Bild",
+      "Zwei Spalten",
+      "Kennzahl",
+      "Zitat",
+      "Bild",
+      "Schluss"
+    ],
+    "file": "y2k.otp",
+    "bytes": 527676
+  },
+  {
+    "slug": "zeitung",
+    "name": "Zeitung",
+    "group": "Zeitung",
+    "tags": [
+      "Zeitung",
+      "Presse",
+      "seriös",
+      "Nachrichten",
+      "Serife",
+      "Bericht",
+      "Politik",
+      "klassisch"
+    ],
+    "description": "Wie ein seriöses Blatt: Zeitungspapier, Kopflinien, Spaltenlinien, schwarze Schrift und ein tiefes Rot.",
+    "fonts": {
+      "head": "Libre Baskerville",
+      "body": "Libre Franklin"
+    },
+    "colors": [
+      {
+        "color": "#efe9db",
+        "name": "Hintergrund 1"
+      },
+      {
+        "color": "#1b1a18",
+        "name": "Text 1"
+      },
+      {
+        "color": "#e2dac8",
+        "name": "Hintergrund 2"
+      },
+      {
+        "color": "#5c574e",
+        "name": "Text 2"
+      },
+      {
+        "color": "#8c1c13",
+        "name": "Akzent 1"
+      },
+      {
+        "color": "#3a3936",
+        "name": "Akzent 2"
+      },
+      {
+        "color": "#aaa291",
+        "name": "Akzent 3"
+      },
+      {
+        "color": "#cdc4b0",
+        "name": "Akzent 4"
+      },
+      {
+        "color": "#2f4858",
+        "name": "Akzent 5"
+      },
+      {
+        "color": "#a8843c",
+        "name": "Akzent 6"
+      }
+    ],
+    "aspectRatio": 1.7777777777777777,
+    "layouts": [
+      "Titel",
+      "Abschnitt",
+      "Inhalt",
+      "Text und Bild",
+      "Zwei Spalten",
+      "Kennzahl",
+      "Zitat",
+      "Bild",
+      "Schluss"
+    ],
+    "file": "zeitung.otp",
+    "bytes": 335823
+  },
+  {
+    "slug": "zine",
+    "name": "Zine",
+    "group": "Schwarzweiß",
+    "tags": [
+      "Zine",
+      "Punk",
+      "Fanzine",
+      "Kopierer",
+      "schwarzweiß",
+      "Collage",
+      "laut",
+      "Neon",
+      "DIY"
+    ],
+    "description": "Wie ein Fanzine aus dem Kopierer: hartes Schwarzweiß mit Korn, gerissenes Papier, Klebeband und Neonpink.",
+    "fonts": {
+      "head": "Anton",
+      "body": "Space Mono"
+    },
+    "colors": [
+      {
+        "color": "#eeeeea",
+        "name": "Hintergrund 1"
+      },
+      {
+        "color": "#0d0d0d",
+        "name": "Text 1"
+      },
+      {
+        "color": "#d6d6d0",
+        "name": "Hintergrund 2"
+      },
+      {
+        "color": "#4a4a4a",
+        "name": "Text 2"
+      },
+      {
+        "color": "#ff2e88",
+        "name": "Akzent 1"
+      },
+      {
+        "color": "#2a2a2a",
+        "name": "Akzent 2"
+      },
+      {
+        "color": "#8b8b86",
+        "name": "Akzent 3"
+      },
+      {
+        "color": "#b4b4ae",
+        "name": "Akzent 4"
+      },
+      {
+        "color": "#fbfbf8",
+        "name": "Akzent 5"
+      },
+      {
+        "color": "#6a6a66",
+        "name": "Akzent 6"
+      }
+    ],
+    "aspectRatio": 1.7777777777777777,
+    "layouts": [
+      "Titel",
+      "Abschnitt",
+      "Inhalt",
+      "Text und Bild",
+      "Zwei Spalten",
+      "Kennzahl",
+      "Zitat",
+      "Bild",
+      "Schluss"
+    ],
+    "file": "zine.otp",
+    "bytes": 380328
+  },
+  {
+    "slug": "zirkus",
+    "name": "Zirkus",
+    "group": "Plakat",
+    "tags": [
+      "Zirkus",
+      "Buchdruck",
+      "Jahrmarkt",
+      "nostalgisch",
+      "Sterne",
+      "festlich",
+      "Show",
+      "Feier"
+    ],
+    "description": "Schauplakat aus dem Buchdruck: Cremepapier, Rot und Tiefblau, Zeltstreifen, Sterne, Banderolen und viele Schriften auf Mitte.",
+    "fonts": {
+      "head": "Abril Fatface",
+      "body": "Alegreya"
+    },
+    "colors": [
+      {
+        "color": "#f3e6c8",
+        "name": "Hintergrund 1"
+      },
+      {
+        "color": "#1d2f5f",
+        "name": "Text 1"
+      },
+      {
+        "color": "#e6d3a8",
+        "name": "Hintergrund 2"
+      },
+      {
+        "color": "#5b6078",
+        "name": "Text 2"
+      },
+      {
+        "color": "#c5281c",
+        "name": "Akzent 1"
+      },
+      {
+        "color": "#d9a441",
+        "name": "Akzent 2"
+      },
+      {
+        "color": "#2f4f93",
+        "name": "Akzent 3"
+      },
+      {
+        "color": "#a81f15",
+        "name": "Akzent 4"
+      },
+      {
+        "color": "#f0c9a0",
+        "name": "Akzent 5"
+      },
+      {
+        "color": "#2e6b5e",
+        "name": "Akzent 6"
+      }
+    ],
+    "aspectRatio": 1.7777777777777777,
+    "layouts": [
+      "Titel",
+      "Abschnitt",
+      "Inhalt",
+      "Text und Bild",
+      "Zwei Spalten",
+      "Kennzahl",
+      "Zitat",
+      "Bild",
+      "Schluss"
+    ],
+    "file": "zirkus.otp",
+    "bytes": 67746
+  }
+]

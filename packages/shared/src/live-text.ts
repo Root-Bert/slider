@@ -1,6 +1,7 @@
 import * as Y from 'yjs';
 import type { z } from 'zod';
 import {
+  LIST_BULLETS,
   liveParagraphSchema,
   liveTextStyleSchema,
   type LiveElement,
@@ -80,11 +81,26 @@ export function typedParagraphs(
 
 // ── Lists ────────────────────────────────────────────────────────────────────
 
-/** A paragraph's list as the editor writes it (`setRichText`): from its level and bullet. */
-export const listOf = (paragraph: LiveParagraph): TextList | null =>
-  paragraph.level > 0 && paragraph.bullet
-    ? { kind: paragraph.bullet.number ? 'number' : 'bullet', level: paragraph.level }
-    : null;
+/**
+ * A paragraph's list as the editor writes it (`setRichText`): from its level and bullet, with the
+ * bullet or the numbering it shows – unless the editor only assumed that.
+ */
+export function listOf(paragraph: LiveParagraph): TextList | null {
+  const bullet = paragraph.bullet;
+  if (paragraph.level <= 0 || !bullet) return null;
+  if (bullet.number) {
+    return {
+      kind: 'number',
+      level: paragraph.level,
+      ...(bullet.assumed ? {} : { number: bullet.number }),
+    };
+  }
+  return {
+    kind: 'bullet',
+    level: paragraph.level,
+    ...(bullet.assumed || !bullet.char ? {} : { char: bullet.char }),
+  };
+}
 
 /**
  * A list Slider writes itself (none of the text's own draws it): each level this many points
@@ -94,6 +110,15 @@ export const LIST_INDENT = 27;
 export const LIST_LABEL_WIDTH = 27;
 /** Its bullets, by level: a dot, a dash, a dot, … */
 export const listBullet = (level: number) => (level % 2 === 1 ? '•' : '–');
+/**
+ * The font a bullet picked in the editor is drawn in (`null`: the text's): the shapes in Inter,
+ * which has them all – most text fonts have only the dot and the dash (measured over
+ * `fonts/google`), and what the browser and LibreOffice draw instead differs.
+ */
+export const listBulletFont = (char: string): string | null =>
+  char !== '•' && char !== '–' && (LIST_BULLETS as readonly string[]).includes(char)
+    ? 'Inter'
+    : null;
 
 const ROMAN: [number, string][] = [
   [1000, 'm'],

@@ -2,6 +2,7 @@ import {
   clamp,
   isTurned,
   rectFromPoints,
+  SLIDE_RECT,
   turnedCorners,
   type Point,
   type Rect,
@@ -577,11 +578,11 @@ export function snappedPoint(
 }
 
 /**
- * A new box drawn from `from` to the pointer at `to` (on the slide, both kept on it): its moving
- * corner caught at `lines` close by (`tolerance`) as a resized box's is; `null` lines: free. With
- * `square` it is square as seen (`aspect`: the slide's width over its height) – as far as the
- * pointer went further, no further than the slide's edge –, and only the closer catch counts, the
- * other side following it.
+ * A new box drawn from `from` to the pointer at `to` (both where things may lie, `within`: the
+ * slide, or with the room around it): its moving corner caught at `lines` close by (`tolerance`)
+ * as a resized box's is; `null` lines: free. With `square` it is square as seen (`aspect`: the
+ * slide's width over its height) – as far as the pointer went further, no further than the edge
+ * of `within` –, and only the closer catch counts, the other side following it.
  */
 export function drawnRect(
   from: Point,
@@ -590,6 +591,7 @@ export function drawnRect(
   tolerance: RectSize,
   square = false,
   aspect = 1,
+  within: Rect = SLIDE_RECT,
 ): { rect: Rect; caught: string | null } {
   if (!square) {
     const snapped = lines ? snappedPoint(to, lines, tolerance) : { point: to, caught: null };
@@ -597,8 +599,11 @@ export function drawnRect(
   }
   const sx = to.x < from.x ? -1 : 1;
   const sy = to.y < from.y ? -1 : 1;
-  // Sides in the slide's heights; room up to the slide's edge each way.
-  const room = Math.min((sx > 0 ? 1 - from.x : from.x) * aspect, sy > 0 ? 1 - from.y : from.y);
+  // Sides in the slide's heights; room up to the edge each way.
+  const room = Math.min(
+    (sx > 0 ? within.x + within.w - from.x : from.x - within.x) * aspect,
+    sy > 0 ? within.y + within.h - from.y : from.y - within.y,
+  );
   const side = Math.min(room, Math.max(Math.abs(to.x - from.x) * aspect, Math.abs(to.y - from.y)));
   const cornerAt = (length: number) => ({
     x: from.x + (sx * length) / aspect,

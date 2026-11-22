@@ -1042,7 +1042,8 @@ describe('editing an ODP deck', () => {
       if (url.includes('/get_result')) {
         return Response.json(
           pending-- > 0
-            ? { status: 'Pending' }
+            ? // FLUX 3's own step between Pending and Ready.
+              { status: 'Generating' }
             : { status: 'Ready', result: { sample: 'https://delivery-eu.bfl.ai/t1.png' } },
         );
       }
@@ -1199,6 +1200,11 @@ describe('editing an ODP deck', () => {
     await ctx.deps.db
       .insert(workspaceMembers)
       .values({ workspaceId: ctx.workspaceId, userId: reviewer.user.id, role: 'reviewer' });
+    // New, it was its maker's alone: opened to the workspace.
+    await ctx.request(`/api/decks/${deckId}/access`, {
+      method: 'PUT',
+      json: { restricted: false, userIds: [] },
+    });
     const read = await ctx.request(`/api/decks/${deckId}/notes`, { cookie: reviewer.cookie });
     expect(read.status).toBe(200);
     const readNotes = deckNotesSchema.parse(await read.json());

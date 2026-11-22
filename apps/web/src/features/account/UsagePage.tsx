@@ -1,11 +1,17 @@
 import { useEffect, useRef, useState } from 'react';
 import { useSearchParams } from 'react-router';
 import { useQueryClient } from '@tanstack/react-query';
-import { routes } from '@/lib/routes';
 import { queryKeys, useWorkspaceUsage } from '@/lib/api';
 import { SettingsLayout } from '@/shell/layouts/SettingsLayout';
 import { useAccount } from '@/features/auth';
-import { pickWorkspace, readLastWorkspaceId, UsageOverview } from '@/features/workspaces';
+import { APP_SCOPES, appScopeOf, type AppScope } from '@/lib/apps';
+import { AppTabs } from '@/shell/AppTabs';
+import {
+  CloudUsage,
+  pickWorkspace,
+  readLastWorkspaceId,
+  UsageOverview,
+} from '@/features/workspaces';
 import { ErrorText, Icon, LoadingState, Section, Select, useToast } from '@/ui';
 
 /** After paying, Stripe's webhook may land a moment after the browser: ask again this often… */
@@ -29,6 +35,8 @@ export function Component() {
   const workspace =
     workspaces.find((candidate) => candidate.id === requested) ??
     pickWorkspace(workspaces, readLastWorkspaceId());
+  // `?app=cloud|slider`: one app's part; else the whole workspace.
+  const scope = appScopeOf(searchParams.get('app'));
   const [paidJustNow] = useState(() => searchParams.get('checkout') === 'success');
   const [polling, setPolling] = useState(paidJustNow);
   const [upgraded, setUpgraded] = useState(false);
@@ -70,7 +78,7 @@ export function Component() {
       docTitle="Nutzung | Slider"
       title="Nutzung"
       leading={<Icon name="cloud" size={32} className="text-fg-muted" />}
-      back={{ to: workspace ? routes.workspace(workspace.id) : routes.reviews() }}
+      back="app"
       toast={toast}
     >
       {!workspace ? (
@@ -81,15 +89,36 @@ export function Component() {
             <Select<string>
               aria-label="Workspace"
               value={workspace.id}
-              onChange={(id) => setSearchParams({ workspace: id })}
+              onChange={(id) =>
+                setSearchParams(scope === 'all' ? { workspace: id } : { workspace: id, app: scope })
+              }
               options={workspaces.map((each) => ({ value: each.id, label: each.name }))}
               className="self-start sm:min-w-[280px]"
             />
           )}
+          <AppTabs<AppScope>
+            label="Gesamt oder eine App"
+            value={scope}
+            onChange={(next) =>
+              setSearchParams((params) => {
+                if (next === 'all') params.delete('app');
+                else params.set('app', next);
+                return params;
+              })
+            }
+            segments={APP_SCOPES}
+          />
           {usage.isPending ? (
             <LoadingState padding="lg" />
           ) : usage.isError ? (
             <ErrorText role="alert">{usage.error.message}</ErrorText>
+          ) : scope === 'cloud' ? (
+            <CloudUsage
+              key={workspace.id}
+              workspaceId={workspace.id}
+              admin={workspace.role === 'admin'}
+              fileBytes={usage.data.storage.files}
+            />
           ) : (
             <UsageOverview
               key={workspace.id}
@@ -97,6 +126,7 @@ export function Component() {
               details={usage.data}
               userId={user.id}
               onNotify={showToast}
+              scope={scope}
             />
           )}
         </>

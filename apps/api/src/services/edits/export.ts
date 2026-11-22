@@ -1,4 +1,5 @@
-import { createCanvas, loadImage } from '@napi-rs/canvas';
+import { createCanvas } from '@napi-rs/canvas';
+import { loadImage } from '../../import/load-image';
 import { asc, eq } from 'drizzle-orm';
 import { ODP_MIME, OTP_MIME } from '@slider/odp';
 import type { SendExportInput, Viewer } from '@slider/shared';
@@ -123,9 +124,10 @@ export async function exportedFile(
 export const MAX_MAILED_EXPORT_BYTES = 15 * 1024 * 1024;
 
 /**
- * Mails an export to someone as an attachment, from Slider in the sender's name, with their
- * note. Like a deck shared by mail, the sender's address stays out of it (no Reply-To), and the
- * mail names the imprint and privacy policy – the recipient's address came from someone else.
+ * Mails an export to someone as an attachment, from Slider's address in the sender's name, with
+ * their note. Replies go to the sender: Reply-To is their account's own address – never one
+ * typed in here –, so the mail can only point back at who sent it. It names the imprint and
+ * privacy policy – the recipient's address came from someone else.
  */
 export async function sendExport(
   deps: AppDeps,

@@ -54,7 +54,9 @@ export type MaterialSheet = z.infer<typeof materialSheetSchema>;
 
 export const materialSchema = boardFrameSchema.extend({
   id: z.string(),
-  deckId: z.string(),
+  /** The deck whose board it lies on – or `documentId`, a text document's: exactly one is set. */
+  deckId: z.string().nullable(),
+  documentId: z.string().nullable(),
   author: authorSchema,
   name: z.string(),
   kind: z.enum(MATERIAL_KINDS),
@@ -107,7 +109,9 @@ export const boardRichSchema = z
 
 export const boardItemSchema = boardFrameSchema.extend({
   id: z.string(),
-  deckId: z.string(),
+  /** The deck whose board it lies on – or `documentId`, a text document's: exactly one is set. */
+  deckId: z.string().nullable(),
+  documentId: z.string().nullable(),
   author: authorSchema,
   kind: z.enum(BOARD_ITEM_KINDS),
   /** A note's text; a link's title (may be empty). */
@@ -187,7 +191,7 @@ export const moveBoardInputSchema = z.object({
 export type MoveBoardInput = z.infer<typeof moveBoardInputSchema>;
 
 /**
- * A file put on the board: sent over tus (`purpose material`, `deckId`) and named here by its
+ * A file put on the board: sent over tus (`purpose material`, `deckId` or `documentId`) and named here by its
  * upload id, or as the multipart field `file` with these fields beside it.
  */
 export const addMaterialInputSchema = boardFrameSchema.extend({

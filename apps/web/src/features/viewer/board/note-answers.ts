@@ -10,18 +10,17 @@ import { useMemo, useSyncExternalStore } from 'react';
 import { ApiError } from '@/lib/api-client';
 import {
   askMaterial,
-  queryKeys,
+  boardKeys,
   stopMaterialAnswer,
   useDeleteMaterialAnswer,
   useMaterialQuestions,
 } from '@/lib/api';
 import { isApplePlatform } from '@/lib/platform';
-import { useViewerData } from '../state/viewer-data';
-import { useViewerToast } from '../state/viewer-toast';
+import { ownedBy, ownerIds, useBoardOwner } from './board-owner';
 
 /*
  * Asking the material from a note: ⌘↵ while its text is typed (or on a picked note, or its right
- * click „KI fragen“) hands the note's text to the workspace's AI, which answers from the deck's
+ * click „KI fragen“) hands the note's text to the workspace's AI, which answers from the board's
  * material only (`services/material-questions.ts`). Under the note it has a thread as a comment
  * has – for everyone who sees the board: the AI's answer to the note (asked again, written anew
  * in its place), then the replies people write, each handed to the AI too or not (its answer
@@ -93,23 +92,22 @@ export interface AskOptions {
 }
 
 /**
- * The deck's threads by note and asking: `saved` waits for a note just put down to be on the
+ * The board's threads by note and asking: `saved` waits for a note just put down to be on the
  * server (the outbox sends it) – its thread is kept with it there.
  */
 export function useNoteAnswers(saved: (noteId: string) => Promise<void>) {
-  const { deck, viewer } = useViewerData();
-  const deckId = deck.id;
+  const { kind, id: ownerId, viewer: author, toast } = useBoardOwner();
+  const owner = useMemo(() => ({ kind, id: ownerId }), [kind, ownerId]);
   const queryClient = useQueryClient();
-  const toast = useViewerToast();
-  const query = useMaterialQuestions(deckId);
-  const deleting = useDeleteMaterialAnswer(deckId);
+  const query = useMaterialQuestions(owner);
+  const deleting = useDeleteMaterialAnswer(owner);
   const local = useSyncExternalStore(subscribe, () => shown);
-  const key = queryKeys.materialQuestions(deckId);
+  const key = boardKeys.questions(owner);
 
   const byNote = useMemo(() => {
     const all = new Map<string, NoteAnswerValue>();
     for (const entry of query.data ?? []) all.set(entry.id, entry);
-    for (const [id, entry] of local) if (entry.deckId === deckId) all.set(id, entry);
+    for (const [id, entry] of local) if (ownedBy(entry, owner)) all.set(id, entry);
     for (const entry of local.values()) if (entry.replaced) all.delete(entry.replaced);
     const map = new Map<string, NoteAnswerValue[]>();
     for (const entry of all.values()) {
@@ -119,7 +117,7 @@ export function useNoteAnswers(saved: (noteId: string) => Promise<void>) {
     }
     for (const thread of map.values()) thread.sort(byTime);
     return map;
-  }, [query.data, local, deckId]);
+  }, [query.data, local, owner]);
 
   const ask = async (noteId: string, text: string, options: AskOptions = {}) => {
     const question = text.trim().slice(0, MAX_MATERIAL_QUESTION);
@@ -139,10 +137,10 @@ export function useNoteAnswers(saved: (noteId: string) => Promise<void>) {
     const first = thread[0]?.createdAt;
     streams.set(id, {
       id,
-      deckId,
+      ...ownerIds(owner),
       noteId,
       kind,
-      author: kind === 'reply' ? (replaces?.author ?? viewer.author) : null,
+      author: kind === 'reply' ? (replaces?.author ?? author) : null,
       question,
       answer: '',
       state: asking ? 'answering' : null,
@@ -178,7 +176,7 @@ export function useNoteAnswers(saved: (noteId: string) => Promise<void>) {
     let heard = false;
     try {
       await askMaterial(
-        deckId,
+        owner,
         { id, noteId, question, kind, ask: asking, replaces: replaces?.id },
         (event) => {
           heard = true;

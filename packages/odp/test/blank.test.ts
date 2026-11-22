@@ -1,11 +1,20 @@
 import JSZip from 'jszip';
 import { describe, expect, it } from 'vitest';
 import { OdpDocument, blankOdp, isOdpBytes } from '../src';
+import { buildPart, parsePart, spaceRun } from '../src/xml';
 
 describe('blankOdp', () => {
   it('is a different ODP each time with one empty 16:9 slide the editor can work on', async () => {
     const bytes = await blankOdp(new Date('2026-10-27T10:00:00Z'));
     expect(isOdpBytes(bytes)).toBe(true);
+    // A run of spaces is as long as the file says – up to a cap, or a few bytes become gigabytes.
+    expect([undefined, '3', '0', 'x', '400000000'].map((count) => spaceRun(count).length)).toEqual([
+      1, 3, 1, 1, 10_000,
+    ]);
+    // A CDATA section stays text when the part is written again – never markup of its own.
+    expect(buildPart(parsePart('<a>x<![CDATA[<b href="y">&]]>z</a>', 'content.xml'))).toBe(
+      '<a>x&lt;b href="y"&gt;&amp;z</a>',
+    );
     const document = await OdpDocument.open(bytes);
     expect(document.pageSize()).toEqual({ width: 28, height: 15.75 });
     const slides = document.slides();

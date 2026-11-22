@@ -1,7 +1,12 @@
 import { readFileSync } from 'node:fs';
 import { deflateSync } from 'node:zlib';
 import JSZip from 'jszip';
-import { shapeAreaSteps, shapeOutlinePath } from '@slider/shared';
+import {
+  shapeAreaSteps,
+  shapeOutlinePath,
+  zipEntriesAtMost,
+  type EditableElement,
+} from '@slider/shared';
 import { describe, expect, it } from 'vitest';
 import { OdpDocument, OdpError, imageSize, isPackagePath, type OdpImage } from '../src';
 import { OdpArchive } from '../src/archive';
@@ -122,6 +127,24 @@ describe('reading', () => {
     zip.file('mimetype', 'application/vnd.oasis.opendocument.text');
     const text = await zip.generateAsync({ type: 'uint8array' });
     await expect(OdpDocument.open(text)).rejects.toMatchObject({ code: 'unsupported' });
+    // Counts a zip's entries in its bytes, before any is read – whatever its end record claims.
+    {
+      const many = new JSZip();
+      for (let index = 0; index < 30; index += 1) many.file(`p${index}.xml`, '');
+      const bytes = await many.generateAsync({ type: 'uint8array' });
+      expect(zipEntriesAtMost(bytes, 30)).toBe(true);
+      expect(zipEntriesAtMost(bytes, 29)).toBe(false);
+      const end = bytes.length - 22;
+      const forged = bytes.slice();
+      // „One entry, a directory of 50 bytes“.
+      forged.set([1, 0, 1, 0, 50, 0, 0, 0], end + 8);
+      expect(zipEntriesAtMost(forged, 29)).toBe(false);
+      // „Look in the zip64 record“, with none where one is looked for.
+      forged.set([255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255], end + 8);
+      expect(zipEntriesAtMost(forged, 29)).toBe(false);
+      expect(zipEntriesAtMost(DEMO, 10_000)).toBe(true);
+      expect(zipEntriesAtMost(new Uint8Array([1, 2, 3]), 1)).toBe(true);
+    }
   });
 });
 
@@ -1437,6 +1460,11 @@ describe('slides moving', () => {
         { type: 'setBox', elementId: 'sl-mine', box, rotation: 10 },
       ]);
       expect(drawn('sl-mine')?.paint).toBeUndefined();
+      // A slide's styles take its gradient along (carried into another file with the slide).
+      const mine = document
+        .slides()
+        .findIndex((slide) => slide.elements.some((element) => element.id === 'sl-mine'));
+      expect(document.styleNamesOf(mine).some((name) => name.includes('Gradient'))).toBe(true);
       // A rectangle's corners: rounded by a radius (pt) and sharp again – no ellipse's or
       // triangle's. Kept through the file, the text area following the rounding.
       document.apply([
@@ -1811,6 +1839,61 @@ describe('slides moving', () => {
       expect(saved.slides()[3]!.elements.map((element) => element.id)).not.toEqual(
         source.map((element) => element.id),
       );
+
+      // Entrances: each after the one before or with it, in the main sequence next to the
+      // transition, as LibreOffice writes its presets – copied with the slide, gone with the
+      // element.
+      const [first, second] = source as [EditableElement, EditableElement];
+      saved.apply([
+        { type: 'setEntrance', elementId: first.id, entrance: { effect: 'rise', start: 'after' } },
+        {
+          type: 'setEntrance',
+          elementId: second.id,
+          entrance: { effect: 'fly', start: 'with', from: 'left' },
+        },
+        { type: 'setEntrance', elementId: first.id, entrance: { effect: 'fade', start: 'after' } },
+      ]);
+      const comes = (at: number) => saved.slides()[at]!.elements.map((element) => element.entrance);
+      expect(comes(2).slice(0, 2)).toEqual([
+        { effect: 'fade', start: 'after', order: 0 },
+        { effect: 'fly', start: 'with', from: 'left', order: 1 },
+      ]);
+      const animated = await (
+        await JSZip.loadAsync(await saved.toBytes())
+      )
+        .file('content.xml')!
+        .async('string');
+      expect(animated).toContain(
+        `<anim:par smil:begin="next"><anim:par smil:begin="0s"><anim:par smil:begin="0s" smil:fill="hold" presentation:node-type="after-previous" presentation:preset-class="entrance" presentation:preset-id="ooo-entrance-fade-in">`,
+      );
+      expect(animated).toContain('presentation:preset-sub-type="from-left"');
+      expect((await roundtrip(saved)).slides()[2]!.elements[1]!.entrance?.effect).toBe('fly');
+      // Carried as XML into a file that never declared animations (a blank deck): declared then.
+      const bare = await JSZip.loadAsync(await saved.toBytes());
+      bare.file(
+        'content.xml',
+        (await bare.file('content.xml')!.async('string')).replace(
+          / xmlns:(smil|anim)="[^"]*"/g,
+          '',
+        ),
+      );
+      const plain = await OdpDocument.open(await bare.generateAsync({ type: 'uint8array' }));
+      plain.replaceSlide(2, saved.slideXml(2));
+      expect(plain.slides()[2]!.elements[1]!.entrance?.effect).toBe('fly');
+      saved.apply([
+        { type: 'duplicateSlide', pageId: ids[2]!, newPageId: 'slcopy-three', after: ids[2]! },
+      ]);
+      expect(
+        comes(3)
+          .slice(0, 2)
+          .map((entrance) => entrance?.effect),
+      ).toEqual(['fade', 'fly']);
+      saved.apply([
+        { type: 'deleteElement', elementId: first.id },
+        { type: 'setEntrance', elementId: second.id, entrance: null },
+      ]);
+      expect(comes(2).every((entrance) => entrance === undefined)).toBe(true);
+      expect(comes(3)[0]?.effect).toBe('fade');
     }
   });
 });
@@ -1883,7 +1966,7 @@ describe('writing', () => {
       );
       zip.file(
         'Object 1/content.xml',
-        '<?xml version="1.0" encoding="UTF-8"?><office:document-content xmlns:office="urn:oasis:names:tc:opendocument:xmlns:office:1.0" xmlns:draw="urn:oasis:names:tc:opendocument:xmlns:drawing:1.0" xmlns:xlink="http://www.w3.org/1999/xlink"><office:body><draw:image xlink:href="file:///etc/passwd"/><draw:image xlink:href="Pictures/a.png"/></office:body></office:document-content>',
+        '<?xml version="1.0" encoding="UTF-8"?><office:document-content xmlns:office="urn:oasis:names:tc:opendocument:xmlns:office:1.0" xmlns:draw="urn:oasis:names:tc:opendocument:xmlns:drawing:1.0" xmlns:xlink="http://www.w3.org/1999/xlink"><office:body><draw:image xlink:href="file:///etc/passwd"/><draw:image xlink:href="Pictures/a.png"/><draw:image xmlns:x="http://www.w3.org/1999/xlink" x:href="file:///etc/shadow"/><d:image xmlns:d="urn:oasis:names:tc:opendocument:xmlns:drawing:1.0" xmlns:y="http://www.w3.org/1999/xlink" y:href="http://intern/"/><o:dde-source xmlns:o="urn:oasis:names:tc:opendocument:xmlns:office:1.0"/></office:body></office:document-content>',
       );
       const document = await OdpDocument.open(await zip.generateAsync({ type: 'uint8array' }));
       document.removeExternalLinks();
@@ -1895,6 +1978,9 @@ describe('writing', () => {
       expect(main).toContain('xlink:href="https://example.com/next"');
       const object = await written.file('Object 1/content.xml')!.async('string');
       expect(object).not.toContain('file:///');
+      // Whatever prefix the file gives the namespace: a link is one by its namespace.
+      expect(object).not.toContain('http://intern/');
+      expect(object).not.toContain('dde-source');
       expect(object).toContain('xlink:href="Pictures/a.png"');
     }
 

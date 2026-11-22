@@ -7,13 +7,14 @@ import {
 } from '@slider/shared';
 import { endSession, loadSessionUser } from '../auth/session';
 import type { AppDeps } from '../deps';
-import { badRequest } from '../http/errors';
+import { ApiError, badRequest } from '../http/errors';
 import { fixedWindow, rateLimit } from '../http/rate-limit';
 import { readJson } from '../http/validate';
 import { successorChoices } from '../services/account-deletion';
 import { exportAccount } from '../services/account-export';
 import { normalizeEmail } from '../services/accounts';
 import {
+  DATA_EXPORT_DOWNLOADS,
   deleteRequested,
   exportInvites,
   requestData,
@@ -32,6 +33,21 @@ export function dataRequestsRoutes(deps: AppDeps) {
   const perClient = rateLimit({ limit: 10, windowMs: HOUR_MS, clock: deps.clock });
   // Per address: nobody fills someone's mailbox. Over the limit nothing is sent, the answer stays.
   const perAddress = fixedWindow({ limit: 3, windowMs: HOUR_MS, clock: deps.clock });
+  // Downloads per copy link (by its signature) – the whole account, so not again and again.
+  const downloads = new Map<string, { count: number; expiresAt: number }>();
+  const usedUp = (token: string) => (downloads.get(token)?.count ?? 0) >= DATA_EXPORT_DOWNLOADS;
+  const usedUpError = () =>
+    new ApiError(
+      410,
+      'link_expired',
+      'Mit diesem Link wurden die Daten schon dreimal heruntergeladen. Fordere auf der Seite „Datenanfrage“ einen neuen an.',
+    );
+  const countDownload = (token: string, expiresAt: Date) => {
+    const now = deps.clock.now().getTime();
+    for (const [key, entry] of downloads) if (entry.expiresAt <= now) downloads.delete(key);
+    const count = (downloads.get(token)?.count ?? 0) + 1;
+    downloads.set(token, { count, expiresAt: expiresAt.getTime() });
+  };
 
   return (
     new Hono()
@@ -42,6 +58,7 @@ export function dataRequestsRoutes(deps: AppDeps) {
       })
       .get('/data-requests/:token', async (c) => {
         const request = await resolveDataRequest(deps, c.req.param('token'));
+        if (request.purpose === 'export' && usedUp(c.req.param('token'))) throw usedUpError();
         c.header('Cache-Control', 'no-store');
         return c.json<DataRequestInfo>({
           purpose: request.purpose,
@@ -54,6 +71,9 @@ export function dataRequestsRoutes(deps: AppDeps) {
         const request = await resolveDataRequest(deps, c.req.param('token'));
         if (request.purpose !== 'export')
           throw badRequest('Dieser Link ist nicht zum Herunterladen.');
+        const token = c.req.param('token');
+        if (usedUp(token)) throw usedUpError();
+        countDownload(token, request.expiresAt);
         return zipResponse(
           c,
           request.user

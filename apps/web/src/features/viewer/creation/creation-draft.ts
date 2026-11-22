@@ -5,6 +5,7 @@ import {
   MIN_CREATED_SLIDES,
   type DeckKind,
 } from '@slider/shared';
+import { accountKey } from '@/lib/api-client';
 import { readJson, writeJson, writeString } from '@/lib/storage';
 
 /*
@@ -16,7 +17,7 @@ import { readJson, writeJson, writeString } from '@/lib/storage';
 export interface CreationDraft {
   description: string;
   kind: DeckKind | null;
-  /** `null`: the kind's suggestion; `ai`: „KI wählt“. */
+  /** A number: that many slides; else „Automatisch“ (`ai` from older drafts). */
   pages: number | 'ai' | null;
   /** `null`: not picked – the deck's own template. */
   templateId: string | null;
@@ -51,7 +52,8 @@ export const EMPTY_CREATION_DRAFT: CreationDraft = {
   templateId: null,
 };
 
-const keyOf = (deckId: string) => `slider.creationDraft.${deckId}`;
+/** Per account too (`accountKey`): not the next one's on this browser; signing out drops it. */
+const keyOf = (deckId: string) => accountKey(`slider.creationDraft.${deckId}`);
 
 export const loadCreationDraft = (deckId: string): CreationDraft =>
   readJson(keyOf(deckId), parseDraft, EMPTY_CREATION_DRAFT);

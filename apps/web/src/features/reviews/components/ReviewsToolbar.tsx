@@ -40,6 +40,12 @@ export function ReviewsToolbar({
       icon: 'archive',
       count: counts.archive > 0 ? counts.archive : undefined,
     },
+    {
+      value: 'trash',
+      label: 'Papierkorb',
+      icon: 'delete',
+      count: counts.trash > 0 ? counts.trash : undefined,
+    },
   ];
 
   return (
@@ -66,6 +72,8 @@ export function ReviewsToolbar({
       }
       view={view}
       onViewChange={onViewChange}
+      // The trash is a list.
+      listOnly={tab === 'trash'}
     />
   );
 }

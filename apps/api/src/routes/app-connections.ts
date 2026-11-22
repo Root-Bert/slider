@@ -2,6 +2,8 @@ import { Server } from '@modelcontextprotocol/sdk/server/index.js';
 import { WebStandardStreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/webStandardStreamableHttp.js';
 import { CallToolRequestSchema, ListToolsRequestSchema } from '@modelcontextprotocol/sdk/types.js';
 import { Hono, type Context } from 'hono';
+import { bodyLimit } from 'hono/body-limit';
+import { createMiddleware } from 'hono/factory';
 import {
   MCP_PATH,
   appRequestInputSchema,
@@ -30,7 +32,9 @@ import {
   registerClient,
   removeAppConnection,
 } from '../services/app-connections';
-import { MCP_INSTRUCTIONS, MCP_TOOLS, runMcpTool } from '../services/mcp';
+import { MCP_INSTRUCTIONS } from '../services/mcp';
+import { DocumentLive } from '../services/documents';
+import { APP_TOOLS, runAppTool } from '../services/mcp-cloud';
 
 /*
  * „KI-Apps“ (`services/app-connections.ts`, `services/mcp.ts`):
@@ -46,6 +50,9 @@ import { MCP_INSTRUCTIONS, MCP_TOOLS, runMcpTool } from '../services/mcp';
 const HOUR_MS = 60 * 60 * 1000;
 
 /** Paths whose answers any origin may read (apps in a browser, the MCP Inspector) – no cookies. */
+/** An MCP request's body: a file as base64 (add_file) of some 70 MB still fits, no more is buffered. */
+const MCP_MAX_BODY_BYTES = 96 * 1024 * 1024;
+
 export const OPEN_PATHS = [MCP_PATH, '/api/oauth/token', '/api/oauth/register'];
 export const isOpenPath = (path: string) =>
   OPEN_PATHS.includes(path) || path.startsWith('/.well-known/');
@@ -121,18 +128,62 @@ const oauthError = (c: Context, error: unknown) => {
 const problemPage = (message: string) =>
   `<!doctype html><html lang="de"><meta charset="utf-8"><meta name="viewport" content="width=device-width"><title>Slider</title><body style="font:16px/1.5 system-ui,sans-serif;max-width:32rem;margin:15vh auto;padding:0 1rem;color:#222"><h1 style="font-size:1.25rem">Verbindung nicht möglich</h1><p>${message.replace(/[<>&]/g, '')}</p></body></html>`;
 
-export function appConnectionsRoutes(deps: AppDeps) {
+/** `live`: who has a document open – the same one the documents' routes tell through. */
+export function appConnectionsRoutes(deps: AppDeps, live = new DocumentLive()) {
   const viewer = viewerMiddleware(deps);
   const registrations = rateLimit({ limit: 30, windowMs: HOUR_MS, clock: deps.clock });
   const tokens = rateLimit({ limit: 120, windowMs: 60 * 1000, clock: deps.clock });
   // May fetch an app's metadata document: a person signs in a few times, a loop is stopped.
   const authorizations = rateLimit({ limit: 60, windowMs: 60 * 1000, clock: deps.clock });
+  // These need no session: a body is read no further than this, whatever its length claims.
+  const small = bodyLimit({ maxSize: 64 * 1024 });
+  // A file handed over as base64 (add_file) is the largest call.
+  const mcpBody = bodyLimit({ maxSize: MCP_MAX_BODY_BYTES });
+  /**
+   * Who calls `/mcp`, before a byte of the body is read: without a token (or past the calls a
+   * minute) the answer needs none, and a body held for a stranger is memory given away.
+   */
+  const mcpCaller = createMiddleware<{
+    Variables: { app: NonNullable<Awaited<ReturnType<typeof authenticateAppToken>>> };
+  }>(async (c, next) => {
+    const given = /^Bearer\s+(\S+)\s*$/i.exec(c.req.header('authorization') ?? '')?.[1];
+    const found = given ? await authenticateAppToken(deps, given) : null;
+    if (!found) {
+      const challenge = [
+        `Bearer resource_metadata="${resourceMetadataUrl(deps)}"`,
+        ...(given ? ['error="invalid_token"'] : []),
+      ].join(', ');
+      return c.json(
+        {
+          error: given ? 'invalid_token' : 'unauthorized',
+          error_description: given
+            ? 'The token is unknown, expired or was removed.'
+            : 'Sign in to Slider (OAuth) or send a token from Slider → Konto → KI-Apps.',
+        },
+        401,
+        { 'WWW-Authenticate': challenge },
+      );
+    }
+    // Per person, whatever the tool – the costly ones count in the page's windows too.
+    const hit = aiLimits(deps).mcpCalls.hit(found.user.id);
+    if (!hit.allowed)
+      return c.json(
+        {
+          error: 'rate_limited',
+          error_description: `Too many calls at once – try again in ${hit.retryAfterS} s.`,
+        },
+        429,
+        { 'Retry-After': String(hit.retryAfterS) },
+      );
+    c.set('app', found);
+    await next();
+  });
   const noOAuth = () => notFound('Auf diesem Server melden sich KI-Apps mit einem Token an.');
 
   return (
     new Hono<ViewerEnv>()
       // ── OAuth ────────────────────────────────────────────────────────────
-      .post('/oauth/register', registrations, async (c) => {
+      .post('/oauth/register', registrations, small, async (c) => {
         if (!oauthOffered(deps)) throw noOAuth();
         try {
           const raw = await c.req.raw.text();
@@ -154,7 +205,7 @@ export function appConnectionsRoutes(deps: AppDeps) {
         if ('problem' in result) return c.html(problemPage(result.problem), 400);
         return c.redirect(result.to, 302);
       })
-      .post('/oauth/token', tokens, async (c) => {
+      .post('/oauth/token', tokens, small, async (c) => {
         if (!oauthOffered(deps)) throw noOAuth();
         try {
           return c.json(await exchangeToken(deps, await readForm(c)), 200, {
@@ -202,36 +253,8 @@ export function appConnectionsRoutes(deps: AppDeps) {
       })
 
       // ── MCP ──────────────────────────────────────────────────────────────
-      .all('/mcp', async (c) => {
-        const given = /^Bearer\s+(\S+)\s*$/i.exec(c.req.header('authorization') ?? '')?.[1];
-        const found = given ? await authenticateAppToken(deps, given) : null;
-        if (!found) {
-          const challenge = [
-            `Bearer resource_metadata="${resourceMetadataUrl(deps)}"`,
-            ...(given ? ['error="invalid_token"'] : []),
-          ].join(', ');
-          return c.json(
-            {
-              error: given ? 'invalid_token' : 'unauthorized',
-              error_description: given
-                ? 'The token is unknown, expired or was removed.'
-                : 'Sign in to Slider (OAuth) or send a token from Slider → Konto → KI-Apps.',
-            },
-            401,
-            { 'WWW-Authenticate': challenge },
-          );
-        }
-        // Per person, whatever the tool – the costly ones count in the page's windows too.
-        const hit = aiLimits(deps).mcpCalls.hit(found.user.id);
-        if (!hit.allowed)
-          return c.json(
-            {
-              error: 'rate_limited',
-              error_description: `Too many calls at once – try again in ${hit.retryAfterS} s.`,
-            },
-            429,
-            { 'Retry-After': String(hit.retryAfterS) },
-          );
+      .all('/mcp', mcpCaller, mcpBody, async (c) => {
+        const found = c.var.app;
         const caller = {
           viewer: userViewer(found.user),
           workspaceId: found.connection.workspaceId,
@@ -251,13 +274,30 @@ export function appConnectionsRoutes(deps: AppDeps) {
           },
           { capabilities: { tools: {} }, instructions: MCP_INSTRUCTIONS },
         );
-        server.setRequestHandler(ListToolsRequestSchema, () => ({ tools: MCP_TOOLS }));
+        server.setRequestHandler(ListToolsRequestSchema, () => ({ tools: APP_TOOLS }));
+        // One request may carry many calls (a JSON-RPC batch): each counts, the first is paid.
+        let calls = 0;
         server.setRequestHandler(CallToolRequestSchema, async (request) => {
-          const result = await runMcpTool(
+          calls += 1;
+          if (calls > 1) {
+            const more = aiLimits(deps).mcpCalls.hit(found.user.id);
+            if (!more.allowed)
+              return {
+                isError: true,
+                content: [
+                  {
+                    type: 'text',
+                    text: `Too many calls at once – try again in ${more.retryAfterS} s.`,
+                  },
+                ],
+              };
+          }
+          const result = await runAppTool(
             deps,
             caller,
             request.params.name,
             (request.params.arguments ?? {}) as Record<string, unknown>,
+            live,
           );
           return { ...result };
         });

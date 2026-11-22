@@ -36,7 +36,9 @@ const copy = (from, to = from) => {
   });
 };
 
-rmSync(build, { recursive: true, force: true });
+// Only the stage's own folders: `build/drive` (drive/build.sh) is Cloud's and stays.
+for (const dir of [app, bin, path.join(build, 'app-linked')])
+  rmSync(dir, { recursive: true, force: true });
 mkdirSync(app, { recursive: true });
 mkdirSync(bin, { recursive: true });
 
@@ -50,6 +52,9 @@ for (const workspace of [
   'packages/shared',
   'packages/pptx',
   'packages/odp',
+  'packages/odt',
+  // Not installed (the filter below), but the lockfile names it – without it the install refuses.
+  'packages/templates',
 ]) {
   copy(`${workspace}/package.json`);
 }
@@ -70,7 +75,7 @@ run(
 
 // ── Sources (Bun runs TypeScript as it is; paths next to the files stay as in the repo) ──────
 copy('tsconfig.base.json');
-for (const pkg of ['shared', 'pptx', 'odp']) {
+for (const pkg of ['shared', 'pptx', 'odp', 'odt']) {
   copy(`packages/${pkg}/src`);
   copy(`packages/${pkg}/tsconfig.json`);
 }
@@ -79,6 +84,10 @@ copy('apps/api/drizzle');
 copy('apps/api/src');
 // The Google Fonts LibreOffice draws with (libreoffice.ts finds them next to the sources).
 copy('fonts/google');
+// The templates Slider brings along (services/slider-templates.ts).
+copy('packages/templates/library');
+// The symbol sets the AI searches and draws (services/icons.ts).
+copy('apps/web/src/features/icons/sets');
 
 // ── Web app, built into the stage (the repo's apps/web/dist stays untouched) ─────────────────
 run(

@@ -22,6 +22,6 @@ export { OdpError, type OdpErrorCode } from './errors';
 export { mergeSlide, renameStyles, sameSlide, type SlideConflict, type SlideMerge } from './merge';
 export { ODP_MIME, OTP_MIME, isOdpBytes } from './archive';
 export { imageSize } from './image-size';
-export { creditText, frameIdShowing, swapPicture } from './credit';
+export { creditText, frameIdShowing, readCredit, swapPicture, writeCredit } from './credit';
 export { blankOdp } from './blank';
 export { revertChange, type RevertOutcome } from './revert';

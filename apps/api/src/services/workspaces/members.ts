@@ -1,15 +1,28 @@
-import { and, asc, count, eq, isNull, ne } from 'drizzle-orm';
+import { and, asc, count, eq, inArray, isNull, ne, notExists, or } from 'drizzle-orm';
 import type { WorkspaceMember, WorkspaceRole } from '@slider/shared';
 import type { Executor } from '../../db/client';
 import {
+  cloudAreaMembers,
+  cloudAgents,
+  cloudAreas,
+  cloudConnections,
+  cloudShares,
+  mailAccounts,
+  senderChannels,
+  senderDrafts,
+  senderMembers,
+  senderPins,
+  todos,
   users,
   workspaceInvites,
   workspaceMembers,
   workspaces,
+  type CloudConnectionRow,
   type UserRow,
 } from '../../db/schema';
 import { badRequest, forbidden, notFound } from '../../http/errors';
 import { assertBillingOwnerMayGo, reassignBillingOwner } from '../billing-owner';
+import { audienceShrank } from '../call-audience';
 import { lockWorkspaceRow } from '../plans';
 import { departDecks } from './departure';
 import { maskEmail } from './invites';
@@ -151,7 +164,9 @@ export async function updateMemberRole(
  * leaves nor is removed before handing over paying (`assertBillingOwnerMayGo`); the billing
  * role of a free workspace passes on. Returns the subscription to cancel should the billing
  * owner still go with one (`cancelSubscriptions`, after the commit) and the deleted decks, whose
- * files go after the commit too (`deleteDeckFiles`). `now`: the app's clock.
+ * files go after the commit too (`deleteDeckFiles`) – as do the attachments of their mailboxes in
+ * the workspace, which go with them (`mailBlobs`) – and the sign-ins of their connections in
+ * Cloud there, handed back to the services (`revokeCloudConnection`). `now`: the app's clock.
  */
 export async function removeMember(
   db: Executor,
@@ -160,8 +175,13 @@ export async function removeMember(
   targetId: string,
   successorId?: string,
   now = new Date(),
-): Promise<{ cancelSubscriptionId: string | null; deletedDeckIds: string[] }> {
-  return db.transaction(async (tx) => {
+): Promise<{
+  cancelSubscriptionId: string | null;
+  deletedDeckIds: string[];
+  deletedMailAccountIds: string[];
+  deletedConnections: CloudConnectionRow[];
+}> {
+  const removal = await db.transaction(async (tx) => {
     await lockWorkspaceRow(tx, workspaceId);
     // Leaving works in a blocked workspace too (BER-167); removing others does not.
     const actorRole = await requireRole(tx, workspaceId, actorId, 'viewer', undefined, {
@@ -201,6 +221,150 @@ export async function removeMember(
         and(eq(workspaceMembers.workspaceId, workspaceId), eq(workspaceMembers.userId, targetId)),
       );
     await revokeInvitesBy(tx, workspaceId, targetId);
+    // Cloud: out of the areas' lists and what was shared with them – back in the workspace
+    // later, they see what everyone sees, not what they once did.
+    await tx
+      .delete(cloudAreaMembers)
+      .where(
+        and(
+          eq(cloudAreaMembers.userId, targetId),
+          inArray(
+            cloudAreaMembers.areaId,
+            tx
+              .select({ id: cloudAreas.id })
+              .from(cloudAreas)
+              .where(eq(cloudAreas.workspaceId, workspaceId)),
+          ),
+        ),
+      );
+    await tx
+      .delete(cloudShares)
+      .where(
+        and(
+          eq(cloudShares.workspaceId, workspaceId),
+          eq(cloudShares.kind, 'user'),
+          eq(cloudShares.userId, targetId),
+        ),
+      );
+    // The public links they made go too: a link is a key they still hold.
+    await tx
+      .delete(cloudShares)
+      .where(
+        and(
+          eq(cloudShares.workspaceId, workspaceId),
+          eq(cloudShares.kind, 'link'),
+          eq(cloudShares.createdBy, targetId),
+        ),
+      );
+    // Their mailboxes here stop syncing: their mail is not the workspace's.
+    const mailboxes = await tx
+      .delete(mailAccounts)
+      .where(and(eq(mailAccounts.workspaceId, workspaceId), eq(mailAccounts.userId, targetId)))
+      .returning({ id: mailAccounts.id });
+    // So do their connections in Cloud here: their agents work there as them, for the workspace.
+    const connections = await tx
+      .delete(cloudConnections)
+      .where(
+        and(eq(cloudConnections.workspaceId, workspaceId), eq(cloudConnections.userId, targetId)),
+      )
+      .returning();
+    // Sender: out of their groups and direct conversations here – back later, they don't read
+    // what was written while they were gone. A direct one stays with the other person, its pair
+    // freed for a new one; one left without people goes, as when the last one leaves a group.
+    const left = await tx
+      .delete(senderMembers)
+      .where(
+        and(
+          eq(senderMembers.userId, targetId),
+          inArray(
+            senderMembers.channelId,
+            tx
+              .select({ id: senderChannels.id })
+              .from(senderChannels)
+              .where(
+                and(
+                  eq(senderChannels.workspaceId, workspaceId),
+                  inArray(senderChannels.kind, ['group', 'direct']),
+                ),
+              ),
+          ),
+        ),
+      )
+      .returning({ channelId: senderMembers.channelId });
+    // Their own agents go out of those with them (`leaveGroup`).
+    await tx
+      .update(senderChannels)
+      .set({ agentId: null })
+      .where(
+        and(
+          eq(senderChannels.workspaceId, workspaceId),
+          inArray(senderChannels.kind, ['group', 'direct']),
+          inArray(
+            senderChannels.agentId,
+            tx
+              .select({ id: cloudAgents.id })
+              .from(cloudAgents)
+              .where(eq(cloudAgents.userId, targetId)),
+          ),
+        ),
+      );
+    // Their own to-dos here go (nobody else sees them, they could no longer reach them); the
+    // area's they were to do stay, without them.
+    await tx
+      .delete(todos)
+      .where(and(eq(todos.workspaceId, workspaceId), eq(todos.ownerId, targetId)));
+    await tx
+      .update(todos)
+      .set({ assigneeId: null })
+      .where(and(eq(todos.workspaceId, workspaceId), eq(todos.assigneeId, targetId)));
+    // What they wrote here and did not send, and what they pinned here, goes too – kept for a
+    // workspace they no longer read, nobody could see or delete it (mail pins go with the mail).
+    await tx
+      .delete(senderDrafts)
+      .where(and(eq(senderDrafts.workspaceId, workspaceId), eq(senderDrafts.userId, targetId)));
+    await tx
+      .delete(senderPins)
+      .where(
+        and(
+          eq(senderPins.userId, targetId),
+          or(
+            inArray(
+              senderPins.channelId,
+              tx
+                .select({ id: senderChannels.id })
+                .from(senderChannels)
+                .where(eq(senderChannels.workspaceId, workspaceId)),
+            ),
+            inArray(
+              senderPins.agentId,
+              tx
+                .select({ id: cloudAgents.id })
+                .from(cloudAgents)
+                .where(eq(cloudAgents.workspaceId, workspaceId)),
+            ),
+          ),
+        ),
+      );
+    const conversations = left.map((row) => row.channelId);
+    if (conversations.length > 0) {
+      await tx
+        .update(senderChannels)
+        .set({ directKey: null })
+        .where(and(inArray(senderChannels.id, conversations), eq(senderChannels.kind, 'direct')));
+      await tx
+        .delete(senderChannels)
+        .where(
+          and(
+            inArray(senderChannels.id, conversations),
+            notExists(
+              tx
+                .select({ one: senderMembers.userId })
+                .from(senderMembers)
+                .where(eq(senderMembers.channelId, senderChannels.id)),
+            ),
+          ),
+        );
+    }
     // Removed by an admin: back only with an invitation, not by domain. Leaving blocks nothing.
     // Also by their address, which outlasts the account (`workspace_removals`).
     if (actorId !== targetId) {
@@ -214,8 +378,16 @@ export async function removeMember(
     const handover = await reassignBillingOwner(tx, workspaceId, targetId, new Date());
     // After that: their uploads go to the (new) billing owner.
     const { deleted } = await departDecks(tx, { workspaceId, leaverId: targetId });
-    return { cancelSubscriptionId: handover.cancelSubscriptionId, deletedDeckIds: deleted };
+    return {
+      cancelSubscriptionId: handover.cancelSubscriptionId,
+      deletedDeckIds: deleted,
+      deletedMailAccountIds: mailboxes.map((row) => row.id),
+      deletedConnections: connections,
+    };
   });
+  // Out of the workspace's calls too, quiet as they may be.
+  audienceShrank(workspaceId);
+  return removal;
 }
 
 /** Someone besides `exceptId` who is more than a viewer. */

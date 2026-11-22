@@ -28,19 +28,13 @@ export function GenerateImage({
   const generate = useGenerateEditImage(deck.id);
   const [typed, setPrompt] = useState(initialPrompt);
   const prompt = given ?? typed;
-  // Typed already: the caret after it, not before.
-  const field = useRef<HTMLTextAreaElement>(null);
-  useEffect(() => {
-    const end = field.current?.value.length ?? 0;
-    field.current?.setSelectionRange(end, end);
-  }, []);
   const { w, h } = element.bbox;
   const aspect = h > 0 ? (w * editing.pageSize.width) / (h * editing.pageSize.height) : null;
 
-  const submit = async () => {
-    if (!prompt.trim() || generate.isPending) return;
+  const submit = async (text: string) => {
+    if (generate.isPending) return;
     try {
-      const image = await generate.mutateAsync({ prompt: prompt.trim(), aspect });
+      const image = await generate.mutateAsync({ prompt: text, aspect });
       await editing.apply([
         { type: 'replaceImage', elementId: element.id, imageId: image.imageId },
       ]);
@@ -49,6 +43,39 @@ export function GenerateImage({
     }
   };
 
+  return (
+    <ImagePrompt
+      prompt={prompt}
+      onPrompt={setPrompt}
+      pending={generate.isPending}
+      onSubmit={(text) => void submit(text)}
+    />
+  );
+}
+
+/**
+ * The description of a picture to generate and „Erzeugen“ – a slide's picture frame and a
+ * document's picture (Writer) alike. ↵ generates, ⇧↵ is a new line; the caret after what is there.
+ */
+export function ImagePrompt({
+  prompt,
+  onPrompt,
+  pending,
+  onSubmit,
+}: {
+  prompt: string;
+  onPrompt: (prompt: string) => void;
+  pending: boolean;
+  onSubmit: (prompt: string) => void;
+}) {
+  const field = useRef<HTMLTextAreaElement>(null);
+  useEffect(() => {
+    const end = field.current?.value.length ?? 0;
+    field.current?.setSelectionRange(end, end);
+  }, []);
+  const submit = () => {
+    if (prompt.trim() && !pending) onSubmit(prompt.trim());
+  };
   return (
     <div className="flex flex-col gap-2">
       <div className="field-well focus-field rounded-control-sm px-3 py-2">
@@ -59,13 +86,13 @@ export function GenerateImage({
           placeholder="Was soll das Bild zeigen? z. B. Team am Whiteboard, Aquarell"
           maxLength={IMAGE_PROMPT_MAX}
           value={prompt}
-          disabled={generate.isPending}
-          onChange={(event) => setPrompt(event.target.value)}
+          disabled={pending}
+          onChange={(event) => onPrompt(event.target.value)}
           onKeyDown={(event) => {
             // ↵ generates, ⇧↵ is a new line – as in the comments.
             if (event.key === 'Enter' && !event.shiftKey && !event.nativeEvent.isComposing) {
               event.preventDefault();
-              void submit();
+              submit();
             }
           }}
           className="text-xs leading-5 text-fg"
@@ -75,11 +102,11 @@ export function GenerateImage({
         size="sm"
         variant="primary"
         icon="autoAwesome"
-        loading={generate.isPending}
+        loading={pending}
         disabled={!prompt.trim()}
-        onClick={() => void submit()}
+        onClick={submit}
       >
-        {generate.isPending ? 'Wird erzeugt …' : 'Erzeugen'}
+        {pending ? 'Wird erzeugt …' : 'Erzeugen'}
       </Button>
     </div>
   );

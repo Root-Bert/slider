@@ -26,6 +26,8 @@ export function useUpdateDeckAccess(deckId: string, workspaceId: string) {
       void queryClient.invalidateQueries({ queryKey: queryKeys.deck(deckId), exact: true });
       void queryClient.invalidateQueries({ queryKey: queryKeys.deckList(workspaceId) });
       void queryClient.invalidateQueries({ queryKey: queryKeys.people(deckId) });
+      // Where it lies follows who may open it (`setDeckAccess`).
+      void queryClient.invalidateQueries({ queryKey: ['cloud'] });
     },
   });
 }

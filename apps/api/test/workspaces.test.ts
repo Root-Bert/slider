@@ -4,13 +4,23 @@ import {
   createdWorkspaceInviteSchema,
   deckSchema,
   joinPreviewSchema,
+  type SenderChannel,
+  type SenderHome,
+  type SenderMessagePage,
   workspaceInviteSchema,
   workspaceMemberSchema,
   workspaceSchema,
   type MeResponse,
   type WorkspaceRole,
 } from '@slider/shared';
-import { blobDeletions, decks, workspaceInvites, workspaceMembers } from '../src/db/schema';
+import {
+  blobDeletions,
+  cloudAgents,
+  cloudConnections,
+  decks,
+  workspaceInvites,
+  workspaceMembers,
+} from '../src/db/schema';
 import { FailingMailer, RecordingMailer } from '../src/mail/mailer';
 import { INVITE_MAILS_PER_HOUR } from '../src/routes/workspaces';
 import { removeMember } from '../src/services/workspaces/members';
@@ -136,7 +146,24 @@ describe('workspaces', () => {
       name: 'Marketing',
       role: 'admin',
       memberCount: 3,
+      agentAvatars: 'flowers',
     });
+
+    // How the agents look: admins only, one of the styles offered; everyone sees the choice.
+    const looks = `${path}/agent-avatars`;
+    const setLooks = (style: string, cookie: string) =>
+      ctx.request(looks, { method: 'PUT', json: { style }, cookie });
+    const mia = await member('Mia', 'member');
+    expect((await setLooks('cameo', mia.cookie)).status).toBe(403);
+    expect((await setLooks('cameo', reviewer.cookie)).status).toBe(403);
+    expect((await setLooks('cameo', outsider.cookie)).status).toBe(404);
+    expect((await setLooks('pixel-art', admin.cookie)).status).toBe(400);
+    const cameo = await setLooks('cameo', admin.cookie);
+    expect(workspaceSchema.parse(await cameo.json()).agentAvatars).toBe('cameo');
+    expect(
+      workspaceSchema.parse(await (await ctx.request(path, { cookie: mia.cookie })).json())
+        .agentAvatars,
+    ).toBe('cameo');
 
     const logoPath = `/api/workspaces/${ctx.workspaceId}/logo`;
     const put = (bytes: number[], cookie?: string) => {
@@ -178,12 +205,44 @@ describe('workspaces', () => {
     ]);
 
     const { deckId, imageKeys } = await createReadyDeck(ctx);
+    // A connection in Cloud signed in there: its sign-in is handed back to the service.
+    await ctx.deps.db.insert(cloudConnections).values({
+      id: crypto.randomUUID(),
+      workspaceId: ctx.workspaceId,
+      userId: reviewer.user.id,
+      name: 'Linear',
+      url: 'https://mcp.linear.app/mcp',
+      auth: {
+        client: { client_id: 'slider-client' },
+        tokens: { access_token: 'at-rita' },
+        discovery: {
+          authorizationServerUrl: 'https://mcp.linear.app',
+          authorizationServerMetadata: { revocation_endpoint: 'https://mcp.linear.app/revoke' },
+        },
+      },
+      state: 'connected',
+      tools: [],
+    });
+    const revoked: string[] = [];
+    ctx.deps.ssoNetwork!.fetch = async (url, init) => {
+      revoked.push(`${String(url)} ${String(init?.body)}`);
+      return new Response(null, { status: 200 });
+    };
     expect((await ctx.request(path, { method: 'DELETE', cookie: reviewer.cookie })).status).toBe(
       403,
     );
     // Any admin may delete it, not only its creator.
     expect((await ctx.request(path, { method: 'DELETE', cookie: admin.cookie })).status).toBe(204);
     expect(await ctx.deps.db.select().from(decks).where(eq(decks.id, deckId))).toEqual([]);
+    expect(revoked).toEqual([
+      'https://mcp.linear.app/revoke token=at-rita&token_type_hint=access_token&client_id=slider-client',
+    ]);
+    expect(
+      await ctx.deps.db
+        .select()
+        .from(cloudConnections)
+        .where(eq(cloudConnections.workspaceId, ctx.workspaceId)),
+    ).toEqual([]);
     expect(await ctx.deps.storage.get(imageKeys[0] ?? '')).toBeNull();
     expect((await ctx.request(path)).status).toBe(404);
   });
@@ -623,6 +682,49 @@ describe('invitations', () => {
     ctx.clock.advance(1000);
     expect((await join((await invite({ role: 'member' })).token)).status).toBe(200);
 
+    // Sender: a group and a direct conversation with her, and a group she alone is left in.
+    const api = (method: string, url: string, body?: unknown, cookie?: string) =>
+      ctx.request(`/api${url}`, { method, ...(body === undefined ? {} : { json: body }), cookie });
+    const home = async (cookie?: string) =>
+      (await (
+        await api('GET', `/workspaces/${ctx.workspaceId}/sender`, undefined, cookie)
+      ).json()) as SenderHome;
+    const opened = async (res: Promise<Response>) => (await (await res).json()) as SenderChannel;
+    const group = await opened(
+      api('POST', `/workspaces/${ctx.workspaceId}/sender/groups`, { userIds: [anna.user.id] }),
+    );
+    const direct = await opened(
+      api('POST', `/workspaces/${ctx.workspaceId}/sender/direct`, { userId: anna.user.id }),
+    );
+    const hers = await opened(
+      api(
+        'POST',
+        `/workspaces/${ctx.workspaceId}/sender/groups`,
+        { userIds: [ben.user.id] },
+        anna.cookie,
+      ),
+    );
+    expect(
+      (await api('DELETE', `/sender/channels/${hers.id}/members/me`, undefined, ben.cookie)).status,
+    ).toBe(204);
+    for (const id of [group.id, direct.id]) {
+      expect(
+        (await api('POST', `/sender/channels/${id}/messages`, { text: 'Vorher' })).status,
+      ).toBe(201);
+    }
+    // Her own agent in the group goes out with her.
+    const annasAgent = crypto.randomUUID();
+    await ctx.deps.db.insert(cloudAgents).values({
+      id: annasAgent,
+      workspaceId: ctx.workspaceId,
+      userId: anna.user.id,
+      title: 'Annas Agent',
+    });
+    expect(
+      (await api('PATCH', `/sender/channels/${group.id}`, { agentId: annasAgent }, anna.cookie))
+        .status,
+    ).toBe(200);
+
     // Removed through the service with the app clock's time: a later link works.
     await removeMember(
       ctx.deps.db,
@@ -632,8 +734,38 @@ describe('invitations', () => {
       undefined,
       ctx.clock.now(),
     );
+    // Gone from her conversations: nobody to write to directly, her own group gone with her.
+    expect(
+      (await api('POST', `/sender/channels/${direct.id}/messages`, { text: 'Weg' })).status,
+    ).toBe(403);
+    expect(
+      (await api('POST', `/sender/channels/${group.id}/messages`, { text: 'Ohne Anna' })).status,
+    ).toBe(201);
+    expect((await home()).groups.find((each) => each.id === group.id)?.agent).toBeNull();
+    expect((await api('GET', `/sender/channels/${hers.id}/messages`)).status).toBe(404);
     ctx.clock.advance(1000);
     expect((await join((await invite({ role: 'member' })).token)).status).toBe(200);
+    // Back: she reads nothing of before or of while she was gone; a direct one starts anew.
+    expect(await home(anna.cookie)).toMatchObject({ groups: [], direct: [] });
+    expect(
+      (await api('GET', `/sender/channels/${group.id}/messages`, undefined, anna.cookie)).status,
+    ).toBe(404);
+    expect(
+      (await api('GET', `/sender/channels/${direct.id}/messages`, undefined, anna.cookie)).status,
+    ).toBe(404);
+    const anew = await opened(
+      api(
+        'POST',
+        `/workspaces/${ctx.workspaceId}/sender/direct`,
+        { userId: ctx.ownerId },
+        anna.cookie,
+      ),
+    );
+    expect(anew.id).not.toBe(direct.id);
+    const fresh = (await (
+      await api('GET', `/sender/channels/${anew.id}/messages`, undefined, anna.cookie)
+    ).json()) as SenderMessagePage;
+    expect(fresh.messages).toEqual([]);
   });
 
   it('only admins invite, joining again never downgrades, unknown links are 404', async () => {

@@ -84,7 +84,12 @@ interface AnnotationLayerProps {
    * as the box under the pointer is, also where it reaches beyond the slide.
    */
   slideBoxes?: readonly SlideBox[];
+  /** The slide zoomed out: the room around it shows – marks lying there too. */
+  room?: boolean;
 }
+
+/** Lies wholly off the slide. */
+const besideSlide = ({ x, y, w, h }: Rect) => x + w < 0 || x > 1 || y + h < 0 || y > 1;
 
 interface Mark {
   thread: Thread;
@@ -136,6 +141,7 @@ export const AnnotationLayer = memo(function AnnotationLayer({
   editing = false,
   passive = false,
   slideBoxes,
+  room = false,
 }: AnnotationLayerProps) {
   const dispatch = useViewerDispatch();
   const { viewer, deck, canComment } = useViewerData();
@@ -175,6 +181,9 @@ export const AnnotationLayer = memo(function AnnotationLayer({
       const stored = anchorRect(thread.root, slide.shapes);
       const rect = preview?.threadId === thread.id ? preview.rect : stored;
       if (!rect || !stored) continue;
+      // Wholly beside the slide, as an element there: shown where the slide shows the room around
+      // it (zoomed out) – else only while it is the one looked at or moved.
+      if (!room && rect === stored && thread.id !== emphasisId && besideSlide(stored)) continue;
       const state: MarkState =
         emphasisId === null ? 'normal' : thread.id === emphasisId ? 'emphasized' : 'dimmed';
       // Moved, not resized: the drawing goes along (as it will once stored) – unless only the
@@ -189,7 +198,7 @@ export const AnnotationLayer = memo(function AnnotationLayer({
       result.push({ thread, rect, more, state, shift });
     }
     return result;
-  }, [threads, slide.shapes, emphasisId, preview, draft?.commentId]);
+  }, [threads, slide.shapes, emphasisId, preview, draft?.commentId, room]);
 
   const emphasized = marks.find((mark) => mark.state === 'emphasized');
   // A comment on the whole slide, without a drawing: hovered, the slide is its mark.
@@ -412,6 +421,7 @@ export const AnnotationLayer = memo(function AnnotationLayer({
                   emphasized={mark.state === 'emphasized'}
                   isMark
                   edgesOnly
+                  offSlide
                   title={`${markLabel(root)} – ziehen zum Verschieben`}
                   className={cn(
                     'transition-opacity duration-200',

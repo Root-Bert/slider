@@ -21,6 +21,9 @@ import {
 export const SITE_ROOM_MAX = 40;
 /** Open streams per address (several tabs, a reconnect overlapping the old stream). */
 export const SITE_MAX_PER_ADDRESS = 8;
+/** Open streams and rooms over all – addresses are cheap (IPv6), memory is not. */
+export const SITE_MAX_CONNECTIONS = 1_000;
+export const SITE_MAX_ROOMS = 200;
 /**
  * A stream not heard from this long is gone: Bun's Node HTTP layer doesn't report closed streams,
  * so pages post `here` every {@link SITE_HEARTBEAT_MS} (moves and writes count too).
@@ -67,16 +70,27 @@ interface Room {
   comments: Map<string, LiveComment>;
 }
 
-export type SiteJoin = { ok: true; key: string } | { ok: false; reason: 'full' | 'busy' };
+/** `busy`: this address has its streams; `overloaded`: the whole site has. */
+export type SiteRefusal = 'busy' | 'overloaded';
+export type SiteJoin = { ok: true; key: string } | { ok: false; reason: 'full' | SiteRefusal };
 
 export class SiteLive {
   private readonly rooms = new Map<string, Room>();
   private readonly byKey = new Map<string, Connection>();
+  private readonly perAddress = new Map<string, number>();
 
   constructor(
     private readonly now: () => number = Date.now,
     readonly heartbeatMs = 5_000,
   ) {}
+
+  /** Why a stream from `address` to `page` would be refused now, before one is opened. */
+  refusal(page: string, address: string): SiteRefusal | null {
+    if ((this.perAddress.get(address) ?? 0) >= SITE_MAX_PER_ADDRESS) return 'busy';
+    if (this.byKey.size >= SITE_MAX_CONNECTIONS) return 'overloaded';
+    if (!this.rooms.has(page) && this.rooms.size >= SITE_MAX_ROOMS) return 'overloaded';
+    return null;
+  }
 
   join(
     page: string,
@@ -85,10 +99,8 @@ export class SiteLive {
     send: Send,
     close: () => void,
   ): SiteJoin {
-    let fromAddress = 0;
-    for (const connection of this.byKey.values())
-      if (connection.address === address) fromAddress += 1;
-    if (fromAddress >= SITE_MAX_PER_ADDRESS) return { ok: false, reason: 'busy' };
+    const refused = this.refusal(page, address);
+    if (refused) return { ok: false, reason: refused };
     const room = this.room(page);
     if (room.connections.size >= SITE_ROOM_MAX) return { ok: false, reason: 'full' };
 
@@ -124,6 +136,7 @@ export class SiteLive {
     this.broadcast(room, { type: 'join', visitor });
     room.connections.set(key, connection);
     this.byKey.set(key, connection);
+    this.perAddress.set(address, (this.perAddress.get(address) ?? 0) + 1);
     return { ok: true, key };
   }
 
@@ -144,6 +157,9 @@ export class SiteLive {
     const connection = this.byKey.get(key);
     if (!connection) return;
     this.byKey.delete(key);
+    const left = (this.perAddress.get(connection.address) ?? 1) - 1;
+    if (left > 0) this.perAddress.set(connection.address, left);
+    else this.perAddress.delete(connection.address);
     const room = this.rooms.get(connection.page);
     if (!room) return;
     room.connections.delete(key);

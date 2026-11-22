@@ -1,0 +1,220 @@
+---
+import { s, type Lang } from '~/i18n';
+
+/**
+ * Solver as one object: a real table on its copy in Solver's colour, the one figure everyone
+ * reads lifted out of it as a card with its curve, and a question asked in plain words below.
+ */
+interface Props {
+  lang: Lang;
+}
+
+const w = s(Astro.props.lang).objects.solver;
+const rows = [
+  ['A-1842', 'Hansewerk', '15.480'],
+  ['A-1841', 'Küstenrad', '14.400'],
+  ['A-1840', 'Nordbau', '23.040'],
+  ['A-1839', 'Elbkontor', '11.340'],
+  ['A-1838', 'Wattwerk', '4.800'],
+];
+---
+
+<div class="object numbers-object" data-tilt>
+  <div class="object-stage">
+    <div class="no-copy" data-deal></div>
+    <div class="no-table" data-deal style="--i: 1">
+      <p class="no-table-head"><b>{w.table}</b><span>{w.rows}</span></p>
+      {
+        rows.map(([nr, customer, amount], i) => (
+          <p class="no-row">
+            <span class="no-nr">{nr}</span>
+            <span class="no-chip">{customer}</span>
+            <span class:list={['no-amount', i === 1 && 'is-picked']}>
+              {amount}
+              {i === 1 && <span class="mark-tag">{w.by}</span>}
+            </span>
+          </p>
+        ))
+      }
+    </div>
+    <div class="no-kpi" data-deal style="--i: 2">
+      <p class="no-kpi-label">{w.kpi}</p>
+      <p class="no-kpi-value">{w.value}</p>
+      <p class="no-kpi-trend">{w.trend}</p>
+      <svg viewBox="0 0 200 80" preserveAspectRatio="none" aria-hidden="true">
+        <path class="no-area" d="M0 66 C 20 62, 30 50, 46 52 S 72 36, 90 40 S 118 20, 136 26 S 168 6, 200 10 V80 H0 Z"></path>
+        <path class="no-curve" d="M0 66 C 20 62, 30 50, 46 52 S 72 36, 90 40 S 118 20, 136 26 S 168 6, 200 10" pathLength="1" data-draw style="--i: 5"></path>
+      </svg>
+    </div>
+    <div class="no-ask" data-deal style="--i: 3">
+      <svg class="no-spark" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 2l2.4 6.6L21 11l-6.6 2.4L12 20l-2.4-6.6L3 11l6.600-2.400z"></path></svg>
+      <span>{w.ask}</span>
+      <b>{w.answer}</b>
+    </div>
+  </div>
+</div>
+
+<style>
+  .numbers-object {
+    --c: var(--app-solver);
+    aspect-ratio: 10 / 8;
+  }
+  .no-copy,
+  .no-table {
+    position: absolute;
+    top: 6cqw;
+    left: 7cqw;
+    width: 70cqw;
+    height: 50cqw;
+    border-radius: 3cqw;
+  }
+  .no-copy {
+    translate: -4.5cqw 4.5cqw;
+    background: var(--c);
+  }
+  :global(.js) .no-copy[data-deal] {
+    translate: 10cqw -8cqw;
+  }
+  :global(.js .is-in) .no-copy[data-deal] {
+    translate: -4.5cqw 4.5cqw;
+  }
+  .no-table,
+  .no-kpi,
+  .no-ask {
+    background: #fff;
+    color: #1c1c1e;
+    box-shadow: 0 3cqw 6cqw -2cqw rgb(0 0 0 / 0.26);
+  }
+  .no-table {
+    display: flex;
+    flex-direction: column;
+    padding: 3.4cqw 4cqw 2cqw;
+    font-variant-numeric: tabular-nums;
+  }
+  .no-table-head {
+    display: flex;
+    align-items: baseline;
+    gap: 2cqw;
+    padding-bottom: 2cqw;
+    font-size: 2.8cqw;
+    letter-spacing: -0.02em;
+  }
+  .no-table-head span {
+    font-size: 2cqw;
+    color: #8a8a90;
+  }
+  .no-row {
+    display: grid;
+    flex: 1;
+    grid-template-columns: 13cqw 1fr auto;
+    align-items: center;
+    border-top: 0.2cqw solid #ececf0;
+    font-size: 2.2cqw;
+  }
+  .no-nr {
+    color: #8a8a90;
+  }
+  .no-chip {
+    justify-self: start;
+    padding: 0.5cqw 1.6cqw;
+    border-radius: 1.2cqw;
+    background: color-mix(in srgb, var(--c) 14%, #fff);
+    color: color-mix(in srgb, var(--c) 80%, #000);
+    font-weight: 600;
+  }
+  .no-amount {
+    position: relative;
+    padding: 0.8cqw 1.4cqw;
+    font-weight: 600;
+  }
+  /* A colleague's cell: their colour around it, their name on top. */
+  .no-amount.is-picked {
+    border-radius: 0.6cqw;
+    box-shadow: 0 0 0 0.4cqw var(--color-accent-yellow);
+    background: color-mix(in srgb, var(--color-accent-yellow) 16%, #fff);
+  }
+  .no-amount :global(.mark-tag),
+  .no-amount .mark-tag {
+    --c: var(--color-accent-yellow);
+    bottom: calc(100% + 0.8cqw);
+    left: -0.4cqw;
+    padding: 0.4cqw 1.3cqw;
+    border-radius: 1.6cqw 1.6cqw 1.6cqw 0.4cqw;
+    font-size: 1.7cqw;
+    line-height: 1.3;
+  }
+  .no-kpi {
+    position: absolute;
+    top: 30cqw;
+    right: 0;
+    width: 40cqw;
+    overflow: hidden;
+    padding: 3.4cqw 3.6cqw 0;
+    border-radius: 3cqw;
+  }
+  .no-kpi-label {
+    font-size: 2.2cqw;
+    color: #6e6e73;
+  }
+  .no-kpi-value {
+    margin-top: 0.6cqw;
+    font-size: 6.4cqw;
+    font-weight: 800;
+    line-height: 1;
+    letter-spacing: -0.05em;
+    white-space: nowrap;
+  }
+  .no-kpi-trend {
+    display: inline-block;
+    margin-top: 1.6cqw;
+    padding: 0.5cqw 1.5cqw;
+    border-radius: 2cqw;
+    background: color-mix(in srgb, var(--c) 16%, #fff);
+    color: color-mix(in srgb, var(--c) 82%, #000);
+    font-size: 2cqw;
+    font-weight: 700;
+  }
+  .no-kpi svg {
+    display: block;
+    width: calc(100% + 7.2cqw);
+    height: 15cqw;
+    margin: 1.6cqw -3.6cqw 0;
+  }
+  .no-area {
+    fill: color-mix(in srgb, var(--c) 16%, #fff);
+  }
+  .no-curve {
+    fill: none;
+    stroke: var(--c);
+    stroke-width: 3px;
+    stroke-linecap: round;
+    vector-effect: non-scaling-stroke;
+  }
+  .no-ask {
+    position: absolute;
+    bottom: 1cqw;
+    left: 0;
+    display: flex;
+    align-items: center;
+    gap: 1.8cqw;
+    max-width: 68cqw;
+    padding: 2.2cqw 2.4cqw 2.2cqw 2.8cqw;
+    border-radius: 5cqw;
+    font-size: 2.3cqw;
+    line-height: 1.3;
+  }
+  .no-spark {
+    flex: none;
+    width: 3.4cqw;
+    fill: var(--c);
+  }
+  .no-ask b {
+    flex: none;
+    padding: 1cqw 2.2cqw;
+    border-radius: 4cqw;
+    background: var(--c);
+    color: #fff;
+    font-weight: 700;
+    white-space: nowrap;
+  }
+</style>

@@ -1,5 +1,5 @@
 import JSZip from 'jszip';
-import { declaredSize, inflateEntry } from '@slider/shared';
+import { declaredSize, inflateEntry, zipEntriesAtMost } from '@slider/shared';
 import { PptxError } from './types';
 import { attr, children, parseXml, XmlSyntaxError, type XmlElement } from './xml';
 
@@ -86,6 +86,9 @@ export interface Relationship {
   external: boolean;
 }
 
+/** No presentation has this many parts; a zip can list millions in a few megabytes. */
+const MAX_ZIP_ENTRIES = 20_000;
+
 /**
  * Read access to the parts of a PPTX zip, with XML and relationship caching.
  * XML syntax errors surface as `PptxError('corrupt')`.
@@ -106,6 +109,8 @@ export class Archive {
     }
     let zip: JSZip;
     try {
+      // Counted before the zip is read: every entry becomes an object there.
+      if (!zipEntriesAtMost(bytes, MAX_ZIP_ENTRIES)) throw new Error('too many parts');
       zip = await JSZip.loadAsync(bytes);
     } catch {
       throw new PptxError('not_pptx', 'The file is not a PowerPoint (.pptx) package.');

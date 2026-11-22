@@ -3,6 +3,7 @@ import {
   API_PREFIX,
   type ApiError as ApiErrorBody,
   type ErrorCode,
+  type MailCheckFailure,
 } from '@slider/shared';
 import { forgetOffline } from './offline';
 import { routes } from './routes';
@@ -16,6 +17,8 @@ export class ApiError extends Error {
     message: string,
     /** With `nextcloud_login_required`: the Nextcloud to connect (BER-135). */
     readonly nextcloudServer?: string,
+    /** A mailbox not let in: where its check stopped, what the server said. */
+    readonly mailCheck?: MailCheckFailure,
   ) {
     super(message);
     this.name = 'ApiError';
@@ -24,7 +27,7 @@ export class ApiError extends Error {
 
 const fromBody = (status: number, error: ApiErrorBody['error']) => {
   if (error.code === 'instance_unclaimed') toClaimScreen();
-  return new ApiError(status, error.code, error.message, error.nextcloudServer);
+  return new ApiError(status, error.code, error.message, error.nextcloudServer, error.mailCheck);
 };
 
 /**
@@ -182,9 +185,12 @@ const LAST_ACCOUNT_KEY = 'slider-last-account';
  * open, a hint dismissed) is not the next account's on the same browser.
  */
 export const accountKey = (key: string): string => {
-  const account = pageAccount ?? readString(LAST_ACCOUNT_KEY);
+  const account = currentAccount();
   return account ? `${key}:${account}` : key;
 };
+
+/** The account this page is for – or, not known yet, the one this browser was last on. */
+export const currentAccount = (): string | null => pageAccount ?? readString(LAST_ACCOUNT_KEY);
 
 /** The page changes the account itself (switching): requests on their way must not start it over. */
 export function leavingAccount(leaving: boolean): void {
@@ -233,7 +239,9 @@ export async function apiRequestAnswer<T>(
   const fromStore = response.headers.get(STORED_ANSWER_HEADER) === '1';
   if (response.status === 204) return { data: undefined as T, fromStore };
   try {
-    return { data: (await response.json()) as T, fromStore };
+    // No body: a 202 that only says the work began (`/mail/threads/:id/context`).
+    const text = await response.text();
+    return { data: (text ? JSON.parse(text) : undefined) as T, fromStore };
   } catch {
     // A 2xx that isn't JSON: a proxy or the SPA fallback answered instead of the API.
     throw proxyError(response.status);

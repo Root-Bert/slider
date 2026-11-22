@@ -2,6 +2,7 @@ import { memo, type CSSProperties } from 'react';
 import { accentColor } from '@/lib/accent';
 import { Avatar, cn, Icon, selectedOutlineClass } from '@/ui';
 import { commentPreview, isRemovedInSource, type Thread } from './lib/comment-selectors';
+import { CommentPreview } from './CommentPreview';
 import { LiveThreadMarker } from '../live/LiveThreadMarker';
 import { useViewerDispatch } from '../state/viewer-state';
 import type { CardEmphasis } from './CommentCard';
@@ -101,7 +102,7 @@ export const CompactCard = memo(function CompactCard({
             removed && 'text-fg-subtle line-through decoration-fg-faint',
           )}
         >
-          {text}
+          <CommentPreview comment={root} iconSize="xs" />
         </span>
       </button>
     </article>

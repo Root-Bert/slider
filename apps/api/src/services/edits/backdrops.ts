@@ -1,5 +1,6 @@
 import { createHash } from 'node:crypto';
-import { createCanvas, loadImage, type Image, type SKRSContext2D } from '@napi-rs/canvas';
+import { createCanvas, type Image, type SKRSContext2D } from '@napi-rs/canvas';
+import { loadImage } from '../../import/load-image';
 import type { BackdropWork, OdpDocument } from '@slider/odp';
 import { coverCrop, gradientPixels, type FillLayer } from '@slider/shared';
 import type { AppDeps } from '../../deps';

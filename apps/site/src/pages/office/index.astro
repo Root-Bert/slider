@@ -1,0 +1,11 @@
+---
+import Office from '~/components/office/Office.astro';
+import { s } from '~/i18n';
+import Base from '~/layouts/Base.astro';
+
+const { office } = s('en');
+---
+
+<Base app="office" lang="en" translated="" fullTitle={office.metaTitle} description={office.metaDescription}>
+  <Office lang="en" />
+</Base>

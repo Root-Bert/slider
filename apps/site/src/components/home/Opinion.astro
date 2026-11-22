@@ -58,18 +58,16 @@ const examples = Object.fromEntries(SCENES.map(({ id }) => [id, o.scenes[id].exa
 const answers = Object.fromEntries(SCENES.map((scene) => [scene.id, 'answers' in scene ? scene.answers : ANSWERS]));
 ---
 
-<section class="op" data-opinion data-state="ask" data-scene="dog" data-answer="polished" data-examples={JSON.stringify(examples)} data-answers={JSON.stringify(answers)}>
+<section id="opinion" class="op" data-opinion data-state="ask" data-scene="dog" data-answer="polished" data-examples={JSON.stringify(examples)} data-answers={JSON.stringify(answers)}>
   <div class="op-copy">
     <p class="op-kind">{o.kind}</p>
-    <h1 class="op-title">
+    <h2 class="op-title">
       <span class="op-ask">{o.askLead} {o.askMark}</span>
       <span class="op-done" aria-hidden="true">{o.doneLead} {o.doneMark}</span>
-    </h1>
+    </h2>
   </div>
 
   <div class="op-stack" data-op-slide>
-    <span class="op-card op-deco is-blue" aria-hidden="true"></span>
-    <span class="op-card op-deco is-violet" aria-hidden="true"></span>
 
     <!-- Version 1: what everyone has seen a hundred times. -->
     <div class="op-card op-v1" data-live="opinion" data-op-v1>
@@ -242,10 +240,10 @@ const answers = Object.fromEntries(SCENES.map((scene) => [scene.id, 'answers' in
   .op-title {
     display: grid;
     margin-top: 20px;
-    font-size: clamp(44px, 5.6vw, 92px);
-    font-weight: 800;
-    line-height: 0.95;
-    letter-spacing: -0.05em;
+    font-size: clamp(32px, 4vw, 60px);
+    font-weight: 700;
+    line-height: 1.04;
+    letter-spacing: -0.03em;
   }
   .op-title > span {
     grid-area: 1 / 1;
@@ -269,7 +267,7 @@ const answers = Object.fromEntries(SCENES.map((scene) => [scene.id, 'answers' in
     grid-area: stack;
     align-self: center;
     display: grid;
-    padding: 0 0 calc(var(--step) * 3) calc(var(--step) * 3);
+    --step: 0px;
   }
   .op-card {
     --d: 0;
@@ -620,7 +618,7 @@ const answers = Object.fromEntries(SCENES.map((scene) => [scene.id, 'answers' in
     margin: 40px 0 calc(var(--step) * 3);
     padding: 22px 22px 22px 26px;
     border-radius: 30px 30px 6px 30px;
-    background: var(--color-accent-blue);
+    background: var(--brand);
     color: #fff;
     box-shadow: 0 40px 90px -40px rgb(0 0 0 / 0.55);
   }
@@ -665,7 +663,7 @@ const answers = Object.fromEntries(SCENES.map((scene) => [scene.id, 'answers' in
     background: transparent;
     color: inherit;
     font: inherit;
-    font-size: clamp(26px, 2.5vw, 38px);
+    font-size: clamp(22px, 2vw, 30px);
     font-weight: 700;
     line-height: 1.1;
     letter-spacing: -0.035em;
@@ -683,16 +681,12 @@ const answers = Object.fromEntries(SCENES.map((scene) => [scene.id, 'answers' in
     height: 56px;
     border-radius: 50%;
     background: #fff;
-    color: var(--color-accent-blue);
-    box-shadow: -4px 4px 0 rgb(255 255 255 / 0.4);
+    color: var(--brand);
     cursor: pointer;
-    transition:
-      translate 200ms var(--ease),
-      box-shadow 200ms var(--ease);
+    transition: filter 200ms var(--ease);
   }
   .op-send:hover {
-    translate: 2px -2px;
-    box-shadow: -7px 7px 0 rgb(255 255 255 / 0.4);
+    filter: brightness(0.94);
   }
   .op-chips {
     display: flex;
@@ -724,7 +718,7 @@ const answers = Object.fromEntries(SCENES.map((scene) => [scene.id, 'answers' in
     display: none;
   }
   .op-said-text {
-    font-size: clamp(26px, 2.4vw, 36px);
+    font-size: clamp(22px, 2vw, 30px);
     font-weight: 700;
     line-height: 1.1;
     letter-spacing: -0.035em;

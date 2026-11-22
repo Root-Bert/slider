@@ -1,7 +1,13 @@
 import { useId, useMemo, useState, type ReactNode } from 'react';
-import type { Deck, DeckAccess, WorkspaceMember } from '@slider/shared';
+import type { CloudArea, Deck, DeckAccess, WorkspaceMember } from '@slider/shared';
 import { pluralize } from '@/lib/format';
-import { useDeckAccess, useMembers, useUpdateDeckAccess } from '@/lib/api';
+import {
+  useCloudHome,
+  useDeckAccess,
+  useMembers,
+  usePlaceDecks,
+  useUpdateDeckAccess,
+} from '@/lib/api';
 import { useAccount } from '@/features/auth';
 import { Avatar, Badge, Button, cn, Dialog, ErrorText, Icon, LoadingState, TextField } from '@/ui';
 
@@ -20,16 +26,23 @@ const matches = (member: WorkspaceMember, query: string) =>
  * "Zugriff einschränken …" in a deck's ⋯ / right-click menu (managers only): everyone in the
  * workspace may open the review, or only the people ticked here. Whoever added the review and
  * the workspace's admins always may – their rows stay ticked and can't be changed.
+ *
+ * Said by who added it, the answer is also where it lies in Cloud (`setDeckAccess` on the
+ * server), and each answer says so: everyone – the workspace's own area; chosen people – one's own files,
+ * shared with them. Are all of them the people of one area, the dialog offers to put it there.
  */
 export function DeckAccessDialog({
   deck,
   onClose,
   onSaved,
+  onPlaced,
 }: {
   deck: Deck;
   onClose: () => void;
   /** After saving, with what now applies and what did before – for a toast. */
   onSaved: (access: DeckAccess, before: DeckAccess) => void;
+  /** Put into an area instead: its name, for a toast. */
+  onPlaced?: (areaName: string) => void;
 }) {
   const { workspaces } = useAccount();
   const workspaceName =
@@ -60,6 +73,7 @@ export function DeckAccessDialog({
           members={members.data}
           onClose={onClose}
           onSaved={onSaved}
+          onPlaced={onPlaced}
         />
       )}
     </Dialog>
@@ -74,6 +88,7 @@ function AccessForm({
   members,
   onClose,
   onSaved,
+  onPlaced,
 }: {
   deck: Deck;
   workspaceName: string;
@@ -81,8 +96,13 @@ function AccessForm({
   members: WorkspaceMember[];
   onClose: () => void;
   onSaved: (access: DeckAccess, before: DeckAccess) => void;
+  onPlaced?: ((areaName: string) => void) | undefined;
 }) {
   const { user } = useAccount();
+  // Where it lies follows the answer only for who added it (nobody files into another's files).
+  const mine = deck.owner.id === user.id;
+  const areas = useCloudHome(deck.workspaceId).data?.areas;
+  const place = usePlaceDecks();
   const update = useUpdateDeckAccess(deck.id, deck.workspaceId);
   const [restricted, setRestricted] = useState(access.restricted);
   const [selected, setSelected] = useState(() => new Set(access.userIds));
@@ -112,6 +132,9 @@ function AccessForm({
   const chosen = rows
     .filter(({ member }) => member.userId !== deck.owner.id && selected.has(member.userId))
     .map(({ member }) => member.userId);
+
+  // All chosen are people of one area (the smallest such): it could simply lie there.
+  const fitting = mine && restricted && chosen.length > 0 ? areaOf(areas ?? [], chosen) : null;
 
   const toggle = (userId: string, on: boolean) =>
     setSelected((current) => {
@@ -149,7 +172,11 @@ function AccessForm({
           onSelect={() => choose(false)}
           icon="person"
           title={`Alle in ${workspaceName}`}
-          description="Jedes Mitglied des Workspace kann die Präsentation öffnen."
+          description={
+            mine
+              ? `Jedes Mitglied des Workspace kann sie öffnen. Sie liegt in „${workspaceName}“ oder in dem Bereich, in dem sie schon ist.`
+              : 'Jedes Mitglied des Workspace kann die Präsentation öffnen.'
+          }
         />
         <ChoiceRow
           name={choiceName}
@@ -157,7 +184,11 @@ function AccessForm({
           onSelect={() => choose(true)}
           icon="lock"
           title="Nur ausgewählte Personen"
-          description="Nur wen du unten auswählst – dazu wer sie angelegt hat und die Admins."
+          description={
+            mine
+              ? 'Nur wen du unten auswählst und die Admins. Sie liegt in deinen Dateien, die Ausgewählten finden sie unter „Geteilt“.'
+              : 'Nur wen du unten auswählst, dazu wer sie angelegt hat und die Admins.'
+          }
         />
       </fieldset>
 
@@ -172,6 +203,10 @@ function AccessForm({
             autoFocus={searchFirst}
             value={query}
             onChange={(event) => setQuery(event.target.value)}
+            // Enter while searching is not „Speichern“.
+            onKeyDown={(event) => {
+              if (event.key === 'Enter') event.preventDefault();
+            }}
           />
           <p className="text-xs text-fg-subtle" aria-live="polite">
             {pluralize(chosen.length, 'Person', 'Personen')} ausgewählt
@@ -198,9 +233,36 @@ function AccessForm({
         </div>
       )}
 
-      {update.error && (
+      {fitting && (
+        <div className="flex items-center gap-3 rounded-control bg-surface-1 px-3 py-2.5">
+          <Icon name="workspaces" size={18} className="shrink-0 text-fg-muted" />
+          <p className="min-w-0 flex-1 text-xs text-fg-muted">
+            Alle Ausgewählten sind im Bereich „{fitting.name}“. Dort sehen sie alle aus dem Bereich.
+          </p>
+          <Button
+            variant="secondary"
+            size="sm"
+            loading={place.isPending}
+            onClick={() =>
+              place.mutate(
+                { deckIds: [deck.id], target: { areaId: fitting.id } },
+                {
+                  onSuccess: () => {
+                    onPlaced?.(fitting.name);
+                    onClose();
+                  },
+                },
+              )
+            }
+          >
+            In den Bereich legen
+          </Button>
+        </div>
+      )}
+
+      {(update.error ?? place.error) && (
         <ErrorText role="alert" size="xs">
-          {update.error.message}
+          {(update.error ?? place.error)?.message}
         </ErrorText>
       )}
 
@@ -215,6 +277,20 @@ function AccessForm({
       </footer>
     </form>
   );
+}
+
+/**
+ * The area for its people only that holds everyone chosen and the fewest others – where the
+ * presentation could lie instead of being shared one by one. One must be allowed to file there.
+ */
+function areaOf(areas: readonly CloudArea[], chosen: readonly string[]): CloudArea | null {
+  const fits = areas.filter(
+    (area) =>
+      area.visibility === 'members' &&
+      area.access !== 'view' &&
+      chosen.every((id) => area.members.some((member) => member.id === id)),
+  );
+  return fits.sort((a, b) => a.members.length - b.members.length)[0] ?? null;
 }
 
 /** One of the two answers to "who may open it": a radio with title and explanation. */

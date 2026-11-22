@@ -3,7 +3,6 @@ import { useRef, useState } from 'react';
 import { SETUP_TOKEN_HEADER, type SetupStatus } from '@slider/shared';
 import { apiRequest } from '@/lib/api-client';
 import { queryKeys } from '@/lib/api';
-import { routes } from '@/lib/routes';
 import { SettingsLayout } from '@/shell/layouts/SettingsLayout';
 import { Button, Notice, Spinner } from '@/ui';
 import { NotAuthorized } from './components/NotAuthorized';
@@ -53,7 +52,7 @@ export function Component() {
       docTitle="Einrichtung | Slider"
       title="Slider einrichten"
       subtitle={status.data?.settings ? SUBTITLES[tab] : SUBTITLES.settings}
-      back={{ to: routes.reviews() }}
+      back="app"
       truncate={false}
     >
       {status.isPending ? (

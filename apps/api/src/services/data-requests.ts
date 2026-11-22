@@ -25,13 +25,16 @@ import { maskEmail } from './workspaces/invites';
  */
 
 /**
- * How long a link works: a copy a week, a deletion a day – a forwarded or forgotten mail must
- * not be able to delete an account (and choose a new admin) long after.
+ * How long a link works: a copy two days, a deletion a day – a forwarded or forgotten mail must
+ * not be able to hand out the whole account or delete it (and choose a new admin) long after.
  */
 export const DATA_REQUEST_TTL_MS: Record<'export' | 'delete', number> = {
-  export: 7 * 24 * 60 * 60 * 1000,
+  export: 48 * 60 * 60 * 1000,
   delete: 24 * 60 * 60 * 1000,
 };
+
+/** How often one copy link downloads (a broken download tried again), counted per process. */
+export const DATA_EXPORT_DOWNLOADS = 3;
 
 interface Payload {
   p: DataRequestPurpose;
@@ -110,7 +113,7 @@ const MAILS: Record<'export' | 'delete', Omit<Parameters<typeof inviteMail>[0], 
       'Für diese Adresse wurde eine Kopie der Daten angefragt, die Slider speichert. Über den Button lädst du sie als ZIP herunter.',
     button: 'Daten herunterladen',
     outro:
-      'Der Link gilt 7 Tage. Du hast nichts angefragt? Dann ignoriere diese Mail. Ohne den Link kommt niemand an die Daten.',
+      'Der Link gilt 48 Stunden und lädt die Daten höchstens dreimal herunter. Du hast nichts angefragt? Dann ignoriere diese Mail. Ohne den Link kommt niemand an die Daten.',
   },
   delete: {
     subject: 'Daten in Slider löschen',

@@ -6,7 +6,7 @@ import {
   type SuccessorChoice,
 } from '@slider/shared';
 import { useMutation, useQuery } from '@tanstack/react-query';
-import { api, apiRequest } from '../api-client';
+import { api, apiRequest, currentAccount } from '../api-client';
 import { routes } from '../routes';
 import { forgetOffline } from '../offline';
 
@@ -33,7 +33,8 @@ export const useDeleteAccount = () =>
       apiRequest<void>('/me', { method: 'DELETE', body: input }),
     // The session is gone with the account: leave the app for the login page.
     onSuccess: async () => {
-      await forgetOffline();
+      const account = currentAccount();
+      await forgetOffline(account ? { userId: account } : null);
       window.location.assign(routes.login());
     },
   });

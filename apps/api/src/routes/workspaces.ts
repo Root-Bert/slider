@@ -5,6 +5,7 @@ import {
   createWorkspaceInputSchema,
   createWorkspaceInviteInputSchema,
   renameWorkspaceMasterInputSchema,
+  updateAgentAvatarsInputSchema,
   updateMemberInputSchema,
   updateWorkspaceDomainInputSchema,
   updateWorkspaceInputSchema,
@@ -17,6 +18,7 @@ import {
   WORKSPACE_MASTER_MAX_BYTES,
 } from '@slider/shared';
 import { requireOwner, viewerAccess } from '../auth/access';
+import { runInBackground } from '../background-work';
 import { toDeckDto } from '../services/decks';
 import { viewerMiddleware, type ViewerEnv } from '../auth/viewer';
 import { decks, users, type UserRow } from '../db/schema';
@@ -27,6 +29,8 @@ import { deckUploadSlot, importLimit } from '../http/import-limit';
 import { clientAddress, fixedWindow, rateLimit } from '../http/rate-limit';
 import { readJson } from '../http/validate';
 import { cancelSubscriptions } from '../services/billing-owner';
+import { deleteBlobs, mailBlobs } from '../services/blob-deletions';
+import { revokeCloudConnection } from '../services/cloud-connections';
 import {
   deleteWorkspaceFonts,
   listWorkspaceFonts,
@@ -63,6 +67,7 @@ import {
   requireRole,
   revokeInvite,
   saveWorkspaceSso,
+  setAgentAvatars,
   setWorkspaceDomain,
   setWorkspaceLogo,
   updateMemberRole,
@@ -124,6 +129,11 @@ export function workspacesRoutes(deps: AppDeps, presence: WorkspacePresence) {
       .patch('/workspaces/:id', viewer, async (c) => {
         const { name } = await readJson(c, updateWorkspaceInputSchema);
         return c.json(await renameWorkspace(deps, userId(c.var.viewer), c.req.param('id'), name));
+      })
+      /** How the workspace's agents look (admins). */
+      .put('/workspaces/:id/agent-avatars', viewer, async (c) => {
+        const { style } = await readJson(c, updateAgentAvatarsInputSchema);
+        return c.json(await setAgentAvatars(deps, userId(c.var.viewer), c.req.param('id'), style));
       })
       .put(
         '/workspaces/:id/logo',
@@ -323,7 +333,7 @@ export function workspacesRoutes(deps: AppDeps, presence: WorkspacePresence) {
       })
       .delete('/workspaces/:id/members/:userId', viewer, async (c) => {
         // `?successor=<userId>`: the last owner leaves and hands the workspace to them.
-        const { cancelSubscriptionId, deletedDeckIds } = await removeMember(
+        const removal = await removeMember(
           deps.db,
           userId(c.var.viewer),
           c.req.param('id'),
@@ -342,8 +352,12 @@ export function workspacesRoutes(deps: AppDeps, presence: WorkspacePresence) {
           for (const deck of workspaceDecks)
             deps.live.evict(deck.id, (authorId) => authorId !== removedId);
         }
-        await cancelSubscriptions(deps, [cancelSubscriptionId]);
-        await deleteDeckFiles(deps, deletedDeckIds);
+        await cancelSubscriptions(deps, [removal.cancelSubscriptionId]);
+        await deleteDeckFiles(deps, removal.deletedDeckIds);
+        await deleteBlobs(deps, mailBlobs(removal.deletedMailAccountIds));
+        runInBackground(deps, async () => {
+          for (const row of removal.deletedConnections) await revokeCloudConnection(deps, row);
+        });
         return c.body(null, 204);
       })
       /** What happens to their decks if they went now (BER-165) – asked before the `DELETE`. */

@@ -172,7 +172,7 @@ export function Timeline({
     dispatch({ type: 'notesShownSet', shown: notesShown });
   }, [dispatch, notesShown]);
   // „Variante erstellen“ from the right-click menu, a copy opened, the AI done with one.
-  useVariantFlow(swipe.go, stack.above > 0);
+  useVariantFlow(swipe.go, stack.above > 0, stack.overview ? -stack.above : null, swipe.track);
   // For the dots in the gaps: memoised, so a gap only renders again when the track changes.
   const trackDots = useMemo(
     () => ({ stack, track: swipe.track, go: swipe.go }),
@@ -610,14 +610,25 @@ export function Timeline({
           {layout && context && (
             <TimelineContext value={context}>
               <CommentSelectionContext value={commentSelection}>
-                <CommentColumns layout={layout} window={windowStore} narrow={narrow} />
+                <CommentColumns
+                  layout={layout}
+                  window={windowStore}
+                  narrow={narrow}
+                  track={swipe.track}
+                  stack={stack}
+                />
               </CommentSelectionContext>
             </TimelineContext>
           )}
           {marquee.active && <SelectionBox ref={boxRef} raised />}
         </div>
       </div>
-      <ConnectorLines wrapperRef={wrapperRef} layer={connectorLayer} />
+      <ConnectorLines
+        wrapperRef={wrapperRef}
+        layer={connectorLayer}
+        track={swipe.track}
+        stack={stack}
+      />
       {/* „Variante erstellen“ on a phone: no variant tracks, the tile's field in a sheet. */}
       <VariantSheet />
     </main>

@@ -41,6 +41,12 @@ function imageKind(bytes: Uint8Array): keyof typeof EDIT_IMAGE_TYPES | null {
   return null;
 }
 
+/** A picture's media type by its first bytes – the four formats above, else null. */
+export const imageMediaType = (bytes: Uint8Array): string | null => {
+  const kind = imageKind(bytes);
+  return kind ? EDIT_IMAGE_TYPES[kind]!.mediaType : null;
+};
+
 export async function uploadEditImage(
   deps: AppDeps,
   viewer: Viewer,

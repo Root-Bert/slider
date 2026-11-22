@@ -31,6 +31,8 @@ interface FakeIdp {
   claims: Record<string, unknown>;
   nonce: string;
   requests: string[];
+  /** Where its discovery document sends the browser. */
+  authorize: string;
 }
 
 /** The workspace's provider (no network). */
@@ -38,6 +40,7 @@ function fakeIdp(claims: Record<string, unknown> = {}): FakeIdp {
   const idp: FakeIdp = {
     nonce: '',
     requests: [],
+    authorize: `${ISSUER}/protocol/openid-connect/auth`,
     claims: {
       iss: ISSUER,
       aud: 'slider-client',
@@ -53,7 +56,7 @@ function fakeIdp(claims: Record<string, unknown> = {}): FakeIdp {
       if (url === `${ISSUER}/.well-known/openid-configuration`) {
         return Response.json({
           issuer: ISSUER,
-          authorization_endpoint: `${ISSUER}/protocol/openid-connect/auth`,
+          authorization_endpoint: idp.authorize,
           token_endpoint: `${ISSUER}/protocol/openid-connect/token`,
         });
       }
@@ -325,6 +328,24 @@ describe('company login per workspace (BER-162)', () => {
     expect(outside.callback.headers.get('location')).toContain('/login?error=sso_domain');
     expect(sessionCookieFrom(outside.callback)).toBeNull();
 
+    // A week on, a login looks for the TXT record again: gone, the login is off; back, it works.
+    ctx.clock.advance(8 * 24 * 60 * 60_000);
+    const record = txt['_slider-sso.firma.de'];
+    txt['_slider-sso.firma.de'] = [];
+    const lapsed = await ctx.request(`/api/auth/sso/login?workspace=${admin.workspaceId}`);
+    expect(lapsed.headers.get('location')).toContain('/login?error=sso_unavailable');
+    txt['_slider-sso.firma.de'] = record!;
+    idp.claims = {
+      ...idp.claims,
+      sub: 'kc-anna',
+      email: 'anna@firma.de',
+      exp: Math.floor(ctx.clock.now().getTime() / 1000) + 300,
+    };
+    const back = await ssoLogin(idp, 'anna@firma.de');
+    expect(sessionCookieFrom(back.callback)).toBeTruthy();
+    const [proof] = await ctx.deps.db.select().from(workspaceSso);
+    expect(proof?.verifiedAt?.getTime()).toBeGreaterThan(ctx.clock.now().getTime() - 60_000);
+
     // Private again: the proof was for the domain, the login is off.
     await ctx.request(`/api/workspaces/${admin.workspaceId}/domain`, {
       method: 'PUT',
@@ -373,6 +394,12 @@ describe('company login per workspace (BER-162)', () => {
       (await saveSso(admin.workspaceId, admin.cookie, { issuer: 'https://login.firma.de/nothing' }))
         .status,
     ).toBe(400);
+    // A discovery document sending the browser off the issuer's host (or to http) is refused.
+    for (const authorize of ['https://evil.example/login', 'http://login.firma.de/auth']) {
+      idp.authorize = authorize;
+      expect((await saveSso(admin.workspaceId, admin.cookie)).status).toBe(400);
+    }
+    idp.authorize = `${ISSUER}/protocol/openid-connect/auth`;
     expect(await ctx.deps.db.select().from(workspaceSso)).toEqual([]);
 
     // Never calls internal addresses.
@@ -411,5 +438,10 @@ describe('company login per workspace (BER-162)', () => {
     // Links from before the rename to Workspace still carry `?organisation=`.
     const old = await ctx.request(`/api/auth/sso/login?organisation=${admin.workspaceId}`);
     expect(old.headers.get('location')).toContain(`${ISSUER}/protocol/openid-connect/auth`);
+
+    // A discovery document changed afterwards to send the browser elsewhere is not followed.
+    idp.authorize = 'https://evil.example/login';
+    const evil = await ctx.request(`/api/auth/sso/login?workspace=${admin.workspaceId}`);
+    expect(evil.headers.get('location')).toContain('/login?error=failed');
   });
 });

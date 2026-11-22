@@ -104,3 +104,24 @@ export const madeByProposal = (pageId: string, proposalId: string): boolean =>
  */
 export const variantStep = (step: string | undefined): string | undefined =>
   step?.replace(/^Ändert (Folie \d+|die Folie)$/, 'Gestaltet die Variante');
+
+let comparer: ((slideId: string) => void) | null = null;
+
+/**
+ * The timeline: how it shows „Varianten vergleichen“ – its top track, the overview of each
+ * slide's variants side by side, with the slide in view.
+ */
+export function setVariantComparer(next: ((slideId: string) => void) | null): () => void {
+  comparer = next;
+  return () => {
+    if (comparer === next) comparer = null;
+  };
+}
+
+/** Whether „Varianten vergleichen“ has an overview to show (none on a phone, no variant tracks). */
+export const canCompareVariants = (): boolean => comparer !== null;
+
+/** „Varianten vergleichen“: the overview track shown, slide `slideId` in view. */
+export function compareVariants(slideId: string): void {
+  comparer?.(slideId);
+}

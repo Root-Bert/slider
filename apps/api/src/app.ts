@@ -47,6 +47,7 @@ import { cspReportRoutes } from './routes/csp-report';
 import { instanceAdminRoutes } from './routes/instance-admin';
 import { legalRoutes } from './routes/legal';
 import { meRoutes } from './routes/me';
+import { sliderTemplateRoutes } from './routes/slider-templates';
 import { spellingRoutes } from './routes/spelling';
 import { passkeysRoutes } from './routes/passkeys';
 import { setupRoutes } from './routes/setup';
@@ -56,6 +57,25 @@ import { editsRoutes } from './routes/edits';
 import { integrationsRoutes } from './routes/integrations';
 import { workspacesRoutes } from './routes/workspaces';
 import { foldersRoutes } from './routes/folders';
+import { cloudRoutes } from './routes/cloud';
+import { documentsRoutes } from './routes/documents';
+import { pdfsRoutes } from './routes/pdfs';
+import { cloudAgentRoutes } from './routes/cloud-agents';
+import { senderRoutes } from './routes/sender';
+import { callRoutes } from './routes/calls';
+import { mailRoutes } from './routes/mail';
+import { todoRoutes } from './routes/todos';
+import { calendarRoutes } from './routes/calendars';
+import { draftsRoutes } from './routes/drafts';
+import { writeCallNotes } from './services/call-notes';
+import { CallHub } from './services/calls';
+import { keepCall } from './services/call-records';
+import { runInBackground } from './background-work';
+import { cloudConnectionRoutes } from './routes/cloud-connections';
+import { cloudChatRoutes } from './routes/cloud-chat';
+import { homeChatRoutes } from './routes/home-chat';
+import { cloudTusRoutes } from './routes/cloud-tus';
+import { DocumentLive } from './services/documents';
 import { configureFileUrls } from './storage/file-urls';
 
 export function createApp(appDeps: AppDeps) {
@@ -63,15 +83,30 @@ export function createApp(appDeps: AppDeps) {
   const live = appDeps.live ?? new LiveHub();
   const presence = appDeps.presence ?? new WorkspacePresence(() => appDeps.clock.now().getTime());
   const texts = appDeps.liveTexts ?? new LiveTexts(live);
+  // Who has a document open: an app's change over MCP reaches them as one made in Writer.
+  const documentLive = appDeps.documentLive ?? new DocumentLive();
   // Live comments on the product website – in memory, apart from decks and accounts.
   const site = new SiteLive();
-  const deps: AppDeps = { ...appDeps, live, presence, liveTexts: texts };
+  // Calls: who is in which, and the signals between their browsers – in memory.
+  const calls = new CallHub(appDeps.config.calls?.iceServers ?? [], {
+    // `deps` is made below; the hook runs only once a call is over.
+    afterCall: (call) => void writeCallNotes(deps, call),
+    keep: (call) =>
+      runInBackground(deps, () =>
+        keepCall(deps, call).catch((error: unknown) =>
+          deps.log.warn('Calls: a call was not kept', { callId: call.id, error }),
+        ),
+      ),
+    turnSecret: appDeps.config.calls?.turnSecret ?? null,
+    now: () => appDeps.clock.now().getTime(),
+  });
+  const deps: AppDeps = { ...appDeps, live, presence, liveTexts: texts, documentLive };
   const app = new Hono();
 
   if (deps.config.env === 'development') {
     // Live presence posts come many times a second while a pointer moves – not worth a log line.
     const log = logger();
-    const livePosts = [`${API_PREFIX}/live/`, `${API_PREFIX}/site-live/`];
+    const livePosts = [`${API_PREFIX}/live/`, `${API_PREFIX}/site-live/`, `${API_PREFIX}/calls/`];
     app.use((c, next) => (livePosts.some((p) => c.req.path.startsWith(p)) ? next() : log(c, next)));
   }
   // gzip for the web app, the API's JSON and SVG slides – also behind a proxy that doesn't
@@ -121,6 +156,7 @@ export function createApp(appDeps: AppDeps) {
   const api = new Hono()
     .route('/', meRoutes(deps, gate))
     .route('/', spellingRoutes(deps))
+    .route('/', sliderTemplateRoutes(deps))
     .route('/', dataRequestsRoutes(deps))
     .route('/', contactRoutes(deps))
     .route('/', siteLiveRoutes(site))
@@ -137,15 +173,29 @@ export function createApp(appDeps: AppDeps) {
     .route('/', materialsRoutes(deps))
     .route('/', materialQuestionsRoutes(deps))
     .route('/', materialChatRoutes(deps))
-    .route('/', appConnectionsRoutes(deps))
+    .route('/', appConnectionsRoutes(deps, documentLive))
     .route('/', deckCreationRoutes(deps))
     .route('/', showRunRoutes(deps))
     .route('/', liveRoutes(deps, live, presence, texts))
     .route('/', mediaRoutes(deps))
-    .route('/', voiceRoutes(deps))
+    .route('/', voiceRoutes(deps, documentLive))
     .route('/', workspacesRoutes(deps, presence))
     .route('/', billingRoutes(deps))
     .route('/', foldersRoutes(deps))
+    .route('/', cloudTusRoutes(deps))
+    .route('/', documentsRoutes(deps, documentLive))
+    .route('/', pdfsRoutes(deps))
+    .route('/', cloudRoutes(deps))
+    .route('/', cloudChatRoutes(deps))
+    .route('/', cloudAgentRoutes(deps))
+    .route('/', senderRoutes(deps))
+    .route('/', callRoutes(deps, calls))
+    .route('/', mailRoutes(deps))
+    .route('/', todoRoutes(deps))
+    .route('/', calendarRoutes(deps))
+    .route('/', draftsRoutes(deps))
+    .route('/', cloudConnectionRoutes(deps))
+    .route('/', homeChatRoutes(deps))
     .route('/', authRoutes(deps, gate))
     .route('/', desktopLoginRoutes(deps))
     .route('/', desktopCloudRoutes(deps))

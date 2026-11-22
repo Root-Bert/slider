@@ -13,7 +13,6 @@ import {
   type UpdateBoardItemInput,
   type Viewer,
 } from '@slider/shared';
-import { deckAccess, requireDeckAccess } from '../auth/access';
 import {
   deckBoardItems,
   deckMaterials,
@@ -23,8 +22,17 @@ import {
 import { advisoryXactLock } from '../db/client';
 import type { AppDeps } from '../deps';
 import { badRequest, fileTooLarge, forbidden, notFound } from '../http/errors';
-import { blobKeys } from '../storage/blob-storage';
 import { deleteBlobs } from './blob-deletions';
+import {
+  boardChanged,
+  isOn,
+  materialKey,
+  ownedBy,
+  ownerColumns,
+  ownerOf,
+  requireBoardAccess,
+  type BoardOwner,
+} from './board-owner';
 import { extractLater } from './material-extract';
 import { assertStorageFor, assertWithinLimits } from './plans';
 
@@ -33,8 +41,9 @@ import { assertStorageFor, assertWithinLimits } from './plans';
  * surface on a page of its own beside the slides. Never part of the deck's file. Everyone who
  * sees the deck sees the board;
  * whoever may comment puts things down, moves them and deletes their own; whoever manages the
- * deck deletes anyone's (as comments). Every change is told to the others at once
- * (`LiveHub.boardChanged`). Files come over tus (`purpose material`), their text is read in the
+ * deck deletes anyone's (as comments). A text document has the same board (`BoardOwner`,
+ * `board-owner.ts`: who may do what there). Every change is told to the others at once
+ * (`boardChanged`). Files come over tus (`purpose material`), their text is read in the
  * background (`material-extract.ts`) for the AI's tools (`material-tools.ts`).
  */
 
@@ -45,6 +54,7 @@ export function toMaterialDto(row: DeckMaterialRow): Material {
   return {
     id: row.id,
     deckId: row.deckId,
+    documentId: row.documentId,
     author: row.author,
     name: row.name,
     kind: row.kind,
@@ -68,6 +78,7 @@ export function toMaterialDto(row: DeckMaterialRow): Material {
 export const toBoardItemDto = (row: DeckBoardItemRow): BoardItem => ({
   id: row.id,
   deckId: row.deckId,
+  documentId: row.documentId,
   author: row.author,
   kind: row.kind,
   text: row.text,
@@ -83,18 +94,18 @@ export const toBoardItemDto = (row: DeckBoardItemRow): BoardItem => ({
 });
 
 /** Everything on the board, oldest first (newer cards lie over older ones). */
-export async function getBoard(deps: AppDeps, viewer: Viewer, deckId: string): Promise<Board> {
-  await requireDeckAccess(deps, viewer, deckId, 'view');
+export async function getBoard(deps: AppDeps, viewer: Viewer, owner: BoardOwner): Promise<Board> {
+  await requireBoardAccess(deps, viewer, owner, 'view');
   const [materials, items] = await Promise.all([
     deps.db
       .select()
       .from(deckMaterials)
-      .where(eq(deckMaterials.deckId, deckId))
+      .where(ownedBy(deckMaterials, owner))
       .orderBy(asc(deckMaterials.createdAt), asc(deckMaterials.id)),
     deps.db
       .select()
       .from(deckBoardItems)
-      .where(eq(deckBoardItems.deckId, deckId))
+      .where(ownedBy(deckBoardItems, owner))
       .orderBy(asc(deckBoardItems.createdAt), asc(deckBoardItems.id)),
   ]);
   return { materials: materials.map(toMaterialDto), items: items.map(toBoardItemDto) };
@@ -194,13 +205,13 @@ const cleanName = (name: string) =>
 export async function retriedMaterial(
   deps: AppDeps,
   viewer: Viewer,
-  deckId: string,
+  owner: BoardOwner,
   id: string,
 ): Promise<Material | null> {
-  await requireDeckAccess(deps, viewer, deckId, 'comment');
+  await requireBoardAccess(deps, viewer, owner, 'comment');
   const [row] = await deps.db.select().from(deckMaterials).where(eq(deckMaterials.id, id));
   if (!row) return null;
-  if (row.deckId !== deckId || row.author.id !== viewer.author.id)
+  if (!isOn(row, owner) || row.author.id !== viewer.author.id)
     throw badRequest('Dieses Material gibt es schon.');
   return toMaterialDto(row);
 }
@@ -212,19 +223,19 @@ export async function retriedMaterial(
 export async function addMaterial(
   deps: AppDeps,
   viewer: Viewer,
-  deckId: string,
+  owner: BoardOwner,
   input: AddMaterialInput,
   file: { name: string; bytes: Uint8Array<ArrayBuffer> },
 ): Promise<{ material: Material; created: boolean }> {
-  const deck = await requireDeckAccess(deps, viewer, deckId, 'comment');
-  const again = await retriedMaterial(deps, viewer, deckId, input.id);
+  const access = await requireBoardAccess(deps, viewer, owner, 'comment');
+  const again = await retriedMaterial(deps, viewer, owner, input.id);
   if (again) return { material: again, created: false };
-  await assertWithinLimits(deps.db, deps.config, deck.workspaceId, deps.clock.now());
+  await assertWithinLimits(deps.db, deps.config, access.workspaceId, deps.clock.now());
   if (input.folderId) {
     const [folder] = await deps.db
       .select({ kind: deckBoardItems.kind })
       .from(deckBoardItems)
-      .where(and(eq(deckBoardItems.id, input.folderId), eq(deckBoardItems.deckId, deckId)));
+      .where(and(eq(deckBoardItems.id, input.folderId), ownedBy(deckBoardItems, owner)));
     if (folder?.kind !== 'folder') throw notFound('Diesen Ordner gibt es nicht (mehr).');
   }
   const size = file.bytes.byteLength;
@@ -232,9 +243,9 @@ export async function addMaterial(
   if (size > deps.config.maxUploadBytes) throw fileTooLarge(deps.config.maxUploadBytes);
   const name = cleanName(file.name);
   const { kind, mimeType } = classifyMaterial(name, file.bytes);
-  const storageKey = blobKeys.material(deckId, `${input.id}-${crypto.randomUUID()}`);
+  const storageKey = materialKey(owner, `${input.id}-${crypto.randomUUID()}`);
   await deps.db.transaction((tx) =>
-    assertStorageFor(tx, deps.config, deck.workspaceId, size, deps.clock.now()),
+    assertStorageFor(tx, deps.config, access.workspaceId, size, deps.clock.now()),
   );
   await deps.media.put(storageKey, file.bytes);
   try {
@@ -243,16 +254,16 @@ export async function addMaterial(
       await advisoryXactLock(tx, `material:${input.id}`);
       const [again] = await tx.select().from(deckMaterials).where(eq(deckMaterials.id, input.id));
       if (again) {
-        if (again.deckId !== deckId || again.author.id !== viewer.author.id)
+        if (!isOn(again, owner) || again.author.id !== viewer.author.id)
           throw badRequest('Dieses Material gibt es schon.');
         return { row: again, created: false };
       }
-      await assertStorageFor(tx, deps.config, deck.workspaceId, size, now);
+      await assertStorageFor(tx, deps.config, access.workspaceId, size, now);
       const [inserted] = await tx
         .insert(deckMaterials)
         .values({
           id: input.id,
-          deckId,
+          ...ownerColumns(owner),
           author: viewer.author,
           name,
           kind,
@@ -286,7 +297,7 @@ export async function addMaterial(
       await deleteBlobs(deps, [{ store: 'media', key: storageKey, prefix: false }]);
       return { material: toMaterialDto(row), created: false };
     }
-    deps.live?.boardChanged(deckId);
+    boardChanged(deps, owner);
     if (row.kind !== 'other') extractLater(deps, row.id);
     return { material: toMaterialDto(row), created: true };
   } catch (error) {
@@ -299,20 +310,20 @@ export async function addMaterial(
 export async function createBoardItem(
   deps: AppDeps,
   viewer: Viewer,
-  deckId: string,
+  owner: BoardOwner,
   input: CreateBoardItemInput & { id: string; text: string; url: string | null },
 ): Promise<{ item: BoardItem; created: boolean }> {
-  const deck = await requireDeckAccess(deps, viewer, deckId, 'comment');
+  const access = await requireBoardAccess(deps, viewer, owner, 'comment');
   const [again] = await deps.db
     .select()
     .from(deckBoardItems)
     .where(eq(deckBoardItems.id, input.id));
   if (again) {
-    if (again.deckId !== deckId || again.author.id !== viewer.author.id)
+    if (!isOn(again, owner) || again.author.id !== viewer.author.id)
       throw badRequest('Diese Notiz gibt es schon.');
     return { item: toBoardItemDto(again), created: false };
   }
-  await assertWithinLimits(deps.db, deps.config, deck.workspaceId, deps.clock.now());
+  await assertWithinLimits(deps.db, deps.config, access.workspaceId, deps.clock.now());
   if (input.kind === 'link' && !input.url) throw badRequest('Ein Link braucht eine Adresse.');
   if (input.kind !== 'link' && input.url) throw badRequest('Nur ein Link hat eine Adresse.');
   const boundIds = [...new Set(input.boundIds ?? [])];
@@ -322,11 +333,11 @@ export async function createBoardItem(
       deps.db
         .select({ id: deckMaterials.id })
         .from(deckMaterials)
-        .where(and(eq(deckMaterials.deckId, deckId), inArray(deckMaterials.id, boundIds))),
+        .where(and(ownedBy(deckMaterials, owner), inArray(deckMaterials.id, boundIds))),
       deps.db
         .select({ id: deckBoardItems.id })
         .from(deckBoardItems)
-        .where(and(eq(deckBoardItems.deckId, deckId), inArray(deckBoardItems.id, boundIds))),
+        .where(and(ownedBy(deckBoardItems, owner), inArray(deckBoardItems.id, boundIds))),
     ]);
     if (files.length + items.length < boundIds.length)
       throw notFound('Woran die Notiz hängt, gibt es nicht (mehr).');
@@ -336,7 +347,7 @@ export async function createBoardItem(
     .insert(deckBoardItems)
     .values({
       id: input.id,
-      deckId,
+      ...ownerColumns(owner),
       author: viewer.author,
       kind: input.kind,
       text: input.text,
@@ -352,7 +363,7 @@ export async function createBoardItem(
       updatedAt: now,
     })
     .returning();
-  deps.live?.boardChanged(deckId);
+  boardChanged(deps, owner);
   return { item: toBoardItemDto(row!), created: true };
 }
 
@@ -360,15 +371,15 @@ export async function createBoardItem(
 export async function updateBoardItem(
   deps: AppDeps,
   viewer: Viewer,
-  deckId: string,
+  owner: BoardOwner,
   itemId: string,
   input: UpdateBoardItemInput,
 ): Promise<BoardItem> {
-  await requireDeckAccess(deps, viewer, deckId, 'comment');
+  await requireBoardAccess(deps, viewer, owner, 'comment');
   const [row] = await deps.db
     .select()
     .from(deckBoardItems)
-    .where(and(eq(deckBoardItems.id, itemId), eq(deckBoardItems.deckId, deckId)));
+    .where(and(eq(deckBoardItems.id, itemId), ownedBy(deckBoardItems, owner)));
   if (!row) throw notFound('Diese Notiz gibt es nicht (mehr).');
   // Its text and address only by its author; what a frame holds by anyone who moves things.
   if (
@@ -384,7 +395,7 @@ export async function updateBoardItem(
   if (input.boundIds !== undefined && row.kind !== 'box' && row.kind !== 'folder')
     throw badRequest('Nur eine Box oder ein Ordner nimmt Dinge auf.');
   const boundIds =
-    input.boundIds === undefined ? undefined : await existingOnBoard(deps, deckId, input.boundIds);
+    input.boundIds === undefined ? undefined : await existingOnBoard(deps, owner, input.boundIds);
   const [updated] = await deps.db
     .update(deckBoardItems)
     .set({
@@ -397,23 +408,23 @@ export async function updateBoardItem(
     })
     .where(eq(deckBoardItems.id, itemId))
     .returning();
-  deps.live?.boardChanged(deckId);
+  boardChanged(deps, owner);
   return toBoardItemDto(updated!);
 }
 
 /** The ids of `ids` that lie on the deck's board (files or items), in their order, once each. */
-async function existingOnBoard(deps: AppDeps, deckId: string, ids: readonly string[]) {
+async function existingOnBoard(deps: AppDeps, owner: BoardOwner, ids: readonly string[]) {
   const wanted = [...new Set(ids)];
   if (wanted.length === 0) return [];
   const [files, items] = await Promise.all([
     deps.db
       .select({ id: deckMaterials.id })
       .from(deckMaterials)
-      .where(and(eq(deckMaterials.deckId, deckId), inArray(deckMaterials.id, wanted))),
+      .where(and(ownedBy(deckMaterials, owner), inArray(deckMaterials.id, wanted))),
     deps.db
       .select({ id: deckBoardItems.id })
       .from(deckBoardItems)
-      .where(and(eq(deckBoardItems.deckId, deckId), inArray(deckBoardItems.id, wanted))),
+      .where(and(ownedBy(deckBoardItems, owner), inArray(deckBoardItems.id, wanted))),
   ]);
   const there = new Set([...files, ...items].map((each) => each.id));
   return wanted.filter((id) => there.has(id));
@@ -426,10 +437,10 @@ async function existingOnBoard(deps: AppDeps, deckId: string, ids: readonly stri
 export async function moveBoard(
   deps: AppDeps,
   viewer: Viewer,
-  deckId: string,
+  owner: BoardOwner,
   { frames }: MoveBoardInput,
 ): Promise<void> {
-  await requireDeckAccess(deps, viewer, deckId, 'comment');
+  await requireBoardAccess(deps, viewer, owner, 'comment');
   const now = deps.clock.now();
   await deps.db.transaction(async (tx) => {
     for (const { id, ...frame } of frames) {
@@ -437,16 +448,16 @@ export async function moveBoard(
       const moved = await tx
         .update(deckMaterials)
         .set(values)
-        .where(and(eq(deckMaterials.id, id), eq(deckMaterials.deckId, deckId)))
+        .where(and(eq(deckMaterials.id, id), ownedBy(deckMaterials, owner)))
         .returning({ id: deckMaterials.id });
       if (moved.length > 0) continue;
       await tx
         .update(deckBoardItems)
         .set(values)
-        .where(and(eq(deckBoardItems.id, id), eq(deckBoardItems.deckId, deckId)));
+        .where(and(eq(deckBoardItems.id, id), ownedBy(deckBoardItems, owner)));
     }
   });
-  deps.live?.boardChanged(deckId);
+  boardChanged(deps, owner);
 }
 
 /**
@@ -456,20 +467,20 @@ export async function moveBoard(
 export async function deleteBoardItem(
   deps: AppDeps,
   viewer: Viewer,
-  deckId: string,
+  owner: BoardOwner,
   itemId: string,
 ): Promise<void> {
-  const { permissions } = await deckAccess(deps, viewer, deckId, 'view');
+  const permissions = await requireBoardAccess(deps, viewer, owner, 'view');
   const [material] = await deps.db
     .select()
     .from(deckMaterials)
-    .where(and(eq(deckMaterials.id, itemId), eq(deckMaterials.deckId, deckId)));
+    .where(and(eq(deckMaterials.id, itemId), ownedBy(deckMaterials, owner)));
   const [item] = material
     ? []
     : await deps.db
         .select()
         .from(deckBoardItems)
-        .where(and(eq(deckBoardItems.id, itemId), eq(deckBoardItems.deckId, deckId)));
+        .where(and(eq(deckBoardItems.id, itemId), ownedBy(deckBoardItems, owner)));
   const found = material ?? item;
   if (!found) return;
   const own = found.author.id === viewer.author.id;
@@ -491,21 +502,21 @@ export async function deleteBoardItem(
       await deps.db
         .update(deckMaterials)
         .set({ folderId: null })
-        .where(and(eq(deckMaterials.deckId, deckId), eq(deckMaterials.folderId, itemId)));
+        .where(and(ownedBy(deckMaterials, owner), eq(deckMaterials.folderId, itemId)));
   }
-  await unbind(deps, deckId, itemId);
-  deps.live?.boardChanged(deckId);
+  await unbind(deps, owner, itemId);
+  boardChanged(deps, owner);
 }
 
 /**
  * A thing gone from the board: the notes hanging on it let go of it – one that hung on it alone
  * goes with it.
  */
-async function unbind(deps: AppDeps, deckId: string, goneId: string) {
+async function unbind(deps: AppDeps, owner: BoardOwner, goneId: string) {
   const notes = await deps.db
     .select({ id: deckBoardItems.id, kind: deckBoardItems.kind, boundIds: deckBoardItems.boundIds })
     .from(deckBoardItems)
-    .where(eq(deckBoardItems.deckId, deckId));
+    .where(ownedBy(deckBoardItems, owner));
   for (const note of notes) {
     if (!note.boundIds.includes(goneId)) continue;
     const left = note.boundIds.filter((id) => id !== goneId);
@@ -518,11 +529,11 @@ async function unbind(deps: AppDeps, deckId: string, goneId: string) {
         .set({ boundIds: left })
         .where(eq(deckBoardItems.id, note.id));
     // A note on notes: those hanging on it let go of it in turn.
-    if (left.length === 0 && note.kind === 'note') await unbind(deps, deckId, note.id);
+    if (left.length === 0 && note.kind === 'note') await unbind(deps, owner, note.id);
   }
 }
 
-/** A file of the board for whoever may see the deck: its row (the route streams the bytes). */
+/** A file of a board for whoever may see its deck or document: its row (the route streams the bytes). */
 export async function getMaterialForViewer(
   deps: AppDeps,
   viewer: Viewer,
@@ -530,6 +541,6 @@ export async function getMaterialForViewer(
 ): Promise<DeckMaterialRow> {
   const [row] = await deps.db.select().from(deckMaterials).where(eq(deckMaterials.id, materialId));
   if (!row) throw notFound('Dieses Material gibt es nicht (mehr).');
-  await requireDeckAccess(deps, viewer, row.deckId, 'view');
+  await requireBoardAccess(deps, viewer, ownerOf(row), 'view');
   return row;
 }

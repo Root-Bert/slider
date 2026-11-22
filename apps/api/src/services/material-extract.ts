@@ -1,6 +1,8 @@
-import { createCanvas, loadImage } from '@napi-rs/canvas';
+import { createCanvas } from '@napi-rs/canvas';
+import { loadImage } from '../import/load-image';
 import { and, asc, eq } from 'drizzle-orm';
-import { extensionOf, type MaterialSheet } from '@slider/shared';
+import { extensionOf, inflateEntry, zipEntriesAtMost, type MaterialSheet } from '@slider/shared';
+import JSZip from 'jszip';
 import { read, utils, type WorkBook, type WorkSheet } from 'xlsx';
 import { runInBackground } from '../background-work';
 import { deckMaterials, materialChunks, type DeckMaterialRow } from '../db/schema';
@@ -8,10 +10,10 @@ import type { AppDeps } from '../deps';
 import { MATERIAL_PDF_FILTERS, type MaterialPdfKind } from '../import/libreoffice';
 import { runPdfTask } from '../import/pdf-jobs';
 import { PREVIEW_WIDTH } from '../import/pdf-text';
-import { blobKeys } from '../storage/blob-storage';
+import { boardChanged, materialPreviewKey, ownerColumns, ownerOf } from './board-owner';
 
 /*
- * Reading the text of a deck's material files in the background, one file after the
+ * Reading the text of a board's files (a deck's or a document's) in the background, one file after the
  * other: a PDF with pdf.js (in its worker), Word and PowerPoint files as a PDF made by
  * LibreOffice (its pool), spreadsheets and CSV with SheetJS (each sheet a table), text as it is.
  * Pictures have no text – the AI looks at them (`view_material`); they only get a small picture,
@@ -62,8 +64,33 @@ export async function resumeExtractions(deps: AppDeps): Promise<void> {
   for (const row of rows) extractLater(deps, row.id);
 }
 
+const MAX_WORKBOOK_PARTS = 5000;
+const MAX_WORKBOOK_UNPACKED = 256 * 1024 ** 2;
+
+/**
+ * A zipped workbook with every part unpacked under one budget and packed anew without
+ * compression. The spreadsheet reader has a zip reader of its own that unpacks whatever the
+ * file's local headers lead to, whatever its directory declares – handed this, there is nothing
+ * left for it to inflate.
+ */
+async function unpackedWorkbook(bytes: Uint8Array): Promise<Uint8Array> {
+  const tooMuch = () => new Error('The workbook unpacks to more than is read.');
+  if (!zipEntriesAtMost(bytes, MAX_WORKBOOK_PARTS)) throw tooMuch();
+  const zip = await JSZip.loadAsync(bytes);
+  const entries = Object.values(zip.files).filter((entry) => !entry.dir);
+  if (entries.length > MAX_WORKBOOK_PARTS) throw tooMuch();
+  const plain = new JSZip();
+  let left = MAX_WORKBOOK_UNPACKED;
+  for (const entry of entries) {
+    const part = await inflateEntry(entry.name, entry, left, tooMuch);
+    left -= part.length;
+    plain.file(entry.name, part);
+  }
+  return plain.generateAsync({ type: 'uint8array', compression: 'STORE' });
+}
+
 /** The workbook of a spreadsheet or CSV file – values as shown, never formulas run. */
-export function readWorkbook(bytes: Uint8Array, name: string): WorkBook {
+export async function readWorkbook(bytes: Uint8Array, name: string): Promise<WorkBook> {
   const extension = extensionOf(name);
   const options = {
     sheetRows: MAX_SHEET_ROWS,
@@ -76,7 +103,9 @@ export function readWorkbook(bytes: Uint8Array, name: string): WorkBook {
     // UTF-8 text, so umlauts stay; SheetJS finds the separator.
     return read(new TextDecoder().decode(bytes), { ...options, type: 'string', raw: false });
   }
-  return read(bytes, { ...options, type: 'array' });
+  // `PK`: a zip (xlsx, ods) – the old binary formats are read as they are.
+  const zipped = bytes[0] === 0x50 && bytes[1] === 0x4b;
+  return read(zipped ? await unpackedWorkbook(bytes) : bytes, { ...options, type: 'array' });
 }
 
 /** A column's letters: 0 → A, 26 → AA. */
@@ -252,7 +281,7 @@ async function extractMaterial(deps: AppDeps, materialId: string): Promise<void>
     } else if (row.sizeBytes > MAX_READ_BYTES) {
       readState = 'failed';
     } else if (row.kind === 'spreadsheet') {
-      const book = readWorkbook(bytes, row.name);
+      const book = await readWorkbook(bytes, row.name);
       sheets = sheetsOf(book);
       pages = sheets.length;
       chunks = workbookChunks(book);
@@ -279,7 +308,8 @@ async function extractMaterial(deps: AppDeps, materialId: string): Promise<void>
     readState = 'failed';
   }
 
-  const previewKey = preview ? blobKeys.materialPreview(row.deckId, row.id) : null;
+  const owner = ownerOf(row);
+  const previewKey = preview ? materialPreviewKey(owner, row.id) : null;
   if (preview && previewKey) await deps.media.put(previewKey, preview);
   const stored = await deps.db.transaction(async (tx) => {
     // Deleted meanwhile: nothing to keep (its preview goes below).
@@ -294,7 +324,7 @@ async function extractMaterial(deps: AppDeps, materialId: string): Promise<void>
       await tx.insert(materialChunks).values(
         chunks.slice(at, at + 200).map((chunk, index) => ({
           materialId: row.id,
-          deckId: row.deckId,
+          ...ownerColumns(owner),
           seq: at + index,
           page: chunk.page,
           sheet: chunk.sheet,
@@ -318,5 +348,5 @@ async function extractMaterial(deps: AppDeps, materialId: string): Promise<void>
     if (previewKey) await deps.media.delete(previewKey).catch(() => undefined);
     return;
   }
-  deps.live?.boardChanged(row.deckId);
+  boardChanged(deps, owner);
 }

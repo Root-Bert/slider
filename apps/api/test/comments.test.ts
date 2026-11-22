@@ -138,12 +138,15 @@ describe('creating comments', () => {
     expect(empty.status).toBe(400);
     expect(await empty.json()).toMatchObject({ error: { code: 'bad_request' } });
 
-    const offSlide = await post({
-      slideId: slide(0),
-      body: 'x',
-      anchor: { type: 'point', point: { x: 2, y: 0 }, shapeRef: null },
-    });
-    expect(offSlide.status).toBe(400);
+    // Beside the slide (the room it shows zoomed out) a comment is taken – far off it is not.
+    const at = (x: number) =>
+      post({
+        slideId: slide(0),
+        body: 'x',
+        anchor: { type: 'point', point: { x, y: 0 }, shapeRef: null },
+      });
+    expect((await at(1.4)).status).toBe(201);
+    expect((await at(20)).status).toBe(400);
 
     const other = await createReadyDeck(ctx, { slideCount: 1 });
     expect((await post(pinComment(other.slideIds[0] ?? ''))).status).toBe(400);
@@ -267,7 +270,7 @@ describe('text on the slide ("Text auf Folie")', () => {
   it('rejects invalid text boxes, and allows only one, and none on replies or gaps', async () => {
     const invalid: Record<string, unknown>[] = [
       { text: '   ' },
-      { x: 0.8, w: 0.3 },
+      { x: 20 },
       { w: 0 },
       { fontSize: 0.001 },
       { fontSize: 0.5 },
@@ -303,7 +306,7 @@ describe('text on the slide ("Text auf Folie")', () => {
     expect(gap.status).toBe(400);
   });
 
-  it('keeps the text box on edits of the comment; only its author moves it, onto the slide', async () => {
+  it('keeps the text box on edits of the comment; only its author moves it, beside the slide too', async () => {
     const comment = await create(textComment(textStroke()));
     const edited = commentSchema.parse(
       await (
@@ -327,8 +330,12 @@ describe('text on the slide ("Text auf Folie")', () => {
 
     const guest = await asMember('Max Kern');
     expect((await patch({ x: 0.2, y: 0.2, w: 0.2, h: 0.1 }, guest)).status).toBe(403);
-    expect((await patch({ x: 0.9, y: 0.2, w: 0.2, h: 0.1 })).status).toBe(400);
+    expect((await patch({ x: 20, y: 0.2, w: 0.2, h: 0.1 })).status).toBe(400);
     expect((await patch({ x: 0.2, y: 0.2, w: 0, h: 0.1 })).status).toBe(400);
+    const beside = { x: 1.1, y: -0.2, w: 0.2, h: 0.1 };
+    expect(commentSchema.parse(await (await patch(beside)).json()).anchor).toMatchObject({
+      rect: beside,
+    });
 
     const pin = await create(pinComment(slide(0)));
     const noText = await ctx.request(`/api/comments/${pin.id}`, {
@@ -350,7 +357,7 @@ describe('moving a box afterwards', () => {
   const patch = (id: string, anchor: object, cookie?: string) =>
     ctx.request(`/api/comments/${id}`, { method: 'PATCH', json: { anchor }, cookie });
 
-  it('moves and resizes the author’s box – only for the author, on the slide, and only boxes', async () => {
+  it('moves and resizes the author’s box – only for the author, beside the slide too, and only boxes', async () => {
     const comment = await boxComment();
     const res = await patch(comment.id, box({ x: 0.5, y: 0.4, w: 0.3, h: 0.1 }));
     expect(res.status).toBe(200);
@@ -383,7 +390,8 @@ describe('moving a box afterwards', () => {
     expect((await patch(comment.id, box({ x: 0.2, y: 0.2, w: 0.2, h: 0.2 }), member)).status).toBe(
       403,
     );
-    expect((await patch(comment.id, box({ x: 0.9, y: 0.2, w: 0.2, h: 0.2 }))).status).toBe(400);
+    expect((await patch(comment.id, box({ x: 20, y: 0.2, w: 0.2, h: 0.2 }))).status).toBe(400);
+    expect((await patch(comment.id, box({ x: 0.9, y: -0.3, w: 0.2, h: 0.2 }))).status).toBe(200);
     const pin = await create(pinComment(slide(0)));
     expect((await patch(pin.id, box({ x: 0.2, y: 0.2, w: 0.2, h: 0.2 }))).status).toBe(400);
     // A box that is the text on the slide moves with the text box instead.

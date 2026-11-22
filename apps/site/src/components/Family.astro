@@ -1,0 +1,45 @@
+---
+import Dock from './objects/Dock.astro';
+import { s, type Lang } from '~/i18n';
+import type { ProductId } from '~/lib/apps';
+
+/** On an app's page: the other four, as the same hand of tiles the office opens with. */
+interface Props {
+  lang: Lang;
+  current: ProductId;
+}
+
+const { lang, current } = Astro.props;
+const p = s(lang).product;
+---
+
+<section class="family" data-section data-live="family">
+  <h2 class="exhibit-title" data-reveal>{p.familyTitle}</h2>
+  <p class="exhibit-lead family-sub" data-reveal style="--i: 1">{p.familySub}</p>
+  <Dock lang={lang} current={current} class="family-dock" />
+</section>
+
+<style>
+  .family {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    max-width: 1440px;
+    margin: 0 auto;
+    padding: clamp(140px, 20vw, 300px) 32px 0;
+    text-align: center;
+  }
+  .family-sub {
+    max-width: 30em;
+    margin-top: 28px;
+  }
+  .family :global(.family-dock) {
+    --tile: clamp(58px, 15vw, 190px);
+    margin-top: clamp(64px, 8vw, 120px);
+  }
+  @media (max-width: 767px) {
+    .family {
+      padding-inline: 16px;
+    }
+  }
+</style>

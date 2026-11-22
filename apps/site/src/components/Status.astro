@@ -1,0 +1,46 @@
+---
+import { s, type Lang } from '~/i18n';
+import { isLive, type ProductId } from '~/lib/apps';
+
+/** Whether an app can be used today: a green dot and „Available now“, or a quiet „Coming soon“. */
+interface Props {
+  app: ProductId;
+  lang: Lang;
+}
+
+const { app, lang } = Astro.props;
+const live = isLive(app);
+const words = s(lang).status;
+---
+
+<span class:list={['status', live && 'is-live']}><i aria-hidden="true"></i>{live ? words.live : words.soon}</span>
+
+<style>
+  .status {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    height: 28px;
+    padding: 0 12px 0 10px;
+    border-radius: 999px;
+    box-shadow: inset 0 0 0 1px var(--color-hairline-strong);
+    font-size: 13px;
+    font-weight: 600;
+    line-height: 1;
+    color: var(--color-fg-muted);
+    white-space: nowrap;
+  }
+  .status i {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    background: var(--color-fg-faint);
+  }
+  .status.is-live {
+    color: var(--color-fg);
+  }
+  .status.is-live i {
+    background: var(--color-accent-green);
+    box-shadow: 0 0 0 4px color-mix(in srgb, var(--color-accent-green) 28%, transparent);
+  }
+</style>

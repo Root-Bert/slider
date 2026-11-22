@@ -325,6 +325,7 @@ function FormatBar() {
   return (
     <div
       data-sticker-bar
+      data-popover-panel=""
       className="nodrag nopan glass-elevated absolute bottom-full left-0 z-(--z-raised) mb-2 origin-bottom-left rounded-panel"
       style={{ transform: `scale(${1 / zoom})` }}
       onMouseDown={(event) => event.stopPropagation()}

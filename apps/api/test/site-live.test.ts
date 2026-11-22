@@ -1,6 +1,12 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { SiteLiveEvent } from '@slider/shared';
-import { SITE_MAX_PER_ADDRESS, SITE_STALE_MS, SiteLive } from '../src/realtime/site-live';
+import {
+  SITE_MAX_CONNECTIONS,
+  SITE_MAX_PER_ADDRESS,
+  SITE_MAX_ROOMS,
+  SITE_STALE_MS,
+  SiteLive,
+} from '../src/realtime/site-live';
 
 afterEach(() => vi.useRealTimers());
 
@@ -95,6 +101,51 @@ describe('website live comments', () => {
       ),
     );
     expect(joins.at(-1)).toEqual({ ok: false, reason: 'busy' });
+    expect(site.refusal('/', '9.9.9.9')).toBe('busy');
+    // Leaving frees the address again.
+    const first = joins[0];
+    if (first?.ok) site.leave(first.key);
+    expect(site.refusal('/', '9.9.9.9')).toBeNull();
+
+    // And over all: so many rooms, so many streams, however many addresses.
+    const many = new SiteLive(() => Date.now());
+    const opened: string[] = [];
+    for (let i = 0; i < SITE_MAX_ROOMS; i += 1) {
+      const joined = many.join(
+        `/p${i}`,
+        `10.0.${i >> 8}.${i & 255}`,
+        {},
+        () => {},
+        () => {},
+      );
+      if (joined.ok) opened.push(joined.key);
+    }
+    expect(opened).toHaveLength(SITE_MAX_ROOMS);
+    expect(
+      many.join(
+        '/new',
+        '10.9.9.9',
+        {},
+        () => {},
+        () => {},
+      ),
+    ).toEqual({
+      ok: false,
+      reason: 'overloaded',
+    });
+    for (let i = SITE_MAX_ROOMS; i < SITE_MAX_CONNECTIONS; i += 1) {
+      many.join(
+        `/p${i % 40}`,
+        `10.1.${i >> 8}.${i & 255}`,
+        {},
+        () => {},
+        () => {},
+      );
+    }
+    expect(many.refusal('/p0', '10.9.9.9')).toBe('overloaded');
+    many.leave(opened[0]!);
+    expect(many.refusal('/p0', '10.9.9.9')).toBeNull();
+    many.closeAll();
     // A stream that never says it is still there is dropped (Bun doesn't report closed ones).
     expect(site.alive(b.key)).toBe(true);
     vi.advanceTimersByTime(SITE_STALE_MS + 1);

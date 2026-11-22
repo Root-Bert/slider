@@ -56,7 +56,9 @@ Die Einrichtungsseite zeigt alle Weiterleitungs-URIs zum Kopieren.
 Kontotypen „beliebiges Organisationsverzeichnis und persönliche Microsoft-Konten“.
 Plattform _Web_ mit Redirect-URI `https://slider.firma.de/api/auth/microsoft/callback`. Neuen
 Clientschlüssel anlegen. API-Berechtigungen (delegiert), Microsoft Graph: `openid`, `profile`,
-`email`. Nur die eigene Firma: `MS_TENANT=<Tenant-ID>`.
+`email`. Unter Tokenkonfiguration → Optionalen Anspruch hinzufügen → ID: `xms_edov` – dann
+nimmt Slider eine Adresse nur, wenn Microsoft sie bestätigt hat. Nur die eigene Firma:
+`MS_TENANT=<Tenant-ID>`.
 
 **Google:** [Google Cloud Console](https://console.cloud.google.com/) → neues Projekt →
 Google Auth Platform: Zielgruppe **Extern**, Bereiche `openid`, `userinfo.email` und
@@ -83,6 +85,43 @@ slider.bertro.dev an. Für die eigene Instanz: in der App unter Konto → **Ande
 Adresse eintragen, z. B. `https://slider.firma.de` (https, ab Slider 1.6.0). Die Anmeldung öffnet
 den Browser mit den Logins der Instanz; danach liegen die Workspaces und Präsentationen des Kontos
 als Kopien auf dem Computer und werden abgeglichen. Auf dem Server ist nichts einzurichten.
+
+## Cloud
+
+Cloud, die Dateiablage des Workspaces, ist Teil desselben Servers (`/cloud`, im Kopf der App
+neben Slider) und braucht keine eigene Einrichtung, keine eigene Domain und keinen eigenen
+Dienst.
+
+- **Speicherort:** Dateien, ihre Fassungen und Vorschaubilder liegen verschlüsselt im selben
+  Volume wie alles andere (`/data/blobs`), Uploads in Arbeit unter `/data/tmp/cloud-uploads`. Das
+  Backup unten deckt sie mit ab.
+- **Nur im Workspace:** Wer was sieht, folgt aus Rolle und Bereich. Betrachter und Kommentierer
+  sehen nur an und haben keine eigenen Dateien. Einzeln teilen (`CLOUD_SHARING=true`) und Links
+  für Personen außerhalb (`CLOUD_PUBLIC_LINKS=true`) sind aus, solange nicht gesetzt.
+- **Platz:** Eine Datei darf bis 5 GB groß sein (`CLOUD_MAX_FILE_BYTES`), der Speicher je
+  Workspace ist ohne `PLAN_FREE_MAX_STORAGE_BYTES` unbegrenzt. Auf einem Server mit offener
+  Registrierung beides setzen, sonst begrenzt nur die Platte. Gelöschtes bleibt 30 Tage in
+  „Gelöscht“ und belegt so lange Platz.
+- **Nach dem Update von einer Version ohne Cloud:** Beim ersten Start legt der Server für jede
+  vorhandene Präsentation einmalig eine Datei in der Cloud an, im Bereich des Workspace (für alle im
+  Workspace) oder, wenn ihr Zugriff eingeschränkt ist, in den eigenen Dateien ihrer
+  Besitzerin, geteilt mit denen, die sie sehen dürfen. Frühere Ordner aus Slider werden zu
+  Ordnern gleichen Namens. Das dauert je nach Menge einige Sekunden bis Minuten, der Server ist
+  dabei erreichbar; im Log steht am Ende „… older presentations got their place“. Der Speicher
+  wächst dabei um die Größe der Präsentationsdateien.
+- **App für den Schreibtisch:** „The Office Cloud“ (Mac, Linux; Download unter den
+  GitHub-Releases) zeigt die Cloud in einem eigenen Fenster und auf dem Mac ab macOS 15 als Ort
+  im Finder. Selbst bauen: `cd desktop && bun install && bun run cloud:dmg` (Mac mit Apple Chip,
+  Xcode Command Line Tools). Solange die App nicht von Apple beglaubigt ist, fragt macOS vor dem
+  ersten Start nach: einmal öffnen, dann unter Systemeinstellungen › Datenschutz & Sicherheit
+  „Dennoch öffnen“ wählen. Den Rest führt die App: Sie legt sich auf Nachfrage selbst in
+  „Programme“ und meldet nach der Anmeldung den Ort im Finder an – er ist sofort da. Ist er in
+  den Systemeinstellungen ausgeschaltet, fragt die App und öffnet sie an der richtigen Stelle
+  (Dateianbieter › „The Office Cloud“); sobald der Schalter an ist, öffnet sich der Ordner.
+  Jederzeit erreichbar über das Menü Konto › „Im Finder zeigen“. Ohne ihn bleibt die App ein
+  vollständiges Fenster auf die Cloud. Updates lädt diese App noch nicht selbst.
+- **Große Uploads** gehen in Teilen von 32 MB, im Browser wie aus dem Finder. Ein Proxy vor dem
+  Server muss also nur 32 MB je Anfrage durchlassen (Cloudflare mit 100 MB im Free-Plan reicht).
 
 ## KI-Apps
 
@@ -258,47 +297,50 @@ In `deploy/.env` (Vorlage: `deploy/.env.example`). `NODE_ENV`, `PORT`, `DATA_DIR
 `DATABASE_URL` und `TRUST_PROXY` setzt `docker-compose.yml` selbst. Mit „Seite“ markierte Werte
 gehen auch auf der Einrichtungsseite.
 
-| Variable                                                          | Pflicht           | Bedeutung                                                                                      |
-| ----------------------------------------------------------------- | ----------------- | ---------------------------------------------------------------------------------------------- |
-| `SLIDER_DOMAIN`                                                   | ja (Compose)      | Öffentlicher Hostname; Slider läuft unter `https://<domain>`.                                  |
-| `POSTGRES_PASSWORD`                                               | ja (Compose)      | Nur Hex (`openssl rand -hex 24`).                                                              |
-| `SLIDER_URL`                                                      | ja (ohne Compose) | Öffentliche URL, z. B. `https://slider.firma.de` (früher `WEB_ORIGIN`).                        |
-| `SLIDER_SECRET`                                                   | nein              | Signiert Sessions, verschlüsselt Tokens und Einstellungen. Leer: in `DATA_DIR/secret` erzeugt. |
-| `SLIDER_DATA_KEY`, `SLIDER_DATA_KEY_FILE`                         | nein              | Schlüssel der Inhalte (oder Datei damit). Siehe [Schlüssel sichern](#schlüssel-sichern).       |
-| `DATABASE_URL`                                                    | nein              | `postgres://…`. Leer: eingebettete Datenbank in `DATA_DIR/db`.                                 |
-| `DATA_DIR`, `MEDIA_DIR`, `WEB_DIST_DIR`                           | nein              | Datenordner (Container: `/data`), Ordner für Aufnahmen, gebaute Web-App.                       |
-| `TRUST_PROXY`                                                     | nein              | `1` hinter einem Proxy, wenn Port 8787 nicht öffentlich ist.                                   |
-| `HOST`                                                            | nein              | Adresse, auf der die API lauscht; leer: alle Schnittstellen. Im Container leer lassen.         |
-| `TRUSTED_PROXIES`                                                 | nein (Compose)    | Adressen, deren Client-IP-Header Caddy glaubt (Cloudflare).                                    |
-| `SIGNUP`, `SIGNUP_DOMAINS`                                        | nein (Seite)      | `open` (Standard), `invite`, `domains` (mit Liste, z. B. `firma.de,firma.com`) oder `company`. |
-| `DELETE_UNUSED`                                                   | nein (Seite)      | `false` schaltet das Löschen ungenutzter Konten und Präsentationen aus.                        |
-| `MS_CLIENT_ID`, `MS_CLIENT_SECRET`, `MS_TENANT`                   | Login (Seite)     | Microsoft-Login.                                                                               |
-| `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`                        | Login (Seite)     | Google-Login.                                                                                  |
-| `OIDC_ISSUER`, `OIDC_CLIENT_ID`, `OIDC_CLIENT_SECRET`             | Login (Seite)     | OIDC-Anbieter, z. B. `https://auth.firma.de/realms/firma`.                                     |
-| `OIDC_LABEL`, `OIDC_SCOPES`                                       | nein (Seite)      | Button-Text; Scopes (Standard `openid profile email`).                                         |
-| `NEXTCLOUD_URL`, `NEXTCLOUD_CLIENT_ID`, `NEXTCLOUD_CLIENT_SECRET` | Login (Seite)     | Firmen-Nextcloud (darf intern sein) und ihr OAuth-Client.                                      |
-| `NEXTCLOUD_LOGIN_ANY`                                             | nein              | `false`: „Weiter mit Nextcloud“ nur mit der Firmen-Nextcloud.                                  |
-| `SMTP_URL`, `MAIL_FROM`                                           | nein (Seite)      | E-Mail-Versand, nur zusammen.                                                                  |
-| `CONTACT_EMAIL`                                                   | nein              | Empfänger des Kontaktformulars der Produkt-Website.                                            |
-| `SESSION_TTL_DAYS`                                                | nein              | Login-Dauer ohne Nutzung in Tagen, Standard 30.                                                |
-| `INVITE_RATE_LIMIT`                                               | nein              | Anfragen pro Minute und IP auf Einladungslinks, Standard 30.                                   |
-| `MAX_UPLOAD_BYTES`, `MAX_MEDIA_BYTES`                             | nein              | Größte Präsentation und Aufnahme (Standard je 512 MB). Pro 512-MB-Upload ~1–1,5 GB RAM.        |
-| `LIBREOFFICE_PATH`, `LIBREOFFICE_TIMEOUT_MS`                      | nein              | `soffice` für Folienbilder (im Image enthalten); Zeitlimit, Standard 2 Minuten.                |
-| `LIBREOFFICE_WORKERS`                                             | nein              | Dauerhaft laufende LibreOffices für den Editor, Standard 2 (je ~300 MB), `0` = aus.            |
-| `PDF_TIMEOUT_MS`                                                  | nein              | Zeitlimit für das Lesen eines PDFs, Standard 2 Minuten plus 1 Sekunde pro Seite.               |
-| `UNSPLASH_ACCESS_KEY`                                             | nein              | Fotosuche im Editor und Fotos der KI: Access Key einer Unsplash-App.                           |
-| `ANTHROPIC_API_KEY`                                               | nein (Seite)      | KI-Key der Instanz, beim Start einmal übernommen; danach unter „Integrationen“.                |
-| `MISTRAL_API_KEY`, `BFL_API_KEY`                                  | nein (Seite)      | Sprache zu Text (Mistral) und Bilder (Black Forest Labs), einmal übernommen wie der KI-Key.    |
-| `AI_ALLOW_INTERNAL_URLS`                                          | nein              | `true`: OpenAI-kompatibler Dienst der Instanz darf intern/http sein (Ollama, vLLM).            |
-| `REMBG_URL`                                                       | nein              | Freistellen durch die KI: Adresse von rembg, z. B. `http://rembg:7000`.                        |
-| `REMBG_MODEL`                                                     | nein              | Modell von rembg, Standard `isnet-general-use`.                                                |
-| `SPEECH_URL`                                                      | nein              | Sprache zu Text auf dem eigenen Server: Adresse von deploy/stt, z. B. `http://stt:8000/v1`.    |
-| `SPEECH_MODEL`                                                    | nein              | Modell von deploy/stt, Standard `whisper-large-v3-turbo`.                                      |
-| `IMPORT_WORKERS`                                                  | nein              | Gleichzeitige Importe, Standard 1 (je ~1 Kern, 1 GB RAM).                                      |
-| `PLAN_FREE_MAX_MEMBERS`, `PLAN_FREE_MAX_DECKS`                    | nein              | Grenzen pro Workspace, Standard unbegrenzt.                                                    |
-| `PLAN_FREE_MAX_STORAGE_BYTES`                                     | nein              | Speicher pro Workspace, Standard unbegrenzt (früher `MEDIA_QUOTA_BYTES`).                      |
-| `SLIDER_DEMO`                                                     | nein              | `true` schaltet die Grenzen der gehosteten Instanz ein.                                        |
-| `STRIPE_SECRET_KEY`, `STRIPE_WEBHOOK_SECRET`, `STRIPE_PRICE_ID`   | nein              | Bezahlung, nur für eine Instanz mit Grenzen. Webhook: `${SLIDER_URL}/api/billing/webhook`.     |
+| Variable                                                          | Pflicht           | Bedeutung                                                                                                         |
+| ----------------------------------------------------------------- | ----------------- | ----------------------------------------------------------------------------------------------------------------- |
+| `SLIDER_DOMAIN`                                                   | ja (Compose)      | Öffentlicher Hostname; Slider läuft unter `https://<domain>`.                                                     |
+| `POSTGRES_PASSWORD`                                               | ja (Compose)      | Nur Hex (`openssl rand -hex 24`).                                                                                 |
+| `SLIDER_URL`                                                      | ja (ohne Compose) | Öffentliche URL, z. B. `https://slider.firma.de` (früher `WEB_ORIGIN`).                                           |
+| `SLIDER_SECRET`                                                   | nein              | Signiert Sessions, verschlüsselt Tokens und Einstellungen. Leer: in `DATA_DIR/secret` erzeugt.                    |
+| `SLIDER_DATA_KEY`, `SLIDER_DATA_KEY_FILE`                         | nein              | Schlüssel der Inhalte (oder Datei damit). Siehe [Schlüssel sichern](#schlüssel-sichern).                          |
+| `DATABASE_URL`                                                    | nein              | `postgres://…`. Leer: eingebettete Datenbank in `DATA_DIR/db`.                                                    |
+| `DATA_DIR`, `MEDIA_DIR`, `WEB_DIST_DIR`                           | nein              | Datenordner (Container: `/data`), Ordner für Aufnahmen, gebaute Web-App.                                          |
+| `TRUST_PROXY`                                                     | nein              | `1` hinter einem Proxy, wenn Port 8787 nicht öffentlich ist.                                                      |
+| `HOST`                                                            | nein              | Adresse, auf der die API lauscht; leer: alle Schnittstellen. Im Container leer lassen.                            |
+| `TRUSTED_PROXIES`                                                 | nein (Compose)    | Adressen, deren Client-IP-Header Caddy glaubt (Cloudflare).                                                       |
+| `SIGNUP`, `SIGNUP_DOMAINS`                                        | nein (Seite)      | `open` (Standard), `invite`, `domains` (mit Liste, z. B. `firma.de,firma.com`) oder `company`.                    |
+| `DELETE_UNUSED`                                                   | nein (Seite)      | `false` schaltet das Löschen ungenutzter Konten und Präsentationen aus.                                           |
+| `MS_CLIENT_ID`, `MS_CLIENT_SECRET`, `MS_TENANT`                   | Login (Seite)     | Microsoft-Login.                                                                                                  |
+| `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`                        | Login (Seite)     | Google-Login.                                                                                                     |
+| `OIDC_ISSUER`, `OIDC_CLIENT_ID`, `OIDC_CLIENT_SECRET`             | Login (Seite)     | OIDC-Anbieter, z. B. `https://auth.firma.de/realms/firma`.                                                        |
+| `OIDC_LABEL`, `OIDC_SCOPES`                                       | nein (Seite)      | Button-Text; Scopes (Standard `openid profile email`).                                                            |
+| `NEXTCLOUD_URL`, `NEXTCLOUD_CLIENT_ID`, `NEXTCLOUD_CLIENT_SECRET` | Login (Seite)     | Firmen-Nextcloud (darf intern sein) und ihr OAuth-Client.                                                         |
+| `NEXTCLOUD_LOGIN_ANY`                                             | nein              | `false`: „Weiter mit Nextcloud“ nur mit der Firmen-Nextcloud.                                                     |
+| `SMTP_URL`, `MAIL_FROM`                                           | nein (Seite)      | E-Mail-Versand, nur zusammen.                                                                                     |
+| `CONTACT_EMAIL`                                                   | nein              | Empfänger des Kontaktformulars der Produkt-Website.                                                               |
+| `SESSION_TTL_DAYS`                                                | nein              | Login-Dauer ohne Nutzung in Tagen, Standard 30.                                                                   |
+| `INVITE_RATE_LIMIT`                                               | nein              | Anfragen pro Minute und IP auf Einladungslinks, Standard 30.                                                      |
+| `MAX_UPLOAD_BYTES`, `MAX_MEDIA_BYTES`                             | nein              | Größte Präsentation und Aufnahme (Standard je 512 MB). Pro 512-MB-Upload ~1–1,5 GB RAM.                           |
+| `CLOUD_MAX_FILE_BYTES`                                            | nein              | Größte Datei in der Cloud (Standard 5 GB). Wird gestreamt, kostet keinen RAM je Upload.                           |
+| `CLOUD_PUBLIC_LINKS`                                              | nein              | `true` erlaubt Links für Personen außerhalb des Workspace. Standard: aus, Cloud bleibt im Workspace.              |
+| `CLOUD_SHARING`                                                   | nein              | `true` erlaubt, Dateien einzeln mit Personen des Workspace zu teilen. Standard: aus, es gelten Rolle und Bereich. |
+| `LIBREOFFICE_PATH`, `LIBREOFFICE_TIMEOUT_MS`                      | nein              | `soffice` für Folienbilder (im Image enthalten); Zeitlimit, Standard 2 Minuten.                                   |
+| `LIBREOFFICE_WORKERS`                                             | nein              | Dauerhaft laufende LibreOffices für den Editor, Standard 2 (je ~300 MB), `0` = aus.                               |
+| `PDF_TIMEOUT_MS`                                                  | nein              | Zeitlimit für das Lesen eines PDFs, Standard 2 Minuten plus 1 Sekunde pro Seite.                                  |
+| `UNSPLASH_ACCESS_KEY`                                             | nein              | Fotosuche im Editor und Fotos der KI: Access Key einer Unsplash-App.                                              |
+| `ANTHROPIC_API_KEY`                                               | nein (Seite)      | KI-Key der Instanz, beim Start einmal übernommen; danach unter „Integrationen“.                                   |
+| `MISTRAL_API_KEY`, `BFL_API_KEY`                                  | nein (Seite)      | Sprache zu Text (Mistral) und Bilder (Black Forest Labs), einmal übernommen wie der KI-Key.                       |
+| `AI_ALLOW_INTERNAL_URLS`                                          | nein              | `true`: OpenAI-kompatibler Dienst der Instanz darf intern/http sein (Ollama, vLLM).                               |
+| `REMBG_URL`                                                       | nein              | Freistellen durch die KI: Adresse von rembg, z. B. `http://rembg:7000`.                                           |
+| `REMBG_MODEL`                                                     | nein              | Modell von rembg, Standard `isnet-general-use`.                                                                   |
+| `SPEECH_URL`                                                      | nein              | Sprache zu Text auf dem eigenen Server: Adresse von deploy/stt, z. B. `http://stt:8000/v1`.                       |
+| `SPEECH_MODEL`                                                    | nein              | Modell von deploy/stt, Standard `whisper-large-v3-turbo`.                                                         |
+| `IMPORT_WORKERS`                                                  | nein              | Gleichzeitige Importe, Standard 1 (je ~1 Kern, 1 GB RAM).                                                         |
+| `PLAN_FREE_MAX_MEMBERS`, `PLAN_FREE_MAX_DECKS`                    | nein              | Grenzen pro Workspace, Standard unbegrenzt.                                                                       |
+| `PLAN_FREE_MAX_STORAGE_BYTES`                                     | nein              | Speicher pro Workspace, Standard unbegrenzt (früher `MEDIA_QUOTA_BYTES`).                                         |
+| `SLIDER_DEMO`                                                     | nein              | `true` schaltet die Grenzen der gehosteten Instanz ein.                                                           |
+| `STRIPE_SECRET_KEY`, `STRIPE_WEBHOOK_SECRET`, `STRIPE_PRICE_ID`   | nein              | Bezahlung, nur für eine Instanz mit Grenzen. Webhook: `${SLIDER_URL}/api/billing/webhook`.                        |
 
 ## Fehlersuche
 

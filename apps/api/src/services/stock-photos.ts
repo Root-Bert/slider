@@ -458,17 +458,26 @@ export async function findPhoto(
  * A photo fetched for a slide – cut to `aspect` (the frame's width / height) when given – and
  * kept as an edit picture of the deck with its credit, ready for `replaceImage`.
  */
+/** A photo's picture, as wide as the editor puts it in, cut to `aspect` if given. */
+export function photoBytes(
+  deps: AppDeps,
+  photo: StockPhotoRecord,
+  aspect: number | null,
+): Promise<Uint8Array> {
+  const url = stockPhotoUrl(photo, PICTURE_WIDTH, aspect);
+  // From the image host of the service it came from – whichever the workspace uses now.
+  return deps.stockPhotos
+    ? deps.stockPhotos.picture(url)
+    : fetchPicture(url, photo.credit.source === 'pexels' ? PEXELS_IMAGE_HOST : IMAGE_HOST);
+}
+
 export async function fetchPhoto(
   deps: AppDeps,
   deckId: string,
   photo: StockPhotoRecord,
   aspect: number | null,
 ): Promise<UploadedEditImage & { bytes: Uint8Array; mediaType: string; credit: ImageCredit }> {
-  const url = stockPhotoUrl(photo, PICTURE_WIDTH, aspect);
-  // From the image host of the service it came from – whichever the workspace uses now.
-  const bytes = await (deps.stockPhotos
-    ? deps.stockPhotos.picture(url)
-    : fetchPicture(url, photo.credit.source === 'pexels' ? PEXELS_IMAGE_HOST : IMAGE_HOST));
+  const bytes = await photoBytes(deps, photo, aspect);
   const stored = await storeEditImage(deps, deckId, bytes, photo.credit);
   return { ...stored, bytes, credit: photo.credit };
 }

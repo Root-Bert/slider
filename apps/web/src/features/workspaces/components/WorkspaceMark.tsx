@@ -13,7 +13,7 @@ export function WorkspaceMark({
 }: {
   name: string;
   logoUrl?: string | null;
-  size?: 24 | 32 | 40 | 64;
+  size?: 18 | 24 | 32 | 40 | 64;
   className?: string;
 }) {
   return (
@@ -21,13 +21,15 @@ export function WorkspaceMark({
       aria-hidden
       className={cn(
         'inline-flex shrink-0 items-center justify-center overflow-hidden bg-surface-3',
-        size === 24
-          ? 'rounded-badge'
-          : size === 32
-            ? 'rounded-chip'
-            : size === 40
-              ? 'rounded-control-sm'
-              : 'rounded-control',
+        size === 18
+          ? 'rounded-mark'
+          : size === 24
+            ? 'rounded-badge'
+            : size === 32
+              ? 'rounded-chip'
+              : size === 40
+                ? 'rounded-control-sm'
+                : 'rounded-control',
         className,
       )}
       style={{ width: size, height: size }}

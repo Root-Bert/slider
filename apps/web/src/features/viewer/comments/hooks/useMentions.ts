@@ -8,7 +8,7 @@ import {
   type SyntheticEvent,
 } from 'react';
 import { insertMention, mentionQueryAt, suggestPeople } from '../lib/mentions';
-import { useViewerData } from '../../state/viewer-data';
+import { useMentionPeople } from '../mention-people';
 import { isModKey } from '@/lib/keyboard';
 
 export interface Mentions {
@@ -42,7 +42,7 @@ export function useMentions(
   setValue: (value: string) => void,
   fieldRef: RefObject<HTMLTextAreaElement | null>,
 ): Mentions {
-  const { mentionable } = useViewerData();
+  const { mentionable } = useMentionPeople();
   const [caret, setCaret] = useState<number | null>(null);
   // Esc closes the menu for this `@` only; the next one opens it again.
   const [dismissedAt, setDismissedAt] = useState<number | null>(null);
