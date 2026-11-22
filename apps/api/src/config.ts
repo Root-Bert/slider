@@ -227,6 +227,12 @@ export interface AuthConfig {
   oidc: OidcConfig | null;
   /** "Weiter mit Google": the OIDC client with Google's issuer; `null` without GOOGLE_*. */
   google: OidcConfig | null;
+  /**
+   * `GOOGLE_MAILBOXES`: „Mit Google anmelden“ for mailboxes and their calendars, with the same
+   * client. Off by default – Google's mail scope is restricted, and until Google has verified the
+   * app only its test users get in; everyone else meets Google's warning or block.
+   */
+  googleMailboxes: boolean;
   /** Session lifetime; renewed on use (at most once a day). */
   sessionTtlDays: number;
 }
@@ -363,6 +369,7 @@ const envSchema = z.object({
   OIDC_SCOPES: z.string().min(1).default('openid profile email'),
   GOOGLE_CLIENT_ID: z.string().optional(),
   GOOGLE_CLIENT_SECRET: z.string().optional(),
+  GOOGLE_MAILBOXES: booleanEnv.optional(),
   SMTP_URL: z
     .string()
     .regex(/^smtps?:\/\//, 'SMTP_URL muss mit smtp:// oder smtps:// beginnen.')
@@ -611,6 +618,7 @@ export function loadConfig(
       signupDomains,
       oidc,
       google,
+      googleMailboxes: parsed.GOOGLE_MAILBOXES ?? false,
       sessionTtlDays: parsed.SESSION_TTL_DAYS,
     },
     smtp,

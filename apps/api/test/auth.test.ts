@@ -220,6 +220,8 @@ describe('GET /api/auth/providers', () => {
       sso: false,
       // No mail on this instance: no login links (BER-168).
       emailLogin: false,
+      // Microsoft's client signs mailboxes in too; Google's only with GOOGLE_MAILBOXES.
+      mailOAuth: ['microsoft'],
     });
 
     // Open sign-up while the instance has no admin, then SIGNUP again.

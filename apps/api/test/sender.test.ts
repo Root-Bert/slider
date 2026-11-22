@@ -54,7 +54,7 @@ import type {
   SeenMark,
 } from '../src/mail/servers';
 import { imapOptions, smtpOptions } from '../src/mail/servers';
-import { PERSONAL_MICROSOFT_TENANT } from '../src/mail/oauth';
+import { mailOAuthConfigured, PERSONAL_MICROSOFT_TENANT } from '../src/mail/oauth';
 import { SEALED_PREFIX } from '../src/crypto/content-crypto';
 import { dkimDomains } from '../src/mail/dkim';
 import { MAIL_TOOLS, preparedMailbox } from '../src/services/mail-agent';
@@ -248,7 +248,7 @@ beforeEach(async () => {
     anthropic: heldAnthropic,
     config: {
       microsoft: MICROSOFT_TEST_CONFIG,
-      auth: { ...testConfig().auth, google: GOOGLE_TEST },
+      auth: { ...testConfig().auth, google: GOOGLE_TEST, googleMailboxes: true },
     },
     mailOAuthFetch: async (url, init) => {
       const form = new URLSearchParams(String(init?.body));
@@ -2833,7 +2833,17 @@ describe('Sender – the workspace’s messages', () => {
     // Deleting the mailbox deletes its token with it.
     await ok(send('DELETE', `/mail/accounts/${added.account.id}`), 204);
     expect(await msRow()).toBeUndefined();
-    // Google: its full mail scope, offline with consent for a refresh token; refused there – said.
+    // Google: offered for mailboxes only with GOOGLE_MAILBOXES – its client alone signs people in.
+    const base = testConfig();
+    const googleOnly = { ...base, auth: { ...base.auth, google: GOOGLE_TEST } };
+    expect(mailOAuthConfigured(googleOnly, 'google')).toBe(false);
+    expect(
+      mailOAuthConfigured(
+        { ...googleOnly, auth: { ...googleOnly.auth, googleMailboxes: true } },
+        'google',
+      ),
+    ).toBe(true);
+    // Its full mail scope, offline with consent for a refresh token; refused there – said.
     const google = await startOAuth({ provider: 'google' });
     expect(google.url.origin + google.url.pathname).toBe(
       'https://accounts.google.com/o/oauth2/v2/auth',

@@ -313,6 +313,7 @@ gehen auch auf der Einrichtungsseite.
 | `DELETE_UNUSED`                                                   | nein (Seite)      | `false` schaltet das Löschen ungenutzter Konten und Präsentationen aus.                                           |
 | `MS_CLIENT_ID`, `MS_CLIENT_SECRET`, `MS_TENANT`                   | Login (Seite)     | Microsoft-Login.                                                                                                  |
 | `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`                        | Login (Seite)     | Google-Login.                                                                                                     |
+| `GOOGLE_MAILBOXES`                                                | Postfächer        | `true`: „Mit Google anmelden“ auch für Gmail-Postfächer und ihre Kalender. Erst nach Googles Prüfung (eingeschränkter Scope) für alle.|
 | `OIDC_ISSUER`, `OIDC_CLIENT_ID`, `OIDC_CLIENT_SECRET`             | Login (Seite)     | OIDC-Anbieter, z. B. `https://auth.firma.de/realms/firma`.                                                        |
 | `OIDC_LABEL`, `OIDC_SCOPES`                                       | nein (Seite)      | Button-Text; Scopes (Standard `openid profile email`).                                                            |
 | `NEXTCLOUD_URL`, `NEXTCLOUD_CLIENT_ID`, `NEXTCLOUD_CLIENT_SECRET` | Login (Seite)     | Firmen-Nextcloud (darf intern sein) und ihr OAuth-Client.                                                         |

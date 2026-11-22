@@ -1641,6 +1641,10 @@ hidden while pending and when nothing is unread. Slider's own start is „Präse
   mailbox asks for „Neu anmelden“). Console: APIs & Services → OAuth consent screen → Data
   access: add `https://mail.google.com/`; Audience: add test users (or publish + verify); the
   Gmail API need not be enabled for IMAP/SMTP. Gmail's app password stays the other way.
+  „Mit Google anmelden“ for mailboxes (and their calendars, Calendar API enabled) shows only with
+  `GOOGLE_MAILBOXES=true` (`mailOAuthConfigured`, `AuthProviders.mailOAuth`): Google's client alone
+  is the login. Google asks not to put unverified scopes before production traffic – off on the
+  hosted instance until verified; on locally to record the verification's demo video.
 - Calls: see „Calls“ below (also calling an agent and the agent that writes along).
 
 ## To-dos – „Aufgaben“ in the UI (`services/todos.ts`, `routes/todos.ts`, `features/cloud/components/todos/`)

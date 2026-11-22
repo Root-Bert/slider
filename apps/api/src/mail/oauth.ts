@@ -121,8 +121,10 @@ export const MAIL_OAUTH: Record<MailOAuthProvider, ProviderSpec> = {
   },
 };
 
+/** Offered for a new mailbox here: its client set up – Google's only with `GOOGLE_MAILBOXES`. */
 export const mailOAuthConfigured = (config: Config, provider: MailOAuthProvider) =>
-  MAIL_OAUTH[provider].client(config) !== null;
+  MAIL_OAUTH[provider].client(config) !== null &&
+  (provider !== 'google' || config.auth.googleMailboxes);
 
 /** A refusal of the provider's authorize or token endpoint. */
 export class MailOAuthError extends Error {

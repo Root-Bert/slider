@@ -89,6 +89,7 @@ export const testConfig = (overrides: Partial<Config> = {}): Config => ({
     signupDomains: [],
     oidc: null,
     google: null,
+    googleMailboxes: false,
     sessionTtlDays: 30,
   },
   smtp: null,

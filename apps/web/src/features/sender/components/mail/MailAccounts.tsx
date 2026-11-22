@@ -3,7 +3,6 @@ import { Navigate, useLocation, useNavigate, useSearchParams } from 'react-route
 import {
   MAIL_CHECK_STEPS,
   MAIL_OAUTH_LABELS,
-  MAIL_OAUTH_PROVIDERS,
   MAX_MAILBOX_LABEL,
   mailboxDefaultLabel,
   mailboxLabels,
@@ -200,10 +199,9 @@ function CheckSteps({ check }: { check: MailCheckFailure }) {
   );
 }
 
-/** The providers a mailbox can sign in through here: those the server's login has set up. */
+/** The providers a mailbox can sign in through here – Google's only where the server turned it on. */
 function useMailOAuthProviders(): MailOAuthProvider[] {
-  const providers = useAuthProviders().data?.providers ?? [];
-  return MAIL_OAUTH_PROVIDERS.filter((id) => providers.some((provider) => provider.id === id));
+  return useAuthProviders().data?.mailOAuth ?? [];
 }
 
 /** To the provider's sign-in page, in this tab; it comes back to this page (its agent open). */

@@ -8,6 +8,7 @@ import {
   confirmNextcloudSignUpInputSchema,
   discoverSsoInputSchema,
   startEmailLoginInputSchema,
+  MAIL_OAUTH_PROVIDERS,
   startNextcloudSignInInputSchema,
   signOutAccountInputSchema,
   switchAccountInputSchema,
@@ -53,6 +54,7 @@ import { ApiError, notFound } from '../http/errors';
 import { assertWithinLimit, clientAddress, fixedWindow } from '../http/rate-limit';
 import { readJson } from '../http/validate';
 import { hasLogin } from '../config';
+import { mailOAuthConfigured } from '../mail/oauth';
 import { finishMailOAuth, isMailOAuthState } from '../services/mail-oauth';
 import {
   inviteTokenFromPath,
@@ -506,6 +508,7 @@ export function authRoutes(deps: AppDeps, gate: InstanceGate) {
           nextcloudAnyServer: config.nextcloud.loginAnyServer,
           sso: await anyWorkspaceSso(deps),
           emailLogin: deps.mailer.configured,
+          mailOAuth: MAIL_OAUTH_PROVIDERS.filter((id) => mailOAuthConfigured(config, id)),
         });
       })
 
