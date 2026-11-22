@@ -11,7 +11,14 @@
     "main": "sender/main.mjs",
     "description": "Sender as a desktop app: your workspace's messages, with notifications, in a window of their own."
   },
-  "files": ["sender/**", "!sender/builder.json", "tabbar/**", "tabs.mjs", "package.json"],
+  "files": [
+    "sender/**",
+    "!sender/builder.json",
+    "tabbar/**",
+    "tabs.mjs",
+    "hosted.mjs",
+    "package.json"
+  ],
   "mac": {
     "category": "public.app-category.business",
     "target": ["dmg", "zip"],

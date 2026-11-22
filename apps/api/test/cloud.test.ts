@@ -42,6 +42,7 @@ import {
   cloudAgentChats,
   cloudAgentMessages,
   cloudAgents,
+  cloudConnections,
   cloudNodes,
   cloudShares,
   cloudVersions,
@@ -2458,6 +2459,7 @@ describe('Cloud – the workspace’s files', () => {
     const lou = await member('Lou', 'member');
     const asked: string[] = [];
     const revoked: Record<string, string>[] = [];
+    const registered: string[][] = [];
     const answer = (body: unknown, status = 200) =>
       new Response(JSON.stringify(body), {
         status,
@@ -2478,11 +2480,11 @@ describe('Cloud – the workspace’s files', () => {
             code_challenge_methods_supported: ['S256'],
             token_endpoint_auth_methods_supported: ['none'],
           });
-        if (url.pathname === '/register')
-          return answer(
-            { ...(JSON.parse(String(init?.body)) as object), client_id: 'slider-1' },
-            201,
-          );
+        if (url.pathname === '/register') {
+          const client = JSON.parse(String(init?.body)) as { redirect_uris: string[] };
+          registered.push(client.redirect_uris);
+          return answer({ ...client, client_id: 'slider-1' }, 201);
+        }
         if (url.pathname === '/revoke') {
           revoked.push(Object.fromEntries(new URLSearchParams(String(init?.body))));
           return answer({});
@@ -2616,6 +2618,35 @@ describe('Cloud – the workspace’s files', () => {
     expect(landed.headers.get('location')).toMatch(
       new RegExp(`/w/${ctx.workspaceId}/dateien/verbindungen$`),
     );
+    // Slider moved to another address: signing in again registers it anew with its new way back –
+    // the one registered before would be refused there.
+    const way = at.searchParams.get('redirect_uri') ?? '';
+    expect(registered).toEqual([[way]]);
+    const [figmaRow] = await ctx.deps.db
+      .select()
+      .from(cloudConnections)
+      .where(eq(cloudConnections.id, figma.id));
+    const auth = figmaRow!.auth;
+    await ctx.deps.db
+      .update(cloudConnections)
+      .set({
+        auth: {
+          ...auth,
+          tokens: undefined,
+          client: {
+            ...auth.client,
+            redirect_uris: ['https://alt.test/api/cloud/connections/callback'],
+          },
+        },
+      })
+      .where(eq(cloudConnections.id, figma.id));
+    const again = new URL(
+      (await ctx.request(`${figmaUrl}/sign-in`, { cookie: kim.cookie })).headers.get('location') ??
+        '',
+    );
+    expect(again.searchParams.get('redirect_uri')).toBe(way);
+    expect(registered).toEqual([[way], [way]]);
+    expect((await callback(again.searchParams.get('state') ?? '', kim.cookie)).status).toBe(302);
     expect(await connections(kim.cookie)).toMatchObject([
       {
         state: 'connected',

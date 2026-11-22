@@ -16,11 +16,12 @@ import { createHash, randomBytes } from 'node:crypto';
 import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { HOSTED_SERVER, movedSession } from '../hosted.mjs';
 import { createTabWindow } from '../tabs.mjs';
 
 /** As `DESKTOP_SCHEMES.writer` (@slider/shared desktop.ts): `slider-writer://auth?code=…&state=…`. */
 const SCHEME = 'slider-writer';
-const DEFAULT_SERVER = process.env.WRITER_SERVER || 'https://slider.bertro.dev';
+const DEFAULT_SERVER = process.env.WRITER_SERVER || HOSTED_SERVER;
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 
@@ -74,7 +75,11 @@ function toFront() {
 function readSession() {
   try {
     if (!existsSync(sessionFile) || !safeStorage.isEncryptionAvailable()) return null;
-    return JSON.parse(safeStorage.decryptString(readFileSync(sessionFile)));
+    // Kept for the hosted Slider's old address: its new one (`../hosted.mjs`).
+    return movedSession(
+      JSON.parse(safeStorage.decryptString(readFileSync(sessionFile))),
+      keepSession,
+    );
   } catch {
     return null;
   }

@@ -1,6 +1,6 @@
 # Datenschutzerklärung
 
-Diese Erklärung gilt für die Website unter bertro.dev und für die Desktop App von Slider (Mac und Linux). Für die App unter slider.bertro.dev gilt die Datenschutzerklärung, die dort verlinkt ist; wie sie mit Daten von Google umgeht, steht auch hier unter „Slider und Daten von Google“.
+Diese Erklärung gilt für die Website unter bertro.dev und für die Desktop App von Slider (Mac und Linux). Für die App unter office.bertro.dev gilt die Datenschutzerklärung, die dort verlinkt ist; wie sie mit Daten von Google umgeht, steht auch hier unter „Slider und Daten von Google“.
 
 ## Verantwortlicher
 
@@ -33,11 +33,11 @@ Rechtsgrundlage ist unser berechtigtes Interesse an einer sicheren und erreichba
 
 ## Links zu anderen Diensten
 
-Die Website verlinkt auf die App (slider.bertro.dev) und auf den Quellcode bei GitHub; auch die Desktop App lädst du von GitHub. Erst wenn du einem Link folgst, verbindet sich dein Browser mit diesem Dienst; dort gilt dessen Datenschutzerklärung (für GitHub: GitHub, Inc., USA, [docs.github.com/site-policy/privacy-policies](https://docs.github.com/site-policy/privacy-policies/github-general-privacy-statement)).
+Die Website verlinkt auf die App (office.bertro.dev) und auf den Quellcode bei GitHub; auch die Desktop App lädst du von GitHub. Erst wenn du einem Link folgst, verbindet sich dein Browser mit diesem Dienst; dort gilt dessen Datenschutzerklärung (für GitHub: GitHub, Inc., USA, [docs.github.com/site-policy/privacy-policies](https://docs.github.com/site-policy/privacy-policies/github-general-privacy-statement)).
 
 ## Slider und Daten von Google
 
-Die App Slider unter slider.bertro.dev hat eine eigene, ausführliche Datenschutzerklärung: [slider.bertro.dev/datenschutz](https://slider.bertro.dev/datenschutz). Für Daten, die Slider über Googles Schnittstellen erhält, gilt zusätzlich:
+Die App Slider unter office.bertro.dev hat eine eigene, ausführliche Datenschutzerklärung: [office.bertro.dev/datenschutz](https://office.bertro.dev/datenschutz). Für Daten, die Slider über Googles Schnittstellen erhält, gilt zusätzlich:
 
 - **Anmeldung mit Google:** Meldest du dich mit „Weiter mit Google“ bei Slider an, bekommt Slider von Google deinen Namen, deine E-Mail-Adresse und dein Profilbild (`openid`, `email`, `profile`), um dein Konto anzulegen und dich wiederzuerkennen.
 - **Gmail-Postfach:** Verbindest du ein Gmail-Postfach mit „Mit Google anmelden“, liest Slider deine Mails über IMAP, verschickt, was du in Slider schreibst, über SMTP und gleicht ab, was gelesen ist (`https://mail.google.com/` – Google gibt IMAP und SMTP nur mit diesem Recht frei). Sonst ändert Slider in deinem Postfach nichts. Statt eines Passworts speichern wir das Token von Google verschlüsselt, die Mails und ihre Anhänge ebenfalls verschlüsselt. Sie sieht nur, wem das Postfach gehört.
@@ -52,7 +52,7 @@ Die Desktop App läuft auf deinem Computer. Deine Präsentationen, Kommentare un
 
 - **Updates:** Beim Start und danach alle sechs Stunden fragt die App bei GitHub (GitHub, Inc., USA) nach einer neuen Version und lädt sie von dort. GitHub verarbeitet dabei deine IP-Adresse und die Version der App. Rechtsgrundlage ist unser berechtigtes Interesse, die App sicher und aktuell zu halten (Art. 6 Abs. 1 lit. f DSGVO). GitHub ist unter dem EU-US Data Privacy Framework zertifiziert (Art. 45 DSGVO).
 - **LibreOffice:** Fehlt LibreOffice auf deinem Mac, fragt die App, ob sie es laden soll. Sagst du ja, lädt sie es von den Servern der Document Foundation (Berlin), die dabei deine IP-Adresse sehen. Unter Linux lädt die App nichts, LibreOffice installierst du dort selbst.
-- **Anmeldung bei Slider:** Meldest du dich in der App an, gleicht sie deine Workspaces und Präsentationen mit dem Slider Server ab, bei dem du dich anmeldest. Für slider.bertro.dev gilt die Datenschutzerklärung dort, für einen anderen Server die seines Betreibers.
+- **Anmeldung bei Slider:** Meldest du dich in der App an, gleicht sie deine Workspaces und Präsentationen mit dem Slider Server ab, bei dem du dich anmeldest. Für office.bertro.dev gilt die Datenschutzerklärung dort, für einen anderen Server die seines Betreibers.
 - **KI und andere Dienste mit eigenem Schlüssel:** Nutzt du die KI, Sprache zu Text, die Bilderzeugung oder die Fotosuche, schickt die App deine Anfrage mit den nötigen Inhalten direkt an den Anbieter, dessen Schlüssel du eingetragen hast. Dafür gilt dessen Datenschutzerklärung.
 
 Die App sendet keine Nutzungsdaten oder Absturzberichte an uns.

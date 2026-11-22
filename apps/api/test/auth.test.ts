@@ -30,6 +30,7 @@ import {
   users,
 } from '../src/db/schema';
 import { silentLogger } from '../src/logger';
+import { CloudSync } from '../src/services/cloud-sync';
 import { retireFileConnections } from '../src/services/retired-connections';
 import { ensureSetupToken, setupGrant } from '../src/services/instance-settings';
 import { purgeStaleRows } from '../src/services/retention';
@@ -801,6 +802,29 @@ describe('sessions', () => {
       ).toMatchObject({ server: 'http://localhost:7', account: null });
       expect(JSON.parse(await readFile(path.join(dataDir, 'cloud.json'), 'utf8'))).toEqual({
         server: 'http://localhost:7',
+      });
+      // The hosted Slider moved: the session and links kept for its old address are its new
+      // one's at the next start.
+      const kept = (file: string) => path.join(dataDir, file);
+      const account = { name: 'Dana Desk', email: 'dana@example.org', color: 'blue' };
+      await writeFile(
+        kept('cloud.json'),
+        JSON.stringify({ server: 'https://slider.bertro.dev', token: 'slenc3:x', account }),
+      );
+      const links = JSON.parse(await readFile(kept('cloud-sync.json'), 'utf8')) as object;
+      await writeFile(
+        kept('cloud-sync.json'),
+        JSON.stringify({ ...links, server: 'https://slider.bertro.dev' }),
+      );
+      expect(new CloudSync(local.deps).server).toBe('https://office.bertro.dev');
+      expect(JSON.parse(await readFile(kept('cloud.json'), 'utf8'))).toEqual({
+        server: 'https://office.bertro.dev',
+        token: 'slenc3:x',
+        account,
+      });
+      expect(JSON.parse(await readFile(kept('cloud-sync.json'), 'utf8'))).toEqual({
+        ...links,
+        server: 'https://office.bertro.dev',
       });
     } finally {
       await local.cleanup();

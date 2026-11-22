@@ -1,5 +1,6 @@
 # Slider (deploy/docker-compose.yml with docker-compose.shared-proxy.yml). Copy to sites/ and
-# replace the domain.
+# replace the domain. Moved to another domain: the old one after the new one, and the `@moved`
+# matcher and `redir` of deploy/Caddyfile in here, the domain written out for {$SLIDER_DOMAIN}.
 slider.example.com {
 	encode zstd gzip
 	# Slider sets its own security headers (HSTS, nosniff, …) and serves the web app itself.

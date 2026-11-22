@@ -74,12 +74,22 @@ jobs:
           DEPLOY_ENV: ${{ secrets.DEPLOY_ENV }}
           DEPLOY_SETTINGS: ${{ vars.DEPLOY_SETTINGS }}
           TAG: ${{ github.event.workflow_run.head_branch || inputs.tag }}
-        # COMPOSE_PROFILES named in both are joined (rembg in the secret + stt here = both).
+        # COMPOSE_PROFILES named in both are joined (rembg in the secret + stt here = both). Any
+        # other key named in DEPLOY_SETTINGS wins over the secret's line for it, which is left
+        # out – e.g. SLIDER_DOMAIN moved to another address without rewriting the secret.
         run: |
           profiles=$(printf '%s\n%s\n' "$DEPLOY_ENV" "$DEPLOY_SETTINGS" |
             sed -n 's/^COMPOSE_PROFILES=//p' | tr ',' '\n' | sed '/^$/d' | sort -u | paste -sd, -)
           {
-            printf '%s\n%s\n' "$DEPLOY_ENV" "$DEPLOY_SETTINGS" | grep -v '^COMPOSE_PROFILES='
+            printf '%s\n' "$DEPLOY_ENV" | awk '
+              BEGIN {
+                n = split(ENVIRON["DEPLOY_SETTINGS"], lines, "\n")
+                for (i = 1; i <= n; i++)
+                  if (match(lines[i], /^[A-Za-z_][A-Za-z0-9_]*=/)) set[substr(lines[i], 1, RLENGTH - 1)] = 1
+              }
+              { key = $0; sub(/=.*/, "", key) }
+              key != "COMPOSE_PROFILES" && !(key in set)'
+            printf '%s\n' "$DEPLOY_SETTINGS" | awk '!/^COMPOSE_PROFILES=/'
             if [ -n "$profiles" ]; then printf 'COMPOSE_PROFILES=%s\n' "$profiles"; fi
             # The release the settings show (Einstellungen → Version).
             printf 'SLIDER_VERSION=%s\n' "${TAG#v}"

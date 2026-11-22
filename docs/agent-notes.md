@@ -1954,6 +1954,29 @@ hidden while pending and when nothing is unread. Slider's own start is „Präse
   Export `anrufe.json` (own words + notes), deletion anonymises (`anonymiseCalls`). In a scratch
   check `page.route` the agent's GET (add a message with `call`) and `/api/calls/*/record`.
 
+## Hosted instance – office.bertro.dev, formerly slider.bertro.dev
+
+- Moved with 1.7: `SLIDER_DOMAIN=office.bertro.dev`, `SLIDER_OLD_DOMAINS=slider.bertro.dev` in
+  the repo variable `DEPLOY_SETTINGS` (a key there wins over the `DEPLOY_ENV` secret's line,
+  `deploy.yml`). On the old host Caddy 308s browser page loads only (GET/HEAD, `Sec-Fetch-Mode`
+  navigate or none, `/api/*` only when navigate; never `/.well-known`, never `Electron/` in the
+  User-Agent); the rest is proxied as before. Measured with a local caddy and curl per kind of
+  client; the API needs no setting for it (same-origin pages, bearer tokens, MCP tokens do not
+  look at the host).
+- Old clients on slider.bertro.dev: desktop apps ≤ 1.6 (Electron) keep their pages there – their
+  windows refuse any other origin and their cookie is for that host; only Slider updates itself,
+  Cloud/Reader/Sender/Writer must be installed anew. From 1.7 every app moves a session, links
+  and tabs kept for the old host to the new one (`desktop/hosted.mjs`, `movedServer` in
+  `@slider/shared`, `CloudSync.followMove`). MCP clients go on with their tokens there (refresh
+  idle 180 days); a new connection should use office.bertro.dev – the old host's metadata names
+  the new resource. Not on the old host: sign-ins through Google/Microsoft started in an old
+  desktop window (state cookie on the old host, callback on the new), passkeys (rpID = host;
+  made on slider.bertro.dev they work nowhere now – the login page offers the other ways), a
+  browser's session (sign in again).
+- Keep registered while the old host lives: DNS of slider.bertro.dev (Cloudflare, proxied) and
+  its old redirect URIs at Google/Microsoft beside the new ones. Cloud connections (Slider as MCP
+  client) registered with the old callback register anew on their next sign-in.
+
 ## Desktop app (`desktop/`)
 
 - Electron shell around the self-hosted setup: `main.mjs` has the staged Bun API
@@ -1972,7 +1995,7 @@ hidden while pending and when nothing is unread. Slider's own start is „Präse
   `/desktop/cloud/finish` trades it at `<server>/api/auth/desktop/token` for a session token, kept
   sealed in `<dataDir>/cloud.json`. Server like Bitwarden: „Anmelden“ goes to the one signed in to
   last (kept in `cloud.json` after signing out, too), else `SLIDER_CLOUD_URL` (default
-  slider.bertro.dev); „Anderer Server“ on /konto sends `{ server }` – origin only, https unless
+  office.bertro.dev); „Anderer Server“ on /konto sends `{ server }` – origin only, https unless
   loopback, `/api/health` must answer `ok` – and it counts once the sign-in finished. Another
   server starts the links (`cloud-sync.json`) afresh. Dev: `SLIDER_CLOUD_URL=http://localhost:5173
 bun run desktop`, or type `http://localhost:5173` there. `slider://`

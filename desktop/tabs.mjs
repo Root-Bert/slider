@@ -19,6 +19,7 @@ import {
 import { existsSync, readFileSync, writeFile, writeFileSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { movedUrl } from './hosted.mjs';
 
 const BAR_HEIGHT = 40;
 const HOME_TITLE = 'Präsentationen';
@@ -767,7 +768,9 @@ export function createTabWindow({
       } catch {
         saved = null;
       }
-      for (const deck of saved?.decks ?? []) {
+      for (const kept of saved?.decks ?? []) {
+        // Kept at the hosted Slider's old address: at its new one (hosted.mjs).
+        const deck = movedUrl(kept);
         // Nothing to move to (made offline, not up yet): it stays where it was.
         const there = move(deck) ?? deck;
         if (deckIdOf(there)) addTab('deck', there);

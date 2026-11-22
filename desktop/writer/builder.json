@@ -9,7 +9,14 @@
     "main": "writer/main.mjs",
     "description": "Writer as a desktop app: your documents in a window of their own."
   },
-  "files": ["writer/**", "!writer/builder.json", "tabbar/**", "tabs.mjs", "package.json"],
+  "files": [
+    "writer/**",
+    "!writer/builder.json",
+    "tabbar/**",
+    "tabs.mjs",
+    "hosted.mjs",
+    "package.json"
+  ],
   "mac": {
     "category": "public.app-category.productivity",
     "target": ["dmg", "zip"],

@@ -4,7 +4,7 @@ The website at **bertro.dev** – static pages built with Astro: the office (`/o
 domain opens) introduces all four apps at once, each app has a page of its own (`/slider`,
 `/writer`, `/solver`, `/cloud`), and `/me` is the personal page (`public/me`, one static HTML file
 and its `assets/`, copied in as is). Slider's blog, contact, legal and download pages stay under
-`/slider/…`. The apps themselves run elsewhere (Slider at slider.bertro.dev); this package is not
+`/slider/…`. The apps themselves run elsewhere (Slider at office.bertro.dev); this package is not
 part of the Docker image.
 
 ```sh
@@ -55,7 +55,7 @@ WEBSITE_DOMAIN=bertro.dev
 
 `docker compose up -d --build` then builds the site from the checkout into a small container,
 and Caddy routes `https://bertro.dev/…` to it: the root redirects to `/office/`, unknown paths get
-the site's 404 page. DNS for `bertro.dev` must point at the server, like `slider.bertro.dev`.
+the site's 404 page. DNS for `bertro.dev` must point at the server, like `office.bertro.dev`.
 
 ## License
 

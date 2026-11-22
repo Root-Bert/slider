@@ -26,6 +26,14 @@ export const DESKTOP_SCHEMES = {
 } as const;
 export type DesktopApp = keyof typeof DESKTOP_SCHEMES;
 
+/** The hosted Slider: where the desktop apps sign in unless told otherwise (`desktop/hosted.mjs`). */
+export const HOSTED_URL = 'https://office.bertro.dev';
+/** Where the hosted Slider was before (up to 1.6): the same server, still answering apps there. */
+export const FORMER_HOSTED_URLS: readonly string[] = ['https://slider.bertro.dev'];
+/** A server kept by a desktop app, as it is called now: a former hosted address is `HOSTED_URL`. */
+export const movedServer = (server: string): string =>
+  FORMER_HOSTED_URLS.includes(server) ? HOSTED_URL : server;
+
 /** 43 URL-safe characters: SHA-256 (challenge) or 32 random bytes (verifier), base64url. */
 const pkceValue = z.string().regex(/^[\w-]{43}$/);
 
@@ -61,7 +69,7 @@ export const desktopLogoutInputSchema = z.object({ token: z.string().min(1).max(
 
 /** `GET /desktop/cloud` (the desktop's local server): which server, signed in as whom. */
 export interface CloudStatus {
-  /** e.g. `https://slider.bertro.dev`. */
+  /** e.g. `https://office.bertro.dev`. */
   server: string;
   account: CloudAccount | null;
   /** How bringing this machine and the account together goes; `null` while signed out. */

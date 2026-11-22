@@ -81,7 +81,7 @@ Firmen-Login (SSO) in ihren Einstellungen verbinden.
 ## Desktop-App
 
 Die Desktop-App (Mac, Linux; Download unter den GitHub-Releases) meldet sich standardmäßig bei
-slider.bertro.dev an. Für die eigene Instanz: in der App unter Konto → **Anderer Server** die
+office.bertro.dev an. Für die eigene Instanz: in der App unter Konto → **Anderer Server** die
 Adresse eintragen, z. B. `https://slider.firma.de` (https, ab Slider 1.6.0). Die Anmeldung öffnet
 den Browser mit den Logins der Instanz; danach liegen die Workspaces und Präsentationen des Kontos
 als Kopien auf dem Computer und werden abgeglichen. Auf dem Server ist nichts einzurichten.
@@ -237,6 +237,22 @@ Google-Zugriffe (braucht ausgehend `oauth2.googleapis.com`, sonst beim nächsten
 die alten Dateiverbindungen. Danach in der Entra-App alles außer `openid`, `profile` und `email`
 entfernen und bei Google den Bereich `drive.file` sowie Drive-, Picker- und Slides-API abschalten.
 
+## Domain wechseln
+
+Neue Adresse in `SLIDER_DOMAIN`, die alte in `SLIDER_OLD_DOMAINS` (mehrere mit Leerzeichen), DNS
+beider auf den Server, `docker compose up -d`. Vorher die neuen Weiterleitungs-URIs bei Microsoft,
+Google, OIDC und Nextcloud eintragen (siehe [Anmeldung](#anmeldung); die alten stehen lassen),
+Workspaces mit eigenem Firmen-Login (SSO) tragen sie bei ihrem Anbieter ein.
+
+Auf der alten Adresse leitet Caddy Browser auf dieselbe Seite der neuen um (308), auch Links aus
+Mails und Suchmaschinen. Die API, KI-Apps (`/api/mcp`, Tokens bleiben gültig) und die Desktop-Apps
+der Version davor bekommen dort weiter ihre Antworten. Was nicht mitkommt: Browser melden sich auf
+der neuen Adresse neu an (das Cookie gehört zur Adresse), Passkeys gelten nur auf der Adresse, auf
+der sie angelegt wurden (neu anlegen unter Konto), und eine Anmeldung über Microsoft oder Google
+aus einem Fenster einer alten Desktop-App heraus (z. B. ein Postfach verbinden) geht erst mit der
+neuen Version oder der neuen Adresse unter **Anderer Server**. KI-Apps bei Gelegenheit mit der
+neuen Adresse neu verbinden. Kommt niemand mehr über die alte, `SLIDER_OLD_DOMAINS` leeren.
+
 ## Datenschutz
 
 - **Impressum und Datenschutzerklärung** trägt der Admin auf der Einrichtungsseite ein.
@@ -309,6 +325,7 @@ gehen auch auf der Einrichtungsseite.
 | `TRUST_PROXY`                                                     | nein              | `1` hinter einem Proxy, wenn Port 8787 nicht öffentlich ist.                                                      |
 | `HOST`                                                            | nein              | Adresse, auf der die API lauscht; leer: alle Schnittstellen. Im Container leer lassen.                            |
 | `TRUSTED_PROXIES`                                                 | nein (Compose)    | Adressen, deren Client-IP-Header Caddy glaubt (Cloudflare).                                                       |
+| `SLIDER_OLD_DOMAINS`                                              | nein (Compose)    | Frühere Hostnamen (Leerzeichen dazwischen), siehe [Domain wechseln](#domain-wechseln).                            |
 | `SIGNUP`, `SIGNUP_DOMAINS`                                        | nein (Seite)      | `open` (Standard), `invite`, `domains` (mit Liste, z. B. `firma.de,firma.com`) oder `company`.                    |
 | `DELETE_UNUSED`                                                   | nein (Seite)      | `false` schaltet das Löschen ungenutzter Konten und Präsentationen aus.                                           |
 | `MS_CLIENT_ID`, `MS_CLIENT_SECRET`, `MS_TENANT`                   | Login (Seite)     | Microsoft-Login.                                                                                                  |

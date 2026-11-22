@@ -9,7 +9,14 @@
     "main": "cloud/main.mjs",
     "description": "Cloud as a desktop app: your files in a window and as a place in the Finder."
   },
-  "files": ["cloud/**", "!cloud/builder.json", "tabbar/**", "tabs.mjs", "package.json"],
+  "files": [
+    "cloud/**",
+    "!cloud/builder.json",
+    "tabbar/**",
+    "tabs.mjs",
+    "hosted.mjs",
+    "package.json"
+  ],
   "mac": {
     "category": "public.app-category.productivity",
     "target": ["dmg", "zip"],

@@ -5,6 +5,8 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { z } from 'zod';
 import {
+  FORMER_HOSTED_URLS,
+  HOSTED_URL,
   MAX_MEDIA_BYTES,
   MAX_UPLOAD_BYTES,
   SIGNUP_MODES,
@@ -31,7 +33,7 @@ export interface Config {
   desktop?: boolean;
   /**
    * `SLIDER_CLOUD_URL`, desktop only: the Slider server „Anmelden“ signs in to (BER-201), by
-   * default `https://slider.bertro.dev`; `null` off the desktop.
+   * default `https://office.bertro.dev` (`HOSTED_URL`); `null` off the desktop.
    */
   cloudUrl?: string | null;
   /**
@@ -313,7 +315,7 @@ export const normalizeNextcloudServer = (url: string): string =>
     .replace(/\/+$/, '');
 
 /** The hosted Slider: where the desktop app signs in unless told otherwise. */
-const DEFAULT_CLOUD_URL = 'https://slider.bertro.dev';
+const DEFAULT_CLOUD_URL = HOSTED_URL;
 const DEV_SECRET = 'slider-dev-secret-do-not-use-in-production';
 const DEFAULT_DATA_DIR = fileURLToPath(new URL('../.data', import.meta.url));
 /** `.env` lives in the repo root, so relative paths in it are meant from there – not from `apps/api`. */
@@ -413,8 +415,8 @@ const envSchema = z.object({
 const limitFromEnv = (value: number | undefined, fallback: number | null) =>
   value === undefined ? fallback : value === 0 ? null : value;
 
-/** The hosted demo; every other address is a self-hosted instance. */
-export const DEMO_HOSTS = ['slider.bertro.dev'];
+/** The hosted demo, at its address and the one it had before; every other is self-hosted. */
+export const DEMO_HOSTS = [HOSTED_URL, ...FORMER_HOSTED_URLS].map((url) => new URL(url).hostname);
 
 /**
  * Limits only apply on the hosted demo, where hosting costs money: recognised by its address,

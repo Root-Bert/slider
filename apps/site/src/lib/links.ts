@@ -1,5 +1,5 @@
 /** Where the website points to: the hosted app and the public repository. */
-export const APP_URL = 'https://slider.bertro.dev';
+export const APP_URL = 'https://office.bertro.dev';
 /** Cloud in the hosted app (it has no address of its own). */
 export const CLOUD_URL = `${APP_URL}/cloud`;
 /** Reader in the hosted app: on to the PDFs of the workspace last open. */

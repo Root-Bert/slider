@@ -55,6 +55,7 @@
       "splash.html",
       "package.json",
       "tabs.mjs",
+      "hosted.mjs",
       "page-preload.cjs",
       "tabbar/**",
       "splash.js",

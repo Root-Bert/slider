@@ -81,6 +81,8 @@ services:
     restart: unless-stopped
     environment:
       SLIDER_DOMAIN: ${SLIDER_DOMAIN}
+      # Former addresses: browsers go on to SLIDER_DOMAIN, apps are answered (Caddyfile).
+      SLIDER_OLD_DOMAINS: ${SLIDER_OLD_DOMAINS:-}
       TRUSTED_PROXIES: ${TRUSTED_PROXIES:-}
     ports:
       - '80:80'

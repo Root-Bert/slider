@@ -14,8 +14,28 @@
 
 # Automatic HTTPS (Let's Encrypt) for the Slider domain. DNS A/AAAA records must point at this
 # server and ports 80 + 443 must be open before the first start.
-{$SLIDER_DOMAIN} {
+# SLIDER_OLD_DOMAINS (optional, space-separated): addresses Slider had before, kept for old links,
+# apps and AI apps while they move – their DNS must still point here.
+{$SLIDER_DOMAIN} {$SLIDER_OLD_DOMAINS} {
 	encode zstd gzip
+	# On an old address a browser going to a page lands on the same page at the new one (308) –
+	# under /api only when it goes there as a page (a download, a sign-in's way back): its cookie
+	# is at the new one. Everything else is answered on the old address as before: the API's
+	# callers and AI apps (/api, /.well-known), what an open page still loads, and the desktop
+	# apps of before (Electron in the User-Agent) – their windows only take pages of the server
+	# they signed in to. No Sec-Fetch-Mode (crawlers, old browsers) counts as a page.
+	@moved {
+		not host {$SLIDER_DOMAIN}
+		method GET HEAD
+		not header User-Agent *Electron/*
+		not path /.well-known/*
+		not {
+			path /api/*
+			not header Sec-Fetch-Mode navigate
+		}
+		not header_regexp Sec-Fetch-Mode ^(cors|no-cors|same-origin|websocket)$
+	}
+	redir @moved https://{$SLIDER_DOMAIN}{uri} 308
 	# Slider sets its own security headers (HSTS, nosniff, …) and serves the web app itself.
 	reverse_proxy slider:8787 {
 		# Slider reads the right-most X-Forwarded-For entry (TRUST_PROXY=1): hand it the visitor.

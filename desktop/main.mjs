@@ -786,7 +786,7 @@ function serviceEnv(port, keys, soffice) {
     SLIDER_DATA_KEY: keys.dataKey,
     DEV_OWNER_NAME: fullName(),
     DEV_OWNER_EMAIL: 'ich@slider.desktop',
-    // The Slider server „Anmelden“ signs in to; unset: slider.bertro.dev.
+    // The Slider server „Anmelden“ signs in to; unset: office.bertro.dev.
     ...(process.env.SLIDER_CLOUD_URL && { SLIDER_CLOUD_URL: process.env.SLIDER_CLOUD_URL }),
     // The release (CI sets it from the tag); from the repo package.json's 0.1.0 would mislead.
     ...(app.isPackaged && { SLIDER_VERSION: app.getVersion() }),

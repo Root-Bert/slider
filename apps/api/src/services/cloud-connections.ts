@@ -813,6 +813,12 @@ export async function startCloudConnectionSignIn(
   // An API signs in with what the person typed on the page, never by a sign-in of its own.
   if (row.kind === 'api') throw badRequest('Eine API meldet sich mit ihrem Schlüssel an.');
   const back = connectionsPage(deps, row.workspaceId);
+  // Registered there with the way back of Slider's former address (it moved): the service would
+  // refuse this one, so Slider registers anew.
+  const ways = (row.auth.client as { redirect_uris?: unknown } | undefined)?.redirect_uris;
+  if (Array.isArray(ways) && !ways.includes(callbackUrl(deps))) {
+    await new Kept(deps, row).invalidateCredentials('client');
+  }
   try {
     await open(deps, row, true);
   } catch (error) {

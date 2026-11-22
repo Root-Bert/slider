@@ -2,7 +2,7 @@ import { existsSync, rmSync } from 'node:fs';
 import path from 'node:path';
 import { and, asc, count, eq, gt, inArray, lte } from 'drizzle-orm';
 import { z } from 'zod';
-import type { CloudAccount, CloudSync as CloudSyncStatus } from '@slider/shared';
+import { movedServer, type CloudAccount, type CloudSync as CloudSyncStatus } from '@slider/shared';
 import { openText, sealText } from '../crypto/content-crypto';
 import { deckEdits, decks, revisions, workspaceMembers, workspaces } from '../db/schema';
 import type { AppDeps } from '../deps';
@@ -173,7 +173,23 @@ export class CloudSync {
   constructor(private readonly deps: AppDeps) {
     this.accountFile = path.join(deps.config.dataDir, 'cloud.json');
     this.linksFile = path.join(deps.config.dataDir, 'cloud-sync.json');
+    this.followMove();
     this.current = readJsonFile<StoredFile>(this.accountFile)?.server ?? this.configured;
+  }
+
+  /**
+   * The hosted Slider moved (slider.bertro.dev → office.bertro.dev): the session and the links
+   * kept for its old address are its new one's – the same server, account and decks.
+   */
+  private followMove(): void {
+    const stored = readJsonFile<StoredFile>(this.accountFile);
+    if (stored && movedServer(stored.server) !== stored.server) {
+      writeJsonFile(this.accountFile, { ...stored, server: movedServer(stored.server) });
+    }
+    const links = readJsonFile<Links>(this.linksFile);
+    if (links?.server && movedServer(links.server) !== links.server) {
+      writeJsonFile(this.linksFile, { ...links, server: movedServer(links.server) });
+    }
   }
 
   private get configured(): string {

@@ -9,7 +9,14 @@
     "main": "reader/main.mjs",
     "description": "Reader as a desktop app: your PDFs in a window of their own."
   },
-  "files": ["reader/**", "!reader/builder.json", "tabbar/**", "tabs.mjs", "package.json"],
+  "files": [
+    "reader/**",
+    "!reader/builder.json",
+    "tabbar/**",
+    "tabs.mjs",
+    "hosted.mjs",
+    "package.json"
+  ],
   "mac": {
     "category": "public.app-category.productivity",
     "target": ["dmg", "zip"],

@@ -7,7 +7,7 @@ import { defineConfig } from 'astro/config';
 /*
  * The website of the office and its four apps: static pages at bertro.dev (`/office`, `/slider`,
  * `/writer`, `/solver`, `/cloud`), the personal page at `/me` (`public/me`, one static file). The
- * apps themselves run elsewhere (Slider on slider.bertro.dev). Avatars and cursors are the app's
+ * apps themselves run elsewhere (Slider on office.bertro.dev). Avatars and cursors are the app's
  * own React components (apps/web/src), rendered to plain HTML at build time – no React in the
  * browser.
  */

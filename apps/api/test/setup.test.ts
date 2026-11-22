@@ -331,6 +331,14 @@ describe('server start', () => {
     expect(desktop.auth.devLogin).toBe(true);
     expect(desktop.host).toBe('127.0.0.1');
     expect(desktop.retention.deleteUnused).toBe(false);
+    // „Anmelden“ goes to the hosted Slider; it has its limits at its new address and the old one.
+    expect(desktop.cloudUrl).toBe('https://office.bertro.dev');
+    expect(desktop.limited).toBe(false);
+    for (const url of ['https://office.bertro.dev', 'https://slider.bertro.dev']) {
+      expect(
+        loadConfig({ ...env, SLIDER_URL: url, OIDC_CLIENT_SECRET: 'x' }, () => {}).limited,
+      ).toBe(true);
+    }
     // The release shown in the settings: from the tag, without its `v`; none from a checkout.
     expect(desktop.version).toBeNull();
     expect(loadConfig({ ...desktopEnv, SLIDER_VERSION: 'v1.6.3' }, () => {}).version).toBe('1.6.3');
