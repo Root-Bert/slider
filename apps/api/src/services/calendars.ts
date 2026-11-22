@@ -3,20 +3,36 @@ import {
   MAX_EVENT_RANGE_DAYS,
   type Calendar,
   type CalendarChange,
+  type CalendarConnection,
   type CalendarEvent,
   type CalendarEventChange,
   type CalendarEventInput,
   type CalendarInput,
   type MailCalendarRefusal,
 } from '@slider/shared';
-import { calendarEvents, calendars, type CalendarEventRow, type CalendarRow } from '../db/schema';
+import {
+  calendarEvents,
+  calendars,
+  mailAccounts,
+  type CalendarEventRow,
+  type CalendarRow,
+} from '../db/schema';
 import type { AppDeps } from '../deps';
 import { badRequest, forbidden, notFound } from '../http/errors';
 import { authorsOf, cloudContext, type CloudCtx } from './cloud/context';
 import {
+  calendarConnections,
+  createMailCalendar,
+  createMailEvent,
+  deleteMailEvent,
+  dropMailCalendar,
   mailCalendarsRefused,
+  mailEventId,
+  mailEventOf,
   mailEvents,
   syncMailCalendarsBriefly,
+  updateMailCalendar,
+  updateMailEvent,
 } from './calendar/mail-calendars';
 import { areaAudience, senderLive } from './sender';
 
@@ -25,7 +41,9 @@ import { areaAudience, senderLive } from './sender';
  * calendars are looked at, as the workspace's own area is – and every person a private one; under
  * any of them sub-calendars. An area's are seen by whoever sees the area and filled by whoever may
  * edit there; one's private ones are one's own. A mail account's calendars are its person's
- * alone and read only: their events stay at the provider (`calendar/remote.ts`).
+ * alone: their events stay at the provider (`calendar/remote.ts`) and are written there, as far as
+ * the provider and the sign-in let (`remote_rights`); their ids are `mail:<calendar>:<provider's>`,
+ * the calendar checked to be the caller's before the provider is asked.
  */
 
 export const calendarNotFound = () => notFound('Diesen Kalender gibt es nicht (mehr).');
@@ -38,8 +56,14 @@ const MAX_LISTED = 5000;
 const MAX_DEPTH = 4;
 
 /** Whether the caller sees it, and may put events in it. */
-function accessTo(ctx: CloudCtx, row: Pick<CalendarRow, 'areaId' | 'ownerId' | 'mailAccountId'>) {
-  if (row.mailAccountId) return row.ownerId === ctx.userId ? 'view' : null;
+function accessTo(
+  ctx: CloudCtx,
+  row: Pick<CalendarRow, 'areaId' | 'ownerId' | 'mailAccountId' | 'remoteRights'>,
+) {
+  if (row.mailAccountId) {
+    if (row.ownerId !== ctx.userId) return null;
+    return (row.remoteRights?.events ?? true) ? 'edit' : 'view';
+  }
   if (!row.areaId) return row.ownerId === ctx.userId ? 'edit' : null;
   const access = ctx.areas.get(row.areaId)?.access;
   if (!access) return null;
@@ -90,6 +114,10 @@ function toCalendar(ctx: CloudCtx, row: CalendarRow): Calendar {
   const area = row.areaId ? ctx.areas.get(row.areaId)?.row : undefined;
   const root = !row.parentId && !row.mailAccountId;
   const access = accessTo(ctx, row);
+  const rights = row.mailAccountId ? row.remoteRights : null;
+  const canManage = row.mailAccountId
+    ? (rights?.rename ?? true)
+    : access === 'edit' && Boolean(row.parentId);
   return {
     id: row.id,
     workspaceId: row.workspaceId,
@@ -100,7 +128,11 @@ function toCalendar(ctx: CloudCtx, row: CalendarRow): Calendar {
     name: root ? (area ? area.name : 'Privat') : row.name,
     color: row.color ?? (root && area ? area.color : 'blue'),
     canEdit: access === 'edit',
-    canManage: access === 'edit' && Boolean(row.parentId),
+    canManage,
+    canDelete: row.mailAccountId ? !rights || rights.drop === 'delete' : canManage,
+    canRemove: rights?.drop === 'remove',
+    canAddCalendar: Boolean(row.mailAccountId) && (rights?.create ?? true),
+    signInToChange: rights?.regrant ?? false,
   };
 }
 
@@ -134,6 +166,16 @@ export async function listMailCalendarRefusals(
   return mailCalendarsRefused(deps, workspaceId, userId);
 }
 
+/** The caller's Google calendars connected without a mailbox. */
+export async function listCalendarConnections(
+  deps: AppDeps,
+  userId: string,
+  workspaceId: string,
+): Promise<CalendarConnection[]> {
+  await cloudContext(deps.db, workspaceId, userId);
+  return calendarConnections(deps, workspaceId, userId);
+}
+
 /** A calendar the caller may fill, by id alone (its workspace read from it). */
 async function calendarToEdit(deps: AppDeps, userId: string, calendarId: string) {
   const [row] = await deps.db.select().from(calendars).where(eq(calendars.id, calendarId));
@@ -165,8 +207,26 @@ export async function createCalendar(
   userId: string,
   input: CalendarInput,
 ): Promise<Calendar> {
-  const { ctx, row: parent } = await calendarToEdit(deps, userId, input.parentId);
-  if (parent.mailAccountId) throw forbidden(READ_ONLY);
+  if (input.mailAccountId) {
+    const [account] = await deps.db
+      .select({ workspaceId: mailAccounts.workspaceId })
+      .from(mailAccounts)
+      .where(and(eq(mailAccounts.id, input.mailAccountId), eq(mailAccounts.userId, userId)));
+    if (!account) throw calendarNotFound();
+    const ctx = await cloudContext(deps.db, account.workspaceId, userId).catch(() => {
+      throw calendarNotFound();
+    });
+    const row = await createMailCalendar(deps, input.mailAccountId, userId, {
+      name: input.name.trim(),
+      color: remoteColor(input.color),
+    });
+    await tellCalendar(deps, row);
+    return toCalendar(ctx, row);
+  }
+  const { ctx, row: parent } = await calendarToEdit(deps, userId, input.parentId!);
+  if (parent.mailAccountId) {
+    throw forbidden('In den Kalendern eines Postfachs gibt es keine Unterkalender.');
+  }
   let depth = 0;
   for (let up: string | null = parent.parentId; up && depth < MAX_DEPTH; depth++) {
     const [above] = await deps.db
@@ -193,6 +253,23 @@ export async function createCalendar(
   return toCalendar(ctx, row!);
 }
 
+/** A provider takes a colour as `#rrggbb`; an accent name is Slider's theme's. */
+function remoteColor(color: string | undefined): string | null {
+  if (color === undefined) return null;
+  if (!color.startsWith('#')) {
+    throw badRequest('Für diesen Kalender bitte eine Farbe wie #1a2b3c.');
+  }
+  return color;
+}
+
+/** One of the caller's mail calendars, by id alone. */
+async function mailCalendarOf(deps: AppDeps, userId: string, calendarId: string) {
+  const [row] = await deps.db.select().from(calendars).where(eq(calendars.id, calendarId));
+  if (!row?.mailAccountId || row.ownerId !== userId) return null;
+  const ctx = await cloudContext(deps.db, row.workspaceId, userId).catch(() => null);
+  return ctx && { ctx, row };
+}
+
 /** Renames or colours a sub-calendar (an area's own and one's private one keep theirs). */
 export async function updateCalendar(
   deps: AppDeps,
@@ -200,6 +277,18 @@ export async function updateCalendar(
   calendarId: string,
   change: CalendarChange,
 ): Promise<Calendar> {
+  const mail = await mailCalendarOf(deps, userId, calendarId);
+  if (mail) {
+    if (!(mail.row.remoteRights?.rename ?? true)) {
+      throw forbidden('Diesen Kalender kannst du nicht umbenennen.');
+    }
+    const after = await updateMailCalendar(deps, mail.row, {
+      ...(change.name !== undefined && { name: change.name.trim() }),
+      ...(change.color !== undefined && { color: remoteColor(change.color)! }),
+    });
+    await tellCalendar(deps, after);
+    return toCalendar(mail.ctx, after);
+  }
   const { ctx, row } = await calendarToEdit(deps, userId, calendarId);
   if (!row.parentId) throw forbidden('Diesen Kalender kannst du nicht umbenennen.');
   const [after] = await deps.db
@@ -215,8 +304,20 @@ export async function updateCalendar(
   return toCalendar(ctx, after!);
 }
 
-/** Deletes a sub-calendar, the ones under it and all their events. */
+/**
+ * Deletes a sub-calendar, the ones under it and all their events; a mail calendar at its provider
+ * – or, someone else's, takes it off one's list there.
+ */
 export async function deleteCalendar(deps: AppDeps, userId: string, calendarId: string) {
+  const mail = await mailCalendarOf(deps, userId, calendarId);
+  if (mail) {
+    if (mail.row.remoteRights?.drop === null) {
+      throw forbidden('Diesen Kalender kannst du nicht löschen.');
+    }
+    await dropMailCalendar(deps, mail.row);
+    await tellCalendar(deps, mail.row);
+    return;
+  }
   const { row } = await calendarToEdit(deps, userId, calendarId);
   if (!row.parentId) throw forbidden('Diesen Kalender kannst du nicht löschen.');
   await deps.db.delete(calendars).where(eq(calendars.id, calendarId));
@@ -327,11 +428,29 @@ async function eventToEdit(deps: AppDeps, userId: string, eventId: string) {
   return { event, calendar, ctx };
 }
 
+/**
+ * A mail calendar's event by its id: the calendar must be the caller's (a forged id naming
+ * another's is not found); `edit`: and take events.
+ */
+async function mailEventToEdit(deps: AppDeps, userId: string, eventId: string, edit: boolean) {
+  const ids = mailEventId(eventId);
+  const mail = ids && (await mailCalendarOf(deps, userId, ids.calendarId));
+  if (!ids || !mail) throw eventNotFound();
+  if (edit && accessTo(mail.ctx, mail.row) !== 'edit') throw forbidden(READ_ONLY);
+  return { row: mail.row, remoteId: ids.remoteId };
+}
+
 export async function getEvent(
   deps: AppDeps,
   userId: string,
   eventId: string,
 ): Promise<CalendarEvent> {
+  if (mailEventId(eventId)) {
+    const { row, remoteId } = await mailEventToEdit(deps, userId, eventId, false);
+    const event = await mailEventOf(deps, row, remoteId);
+    if (!event) throw eventNotFound();
+    return event;
+  }
   const [event] = await deps.db.select().from(calendarEvents).where(eq(calendarEvents.id, eventId));
   if (!event) throw eventNotFound();
   const [calendar] = await deps.db
@@ -351,7 +470,19 @@ export async function createEvent(
   input: CalendarEventInput,
 ): Promise<CalendarEvent> {
   const { row: calendar } = await calendarToEdit(deps, userId, input.calendarId);
-  if (calendar.mailAccountId) throw forbidden(READ_ONLY);
+  if (calendar.mailAccountId) {
+    bounds(input);
+    const made = await createMailEvent(deps, calendar, {
+      title: input.title.trim(),
+      location: input.location?.trim() ?? '',
+      notes: input.notes ?? '',
+      allDay: input.allDay,
+      start: input.start,
+      end: input.end,
+    });
+    await tellCalendar(deps, calendar);
+    return made;
+  }
   const [row] = await deps.db
     .insert(calendarEvents)
     .values({
@@ -370,6 +501,50 @@ export async function createEvent(
   return (await toEvents(deps, () => true, [row!]))[0]!;
 }
 
+/** Start and end of the kind `allDay` asks: an event's own, or turned (a day ↔ its midnight). */
+function timingOf(event: CalendarEvent, change: CalendarEventChange) {
+  const allDay = change.allDay ?? event.allDay;
+  const as = (value: string) =>
+    allDay === event.allDay ? value : allDay ? value.slice(0, 10) : `${value}T00:00:00.000Z`;
+  const timing = {
+    allDay,
+    start: change.start ?? as(event.start),
+    end: change.end ?? as(event.end),
+  };
+  bounds(timing);
+  return timing;
+}
+
+const changesTiming = (change: CalendarEventChange) =>
+  change.start !== undefined || change.end !== undefined || change.allDay !== undefined;
+
+/**
+ * Moves an event between a mail calendar and another (any provider, or Slider's own): made in the
+ * one, then deleted in the other – nothing moves an event across providers.
+ */
+async function moveAcross(
+  deps: AppDeps,
+  userId: string,
+  event: CalendarEvent,
+  change: CalendarEventChange & { calendarId: string },
+): Promise<CalendarEvent> {
+  const made = await createEvent(deps, userId, {
+    calendarId: change.calendarId,
+    title: change.title ?? event.title,
+    location: change.location ?? event.location,
+    notes: change.notes ?? event.notes,
+    ...timingOf(event, change),
+  });
+  try {
+    await deleteEvent(deps, userId, event.id);
+  } catch (error) {
+    // The old one stays: the new one goes again, so it is not there twice.
+    await deleteEvent(deps, userId, made.id).catch(() => undefined);
+    throw error;
+  }
+  return made;
+}
+
 /** Changes any of its fields; `calendarId` moves it to another calendar the caller may fill. */
 export async function updateEvent(
   deps: AppDeps,
@@ -377,12 +552,32 @@ export async function updateEvent(
   eventId: string,
   change: CalendarEventChange,
 ): Promise<CalendarEvent> {
+  if (mailEventId(eventId)) {
+    const { row, remoteId } = await mailEventToEdit(deps, userId, eventId, true);
+    const event = await mailEventOf(deps, row, remoteId);
+    if (!event) throw eventNotFound();
+    if (change.calendarId && change.calendarId !== row.id) {
+      const target = (await calendarToEdit(deps, userId, change.calendarId)).row;
+      if (target.workspaceId !== row.workspaceId) throw forbidden(READ_ONLY);
+      return moveAcross(deps, userId, event, { ...change, calendarId: change.calendarId });
+    }
+    const changed = await updateMailEvent(deps, row, remoteId, {
+      ...(change.title !== undefined && { title: change.title.trim() }),
+      ...(change.location !== undefined && { location: change.location.trim() }),
+      ...(change.notes !== undefined && { notes: change.notes }),
+      ...(changesTiming(change) && timingOf(event, change)),
+    });
+    await tellCalendar(deps, row);
+    return changed;
+  }
   const { event, calendar } = await eventToEdit(deps, userId, eventId);
   let target = calendar;
   if (change.calendarId && change.calendarId !== calendar.id) {
     target = (await calendarToEdit(deps, userId, change.calendarId)).row;
-    if (target.mailAccountId || target.workspaceId !== calendar.workspaceId) {
-      throw forbidden(READ_ONLY);
+    if (target.workspaceId !== calendar.workspaceId) throw forbidden(READ_ONLY);
+    if (target.mailAccountId) {
+      const [own] = await toEvents(deps, () => true, [event]);
+      return moveAcross(deps, userId, own!, { ...change, calendarId: target.id });
     }
   }
   const allDay = change.allDay ?? event.allDay;
@@ -413,6 +608,12 @@ export async function updateEvent(
 }
 
 export async function deleteEvent(deps: AppDeps, userId: string, eventId: string) {
+  if (mailEventId(eventId)) {
+    const { row, remoteId } = await mailEventToEdit(deps, userId, eventId, true);
+    await deleteMailEvent(deps, row, remoteId);
+    await tellCalendar(deps, row);
+    return;
+  }
   const { calendar } = await eventToEdit(deps, userId, eventId);
   await deps.db.delete(calendarEvents).where(eq(calendarEvents.id, eventId));
   await tellCalendar(deps, calendar);

@@ -128,8 +128,6 @@ export async function runCalendarTool(
     return calendar;
   };
   const eventOf = async (eventId: string) => {
-    if (eventId.startsWith('mail:'))
-      throw new ToolChatError('That event is from a mailbox’s calendar: read only.');
     const event = await getEvent(deps, userId, eventId);
     calendarOf(event.calendarId);
     return event;

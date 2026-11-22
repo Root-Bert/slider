@@ -64,6 +64,8 @@ export const authProvidersSchema = z.object({
   emailLogin: z.boolean(),
   /** „Mit Microsoft/Google anmelden“ for a mailbox (`MAIL_OAUTH_PROVIDERS`): those set up here. */
   mailOAuth: z.array(z.enum(['microsoft', 'google'])),
+  /** „Google Kalender verbinden“ (a calendar without a mailbox): where Google's login is set up. */
+  calendarOAuth: z.array(z.enum(['google'])),
 });
 export type AuthProviders = z.infer<typeof authProvidersSchema>;
 

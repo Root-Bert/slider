@@ -111,6 +111,8 @@ export const routes = {
     if (view) query.set(CLOUD_VIEW_PARAM, view);
     return `/w/${workspaceId}/dateien/kalender${query.size ? `?${query}` : ''}`;
   },
+  /** „Konten“: the accounts whose calendars stand in the calendar (as Post's „Postfächer“). */
+  cloudCalendarAccounts: (workspaceId: string) => `/w/${workspaceId}/dateien/kalender/konten`,
   cloudAreaTodos: (workspaceId: string, areaId: string) =>
     `/w/${workspaceId}/dateien/bereich/${areaId}/aufgaben`,
   /** „Post“: one's mail conversations, one of them, one's mailboxes – as in Sender. */

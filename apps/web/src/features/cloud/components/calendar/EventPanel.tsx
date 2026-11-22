@@ -171,7 +171,12 @@ export function EventPanel() {
           onCreated={(event) => shown.toggle(event.id)}
         />
       ) : (
-        <ShownEvent id={shown.id} calendars={calendars.data} onClose={shown.close} />
+        <ShownEvent
+          id={shown.id}
+          calendars={calendars.data}
+          onClose={shown.close}
+          onMoved={shown.toggle}
+        />
       )}
     </SidePanel>
   );
@@ -182,10 +187,13 @@ function ShownEvent({
   id,
   calendars,
   onClose,
+  onMoved,
 }: {
   id: string;
   calendars: Calendar[];
   onClose: () => void;
+  /** Moved to or from a mailbox's calendar: it stays open under its new id. */
+  onMoved: (id: string) => void;
 }) {
   const ui = useCloud();
   const found = useEventById(ui.workspace.id, id);
@@ -204,7 +212,12 @@ function ShownEvent({
       onChange={(change) =>
         update.mutate(
           { id: found.id, change },
-          { onError: (error) => ui.notify(error.message, 'danger') },
+          {
+            onSuccess: (event) => {
+              if (event.id !== found.id) onMoved(event.id);
+            },
+            onError: (error) => ui.notify(error.message, 'danger'),
+          },
         )
       }
     />

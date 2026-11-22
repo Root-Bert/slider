@@ -9,9 +9,11 @@ import {
   CLOUD_FILE_PARAM,
   CLOUD_TODO_PARAM,
   CLOUD_VIEW_PARAM,
+  routes,
 } from '@/lib/routes';
 import {
   Button,
+  ButtonLink,
   GlassPanel,
   IconButton,
   LoadingState,
@@ -20,6 +22,7 @@ import {
 } from '@/ui';
 import { CloudPage } from './components/CloudPage';
 import { CalendarAside } from './components/calendar/CalendarAside';
+import { useCalendarOAuthOutcome } from './components/calendar/CalendarAccounts';
 import { useHiddenCalendars } from './components/calendar/CalendarList';
 import {
   AgendaView,
@@ -84,6 +87,7 @@ export function Component() {
   const events = useCalendarEvents(workspaceId, range.from, range.to);
   const todos = useTodos(workspaceId);
   const { hidden, toggle } = useHiddenCalendars(workspaceId);
+  useCalendarOAuthOutcome();
   const shownEvent = useShownEvent();
   const busy = useBusyDays(workspaceId, anchor);
   const wide = useMediaQuery(WIDE);
@@ -146,18 +150,6 @@ export function Component() {
     else return;
     event.preventDefault();
   });
-  // Back from signing a mailbox in anew (its calendars): the sign-in's mark goes.
-  useEffect(() => {
-    if (!params.has('anmeldung')) return;
-    setParams(
-      (current) => {
-        const after = new URLSearchParams(current);
-        after.delete('anmeldung');
-        return after;
-      },
-      { replace: true },
-    );
-  }, [params, setParams]);
   useEffect(() => {
     window.addEventListener('keydown', onKeyDown);
     return () => window.removeEventListener('keydown', onKeyDown);
@@ -171,6 +163,17 @@ export function Component() {
       docTitle="Kalender"
       title="Kalender"
       crumbs={[{ label: ui.workspace.name }, { label: 'Kalender' }]}
+      // As „Postfächer“ beside Post: the accounts whose calendars stand here.
+      actions={
+        <ButtonLink
+          to={routes.cloudCalendarAccounts(workspaceId)}
+          variant="ghost"
+          icon="settings"
+          size="sm"
+        >
+          Konten
+        </ButtonLink>
+      }
       nodes={[]}
       fill
     >

@@ -1,6 +1,6 @@
 # Datenschutzerklärung
 
-Diese Erklärung gilt für die Website unter bertro.dev/slider und für die Desktop App von Slider (Mac und Linux). Für die App unter slider.bertro.dev gilt die Datenschutzerklärung, die dort verlinkt ist.
+Diese Erklärung gilt für die Website unter bertro.dev und für die Desktop App von Slider (Mac und Linux). Für die App unter slider.bertro.dev gilt die Datenschutzerklärung, die dort verlinkt ist; wie sie mit Daten von Google umgeht, steht auch hier unter „Slider und Daten von Google“.
 
 ## Verantwortlicher
 
@@ -34,6 +34,17 @@ Rechtsgrundlage ist unser berechtigtes Interesse an einer sicheren und erreichba
 ## Links zu anderen Diensten
 
 Die Website verlinkt auf die App (slider.bertro.dev) und auf den Quellcode bei GitHub; auch die Desktop App lädst du von GitHub. Erst wenn du einem Link folgst, verbindet sich dein Browser mit diesem Dienst; dort gilt dessen Datenschutzerklärung (für GitHub: GitHub, Inc., USA, [docs.github.com/site-policy/privacy-policies](https://docs.github.com/site-policy/privacy-policies/github-general-privacy-statement)).
+
+## Slider und Daten von Google
+
+Die App Slider unter slider.bertro.dev hat eine eigene, ausführliche Datenschutzerklärung: [slider.bertro.dev/datenschutz](https://slider.bertro.dev/datenschutz). Für Daten, die Slider über Googles Schnittstellen erhält, gilt zusätzlich:
+
+- **Anmeldung mit Google:** Meldest du dich mit „Weiter mit Google“ bei Slider an, bekommt Slider von Google deinen Namen, deine E-Mail-Adresse und dein Profilbild (`openid`, `email`, `profile`), um dein Konto anzulegen und dich wiederzuerkennen.
+- **Gmail-Postfach:** Verbindest du ein Gmail-Postfach mit „Mit Google anmelden“, liest Slider deine Mails über IMAP, verschickt, was du in Slider schreibst, über SMTP und gleicht ab, was gelesen ist (`https://mail.google.com/` – Google gibt IMAP und SMTP nur mit diesem Recht frei). Sonst ändert Slider in deinem Postfach nichts. Statt eines Passworts speichern wir das Token von Google verschlüsselt, die Mails und ihre Anhänge ebenfalls verschlüsselt. Sie sieht nur, wem das Postfach gehört.
+- **Google Kalender:** Die Kalender dieses Kontos zeigt Slider nur dir neben deinen anderen Kalendern (`calendar.events`, `calendar.calendars`, `calendar.calendarlist`). Termine und Kalender legt Slider dort nur an, ändert oder löscht sie nur, wenn du es in Slider tust oder einen Agenten darum bittest; einen Kalender, der dir nicht gehört, nimmt Slider dann nur aus deiner Kalenderliste. Deinen Hauptkalender löscht Slider nie. Du kannst ihn auch ohne Postfach verbinden („Google Kalender verbinden“ im Kalender); dann bittet Slider nur um deine E-Mail-Adresse und diese Kalender-Rechte, nicht um deine Mails. Wir speichern nur Name, Farbe und Adresse jedes Kalenders und das Token von Google verschlüsselt; Termine fragt Slider ab, wenn du einen Zeitraum ansiehst, und speichert sie nicht.
+- **KI:** Hat dein Workspace einen KI-Dienst, schätzt die KI neue Mails ein und entwirft auf deinen Klick Antworten. Dafür geht der Text der Unterhaltung an diesen Dienst, nur für diese Funktion; beim Postfach lässt sich abschalten, dass die KI neue Mails von selbst liest. Die Einzelheiten stehen in der Datenschutzerklärung von Slider.
+- **Eingeschränkte Nutzung:** Die Nutzung und Übertragung von Daten, die Slider über Googles Schnittstellen erhält, hält sich an die [Google API Services User Data Policy](https://developers.google.com/terms/api-services-user-data-policy) einschließlich ihrer Anforderungen an eingeschränkte Nutzung („Limited Use“). Wir nutzen diese Daten nur für die Funktionen, die du in Slider siehst, geben sie nur dafür weiter, verkaufen sie nicht, nutzen sie nicht für Werbung und nicht zum Training von KI-Modellen. Menschen sehen sie nur mit deiner Zustimmung, zur Sicherheit oder wo das Gesetz es verlangt.
+- **Widerruf und Löschen:** Löschst du das Postfach oder die Kalender-Verbindung in Slider, löschen wir Token, Mails, Anhänge und Kalender bei uns; in deinem Google-Konto bleibt alles, wie es ist. Den Zugriff kannst du außerdem jederzeit unter [myaccount.google.com/permissions](https://myaccount.google.com/permissions) entziehen.
 
 ## Desktop App
 

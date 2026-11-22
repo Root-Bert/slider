@@ -2,15 +2,15 @@ import type { APIRoute } from 'astro';
 import { postPage, publishedPosts } from '~/components/blog/posts';
 import { LANGS, appPage, localPage } from '~/i18n';
 import { APPS } from '~/lib/apps';
-import { page } from '~/lib/links';
+import { IMPRINT_URL, page, PRIVACY_URL } from '~/lib/links';
 
 /** Every page of the site for search engines (no extra dependency, like the RSS feed). */
 const PAGES = [
   ...APPS.flatMap((app) => LANGS.map((lang) => appPage(app, lang))),
   ...LANGS.map((lang) => localPage(lang, 'blog')),
   page('kontakt'),
-  page('impressum'),
-  page('datenschutz'),
+  IMPRINT_URL,
+  PRIVACY_URL,
   '/me/',
 ];
 

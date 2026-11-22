@@ -50,6 +50,7 @@ import {
   RowList,
   TextField,
   Toggle,
+  Tooltip,
 } from '@/ui';
 import { useSender } from '../../hooks/useSender';
 import { ADD_MAILBOX_HASH } from '../../hooks/useMailView';
@@ -204,6 +205,34 @@ function useMailOAuthProviders(): MailOAuthProvider[] {
   return useAuthProviders().data?.mailOAuth ?? [];
 }
 
+/**
+ * Google's sign-in is set up here but not for mailboxes (`GOOGLE_MAILBOXES`): Gmail's mail scope
+ * waits for Google's review – its button shows, greyed, and says so.
+ */
+function useGoogleMailPending(): boolean {
+  const data = useAuthProviders().data;
+  return (
+    !!data?.providers.some((provider) => provider.id === 'google') &&
+    !data.mailOAuth.includes('google')
+  );
+}
+
+/** „Mit Google anmelden“ greyed: what keeps it and the way in until then. */
+function GoogleMailPending() {
+  return (
+    <Tooltip
+      side="bottom"
+      maxWidth={64}
+      label="Kommt bald: Für Gmail mit Google-Anmeldung muss Google Slider erst prüfen – daran arbeiten wir. Bis dahin verbindest du Gmail unten mit Adresse und App-Passwort. Deinen Google Kalender verbindest du schon jetzt im Kalender."
+    >
+      <Button size="lg" variant="secondary" disabled className="gap-2.5 max-sm:flex-1">
+        <GoogleMark size={16} />
+        Mit Google anmelden
+      </Button>
+    </Tooltip>
+  );
+}
+
 /** To the provider's sign-in page, in this tab; it comes back to this page (its agent open). */
 function useStartMailOAuth() {
   const ui = useSender();
@@ -296,6 +325,7 @@ function AccountForm({
   const add = useAddMailAccount(ui.workspace.id);
   const update = useUpdateMailAccount(ui.workspace.id);
   const oauth = useMailOAuthProviders();
+  const googlePending = useGoogleMailPending();
   const formRef = useRef<HTMLFormElement>(null);
   // Once the sign-in buttons are known (they come with the login's providers): the first of them.
   useEffect(() => {
@@ -465,13 +495,14 @@ function AccountForm({
           </Notice>
         )
       )}
-      {!account && oauth.length > 0 && (
+      {!account && (oauth.length > 0 || googlePending) && (
         // The providers' sign-in first – the address comes from there; the password the other way.
         <>
           <div className="flex flex-wrap gap-3">
             {oauth.map((id) => (
               <OAuthButton key={id} input={{ provider: id, ...oauthInput }} onError={setError} />
             ))}
+            {googlePending && <GoogleMailPending />}
           </div>
           <Divider label="oder mit Adresse und Passwort" labelPosition="start" />
         </>

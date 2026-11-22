@@ -127,6 +127,10 @@ export const router = createBrowserRouter([
                   { path: 'aufgaben', lazy: () => import('@/features/cloud/TodosPage') },
                   { path: 'kalender', lazy: () => import('@/features/cloud/CalendarPage') },
                   {
+                    path: 'kalender/konten',
+                    lazy: () => import('@/features/cloud/CalendarAccountsPage'),
+                  },
+                  {
                     // The list – wide, with the open mail beside it (`MailBody`).
                     path: 'mail',
                     lazy: () => import('@/features/cloud/MailPage'),

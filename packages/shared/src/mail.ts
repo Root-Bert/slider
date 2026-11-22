@@ -539,6 +539,11 @@ export const mailOAuthStartSchema = z.object({
   accountId: z.string().min(1).optional(),
   address: z.string().trim().email().max(320).optional(),
   returnTo: z.string().max(500),
+  /**
+   * Only the account's calendars, no mailbox („Google Kalender verbinden“, Google only): asks
+   * for the calendar scopes and the address alone (`CalendarConnection`).
+   */
+  calendarOnly: z.boolean().default(false),
 });
 export type MailOAuthStart = z.input<typeof mailOAuthStartSchema>;
 

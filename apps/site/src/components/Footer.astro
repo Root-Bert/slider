@@ -2,7 +2,7 @@
 import Mark from './Mark.astro';
 import { LANG_NAMES, appPage, localPage, s, t, type Lang } from '~/i18n';
 import { APPS, APP_NAMES } from '~/lib/apps';
-import { APP_URL, BERTRO_URL, CHANGELOG_URL, REPO_URL, page } from '~/lib/links';
+import { APP_URL, BERTRO_URL, CHANGELOG_URL, IMPRINT_URL, page, PRIVACY_URL, REPO_URL } from '~/lib/links';
 
 /** Site / Footer: the office's mark, link columns and the language switch (where the page has versions). */
 interface Props {
@@ -33,8 +33,8 @@ const columns = [
     links: [
       [suite.footer.about, BERTRO_URL],
       [suite.footer.contact, page('kontakt')],
-      ['Impressum', page('impressum')],
-      ['Datenschutz', page('datenschutz')],
+      ['Impressum', IMPRINT_URL],
+      ['Datenschutz', PRIVACY_URL],
     ],
   },
 ];

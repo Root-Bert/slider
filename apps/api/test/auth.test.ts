@@ -222,6 +222,8 @@ describe('GET /api/auth/providers', () => {
       emailLogin: false,
       // Microsoft's client signs mailboxes in too; Google's only with GOOGLE_MAILBOXES.
       mailOAuth: ['microsoft'],
+      // No Google login here: no Google calendar to connect alone either.
+      calendarOAuth: [],
     });
 
     // Open sign-up while the instance has no admin, then SIGNUP again.

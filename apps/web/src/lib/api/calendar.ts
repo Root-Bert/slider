@@ -1,6 +1,7 @@
 import type {
   Calendar,
   CalendarChange,
+  CalendarConnection,
   CalendarEvent,
   CalendarEventChange,
   CalendarEventInput,
@@ -83,6 +84,47 @@ export function useMailCalendarRefusals(workspaceId: string) {
   });
 }
 
+/** One's Google calendars connected without a mailbox („Google Kalender verbinden“). */
+export function useCalendarConnections(workspaceId: string) {
+  return useQuery({
+    queryKey: [...calendarKeys.all(workspaceId), 'connections'] as const,
+    queryFn: () => api.get<CalendarConnection[]>(`/workspaces/${workspaceId}/calendar-connections`),
+    staleTime: 60_000,
+  });
+}
+
+/** Deletes such a connection – as a mailbox is deleted; its calendars go with it. */
+export function useDeleteCalendarConnection(workspaceId: string) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (accountId: string) => api.delete(`/mail/accounts/${accountId}`),
+    onSettled: settle(queryClient, workspaceId),
+  });
+}
+
+/**
+ * Such a connection's own name (`label`, empty: its address) – at once in the calendar's list and
+ * „Konten“; a refusal puts the old one back.
+ */
+export function useRenameCalendarConnection(workspaceId: string) {
+  const queryClient = useQueryClient();
+  const key = [...calendarKeys.all(workspaceId), 'connections'] as const;
+  return useMutation({
+    mutationFn: ({ id, label }: { id: string; label: string }) =>
+      api.patch(`/mail/accounts/${id}`, { label }),
+    onMutate: async ({ id, label }) => {
+      await queryClient.cancelQueries({ queryKey: key });
+      const before = queryClient.getQueryData<CalendarConnection[]>(key);
+      queryClient.setQueryData<CalendarConnection[]>(key, (now) =>
+        now?.map((one) => (one.accountId === id ? { ...one, label: label.trim() || null } : one)),
+      );
+      return { before };
+    },
+    onError: (_error, _input, context) => queryClient.setQueryData(key, context?.before),
+    onSettled: () => queryClient.invalidateQueries({ queryKey: key }),
+  });
+}
+
 function updateEvents(
   queryClient: QueryClient,
   workspaceId: string,
@@ -155,19 +197,27 @@ export function useCreateEvent(workspaceId: string) {
   });
 }
 
-/** A change shows at once – title, time, calendar. */
+/**
+ * An event's id in a path: a mail calendar's (`mail:<calendar>:<provider's id>`) may hold `/`.
+ */
+const eventPath = (id: string) => `/calendar-events/${encodeURIComponent(id)}`;
+
+/**
+ * A change shows at once – title, time, calendar. Moved between a mailbox's calendar and another,
+ * it comes back under a new id (made there, deleted here): it takes the old one's place.
+ */
 export function useUpdateEvent(workspaceId: string) {
   const queryClient = useQueryClient();
   return useMutation({
     mutationFn: ({ id, change }: { id: string; change: CalendarEventChange }) =>
-      api.patch<CalendarEvent>(`/calendar-events/${id}`, change),
+      api.patch<CalendarEvent>(eventPath(id), change),
     onMutate: ({ id, change }) =>
       updateEvents(queryClient, workspaceId, (list) =>
         list.map((each) => (each.id === id ? { ...each, ...change } : each)),
       ),
-    onSuccess: (event) =>
+    onSuccess: (event, { id }) =>
       updateEvents(queryClient, workspaceId, (list) =>
-        list.map((each) => (each.id === event.id ? event : each)),
+        list.map((each) => (each.id === id ? event : each)),
       ),
     onSettled: settle(queryClient, workspaceId),
   });
@@ -176,7 +226,7 @@ export function useUpdateEvent(workspaceId: string) {
 export function useDeleteEvent(workspaceId: string) {
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: (id: string) => api.delete(`/calendar-events/${id}`),
+    mutationFn: (id: string) => api.delete(eventPath(id)),
     onMutate: (id) =>
       updateEvents(queryClient, workspaceId, (list) => list.filter((each) => each.id !== id)),
     onSettled: settle(queryClient, workspaceId),

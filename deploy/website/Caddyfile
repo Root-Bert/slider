@@ -17,6 +17,9 @@
 	# The domain opens on the office.
 	@root path /
 	redir @root /office/ 302
+	# Imprint and privacy policy cover the whole domain and moved to its root.
+	redir /slider/impressum /impressum 301
+	redir /slider/datenschutz /datenschutz 301
 	# The personal page's files lived at /assets/ while it sat at the root; it is at /me now.
 	@oldassets path /assets/*
 	redir @oldassets /me{uri} 302

@@ -1645,6 +1645,8 @@ hidden while pending and when nothing is unread. Slider's own start is „Präse
   `GOOGLE_MAILBOXES=true` (`mailOAuthConfigured`, `AuthProviders.mailOAuth`): Google's client alone
   is the login. Google asks not to put unverified scopes before production traffic – off on the
   hosted instance until verified; on locally to record the verification's demo video.
+  Off with Google's login set up, the button shows greyed with a tooltip (`GoogleMailPending`):
+  Gmail's scope is restricted – its verification needs a yearly CASA audit; app password till then.
 - Calls: see „Calls“ below (also calling an agent and the agent that writes along).
 
 ## To-dos – „Aufgaben“ in the UI (`services/todos.ts`, `routes/todos.ts`, `features/cloud/components/todos/`)
@@ -1690,16 +1692,51 @@ hidden while pending and when nothing is unread. Slider's own start is „Präse
   (`slider.calendar.agents`). Folded from the head's last button (`slider.calendar.aside`); below
   lg it lies over the days, not remembered. An event opens in the side panel (`?termin=<id>`, `neu` with
   `neu-tag`/`neu-um`) – one panel with `?aufgabe=`/`?datei=`. Mail accounts' calendars:
-  `services/calendar/remote.ts` (CalDAV through `fetchHop`, Google, Graph), read only. Their list
+  `services/calendar/remote.ts` (CalDAV through `fetchHop`, Google, Graph). Their list
   is kept as calendars of kind `mail` (`calendar/mail-calendars.ts`, `remote_id` sealed: a CalDAV
   URL holds the address), compared every 15 min (a first look waits ≤ 5 s); events are never
   stored, only held in memory 5 min per range. Sign-in asks for calendars beside mail
-  (`calendarScopes`: Google `calendar.readonly`, Graph `Calendars.Read` – another resource, so
-  `calendarAccessToken` refreshes for it apart and never marks the mailbox `signin`). Mailboxes
+  (`calendarScopes`: Google `calendar.events` + `calendar.calendars` + `calendar.calendarlist`,
+  Graph `Calendars.ReadWrite` – another resource, so `calendarAccessToken` refreshes for it apart,
+  falls back to `Calendars.Read` on `AADSTS70000` and never marks the mailbox `signin`). Mailboxes
   signed in before have no consent (`AADSTS70000`, Google 403): no calendars, retried after 12 h,
-  until signed in anew (the list shows „Für Kalender neu anmelden“ – the refusal is remembered in
+  until signed in anew („Kalender › Konten“ shows „Neu anmelden“ – the refusal is remembered in
   memory with a hash of the sign-in, so a new token retries at once). Tests:
   `createTestContext({ mailCalendars })`.
+- Writing to mail calendars (events and calendars, as one's own – same panel, menu, confirms):
+  event ids are `mail:<calendar row>:<provider's id>` (encode them in paths – CalDAV/Graph ids
+  hold `/`, `=`); `services/calendars.ts` checks the calendar is the caller's before
+  `mail-calendars.ts` asks the provider, and a write drops the held range (5 min) of that
+  calendar. What may be done is `calendars.remote_rights` (migration 0163), set at each compare:
+  the provider's word (Google `accessRole` + `primary`, Graph `canEdit`/`canShare`/
+  `isDefaultCalendar`, CalDAV `current-user-privilege-set`) AND the sign-in's grant – the scopes
+  of the last token, held in memory only (`calendarGrant` in `mail/oauth.ts`; Google: one token
+  for all scopes, `calendar.readonly`/old `calendarlist.readonly` = read only). Unknown (no token
+  yet, password accounts): everything may be tried, the provider refuses. `regrant` shows „Zum
+  Ändern neu anmelden“. Someone else's calendar is only taken off one's list (Google
+  `calendarList.delete`, Graph DELETE does that for a shared one): „Entfernen“; Google's primary
+  and Graph's default can't go. Conflicts: the etag seen (held, `If-Match`; CalDAV `getetag`,
+  Google `etag`, Graph `@odata.etag`) → 412 → „Der Termin wurde inzwischen woanders geändert.“,
+  the range read anew. Occurrences of a series: Google/Graph instance ids change that one alone;
+  CalDAV refuses (RRULE/RECURRENCE-ID or an id `uid/<start>`) – overrides are not written.
+  Moving between a mail calendar and another is make-there + delete-here (new id; the panel
+  follows it). Graph reads whole days as UTC – rounded to the nearest midnight; written at
+  midnight `Europe/Berlin`. Graph colours are names: recolouring refused.
+- A Google calendar without a mailbox („Google Kalender verbinden“ on „Konten“, migration
+  0161): a `mail_accounts` row with `calendar_only` – Google's tokens, no servers (hosts empty),
+  started with `calendarOnly` (only `openid email` + the calendar scopes; Google's client alone, no
+  `GOOGLE_MAILBOXES` – sensitive scopes, no CASA), refused at finish without `calendar.events`
+  granted. Every mail path skips it (`listMailAccounts`, `ownAccount` – only delete takes it –,
+  sync, address book, logos); `GET /workspaces/:id/calendar-connections` lists it, deleted by
+  `DELETE /mail/accounts/:id`; signing in as a mailbox for the same address turns it into that
+  mailbox, the other way round is refused; renamed by `PATCH /mail/accounts/:id` with `label` alone.
+- „Konten“ (`/dateien/kalender/konten`, „Konten“ at the calendar's top right as „Postfächer“ in Post;
+  `CalendarAccounts.tsx`): every account with calendars – mailboxes with calendars or a refusal,
+  connections – state, „Neu anmelden“, „Umbenennen“ (the mailbox's `label`, shared with Post),
+  connection „Löschen“, mailbox „In Post verwalten“. Sign-ins return there (`useCalendarOAuthOutcome`
+  toasts). The side list only groups: an account's calendars under its `label` or address
+  (`useCalendarAccounts` – no group until mail accounts and connections loaded, never a made-up
+  name), a quiet key to „Konten“ when signed out or read-only.
 - AI tools `list_calendars/list_events/create_event/update_event/delete_event`: definitions in
   `calendar/agent-tool-defs.ts` (kept free of service imports – `APP_TOOLS` is built at load and
   `calendars.ts` → `sender` → agents is a cycle), run by `calendar/agent-tools.ts` for apps/the

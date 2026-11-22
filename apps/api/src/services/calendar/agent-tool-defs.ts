@@ -83,7 +83,7 @@ export const CALENDAR_TOOLS: {
     name: 'list_calendars',
     title: 'List calendars',
     description:
-      'The calendars the person sees, by id: each area’s (everyone in the area sees it), their private one (only they), sub-calendars under them, and their mailboxes’ calendars (read only). Says where events may be put.',
+      'The calendars the person sees, by id: each area’s (everyone in the area sees it), their private one (only they), sub-calendars under them, and their mailboxes’ calendars (changed at the mailbox’s provider). Says where events may be put.',
     properties: {},
     required: [],
     reads: true,

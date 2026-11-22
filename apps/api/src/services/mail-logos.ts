@@ -1,7 +1,7 @@
 import { resolveTxt as dnsResolveTxt } from 'node:dns/promises';
 import { createCanvas } from '@napi-rs/canvas';
 import { emailDomain } from '@slider/shared';
-import { eq } from 'drizzle-orm';
+import { and, eq } from 'drizzle-orm';
 import { mailAccounts, users, workspaceMembers, workspaces } from '../db/schema';
 import type { AppDeps } from '../deps';
 import { loadImage } from '../import/load-image';
@@ -85,7 +85,7 @@ async function ownDomains(deps: AppDeps, workspaceId: string, userId: string) {
     deps.db
       .select({ address: mailAccounts.address })
       .from(mailAccounts)
-      .where(eq(mailAccounts.userId, userId)),
+      .where(and(eq(mailAccounts.userId, userId), eq(mailAccounts.calendarOnly, false))),
   ]);
   const own = new Set<string>();
   for (const email of [...members.map((one) => one.email), ...boxes.map((one) => one.address)]) {

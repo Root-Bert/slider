@@ -9,11 +9,14 @@ export const CHANGELOG_URL = `${REPO_URL}/releases`;
 /** The personal page of the person behind it all. */
 export const BERTRO_URL = '/me/';
 export const CONTACT_URL = 'mailto:slider@bertro.dev';
+/** Imprint and privacy policy: one each for the whole domain, at its root. */
+export const IMPRINT_URL = '/impressum';
+export const PRIVACY_URL = '/datenschutz';
 /** Slider's API as the website reaches it (Caddy in production, a dev middleware in `astro.config.mjs`). */
 export const API_URL = '/slider/api';
 
 /**
- * One of Slider's own pages (`/slider/…`): blog, contact, legal, download. The office and the
+ * One of Slider's own pages (`/slider/…`): blog, contact, download. The office and the
  * apps' pages are built with `appPage` (`~/i18n`).
  */
 export function page(path = ''): string {

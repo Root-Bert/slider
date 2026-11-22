@@ -2703,6 +2703,12 @@ export const mailAccounts = pgTable(
      * fills it in for those known already (`syncMailAccount`).
      */
     htmlRead: boolean('html_read').notNull().default(false),
+    /**
+     * Only a calendar (0161): „Google Kalender verbinden“ – Google's tokens for its calendars
+     * alone, no IMAP/SMTP. Never read for mail, never among the mailboxes; its calendars show as
+     * a mailbox's do (`calendar/mail-calendars.ts`).
+     */
+    calendarOnly: boolean('calendar_only').notNull().default(false),
     lastSyncAt: timestamptz('last_sync_at'),
     createdAt: createdAt(),
     updatedAt: timestamptz('updated_at').notNull().defaultNow(),
@@ -2990,6 +2996,20 @@ export type TodoRow = typeof todos.$inferSelect;
  * under either (`parent_id`, area and owner taken over from the one above), and a mail account's
  * (`mail_account_id`, the provider's `remote_id`; their events are read live, never kept here).
  */
+/** What a mail account's calendar lets its person do in Slider (`calendars.remote_rights`). */
+export interface MailCalendarRights {
+  /** Events made, changed, deleted. */
+  events: boolean;
+  /** Renamed, coloured. */
+  rename: boolean;
+  /** Deleted at the provider, or only taken off one's list there (someone else's). */
+  drop: 'delete' | 'remove' | null;
+  /** New calendars may be made in its account. */
+  create: boolean;
+  /** Something its provider would let is kept back by an older sign-in: signing in anew asks. */
+  regrant: boolean;
+}
+
 export const calendars = pgTable(
   'calendars',
   {
@@ -3011,6 +3031,11 @@ export const calendars = pgTable(
     name: encryptedText('calendars', 'name').notNull(),
     /** `null`: the area's colour (an area's own), blue (private). */
     color: text('color'),
+    /**
+     * A mail account's calendar (0163): what may be done with it there – its provider's word and
+     * what the sign-in lets (`calendar/mail-calendars.ts`); `null`: everything may be tried.
+     */
+    remoteRights: jsonb('remote_rights').$type<MailCalendarRights>(),
     createdBy: text('created_by').references(() => users.id, { onDelete: 'set null' }),
     createdAt: createdAt(),
     updatedAt: timestamptz('updated_at').notNull().defaultNow(),

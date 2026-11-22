@@ -1128,6 +1128,27 @@
       "when": 1795338889177,
       "tag": "0160_agent_named",
       "breakpoints": true
+    },
+    {
+      "idx": 161,
+      "version": "7",
+      "when": 1798718400000,
+      "tag": "0161_mail_calendar_only",
+      "breakpoints": true
+    },
+    {
+      "idx": 162,
+      "version": "7",
+      "when": 1798804800000,
+      "tag": "0162_agent_named_again",
+      "breakpoints": true
+    },
+    {
+      "idx": 163,
+      "version": "7",
+      "when": 1798891200000,
+      "tag": "0163_calendar_remote_rights",
+      "breakpoints": true
     }
   ]
 }

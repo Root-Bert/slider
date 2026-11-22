@@ -1169,6 +1169,18 @@ async function buildExport(
   };
   const mailEntries = [];
   for (const { account, workspace } of mailboxes) {
+    if (account.calendarOnly) {
+      // A Google calendar connected without a mailbox: no mail, no servers – never its token.
+      mailEntries.push({
+        workspace: { id: account.workspaceId, name: workspace },
+        address: account.address,
+        kind: 'Kalenderverbindung (nur Kalender, kein Postfach)',
+        signIn: account.auth,
+        state: account.state,
+        createdAt: account.createdAt.toISOString(),
+      });
+      continue;
+    }
     const own = mails.filter(({ message }) => message.accountId === account.id);
     const conversations = [];
     for (const { thread } of mailThreadRows.filter((row) => row.thread.accountId === account.id)) {

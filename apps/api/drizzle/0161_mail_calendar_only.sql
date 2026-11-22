@@ -1,0 +1,1 @@
+ALTER TABLE "mail_accounts" ADD COLUMN "calendar_only" boolean DEFAULT false NOT NULL;

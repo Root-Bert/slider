@@ -19,6 +19,7 @@ import {
   deleteCalendar,
   deleteEvent,
   getEvent,
+  listCalendarConnections,
   listCalendars,
   listMailCalendarRefusals,
   listEvents,
@@ -43,6 +44,9 @@ export function calendarRoutes(deps: AppDeps) {
     )
     .get('/workspaces/:workspaceId/mail-calendars/refused', viewer, async (c) =>
       c.json(await listMailCalendarRefusals(deps, me(c), c.req.param('workspaceId'))),
+    )
+    .get('/workspaces/:workspaceId/calendar-connections', viewer, async (c) =>
+      c.json(await listCalendarConnections(deps, me(c), c.req.param('workspaceId'))),
     )
     .get('/workspaces/:workspaceId/calendar-events', viewer, async (c) =>
       c.json(

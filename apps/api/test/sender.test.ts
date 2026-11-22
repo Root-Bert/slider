@@ -5,6 +5,8 @@ import { createTransport } from 'nodemailer';
 import type Anthropic from '@anthropic-ai/sdk';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type {
+  Calendar,
+  CalendarConnection,
   CloudArea,
   SenderChannel,
   SenderEvent,
@@ -54,7 +56,13 @@ import type {
   SeenMark,
 } from '../src/mail/servers';
 import { imapOptions, smtpOptions } from '../src/mail/servers';
-import { mailOAuthConfigured, PERSONAL_MICROSOFT_TENANT } from '../src/mail/oauth';
+import {
+  calendarAccessToken,
+  calendarGrant,
+  calendarOAuthConfigured,
+  mailOAuthConfigured,
+  PERSONAL_MICROSOFT_TENANT,
+} from '../src/mail/oauth';
 import { SEALED_PREFIX } from '../src/crypto/content-crypto';
 import { dkimDomains } from '../src/mail/dkim';
 import { MAIL_TOOLS, preparedMailbox } from '../src/services/mail-agent';
@@ -250,6 +258,14 @@ beforeEach(async () => {
       microsoft: MICROSOFT_TEST_CONFIG,
       auth: { ...testConfig().auth, google: GOOGLE_TEST, googleMailboxes: true },
     },
+    // A Google calendar alone has one calendar; mailboxes' calendars stay out of these tests.
+    mailCalendars: (account) =>
+      account.calendarOnly
+        ? {
+            list: async () => [{ remoteId: 'primary', name: 'Robert privat', color: '#0b8043' }],
+            events: async () => [],
+          }
+        : null,
     mailOAuthFetch: async (url, init) => {
       const form = new URLSearchParams(String(init?.body));
       tokenCalls.push({ url, form });
@@ -2679,7 +2695,7 @@ describe('Sender – the workspace’s messages', () => {
       code_challenge_method: 'S256',
       // Its calendars too (Graph) – refused there, the mailbox still signs in.
       scope:
-        'openid email offline_access https://outlook.office.com/IMAP.AccessAsUser.All https://outlook.office.com/SMTP.Send https://graph.microsoft.com/Calendars.Read',
+        'openid email offline_access https://outlook.office.com/IMAP.AccessAsUser.All https://outlook.office.com/SMTP.Send https://graph.microsoft.com/Calendars.ReadWrite',
     });
     expect(ms.state).toMatch(/^mail\./);
     // An address typed into the form only pre-fills Microsoft's page; none typed, none sent.
@@ -2784,6 +2800,33 @@ describe('Sender – the workspace’s messages', () => {
     expect(tokenCalls[1]!.form.get('scope')).toContain('IMAP.AccessAsUser.All');
     expect(seen.at(-1)?.accessToken).toBe('ms-access-2');
     expect((await msRow())?.refreshToken).toBe('ms-refresh-2');
+    // Its calendars: writing asked first. Signed in when Slider only read, Microsoft refuses
+    // (AADSTS70000): asked again for reading – read only, „Neu anmelden“ for more; the mailbox
+    // itself untouched.
+    tokenAnswer = (form) =>
+      form.get('scope')?.includes('Calendars.ReadWrite')
+        ? Response.json(
+            { error: 'invalid_grant', error_description: 'AADSTS70000: not consented' },
+            { status: 400 },
+          )
+        : Response.json({
+            access_token: 'cal-read',
+            scope: 'https://graph.microsoft.com/Calendars.Read',
+            expires_in: 3600,
+          });
+    const calendarAsked = tokenCalls.length;
+    expect(await calendarAccessToken(ctx.deps, (await msRow())!)).toBe('cal-read');
+    expect(tokenCalls.slice(calendarAsked).map((call) => call.form.get('scope'))).toEqual([
+      'offline_access https://graph.microsoft.com/Calendars.ReadWrite',
+      'offline_access https://graph.microsoft.com/Calendars.Read',
+    ]);
+    expect(calendarGrant((await msRow())!)).toEqual({
+      events: false,
+      calendars: false,
+      list: false,
+    });
+    expect(await msRow()).toMatchObject({ refreshToken: 'ms-refresh-2', error: null });
+    expect((await msRow())?.state).not.toBe('signin');
     // Revoked: the mailbox waits for a new sign-in – no further tries, nothing thrown.
     clock.advance(2 * 60 * 60_000);
     tokenAnswer = () =>
@@ -2799,7 +2842,7 @@ describe('Sender – the workspace’s messages', () => {
     });
     await syncNow(ctx.deps, added.account.id);
     await syncAllMail(ctx.deps);
-    expect(tokenCalls).toHaveLength(3);
+    expect(tokenCalls).toHaveLength(5);
     // „Neu anmelden“: the same account only, its address already typed in at Microsoft.
     const again = await startOAuth({ provider: 'microsoft', accountId: added.account.id });
     expect(again.url.searchParams.get('login_hint')).toBe('robert@outlook.de');
@@ -2852,7 +2895,7 @@ describe('Sender – the workspace’s messages', () => {
       client_id: 'g-client',
       redirect_uri: GOOGLE_TEST.redirectUri,
       scope:
-        'openid email https://mail.google.com/ https://www.googleapis.com/auth/calendar.readonly',
+        'openid email https://mail.google.com/ https://www.googleapis.com/auth/calendar.events https://www.googleapis.com/auth/calendar.calendars https://www.googleapis.com/auth/calendar.calendarlist',
       access_type: 'offline',
       prompt: 'consent select_account',
     });
@@ -2893,6 +2936,168 @@ describe('Sender – the workspace’s messages', () => {
       },
     });
     expect(tokenCalls.at(-1)?.url).toBe('https://oauth2.googleapis.com/token');
+    // „Google Kalender verbinden“: a calendar alone – with Google's login only, no
+    // GOOGLE_MAILBOXES; asked for the calendars and the address, nothing of the mail.
+    expect(calendarOAuthConfigured(googleOnly, 'google')).toBe(true);
+    expect(calendarOAuthConfigured(googleOnly, 'microsoft')).toBe(false);
+    expect(calendarOAuthConfigured(base, 'google')).toBe(false);
+    ctx.deps.config.auth.googleMailboxes = false;
+    const oauthPath = `/workspaces/${ctx.workspaceId}/mail/oauth`;
+    expect(
+      (await send('POST', oauthPath, { provider: 'google', returnTo: mailboxesPage })).status,
+    ).toBe(503);
+    expect(
+      (
+        await send('POST', oauthPath, {
+          provider: 'microsoft',
+          calendarOnly: true,
+          returnTo: mailboxesPage,
+        })
+      ).status,
+    ).toBe(503);
+    const calendarToken = (nonce: string, scope: string) => () =>
+      Response.json({
+        id_token: idToken(
+          {
+            iss: 'https://accounts.google.com',
+            aud: 'g-client',
+            email: 'Robert.Privat@gmail.com',
+            email_verified: true,
+          },
+          nonce,
+        ),
+        access_token: 'c-access',
+        refresh_token: 'c-refresh',
+        expires_in: 3599,
+        scope,
+      });
+    const cal = await startOAuth({ provider: 'google', calendarOnly: true });
+    expect(Object.fromEntries(cal.url.searchParams)).toMatchObject({
+      scope:
+        'openid email https://www.googleapis.com/auth/calendar.events https://www.googleapis.com/auth/calendar.calendars https://www.googleapis.com/auth/calendar.calendarlist',
+      access_type: 'offline',
+      prompt: 'consent select_account',
+    });
+    // The events unticked on Google's page: refused, nothing kept.
+    tokenAnswer = calendarToken(
+      cal.url.searchParams.get('nonce') ?? '',
+      'openid https://www.googleapis.com/auth/calendar.calendars https://www.googleapis.com/auth/calendar.calendarlist https://www.googleapis.com/auth/userinfo.email',
+    );
+    expect(await comeBack('google', { state: cal.state, code: 'c' }, cal.cookie)).toMatchObject({
+      ok: false,
+      error: expect.stringContaining('Häkchen beim Kalender'),
+      mailCheck: { step: 'oauth-consent' },
+    });
+    const cal2 = await startOAuth({ provider: 'google', calendarOnly: true });
+    tokenAnswer = calendarToken(
+      cal2.url.searchParams.get('nonce') ?? '',
+      'openid https://www.googleapis.com/auth/calendar.events https://www.googleapis.com/auth/calendar.calendars https://www.googleapis.com/auth/calendar.calendarlist https://www.googleapis.com/auth/userinfo.email',
+    );
+    const loginsBefore = seen.length;
+    const connected = await comeBack('google', { state: cal2.state, code: 'c' }, cal2.cookie);
+    expect(connected).toMatchObject({
+      ok: true,
+      renewed: false,
+      account: { address: 'robert.privat@gmail.com', signIn: 'google', imapHost: '' },
+    });
+    const calendarId = connected.ok ? connected.account.id : '';
+    // Everything granted: its events and calendars are changed in Slider.
+    expect(calendarGrant({ id: calendarId, auth: 'google' })).toEqual({
+      events: true,
+      calendars: true,
+      list: true,
+    });
+    await ctx.deps.background?.idle();
+    // Never a mail server: not tried at sign-in, never read; no mailbox in the mail's lists.
+    await syncAllMail(ctx.deps);
+    expect(seen.slice(loginsBefore).map((one) => one.address)).not.toContain(
+      'robert.privat@gmail.com',
+    );
+    const mailboxes = await ok<MailAccount[]>(
+      send('GET', `/workspaces/${ctx.workspaceId}/mail/accounts`),
+    );
+    expect(mailboxes.map((one) => one.address)).not.toContain('robert.privat@gmail.com');
+    expect(
+      (await send('POST', `/mail/accounts/${calendarId}/sync?workspaceId=${ctx.workspaceId}`))
+        .status,
+    ).toBe(204);
+    // Only its own name changes (Kalender › Konten) – nothing of a mailbox.
+    expect((await send('PATCH', `/mail/accounts/${calendarId}`, { name: 'X' })).status).toBe(404);
+    expect(
+      (await send('PATCH', `/mail/accounts/${calendarId}`, { label: 'X', aiReads: false })).status,
+    ).toBe(404);
+    await ok(send('PATCH', `/mail/accounts/${calendarId}`, { label: ' Privat ' }));
+    // Its calendars stand in the calendar as a mailbox's; it is listed as a connection there.
+    expect(
+      await ok<CalendarConnection[]>(
+        send('GET', `/workspaces/${ctx.workspaceId}/calendar-connections`),
+      ),
+    ).toEqual([
+      {
+        accountId: calendarId,
+        address: 'robert.privat@gmail.com',
+        label: 'Privat',
+        signIn: 'google',
+        signedOut: false,
+      },
+    ]);
+    const calendarsNow = await ok<Calendar[]>(
+      send('GET', `/workspaces/${ctx.workspaceId}/calendars`),
+    );
+    expect(calendarsNow.filter((one) => one.mailAccountId === calendarId)).toMatchObject([
+      // Granted all Slider asks: filled, and a calendar made beside it, in Slider.
+      {
+        kind: 'mail',
+        name: 'Robert privat',
+        canEdit: true,
+        canAddCalendar: true,
+        signInToChange: false,
+      },
+    ]);
+    // „Neu anmelden“ as a calendar only: not as a mailbox (Google's mailboxes on again).
+    ctx.deps.config.auth.googleMailboxes = true;
+    expect(
+      (
+        await send('POST', oauthPath, {
+          provider: 'google',
+          accountId: calendarId,
+          returnTo: mailboxesPage,
+        })
+      ).status,
+    ).toBe(400);
+    const cal3 = await startOAuth({
+      provider: 'google',
+      calendarOnly: true,
+      accountId: calendarId,
+    });
+    expect(cal3.url.searchParams.get('login_hint')).toBe('robert.privat@gmail.com');
+    tokenAnswer = calendarToken(
+      cal3.url.searchParams.get('nonce') ?? '',
+      'https://www.googleapis.com/auth/calendar.events https://www.googleapis.com/auth/calendar.calendarlist.readonly',
+    );
+    expect(await comeBack('google', { state: cal3.state, code: 'c' }, cal3.cookie)).toMatchObject({
+      ok: true,
+      renewed: true,
+    });
+    // Granted as Slider once asked (events, the list to read): events yes, calendars not –
+    // decided from the scopes the token carries.
+    expect(calendarGrant({ id: calendarId, auth: 'google' })).toEqual({
+      events: true,
+      calendars: false,
+      list: false,
+    });
+    // Deleted as a mailbox is – its calendars and its token with it.
+    await ok(send('DELETE', `/mail/accounts/${calendarId}`), 204);
+    expect(
+      await ok<CalendarConnection[]>(
+        send('GET', `/workspaces/${ctx.workspaceId}/calendar-connections`),
+      ),
+    ).toEqual([]);
+    expect(
+      (await ok<Calendar[]>(send('GET', `/workspaces/${ctx.workspaceId}/calendars`))).some(
+        (one) => one.mailAccountId === calendarId,
+      ),
+    ).toBe(false);
     // On the wire: SASL XOAUTH2 with the token, to IMAP (imapflow) and SMTP (nodemailer).
     const wire: string[] = [];
     const fakeServer = (greeting: string, answer: (line: string) => string) =>

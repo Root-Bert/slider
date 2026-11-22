@@ -1,16 +1,12 @@
-import type { Calendar, MailCalendarRefusal } from '@slider/shared';
+import type { Calendar } from '@slider/shared';
 import { useState, type CSSProperties, type ReactNode } from 'react';
-import {
-  startMailOAuth,
-  useCreateCalendar,
-  useDeleteCalendar,
-  useMailAccounts,
-  useMailCalendarRefusals,
-  useUpdateCalendar,
-} from '@/lib/api';
+import { Link } from 'react-router';
+import { useCreateCalendar, useDeleteCalendar, useUpdateCalendar } from '@/lib/api';
+import { routes } from '@/lib/routes';
 import { readJson, writeString } from '@/lib/storage';
-import { ConfirmDialog, Icon, IconButton, Menu, cn } from '@/ui';
+import { ConfirmDialog, Icon, IconButton, Menu, Tooltip, cn, type MenuAction } from '@/ui';
 import { useCloud } from '../../hooks/useCloud';
+import { useCalendarAccounts, type CalendarAccount } from './CalendarAccounts';
 import { colorOf, TODOS } from './entries';
 
 const hiddenKey = (workspaceId: string) => `slider.calendar.hidden:${workspaceId}`;
@@ -82,8 +78,9 @@ function tree(
 
 /**
  * The calendars one sees, beside the calendar as Apple's: the workspace's areas, one's private
- * ones, the mail accounts', the to-dos – each shown or hidden with its box. A sub-calendar is made
- * where it goes (its parent's „+“), typed in place.
+ * ones, each account's under its name, the to-dos – each shown or hidden with its box. A
+ * sub-calendar is made where it goes (its parent's „+“), typed in place. The accounts themselves –
+ * connected, signed in anew, renamed, deleted – are on „Konten“.
  */
 export function CalendarList({
   calendars,
@@ -112,22 +109,7 @@ export function CalendarList({
     areaIndex,
     areaParent,
   );
-  const mail = calendars.filter((each) => each.kind === 'mail');
-  const accounts = [...new Set(mail.map((each) => each.mailAccountId!))];
-  const mailAccounts = useMailAccounts(ui.workspace.id);
-  const refused = useMailCalendarRefusals(ui.workspace.id).data ?? [];
-  const addressOf = (account: string) =>
-    mailAccounts.data?.find((each) => each.id === account)?.address ?? 'Postfach';
-  // To the provider's sign-in, back to this page; there it asks for the calendars too.
-  const signInAnew = (refusal: MailCalendarRefusal) =>
-    startMailOAuth(ui.workspace.id, {
-      provider: refusal.signIn,
-      accountId: refusal.accountId,
-      returnTo: `${window.location.pathname}${window.location.search}`,
-    }).then(
-      ({ url }) => window.location.assign(url),
-      (error: Error) => ui.notify(error.message, 'danger'),
-    );
+  const accounts = useCalendarAccounts(ui.workspace.id, calendars) ?? [];
   return (
     <nav aria-label="Kalender" className="flex flex-col gap-4">
       <Group title={ui.workspace.name}>
@@ -140,36 +122,10 @@ export function CalendarList({
           <Row key={node.calendar.id} node={node} hidden={hidden} onToggle={onToggle} />
         ))}
       </Group>
-      {accounts.map((account) => (
-        <Group key={account} title={addressOf(account)}>
-          {mail
-            .filter((each) => each.mailAccountId === account)
-            .map((calendar) => (
-              <Row
-                key={calendar.id}
-                node={{ calendar, children: [] }}
-                hidden={hidden}
-                onToggle={onToggle}
-              />
-            ))}
-        </Group>
-      ))}
-      {refused
-        .filter((refusal) => !accounts.includes(refusal.accountId))
-        .map((refusal) => (
-          <Group key={refusal.accountId} title={addressOf(refusal.accountId)}>
-            <li>
-              <button
-                type="button"
-                onClick={() => void signInAnew(refusal)}
-                title="Slider darf die Kalender dieses Postfachs noch nicht lesen – nach dem neuen Anmelden stehen sie hier."
-                className="flex h-8 w-full min-w-0 items-center gap-2 rounded-control px-2 text-left text-sm text-fg-muted hover:bg-hover hover:text-fg"
-              >
-                <Icon name="key" size="xs" className="shrink-0" />
-                <span className="truncate">Für Kalender neu anmelden</span>
-              </button>
-            </li>
-          </Group>
+      {accounts
+        .filter((account) => account.calendars.length > 0)
+        .map((account) => (
+          <AccountGroup key={account.id} account={account} hidden={hidden} onToggle={onToggle} />
         ))}
       <Group title="Weiteres">
         <Check
@@ -184,10 +140,110 @@ export function CalendarList({
   );
 }
 
-function Group({ title, children }: { title: string; children: ReactNode }) {
+/**
+ * An account's calendars under its name: a new one made in it with its „+“ (typed in place, as a
+ * sub-calendar). Signed out or kept to reading: a quiet mark to „Konten“, where it signs in anew.
+ */
+function AccountGroup({
+  account,
+  hidden,
+  onToggle,
+}: {
+  account: CalendarAccount;
+  hidden: ReadonlySet<string>;
+  onToggle: (id: string) => void;
+}) {
+  const ui = useCloud();
+  const create = useCreateCalendar(ui.workspace.id);
+  const [adding, setAdding] = useState(false);
+  const canAdd = account.calendars.some((each) => each.canAddCalendar);
+  const why = account.signedOut
+    ? 'Abgemeldet – unter „Konten“ neu anmelden'
+    : account.readOnly
+      ? 'Nur zum Ansehen – zum Ändern unter „Konten“ neu anmelden'
+      : null;
+  return (
+    <Group
+      title={account.name}
+      hint={
+        why && (
+          <Tooltip label={why} side="bottom" className="shrink-0">
+            <Link
+              to={routes.cloudCalendarAccounts(ui.workspace.id)}
+              aria-label={why}
+              className="flex rounded-badge text-fg-faint transition-colors hover:text-fg"
+            >
+              <Icon name="key" size={12} />
+            </Link>
+          </Tooltip>
+        )
+      }
+      action={
+        canAdd && (
+          <IconButton
+            icon="add"
+            label={`Neuer Kalender in ${account.name}`}
+            size="xs"
+            onClick={() => setAdding(true)}
+          />
+        )
+      }
+    >
+      {account.calendars.map((calendar) => (
+        <Row
+          key={calendar.id}
+          node={{ calendar, children: [] }}
+          hidden={hidden}
+          onToggle={onToggle}
+        />
+      ))}
+      {adding && (
+        <NameField
+          depth={0}
+          initial=""
+          label="Neuer Kalender"
+          onDone={(name) => {
+            setAdding(false);
+            if (name) {
+              create.mutate(
+                { mailAccountId: account.id, name },
+                { onError: (error: Error) => ui.notify(error.message, 'danger') },
+              );
+            }
+          }}
+        />
+      )}
+    </Group>
+  );
+}
+
+function Group({
+  title,
+  hint,
+  action,
+  children,
+}: {
+  title: string;
+  /** Right after the title, always there (an account to sign in anew). */
+  hint?: ReactNode;
+  /** At the end, e.g. the group's „+“ – there on pointing or focus. */
+  action?: ReactNode;
+  children: ReactNode;
+}) {
   return (
     <section className="flex flex-col gap-0.5">
-      <h3 className="truncate px-2 pb-1 text-xs font-medium text-fg-subtle">{title}</h3>
+      {action || hint ? (
+        <div className="group flex h-6 min-w-0 items-center gap-1 pr-1 pl-2">
+          <h3 className="min-w-0 truncate text-xs font-medium text-fg-subtle">{title}</h3>
+          {hint}
+          {/* As a calendar's „…“: there on pointing or focus. */}
+          <span className="ml-auto flex items-center opacity-0 group-focus-within:opacity-100 group-hover:opacity-100">
+            {action}
+          </span>
+        </div>
+      ) : (
+        <h3 className="truncate px-2 pb-1 text-xs font-medium text-fg-subtle">{title}</h3>
+      )}
       <ul className="flex flex-col">{children}</ul>
     </section>
   );
@@ -260,9 +316,34 @@ function Row({
   const { calendar } = node;
   const [adding, setAdding] = useState(false);
   const [renaming, setRenaming] = useState(false);
-  const [deleting, setDeleting] = useState(false);
+  /** Deleted – or, someone else's at a mailbox's provider, only taken off one's list there. */
+  const [deleting, setDeleting] = useState<'delete' | 'remove' | null>(null);
   const fail = (error: Error) => ui.notify(error.message, 'danger');
   const canAdd = calendar.canEdit && calendar.kind !== 'mail' && depth < 3;
+  const actions: MenuAction[] = [];
+  if (calendar.canManage) {
+    actions.push({
+      label: 'Umbenennen',
+      icon: 'driveFileRename',
+      onSelect: () => setRenaming(true),
+    });
+  }
+  if (calendar.canDelete) {
+    actions.push({
+      label: 'Löschen',
+      icon: 'delete',
+      tone: 'danger',
+      onSelect: () => setDeleting('delete'),
+    });
+  }
+  if (calendar.canRemove) {
+    actions.push({
+      label: 'Entfernen',
+      icon: 'delete',
+      tone: 'danger',
+      onSelect: () => setDeleting('remove'),
+    });
+  }
   return (
     <>
       {renaming ? (
@@ -285,7 +366,7 @@ function Row({
           onChange={() => onToggle(calendar.id)}
           depth={depth}
           trailing={
-            (canAdd || calendar.canManage) && (
+            (canAdd || actions.length > 0) && (
               <span className="flex items-center opacity-0 group-focus-within:opacity-100 group-hover:opacity-100">
                 {canAdd && (
                   <IconButton
@@ -295,24 +376,8 @@ function Row({
                     onClick={() => setAdding(true)}
                   />
                 )}
-                {calendar.canManage && (
-                  <Menu
-                    label={`Mehr zu ${calendar.name}`}
-                    triggerSize="xs"
-                    actions={[
-                      {
-                        label: 'Umbenennen',
-                        icon: 'driveFileRename',
-                        onSelect: () => setRenaming(true),
-                      },
-                      {
-                        label: 'Löschen',
-                        icon: 'delete',
-                        tone: 'danger',
-                        onSelect: () => setDeleting(true),
-                      },
-                    ]}
-                  />
+                {actions.length > 0 && (
+                  <Menu label={`Mehr zu ${calendar.name}`} triggerSize="xs" actions={actions} />
                 )}
               </span>
             )
@@ -341,16 +406,26 @@ function Row({
       )}
       {deleting && (
         <ConfirmDialog
-          onClose={() => setDeleting(false)}
-          title={`„${calendar.name}“ löschen?`}
-          description="Der Kalender und alle seine Termine sind dann für alle weg."
-          confirmLabel="Löschen"
+          onClose={() => setDeleting(null)}
+          title={`„${calendar.name}“ ${deleting === 'remove' ? 'entfernen' : 'löschen'}?`}
+          description={
+            deleting === 'remove'
+              ? 'Er verschwindet aus deiner Liste. Der Kalender selbst und seine Termine bleiben.'
+              : calendar.kind === 'mail'
+                ? 'Der Kalender und alle seine Termine sind dann auch beim Anbieter weg.'
+                : 'Der Kalender und alle seine Termine sind dann für alle weg.'
+          }
+          confirmLabel={deleting === 'remove' ? 'Entfernen' : 'Löschen'}
           confirmIcon="delete"
           onConfirm={() => {
-            setDeleting(false);
+            const how = deleting;
+            setDeleting(null);
             remove
               .mutateAsync(calendar.id)
-              .then(() => ui.notify(`„${calendar.name}“ gelöscht`), fail);
+              .then(
+                () => ui.notify(`„${calendar.name}“ ${how === 'remove' ? 'entfernt' : 'gelöscht'}`),
+                fail,
+              );
           }}
         />
       )}

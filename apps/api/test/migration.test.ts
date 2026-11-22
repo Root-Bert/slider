@@ -51,6 +51,17 @@ async function upgraded(tag: string, seed: string): Promise<PGlite> {
 
 describe('data migrations', () => {
   it('give owners workspaces on the free plan, index slide keys and drop e-mail logins (0004 … 0027)', async () => {
+    // Drizzle applies only migrations whose `when` lies above the last one applied before the run:
+    // a lower one is skipped without an error on a database that has a later one already. 0126 and
+    // 0160 came in one release with everything around them (applied there); databases that took
+    // their neighbours before them – development ones – miss 0160's column, which 0162 adds again.
+    const { entries } = JSON.parse(
+      await readFile(path.join(MIGRATIONS_DIR, 'meta', '_journal.json'), 'utf8'),
+    ) as { entries: { tag: string; when: number }[] };
+    const backwards = entries
+      .filter((entry, i) => i > 0 && entry.when <= entries[i - 1]!.when)
+      .map((entry) => entry.tag);
+    expect(backwards).toEqual(['0126_reader', '0160_agent_named']);
     {
       const client = await upgraded(
         WORKSPACES_TAG,

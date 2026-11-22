@@ -10,7 +10,14 @@ import type {
   WorkspaceRole,
 } from '@slider/shared';
 import { calendarEvents, calendars, mailAccounts, workspaceMembers } from '../src/db/schema';
-import type { CalendarSource, RemoteCalendar, RemoteEvent } from '../src/services/calendar/remote';
+import { holdMailToken } from '../src/mail/oauth';
+import {
+  CONFLICT,
+  type CalendarSource,
+  type CalendarWriter,
+  type RemoteCalendar,
+  type RemoteEvent,
+} from '../src/services/calendar/remote';
 import { SEALED_PREFIX } from '../src/crypto/content-crypto';
 import { runCalendarTool } from '../src/services/calendar/agent-tools';
 import { runAppTool } from '../src/services/mcp-cloud';
@@ -19,7 +26,7 @@ import { createTestContext, signedInUser, type TestContext } from './helpers';
 
 let ctx: TestContext;
 /** What mail accounts' calendars answer (`deps.mailCalendars`). */
-let mailSource: CalendarSource | null = null;
+let mailSource: (CalendarSource & Partial<CalendarWriter>) | null = null;
 /** A provider that keeps the calendars from Slider: its grant has no consent to them. */
 const noConsent: CalendarSource = {
   list: () =>
@@ -330,8 +337,8 @@ describe('Calendars', () => {
       (await eventsOf('2027-04-01T00:00:00Z', '2027-05-01T00:00:00Z')).map((one) => one.title),
     ).toEqual(['Hannover Messe']);
 
-    // A mail account's calendars: its person's alone, read only, their events asked of the
-    // provider for the range looked at and held a while – never stored.
+    // A mail account's calendars: its person's alone, their events asked of the provider for the
+    // range looked at and held a while – never stored; written there as far as it lets.
     let remote: RemoteCalendar[] = [
       {
         remoteId: 'https://dav.firma.de/cal/chef@firma.de/arbeit/',
@@ -342,29 +349,85 @@ describe('Calendars', () => {
         remoteId: 'https://dav.firma.de/cal/chef@firma.de/feiertage/',
         name: 'Feiertage',
         color: null,
+        rights: { events: false, rename: false, drop: 'remove' },
       },
     ];
     const asked: string[] = [];
+    /** The provider's events by calendar, with a version that changes on every write. */
+    const atProvider = new Map<string, RemoteEvent[]>([
+      [
+        remote[0]!.remoteId,
+        [
+          {
+            id: 'uid-1/20270412T080000Z',
+            calendarRemoteId: remote[0]!.remoteId,
+            title: 'Jour fixe',
+            location: 'Büro',
+            notes: '',
+            allDay: false,
+            start: '2027-04-12T08:00:00Z',
+            end: '2027-04-12T09:00:00Z',
+            etag: '"1"',
+          },
+        ],
+      ],
+    ]);
+    const writes: string[] = [];
+    const inCalendar = (remoteId: string) => atProvider.get(remoteId) ?? [];
     mailSource = {
       list: () => Promise.resolve(remote),
       events: (remoteId) => {
         asked.push(remoteId);
-        return Promise.resolve(
-          remoteId.endsWith('/arbeit/')
-            ? [
-                {
-                  id: 'uid-1/20270412T080000Z',
-                  calendarRemoteId: remoteId,
-                  title: 'Jour fixe',
-                  location: 'Büro',
-                  notes: '',
-                  allDay: false,
-                  start: '2027-04-12T08:00:00Z',
-                  end: '2027-04-12T09:00:00Z',
-                } satisfies RemoteEvent,
-              ]
-            : [],
+        return Promise.resolve(inCalendar(remoteId).map((one) => ({ ...one })));
+      },
+      get: (remoteId, eventId) =>
+        Promise.resolve(inCalendar(remoteId).find((one) => one.id === eventId) ?? null),
+      create: (remoteId, fields) => {
+        writes.push(`create ${remoteId.split('/').at(-2)} ${fields.title}`);
+        const made = {
+          ...fields,
+          id: `new-${writes.length}`,
+          calendarRemoteId: remoteId,
+          etag: '"1"',
+        };
+        atProvider.set(remoteId, [...inCalendar(remoteId), made]);
+        return Promise.resolve(made);
+      },
+      update: (remoteId, eventId, change, etag) => {
+        const before = inCalendar(remoteId).find((one) => one.id === eventId);
+        if (!before) return Promise.reject(new Error('Diesen Termin gibt es nicht (mehr).'));
+        if (etag && etag !== before.etag) return Promise.reject(new Error(CONFLICT));
+        writes.push(`update ${eventId} ${etag ?? '-'} ${Object.keys(change).join(',')}`);
+        Object.assign(before, change, { etag: `"${Number(before.etag!.slice(1, -1)) + 1}"` });
+        return Promise.resolve({ ...before });
+      },
+      remove: (remoteId, eventId, etag) => {
+        writes.push(`remove ${eventId} ${etag ?? '-'}`);
+        atProvider.set(
+          remoteId,
+          inCalendar(remoteId).filter((one) => one.id !== eventId),
         );
+        return Promise.resolve();
+      },
+      createCalendar: (name) => {
+        writes.push(`calendar ${name}`);
+        const made = {
+          remoteId: `https://dav.firma.de/cal/chef@firma.de/${name}/`,
+          name,
+          color: null,
+        };
+        remote = [...remote, made];
+        return Promise.resolve(made);
+      },
+      updateCalendar: (remoteId, change) => {
+        writes.push(`rename ${remoteId.split('/').at(-2)} ${change.name}`);
+        remote = remote.map((one) => (one.remoteId === remoteId ? { ...one, ...change } : one));
+        return Promise.resolve();
+      },
+      deleteCalendar: (remoteId, how) => {
+        writes.push(`${how} ${remoteId.split('/').at(-2)}`);
+        remote = remote.filter((one) => one.remoteId !== remoteId);
+        return Promise.resolve();
       },
     };
     await ctx.deps.db.insert(mailAccounts).values({
@@ -383,17 +446,30 @@ describe('Calendars', () => {
       password: 'postfach-geheim',
     });
     const withMail = (await calendarsOf()).filter((one) => one.kind === 'mail');
-    expect(withMail.map((one) => [one.name, one.color, one.canEdit, one.canManage])).toEqual([
-      ['Arbeit', '#ff2968', false, false],
-      ['Feiertage', 'blue', false, false],
+    expect(
+      withMail.map((one) => [
+        one.name,
+        one.color,
+        one.canEdit,
+        one.canManage,
+        one.canDelete,
+        one.canRemove,
+        one.canAddCalendar,
+        one.signInToChange,
+      ]),
+    ).toEqual([
+      ['Arbeit', '#ff2968', true, true, true, false, true, false],
+      // Someone else's at the provider: only read, only taken off one's list.
+      ['Feiertage', 'blue', false, false, false, true, true, false],
     ]);
     expect((await calendarsOf(anna.cookie)).some((one) => one.kind === 'mail')).toBe(false);
     const april = await eventsOf('2027-04-01T00:00:00Z', '2027-05-01T00:00:00Z');
     const jourFixe = april.find((one) => one.title === 'Jour fixe')!;
     expect(jourFixe).toMatchObject({
+      id: `mail:${withMail[0]!.id}:uid-1/20270412T080000Z`,
       calendarId: withMail[0]!.id,
       location: 'Büro',
-      canEdit: false,
+      canEdit: true,
       start: '2027-04-12T08:00:00Z',
     });
     expect(asked).toHaveLength(2);
@@ -404,11 +480,128 @@ describe('Calendars', () => {
         (one) => one.title === 'Jour fixe',
       ),
     ).toBe(false);
+    // Changed at the provider with the version seen; another person's id – forged or not – is
+    // not found, and nothing is asked of the provider for it.
+    const jourFixeUrl = `/calendar-events/${encodeURIComponent(jourFixe.id)}`;
+    expect((await send('PATCH', jourFixeUrl, { title: 'X' }, anna.cookie)).status).toBe(404);
+    expect((await send('DELETE', jourFixeUrl, undefined, anna.cookie)).status).toBe(404);
     expect(
-      (await send('PATCH', `/calendar-events/${encodeURIComponent(jourFixe.id)}`, { title: 'X' }))
+      (await send('GET', `/calendar-events/mail:${withMail[0]!.id}:x`, undefined, anna.cookie))
         .status,
     ).toBe(404);
-    expect((await send('DELETE', `/calendars/${withMail[0]!.id}`)).status).toBe(403);
+    expect(writes).toEqual([]);
+    // Moved without an end, it keeps its old one: ending at its start is refused before asking.
+    expect(
+      (
+        await send('PATCH', jourFixeUrl, {
+          title: 'Jour fixe (neu)',
+          start: '2027-04-12T09:00:00Z',
+        })
+      ).status,
+    ).toBe(400);
+    expect(writes).toEqual([]);
+    const later1 = await ok<CalendarEvent>(
+      send('PATCH', jourFixeUrl, {
+        title: 'Jour fixe (neu)',
+        allDay: false,
+        start: '2027-04-12T09:00:00Z',
+        end: '2027-04-12T10:00:00Z',
+      }),
+    );
+    expect(later1).toMatchObject({ id: jourFixe.id, title: 'Jour fixe (neu)' });
+    expect(later1.end).toBe('2027-04-12T10:00:00Z');
+    expect(writes).toEqual(['update uid-1/20270412T080000Z "1" title,allDay,start,end']);
+    // What was held is let go: the next look reads the provider anew.
+    expect(
+      (await eventsOf('2027-04-01T00:00:00Z', '2027-05-01T00:00:00Z')).find(
+        (one) => one.id === jourFixe.id,
+      ),
+    ).toMatchObject({ title: 'Jour fixe (neu)', start: '2027-04-12T09:00:00Z' });
+    expect(asked).toHaveLength(3);
+    // Changed elsewhere since it was read: refused, read anew.
+    atProvider.get(remote[0]!.remoteId)![0]!.etag = '"9"';
+    const conflict = await send('PATCH', jourFixeUrl, { notes: 'Agenda' });
+    expect(conflict.status).toBe(409);
+    expect(((await conflict.json()) as { error: { message: string } }).error.message).toBe(
+      'Der Termin wurde inzwischen woanders geändert.',
+    );
+    await ok(send('PATCH', jourFixeUrl, { notes: 'Agenda' }));
+    expect(asked).toHaveLength(3);
+    expect(writes.at(-1)).toBe('update uid-1/20270412T080000Z - notes');
+    // Made, moved to one's own calendar (made there, gone at the provider), made again, deleted.
+    const call = await ok<CalendarEvent>(
+      send('POST', '/calendar-events', {
+        calendarId: withMail[0]!.id,
+        title: 'Anruf',
+        allDay: false,
+        start: '2027-04-13T08:00:00Z',
+        end: '2027-04-13T08:30:00Z',
+      }),
+      201,
+    );
+    expect(call).toMatchObject({ id: `mail:${withMail[0]!.id}:new-3`, canEdit: true });
+    const ownCall = await ok<CalendarEvent>(
+      send('PATCH', `/calendar-events/${encodeURIComponent(call.id)}`, {
+        calendarId: privateCal.id,
+      }),
+    );
+    expect(ownCall).toMatchObject({ calendarId: privateCal.id, title: 'Anruf' });
+    expect(ownCall.id.startsWith('mail:')).toBe(false);
+    expect(writes.slice(-2)).toEqual(['create arbeit Anruf', 'remove new-3 -']);
+    const back = await ok<CalendarEvent>(
+      send('PATCH', `/calendar-events/${ownCall.id}`, { calendarId: withMail[0]!.id }),
+    );
+    expect(back.id.startsWith(`mail:${withMail[0]!.id}:`)).toBe(true);
+    expect((await send('GET', `/calendar-events/${ownCall.id}`)).status).toBe(404);
+    await ok(send('DELETE', `/calendar-events/${encodeURIComponent(back.id)}`), 204);
+    expect(writes.at(-1)).toMatch(/^remove new-\d+ /);
+    // Someone else's calendar at the provider: nothing goes in, it only comes off one's list.
+    expect(
+      (
+        await send('POST', '/calendar-events', {
+          calendarId: withMail[1]!.id,
+          title: 'X',
+          allDay: true,
+          start: '2027-04-13',
+          end: '2027-04-14',
+        })
+      ).status,
+    ).toBe(403);
+    expect((await send('PATCH', `/calendars/${withMail[1]!.id}`, { name: 'Y' })).status).toBe(403);
+    // Calendars: made in the account, renamed; another person can't touch them.
+    const mailbox = withMail[0]!.mailAccountId!;
+    const project = await ok<Calendar>(
+      send('POST', '/calendars', { mailAccountId: mailbox, name: 'Projekt' }),
+      201,
+    );
+    expect(project).toMatchObject({ kind: 'mail', mailAccountId: mailbox, canEdit: true });
+    expect(
+      (await send('POST', '/calendars', { mailAccountId: mailbox, name: 'Z' }, anna.cookie)).status,
+    ).toBe(404);
+    expect(
+      (await send('POST', '/calendars', { parentId: withMail[0]!.id, name: 'Unter' })).status,
+    ).toBe(403);
+    expect(
+      (await send('PATCH', `/calendars/${project.id}`, { name: 'X' }, anna.cookie)).status,
+    ).toBe(404);
+    expect(
+      await ok<Calendar>(send('PATCH', `/calendars/${project.id}`, { name: 'Projekt Nord' })),
+    ).toMatchObject({ name: 'Projekt Nord' });
+    expect((await send('PATCH', `/calendars/${project.id}`, { color: 'red' })).status).toBe(400);
+    expect((await send('DELETE', `/calendars/${project.id}`, undefined, anna.cookie)).status).toBe(
+      404,
+    );
+    await ok(send('DELETE', `/calendars/${project.id}`), 204);
+    await ok(send('DELETE', `/calendars/${withMail[1]!.id}`), 204);
+    expect(writes.slice(-4)).toEqual([
+      'calendar Projekt',
+      'rename Projekt Projekt Nord',
+      'delete Projekt',
+      'remove feiertage',
+    ]);
+    expect(
+      (await calendarsOf()).filter((one) => one.kind === 'mail').map((one) => one.name),
+    ).toEqual(['Arbeit']);
     const [sealed] = await ctx.deps.db
       .select({ raw: sql<string>`${calendars.remoteId}` })
       .from(calendars)
@@ -451,7 +644,7 @@ describe('Calendars', () => {
     expect(listed).toContain(
       `[${privateCal.id}] „Privat“ – private, only the person sees it; takes events`,
     );
-    expect(listed).toContain('„Arbeit“ – from one of the person’s mailboxes; read only');
+    expect(listed).toContain('„Arbeit“ – from one of the person’s mailboxes; takes events');
     const made = await app('create_event', {
       calendar: privateCal.id,
       title: 'Zahnarzt',
@@ -478,7 +671,7 @@ describe('Calendars', () => {
       }),
     ).toContain('2027-04-19 – 2027-04-23 (all day)');
     const fortnight = await app('list_events', { from: '2027-04-12', to: '2027-04-25' });
-    expect(fortnight).toMatch(/2027-04-12 10:00–\d\d:\d\d · Jour fixe · at Büro .* · read only/);
+    expect(fortnight).toMatch(/2027-04-12 11:00–12:00 · Jour fixe \(neu\) · at Büro .*Arbeit/);
     expect(fortnight.indexOf('Jour fixe')).toBeLessThan(fortnight.indexOf('Zahnarzt'));
     expect(fortnight.indexOf('Zahnarzt')).toBeLessThan(fortnight.indexOf('Urlaub'));
     expect(
@@ -486,8 +679,9 @@ describe('Calendars', () => {
         '\n',
       ),
     ).toHaveLength(1);
-    expect(await app('update_event', { event: jourFixe.id, title: 'X' })).toBe(
-      'ERROR That event is from a mailbox’s calendar: read only.',
+    // An agent changes a mailbox's event as the person would: at the provider.
+    expect(await app('update_event', { event: jourFixe.id, start: '2027-04-12T12:00' })).toMatch(
+      /^Changed: .*2027-04-12 12:00–13:00 · Jour fixe \(neu\)/,
     );
     const shared = { areasOnly: 'this agent is shared' };
     const forShared = await runCalendarTool(
@@ -540,7 +734,16 @@ describe('Calendars', () => {
       .update(mailAccounts)
       .set({ refreshToken: 'neu' })
       .where(eq(mailAccounts.id, gmail));
-    expect((await calendarsOf()).filter((one) => one.mailAccountId === gmail)).toHaveLength(2);
+    // Its grant reads only (signed in when Slider asked for no more): read only, „Neu anmelden“.
+    holdMailToken(gmail, {
+      accessToken: 'g',
+      expiresAt: new Date(ctx.clock.now().getTime() + 3_600_000),
+      granted: ['openid', 'https://www.googleapis.com/auth/calendar.readonly'],
+    });
+    const fromGmail = (await calendarsOf()).filter((one) => one.mailAccountId === gmail);
+    expect(fromGmail.map((one) => [one.canEdit, one.canAddCalendar, one.signInToChange])).toEqual([
+      [false, false, true],
+    ]);
     expect(await ok(send('GET', refused))).toEqual([]);
     // Compared again a while later: renamed, one gone.
     remote = [{ ...remote[0]!, name: 'Büro' }];

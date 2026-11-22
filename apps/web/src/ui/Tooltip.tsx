@@ -5,6 +5,8 @@ export interface TooltipProps extends Omit<HTMLAttributes<HTMLSpanElement>, 'chi
   /** The bubble's content; several lines go in as block children (`<span>`s stack). */
   label: ReactNode;
   children: ReactNode;
+  /** Above the trigger (default) or below it – where a scrolling page's top edge would cut it. */
+  side?: 'top' | 'bottom';
   /** Horizontal anchor above the trigger: centred (default), left edge or right edge. */
   align?: 'center' | 'start' | 'end';
   /** Wraps at 12rem (default) or 16rem; `none` keeps it on one line. */
@@ -40,6 +42,7 @@ export function Tooltip({
   label,
   children,
   align = 'center',
+  side = 'top',
   maxWidth = 48,
   showOnFocus = true,
   animated = true,
@@ -59,13 +62,15 @@ export function Tooltip({
           role={decorative ? undefined : 'tooltip'}
           aria-hidden={decorative || undefined}
           className={cn(
-            'pointer-events-none absolute bottom-full mb-1.5 w-max flex-col rounded-badge',
+            'pointer-events-none absolute w-max flex-col rounded-badge',
+            side === 'top' ? 'bottom-full mb-1.5' : 'top-full mt-1.5',
             'bg-glass-solid px-2 py-1 text-caption leading-4 text-fg shadow-float ring-1 ring-hover',
             alignClasses[align],
             maxWidthClasses[maxWidth],
             animated
               ? [
-                  'flex translate-y-1 opacity-0 transition-[opacity,translate] duration-150',
+                  'flex opacity-0 transition-[opacity,translate] duration-150',
+                  side === 'top' ? 'translate-y-1' : '-translate-y-1',
                   'group-hover/tooltip:translate-y-0 group-hover/tooltip:opacity-100',
                   showOnFocus &&
                     'group-has-focus-visible/tooltip:translate-y-0 group-has-focus-visible/tooltip:opacity-100',

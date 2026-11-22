@@ -694,3 +694,143 @@ const startMs = (event: RemoteEvent) =>
   event.allDay
     ? zonedToUtc(Date.parse(`${event.start}T00:00:00Z`), FALLBACK_ZONE)
     : Date.parse(event.start);
+
+// ---------------------------------------------------------------------------------------------
+// Writing: an event made or changed in a CalDAV calendar
+
+/** What Slider writes of an event; days `YYYY-MM-DD` (end exclusive), times ISO instants. */
+export interface IcsFields {
+  title: string;
+  location: string;
+  notes: string;
+  allDay: boolean;
+  start: string;
+  end: string;
+}
+
+const escapeText = (value: string) =>
+  value.replace(/\\/g, '\\\\').replace(/;/g, '\\;').replace(/,/g, '\\,').replace(/\r?\n/g, '\\n');
+
+/** A content line folded at 75 octets, never inside a character (RFC 5545 3.1). */
+function fold(line: string): string {
+  const encoder = new TextEncoder();
+  const parts: string[] = [];
+  let current = '';
+  let bytes = 0;
+  for (const char of line) {
+    const size = encoder.encode(char).length;
+    if (bytes + size > (parts.length ? 74 : 75)) {
+      parts.push(current);
+      current = '';
+      bytes = 0;
+    }
+    current += char;
+    bytes += size;
+  }
+  parts.push(current);
+  return parts.join('\r\n ');
+}
+
+const utcStamp = (at: Date) => at.toISOString().replace(/[-:]|\.\d{3}/g, '');
+
+function timingLines(fields: Pick<IcsFields, 'allDay' | 'start' | 'end'>): string[] {
+  if (fields.allDay) {
+    return [
+      `DTSTART;VALUE=DATE:${fields.start.replace(/-/g, '')}`,
+      `DTEND;VALUE=DATE:${fields.end.replace(/-/g, '')}`,
+    ];
+  }
+  return [`DTSTART:${utcStamp(new Date(fields.start))}`, `DTEND:${utcStamp(new Date(fields.end))}`];
+}
+
+function textLines(fields: Partial<IcsFields>): string[] {
+  const lines: string[] = [];
+  if (fields.title !== undefined) lines.push(`SUMMARY:${escapeText(fields.title)}`);
+  if (fields.location) lines.push(`LOCATION:${escapeText(fields.location)}`);
+  if (fields.notes) lines.push(`DESCRIPTION:${escapeText(fields.notes)}`);
+  return lines;
+}
+
+/** A new calendar resource holding one event. */
+export function newIcsEvent(uid: string, fields: IcsFields, now: Date): string {
+  return [
+    'BEGIN:VCALENDAR',
+    'VERSION:2.0',
+    'PRODID:-//Slider//Kalender//DE',
+    'BEGIN:VEVENT',
+    `UID:${uid}`,
+    `DTSTAMP:${utcStamp(now)}`,
+    `CREATED:${utcStamp(now)}`,
+    ...timingLines(fields),
+    ...textLines(fields),
+    'END:VEVENT',
+    'END:VCALENDAR',
+    '',
+  ]
+    .map(fold)
+    .join('\r\n');
+}
+
+/** The UIDs of a resource's events, and whether it holds a series (a rule, extra dates, overrides). */
+export function icsEventsOf(ics: string): { uids: string[]; series: boolean } {
+  const found = vevents(ics);
+  return {
+    uids: found.map((props) => props.get('UID')?.[0]?.value.trim() ?? ''),
+    series:
+      found.length > 1 ||
+      found.some((props) => props.has('RRULE') || props.has('RDATE') || props.has('RECURRENCE-ID')),
+  };
+}
+
+/**
+ * The resource's one event with the fields given changed; everything else it holds (alarms,
+ * attendees, the server's own properties) stays as it was. Timing comes whole or not at all.
+ */
+export function changedIcsEvent(ics: string, change: Partial<IcsFields>, now: Date): string {
+  const lines = unfold(ics);
+  const timing = change.allDay !== undefined && change.start && change.end;
+  const replaced = new Set(['DTSTAMP', 'LAST-MODIFIED', 'SEQUENCE']);
+  if (timing) for (const name of ['DTSTART', 'DTEND', 'DURATION']) replaced.add(name);
+  if (change.title !== undefined) replaced.add('SUMMARY');
+  if (change.location !== undefined) replaced.add('LOCATION');
+  if (change.notes !== undefined) replaced.add('DESCRIPTION');
+  const out: string[] = [];
+  const stack: string[] = [];
+  let sequence = 0;
+  for (const line of lines) {
+    const parsed = parseLine(line);
+    const inEvent = stack.length > 0 && stack.at(-1) === 'VEVENT';
+    if (parsed?.name === 'BEGIN') stack.push(parsed.value.trim().toUpperCase());
+    else if (parsed?.name === 'END') {
+      const ended = stack.pop();
+      if (ended === 'VEVENT' && !stack.includes('VEVENT')) {
+        out.push(
+          `DTSTAMP:${utcStamp(now)}`,
+          `LAST-MODIFIED:${utcStamp(now)}`,
+          `SEQUENCE:${sequence + 1}`,
+          ...(timing
+            ? timingLines({ allDay: change.allDay!, start: change.start!, end: change.end! })
+            : []),
+          ...textLines(change),
+        );
+      }
+    } else if (inEvent && parsed && replaced.has(parsed.name)) {
+      if (parsed.name === 'SEQUENCE') sequence = Number.parseInt(parsed.value, 10) || 0;
+      continue;
+    }
+    out.push(line);
+  }
+  return `${out.map(fold).join('\r\n')}\r\n`;
+}
+
+/** The one event of a resource as it reads now (a single event; any date it lies on). */
+export function icsSingleEvent(ics: string, calendarRemoteId: string): RemoteEvent | null {
+  return (
+    parseIcsEvents(
+      ics,
+      calendarRemoteId,
+      new Date(Date.UTC(1900, 0, 1)),
+      new Date(Date.UTC(2200, 0, 1)),
+    )[0] ?? null
+  );
+}

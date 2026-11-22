@@ -64,6 +64,14 @@ export const PERSONAL_MICROSOFT_TENANT = '9188040d-6c67-4c5b-b112-36a304b66dad';
 const MS_MAIL_SCOPES =
   'offline_access https://outlook.office.com/IMAP.AccessAsUser.All https://outlook.office.com/SMTP.Send';
 
+/** Google's scope for a calendar's events: granted, the calendars may be read (`finishMailOAuth`). */
+export const GOOGLE_CALENDAR_EVENTS = 'https://www.googleapis.com/auth/calendar.events';
+/** Google's scopes to make, rename and delete calendars, and to colour or drop them from one's list. */
+export const GOOGLE_CALENDARS = 'https://www.googleapis.com/auth/calendar.calendars';
+export const GOOGLE_CALENDAR_LIST = 'https://www.googleapis.com/auth/calendar.calendarlist';
+const MS_CALENDARS_WRITE = 'https://graph.microsoft.com/Calendars.ReadWrite';
+const MS_CALENDARS_READ = 'https://graph.microsoft.com/Calendars.Read';
+
 export const MAIL_OAUTH: Record<MailOAuthProvider, ProviderSpec> = {
   microsoft: {
     client: (config) => config.microsoft,
@@ -72,7 +80,9 @@ export const MAIL_OAUTH: Record<MailOAuthProvider, ProviderSpec> = {
     // v2 dynamic consent: the delegated scopes are asked for here, nothing set in the portal.
     scopes: `openid email ${MS_MAIL_SCOPES}`,
     refreshScopes: MS_MAIL_SCOPES,
-    calendarScopes: 'https://graph.microsoft.com/Calendars.Read',
+    // Events and calendars made, changed and deleted from Slider too (`calendarAccessToken` falls
+    // back to reading for a mailbox signed in before).
+    calendarScopes: MS_CALENDARS_WRITE,
     authorizeParams: { response_mode: 'query', prompt: 'select_account' },
     issuer: (iss, claims) =>
       typeof claims['tid'] === 'string' &&
@@ -99,7 +109,9 @@ export const MAIL_OAUTH: Record<MailOAuthProvider, ProviderSpec> = {
     tokenUrl: () => 'https://oauth2.googleapis.com/token',
     // IMAP and SMTP need Google's full mail scope (restricted: see docs/agent-notes.md, Mail).
     scopes: 'openid email https://mail.google.com/',
-    calendarScopes: 'https://www.googleapis.com/auth/calendar.readonly',
+    // The events, the calendars themselves (made, renamed, deleted) and one's list of them (names,
+    // colours, a subscribed one taken off).
+    calendarScopes: `${GOOGLE_CALENDAR_EVENTS} ${GOOGLE_CALENDARS} ${GOOGLE_CALENDAR_LIST}`,
     // A refresh token comes only offline and with the consent screen shown.
     authorizeParams: { access_type: 'offline', prompt: 'consent select_account' },
     issuer: (iss) => iss === 'https://accounts.google.com' || iss === 'accounts.google.com',
@@ -126,6 +138,14 @@ export const mailOAuthConfigured = (config: Config, provider: MailOAuthProvider)
   MAIL_OAUTH[provider].client(config) !== null &&
   (provider !== 'google' || config.auth.googleMailboxes);
 
+/**
+ * „Google Kalender verbinden“ – a calendar without a mailbox: only the calendar scopes (Google
+ * calls them sensitive, verified once – no yearly audit as Gmail's scope), so with Google's login
+ * alone, not waiting for `GOOGLE_MAILBOXES`.
+ */
+export const calendarOAuthConfigured = (config: Config, provider: MailOAuthProvider) =>
+  provider === 'google' && MAIL_OAUTH.google.client(config) !== null;
+
 /** A refusal of the provider's authorize or token endpoint. */
 export class MailOAuthError extends Error {
   constructor(
@@ -149,8 +169,8 @@ export class MailSignInNeeded extends Error {
   }
 }
 
-export const signInAgainText = (provider: MailOAuthProvider) =>
-  `${MAIL_OAUTH_LABELS[provider]} hat die Anmeldung dieses Postfachs beendet – melde dich neu an.`;
+export const signInAgainText = (provider: MailOAuthProvider, calendarOnly = false) =>
+  `${MAIL_OAUTH_LABELS[provider]} hat die Anmeldung ${calendarOnly ? 'dieses Kalenders' : 'dieses Postfachs'} beendet – melde dich neu an.`;
 
 /** Answers of a token endpoint that mean: this grant is over, only a new sign-in helps. */
 const ENDED = new Set([
@@ -166,6 +186,8 @@ export function mailAuthorizeUrl(
   provider: MailOAuthProvider,
   pkce: Pkce,
   loginHint?: string,
+  /** Only the calendars and the address (`calendarOAuthConfigured`), no mail. */
+  calendarOnly = false,
 ): string {
   const spec = MAIL_OAUTH[provider];
   const client = spec.client(config);
@@ -176,7 +198,9 @@ export function mailAuthorizeUrl(
     response_type: 'code',
     // The login's redirect URI – the registered one; the state tells the callback it is mail.
     redirect_uri: client.redirectUri,
-    scope: `${spec.scopes} ${spec.calendarScopes}`,
+    scope: calendarOnly
+      ? `openid email ${spec.calendarScopes}`
+      : `${spec.scopes} ${spec.calendarScopes}`,
     state: pkce.state,
     nonce: pkce.nonce,
     code_challenge: pkce.challenge,
@@ -192,6 +216,8 @@ interface TokenBody {
   access_token?: string;
   refresh_token?: string;
   expires_in?: number;
+  /** What was granted (Google: space-separated; a person may untick a scope on its page). */
+  scope?: string;
   error?: string;
   error_description?: string;
 }
@@ -241,7 +267,9 @@ export async function exchangeMailCode(
   provider: MailOAuthProvider,
   code: string,
   pkce: { verifier: string; nonce: string },
-): Promise<MailTokens & { address: string | null; servers: MailServerSettings }> {
+): Promise<
+  MailTokens & { address: string | null; servers: MailServerSettings; granted: string[] | null }
+> {
   const spec = MAIL_OAUTH[provider];
   const client = spec.client(deps.config)!;
   const body = await tokenRequest(deps, provider, {
@@ -268,6 +296,7 @@ export async function exchangeMailCode(
     expiresAt: expiry(deps, body),
     address: spec.address(claims),
     servers: spec.servers(claims),
+    granted: typeof body.scope === 'string' ? body.scope.split(/\s+/).filter(Boolean) : null,
   };
 }
 
@@ -281,19 +310,55 @@ const expiry = (deps: Pick<AppDeps, 'clock'>, body: TokenBody) =>
 const EARLY_MS = 5 * 60_000;
 const held = new Map<string, { token: string; expiresAt: number }>();
 const asking = new Map<string, Promise<string>>();
+/**
+ * The scopes the provider said a mailbox's last token carries (Google's one token; Microsoft's
+ * Graph token for its calendars). Memory only: every token asked for tells it anew.
+ */
+const grantedScopes = new Map<string, string[]>();
+
+const scopesOf = (body: TokenBody) =>
+  typeof body.scope === 'string' ? body.scope.split(/\s+/).filter(Boolean) : null;
 
 /** Keeps a mailbox's access token (just signed in) for its next rounds. */
 export function holdMailToken(
   accountId: string,
-  tokens: Pick<MailTokens, 'accessToken' | 'expiresAt'>,
+  tokens: Pick<MailTokens, 'accessToken' | 'expiresAt'> & { granted?: string[] | null },
 ) {
   held.set(accountId, { token: tokens.accessToken, expiresAt: tokens.expiresAt.getTime() });
+  if (tokens.granted) grantedScopes.set(accountId, tokens.granted);
 }
 
 /** The mailbox is deleted or signs in anew: its access token goes. */
 export function forgetMailToken(accountId: string) {
   held.delete(accountId);
   held.delete(calendarKey(accountId));
+  grantedScopes.delete(accountId);
+  grantedScopes.delete(calendarKey(accountId));
+}
+
+/**
+ * What a mailbox signed in through its provider may change in its calendars, as far as its last
+ * token tells (`null`: not known yet – everything is tried, the provider answers). Signed in
+ * before Slider asked for it, a grant reads only: signing in anew asks.
+ */
+export function calendarGrant(
+  row: Pick<MailAccountRow, 'id' | 'auth'>,
+): { events: boolean; calendars: boolean; list: boolean } | null {
+  if (row.auth === 'microsoft') {
+    const scopes = grantedScopes.get(calendarKey(row.id));
+    if (!scopes) return null;
+    const write = scopes.some((one) => one.toLowerCase().endsWith('calendars.readwrite'));
+    return { events: write, calendars: write, list: write };
+  }
+  if (row.auth !== 'google') return null;
+  const scopes = grantedScopes.get(row.id);
+  if (!scopes) return null;
+  const full = scopes.includes('https://www.googleapis.com/auth/calendar');
+  return {
+    events: full || scopes.includes(GOOGLE_CALENDAR_EVENTS),
+    calendars: full || scopes.includes(GOOGLE_CALENDARS),
+    list: full || scopes.includes(GOOGLE_CALENDAR_LIST),
+  };
 }
 
 const calendarKey = (accountId: string) => `${accountId}#calendar`;
@@ -330,7 +395,11 @@ export function mailAccessToken(deps: AppDeps, row: MailAccountRow): Promise<str
         held.delete(row.id);
         await deps.db
           .update(mailAccounts)
-          .set({ state: 'signin', error: signInAgainText(provider), refreshToken: null })
+          .set({
+            state: 'signin',
+            error: signInAgainText(provider, row.calendarOnly),
+            refreshToken: null,
+          })
           .where(eq(mailAccounts.id, row.id));
         throw new MailSignInNeeded(provider);
       }
@@ -348,7 +417,11 @@ export function mailAccessToken(deps: AppDeps, row: MailAccountRow): Promise<str
         .set({ refreshToken: body.refresh_token })
         .where(eq(mailAccounts.id, row.id));
     }
-    holdMailToken(row.id, { accessToken: body.access_token, expiresAt: expiry(deps, body) });
+    holdMailToken(row.id, {
+      accessToken: body.access_token,
+      expiresAt: expiry(deps, body),
+      granted: scopesOf(body),
+    });
     return body.access_token;
   })().finally(() => asking.delete(row.id));
   asking.set(row.id, refresh);
@@ -372,11 +445,20 @@ export async function calendarAccessToken(deps: AppDeps, row: MailAccountRow): P
   const running = asking.get(key);
   if (running) return running;
   const refresh = (async () => {
-    const body = await tokenRequest(deps, provider, {
-      grant_type: 'refresh_token',
-      refresh_token: row.refreshToken!,
-      scope: `offline_access ${MAIL_OAUTH.microsoft.calendarScopes}`,
+    const ask = (scope: string) =>
+      tokenRequest(deps, provider, {
+        grant_type: 'refresh_token',
+        refresh_token: row.refreshToken!,
+        scope: `offline_access ${scope}`,
+      });
+    // Writing first; a mailbox signed in when Slider only read has consented to reading alone.
+    let asked = MS_CALENDARS_WRITE;
+    const body = await ask(asked).catch((error: unknown) => {
+      if (!(error instanceof MailOAuthError)) throw error;
+      asked = MS_CALENDARS_READ;
+      return ask(asked);
     });
+    grantedScopes.set(key, scopesOf(body) ?? [asked]);
     if (!body.access_token) throw new MailOAuthUnreachable('No access token');
     // Microsoft's refresh tokens are for every resource consented to: a new one serves mail too.
     if (body.refresh_token && body.refresh_token !== row.refreshToken) {

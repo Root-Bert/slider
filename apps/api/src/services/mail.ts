@@ -133,9 +133,16 @@ async function loginFor(deps: AppDeps, row: MailAccountRow): Promise<MailLogin> 
   return { ...loginOf(row), password: '', accessToken: await mailAccessToken(deps, row) };
 }
 
-async function ownAccount(deps: AppDeps, userId: string, accountId: string) {
+/** One's mailbox – a calendar alone (`calendarOnly`) only where `calendar` says so (deleting). */
+async function ownAccount(
+  deps: AppDeps,
+  userId: string,
+  accountId: string,
+  { calendar = false } = {},
+) {
   const [row] = await deps.db.select().from(mailAccounts).where(eq(mailAccounts.id, accountId));
-  if (!row || row.userId !== userId) throw notFound('Dieses Postfach gibt es nicht.');
+  if (!row || row.userId !== userId || (row.calendarOnly && !calendar))
+    throw notFound('Dieses Postfach gibt es nicht.');
   // Only while one is in its workspace, and not while that is blocked (BER-167).
   await requireRole(deps.db, row.workspaceId, userId);
   return row;
@@ -150,7 +157,14 @@ export async function listMailAccounts(
   const rows = await deps.db
     .select()
     .from(mailAccounts)
-    .where(and(eq(mailAccounts.workspaceId, workspaceId), eq(mailAccounts.userId, userId)))
+    .where(
+      and(
+        eq(mailAccounts.workspaceId, workspaceId),
+        eq(mailAccounts.userId, userId),
+        // A Google calendar alone is no mailbox (`calendar/mail-calendars.ts` has it).
+        eq(mailAccounts.calendarOnly, false),
+      ),
+    )
     .orderBy(mailAccounts.createdAt);
   return rows.map(accountDto);
 }
@@ -207,7 +221,10 @@ export async function updateMailAccount(
   accountId: string,
   { label, ...patch }: Partial<MailAccountInput>,
 ): Promise<MailAccount> {
-  const row = await ownAccount(deps, userId, accountId);
+  // A calendar alone („Kalender › Konten“) changes its own name only.
+  const row = await ownAccount(deps, userId, accountId, {
+    calendar: Object.values(patch).every((value) => value === undefined),
+  });
   // Its own name: trimmed by the schema; empty is its default again.
   const named = label !== undefined ? { label: label || null } : {};
   if (row.auth !== 'password') {
@@ -278,14 +295,20 @@ export async function checkMailAccount(deps: AppDeps, userId: string, accountId:
   await checked(deps, await loginFor(deps, row));
 }
 
-/** Deletes a mailbox here – its mails here and their attachments; on the server all stays. */
+/**
+ * Deletes a mailbox here – its mails here and their attachments; on the server all stays. A
+ * calendar alone goes the same way (its calendars with it).
+ */
 export async function deleteMailAccount(deps: AppDeps, userId: string, accountId: string) {
-  const row = await ownAccount(deps, userId, accountId);
+  const row = await ownAccount(deps, userId, accountId, { calendar: true });
   // Its refresh token goes with the row, its access token from memory.
   await deps.db.delete(mailAccounts).where(eq(mailAccounts.id, accountId));
   forgetMailToken(accountId);
   await deps.storage.deletePrefix(`mail/${accountId}/`);
-  tell(row, null);
+  if (row.calendarOnly) {
+    if (senderLive.open(row.workspaceId))
+      senderLive.publish(row.workspaceId, new Set([row.userId]), { type: 'calendar' });
+  } else tell(row, null);
 }
 
 // ── Reading ────────────────────────────────────────────────────────────────
@@ -304,7 +327,7 @@ export async function syncMailAccount(deps: AppDeps, accountId: string): Promise
   working.add(accountId);
   try {
     const [row] = await deps.db.select().from(mailAccounts).where(eq(mailAccounts.id, accountId));
-    if (!row) return;
+    if (!row || row.calendarOnly) return;
     let fetched: Awaited<ReturnType<MailServers['fetch']>>;
     // Once, since mails keep their HTML: the inbox read as the first time (its latest mails), the
     // ones known already get their HTML (`ingestMail`). Only right after a good round – what came
@@ -438,7 +461,7 @@ export async function pushSeen(deps: AppDeps, accountId: string): Promise<void> 
   marking.add(accountId);
   try {
     const [row] = await deps.db.select().from(mailAccounts).where(eq(mailAccounts.id, accountId));
-    if (!row || row.state === 'signin') return;
+    if (!row || row.state === 'signin' || row.calendarOnly) return;
     const pending = await deps.db
       .select({
         id: mailMessages.id,
@@ -527,7 +550,8 @@ export async function syncAllMail(deps: AppDeps): Promise<void> {
       every: users.mailSyncMinutes,
     })
     .from(mailAccounts)
-    .innerJoin(users, eq(users.id, mailAccounts.userId));
+    .innerJoin(users, eq(users.id, mailAccounts.userId))
+    .where(eq(mailAccounts.calendarOnly, false));
   const now = deps.clock.now().getTime();
   for (const row of rows) {
     // Waiting for its person to sign in anew: never tried by itself.
@@ -1091,7 +1115,13 @@ export async function listMailThreads(
   const own = await deps.db
     .select({ address: mailAccounts.address })
     .from(mailAccounts)
-    .where(and(eq(mailAccounts.workspaceId, workspaceId), eq(mailAccounts.userId, userId)));
+    .where(
+      and(
+        eq(mailAccounts.workspaceId, workspaceId),
+        eq(mailAccounts.userId, userId),
+        eq(mailAccounts.calendarOnly, false),
+      ),
+    );
   const peopleOf = await peopleOn(
     deps,
     { workspaceId, userId, own: new Set(own.map((row) => row.address.toLowerCase())) },

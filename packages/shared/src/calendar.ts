@@ -1,7 +1,8 @@
 /**
  * Calendars – the workspace's days. Every area is a calendar by itself (the workspace too: it is
  * an area), each person has a private one, and under any of them sub-calendars („Urlaub“,
- * „Messen“). A person's mail accounts bring their calendars along, read only and theirs alone.
+ * „Messen“). A person's mail accounts bring their calendars along, theirs alone: their events and
+ * the calendars themselves are changed at the provider, as far as it lets them.
  * Events are seen by whoever sees the calendar and changed by whoever may edit there.
  */
 import { z } from 'zod';
@@ -10,8 +11,8 @@ import type { Author } from './model';
 
 /**
  * `area`: an area's (the workspace's own area too) – its people's. `private`: one's own, only
- * one sees it. `mail`: a calendar of one's mail account, read only. Sub-calendars take the kind
- * of the one they stand under.
+ * one sees it. `mail`: a calendar of one's mail account (no sub-calendars). Sub-calendars take
+ * the kind of the one they stand under.
  */
 export type CalendarKind = 'area' | 'private' | 'mail';
 
@@ -30,8 +31,16 @@ export interface Calendar {
   color: string;
   /** Events may be put in, changed and deleted here. */
   canEdit: boolean;
-  /** It may be renamed, coloured or deleted (sub-calendars one may edit in). */
+  /** It may be renamed and coloured (sub-calendars one may edit in; a mail calendar one owns). */
   canManage: boolean;
+  /** It may be deleted („Löschen“) – with its events, at the provider too. */
+  canDelete: boolean;
+  /** A mail calendar someone else owns (subscribed): only taken off one's list („Entfernen“). */
+  canRemove: boolean;
+  /** A mail calendar: new ones may be made beside it, in its account. */
+  canAddCalendar: boolean;
+  /** A mail calendar whose provider would let more than the sign-in does: „Neu anmelden“. */
+  signInToChange: boolean;
 }
 
 /**
@@ -41,6 +50,20 @@ export interface Calendar {
 export interface MailCalendarRefusal {
   accountId: string;
   signIn: 'google' | 'microsoft';
+}
+
+/**
+ * A calendar connected without a mailbox („Google Kalender verbinden“): one's Google account,
+ * asked only for its calendars. Its calendars come as a mailbox's (`mailAccountId` = `accountId`);
+ * `signedOut`: Google ended its sign-in – „Neu anmelden“.
+ */
+export interface CalendarConnection {
+  accountId: string;
+  address: string;
+  /** What its person called it („Kalender › Konten“) – `null`: its address. */
+  label: string | null;
+  signIn: 'google';
+  signedOut: boolean;
 }
 
 export interface CalendarEvent {
@@ -68,12 +91,18 @@ export const MAX_EVENT_RANGE_DAYS = 400;
 const day = z.string().regex(/^\d{4}-\d{2}-\d{2}$/);
 const instant = z.string().datetime({ offset: true });
 
-export const calendarInputSchema = z.object({
-  /** Where it stands: under an area's, one's private or another sub-calendar. */
-  parentId: z.string().min(1).max(100),
-  name: z.string().trim().min(1).max(MAX_CALENDAR_NAME),
-  color: cloudAreaColorSchema.optional(),
-});
+export const calendarInputSchema = z
+  .object({
+    /** Where it stands: under an area's, one's private or another sub-calendar … */
+    parentId: z.string().min(1).max(100).optional(),
+    /** … or in one's mail account, made at its provider. */
+    mailAccountId: z.string().min(1).max(100).optional(),
+    name: z.string().trim().min(1).max(MAX_CALENDAR_NAME),
+    color: cloudAreaColorSchema.optional(),
+  })
+  .refine((input) => Boolean(input.parentId) !== Boolean(input.mailAccountId), {
+    message: 'Wo der Kalender stehen soll, fehlt.',
+  });
 export type CalendarInput = z.infer<typeof calendarInputSchema>;
 
 export const calendarChangeSchema = z

@@ -2,7 +2,7 @@
 import Base from '~/layouts/Base.astro';
 import { Icon } from '@/ui/Icon';
 import { buttonClasses } from '@/ui/button-classes';
-import { CONTACT_URL, page } from '~/lib/links';
+import { CONTACT_URL, PRIVACY_URL } from '~/lib/links';
 
 /**
  * The contact form (the second way to reach us next to the mail address, § 5 DDG), drawn as the
@@ -81,7 +81,7 @@ import { CONTACT_URL, page } from '~/lib/links';
       </form>
 
       <p class="text-xs leading-[1.5] text-fg-faint">
-        We use your address and message only to answer you, see the <a href={page('datenschutz')} class="underline underline-offset-3 hover:text-fg-subtle">privacy policy</a>.
+        We use your address and message only to answer you, see the <a href={PRIVACY_URL} class="underline underline-offset-3 hover:text-fg-subtle">privacy policy</a>.
       </p>
     </div>
   </section>

@@ -29,7 +29,13 @@ export async function mailAddressBook(
   const accounts = await deps.db
     .select({ id: mailAccounts.id, address: mailAccounts.address })
     .from(mailAccounts)
-    .where(and(eq(mailAccounts.workspaceId, workspaceId), eq(mailAccounts.userId, userId)));
+    .where(
+      and(
+        eq(mailAccounts.workspaceId, workspaceId),
+        eq(mailAccounts.userId, userId),
+        eq(mailAccounts.calendarOnly, false),
+      ),
+    );
   if (accounts.length === 0) return [];
   const own = new Set(accounts.map((one) => one.address.toLowerCase()));
   const rows = await deps.db
