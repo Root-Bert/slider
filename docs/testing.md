@@ -1,6 +1,6 @@
 # Tests
 
-**At most 500 tests in the whole repo** – every Vitest case incl. each parameterized row, plus
+**At most 1000 tests in the whole repo** – every Vitest case incl. each parameterized row, plus
 every Playwright case. Add assertions to an existing test; merge rather than drop security
 coverage. Test at the lowest layer that sees the real failure; keep regression tests for lost
 edits, access boundaries, corrupted documents and concurrency.

@@ -1,4 +1,2 @@
 # Former fixed e2e test secret (no real credential); the config now generates one per run.
 902d46312f3319e1018534630fd73d7f64fd24dc:e2e/playwright.config.ts:generic-api-key:64
-# Fake TURN secret in the calls test (turn.example.org); no real credential.
-a34b2883dd20df008024801e25445a1154d255e3:apps/api/test/calls.test.ts:generic-api-key:426

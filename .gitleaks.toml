@@ -16,3 +16,12 @@ targetRules = ["generic-api-key"]
 condition = "AND"
 paths = ['''(^|/)apps/api/test/integrations\.test\.ts$''']
 regexes = ['''^(unsplash-env-12345678|unsplash-key-12345678|anything-1234)$''']
+
+# The calls test's fake TURN secret (turn.example.org). Bound to its path and value, not to a commit:
+# the public repository's commits are new ones, so a fingerprint in .gitleaksignore never holds there.
+[[allowlists]]
+description = "Fake TURN secret in the calls test"
+targetRules = ["generic-api-key"]
+condition = "AND"
+paths = ['''(^|/)apps/api/test/calls\.test\.ts$''']
+regexes = ['''^turn-secret-0123456789$''']
