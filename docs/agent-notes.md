@@ -254,7 +254,9 @@ Decrypt the deck's blob (`EncryptedBlobStorage` + `.data/data-key`), then from `
 - The connector's icon: before connecting, the app only has the site (`/api/mcp` is 401 without a
   token) – `/favicon.ico` (light mark, PNG inside, made from `favicon.svg`; renderers outside
   browsers ignore its `<style>`) is what such fetchers find; once connected, `serverInfo.icons`
-  (`favicon.svg`, `icon-192.png`, absolute on `webOrigin`).
+  (`favicon.svg`, `icon-192.png`, absolute on `webOrigin`). Since 2026-11-22 `index.html` names
+  Cloud's icons (the start page's app), no longer the `.ico` – a fetcher reading the page's links
+  finds Cloud's SVG, one asking for `/favicon.ico` still Slider's.
 - Discovery lives at the origin's root (`/.well-known/oauth-protected-resource/api/mcp`,
   `oauth-authorization-server`, `openid-configuration`); issuer = `webOrigin`. Vite proxies
   `/.well-known` in dev; a reverse proxy in front of the API must pass it too. Desktop: no OAuth
@@ -401,8 +403,20 @@ Unsplash can revoke the key; production approval needs screenshots of credits.
 ## Cloud – the workspace's files (`services/cloud/`, `features/cloud/`)
 
 - The name (the user, 2026-11-17): the files app is „Cloud“ everywhere – app, API, desktop, docs.
-  „Office“ is the family's name over all the apps and stands on the website only (`apps/site`,
-  `/office/`). In code „office“ now means LibreOffice or an office file (`officePreviewable`,
+  „Office“ is the family's name over all the apps – on the website (`apps/site`, `/office/`) and,
+  since 2026-11-22 (the user), in the app wherever the software, the instance or the account is
+  meant: „Office einrichten“, „diese Office-Instanz“, „wer Office betreibt“, „bei Office
+  anmelden“, „dein Konto“ (never „Slider-Konto“), the privacy template, the passkey's RP name,
+  Nextcloud's app password (`DEVICE_NAME`), the OAuth client name towards foreign MCP servers.
+  „Slider“ stays for presentations, the deck app's own pages and titles, its desktop app and the
+  MCP connector with its tools; code identifiers, env vars, packages, docker and the self-hosting
+  docs keep „Slider“ as the project's name. System mails (`inviteMail`, `mail/mailer.ts`): without
+  `app` the head is the word „Office“ alone (no picture) and the text ends „– Office“; with `app`
+  (a presentation's mails – shared deck, sent export, unused deck – are `slider`) the app's mark
+  travels inline (`cid:<app>-logo`, PNGs 72 px wide in `mail/logo.ts`, the Cloud/Writer/Reader/
+  Sender ones drawn by Chrome from `features/cloud/assets/<app>-mark.svg`) beside its name. The
+  From display name is the operator's `MAIL_FROM` (code sets one only for a sent export, „Name
+  (über Slider)“). In code „office“ otherwise means LibreOffice or an office file (`officePreviewable`,
   `office-fonts`). Left from before: `/office` still leads to `/cloud` (`router.tsx`, `OLD_START`),
   the usage feature is still `office` (rows in the database).
 - Cut shadows and focus rings: every Cloud page's content scrolls in `CloudPage`'s scroll box, and
@@ -806,7 +820,12 @@ Unsplash can revoke the key; production approval needs screenshots of credits.
   any `#rrggbb` (`cloudAreaColorSchema`) – paint it with `areaColor()`, never a class per colour.
 - Which app a page belongs to: `lib/apps.ts` (`/cloud`, `/w/:id/dateien…` = Cloud; settings,
   usage, instance pages keep the app one came from – `back="app"` on `SettingsLayout`, `AppTabs`
-  switch Gesamt / Cloud / Slider via `?app=`). The same file swaps manifest and tab icon per app
+  switch Gesamt / Cloud / Slider via `?app=`). Pages between the apps (`NEUTRAL`: `/`, login,
+  mail links, legal, account…) wear the app they lead to – the login `returnTo`'s (`appOfTarget`),
+  else the one last open, else Cloud (`appBetween`): logo (`AppLogo` in `LogoHeader`), tab title
+  (`appTitle` turns a page's „| Slider“ into the app's name), icon and manifest. `index.html`
+  names Cloud's; the router (`App.tsx`) and `AppHeader` put the page's app's in (`APP_FILES`, one
+  table: manifest, tab, tile). The same file swaps manifest and tab icon per app
   (`showAppManifest`): two manifests on one scope `/` with their own `id`/`start_url`, so each
   app installs by itself; installed, the other app opens in a window of its own
   (`windowForApp`) – the web has no way to launch another installed app. Cloud the app wears the
@@ -1373,6 +1392,12 @@ hidden while pending and when nothing is unread. Slider's own start is „Präse
   family pill, title, text, chips left; a glimpse of the product right; the pages in the foot),
   components 3:2, screen „S01 Kanal“ 4:12. The MCP cannot set a file's thumbnail
   (`setFileThumbnailNodeAsync` is refused) – the first page's frame shows, or set it by hand.
+- Website (`apps/site`): Sender's page `/sender/` (de, fr), live, „Conversations that matter.“
+  (translated like Slider's tagline); its mark on the site is `features/cloud/assets/sender-mark.svg`
+  (the front bubble is its comment box, `--m-face` colours the reactions on a white mark). Screens
+  from a scratch instance (dev login renamed to a persona, agents and „Aktuell“ by the real AI, mail
+  by `page.route` fixtures), 1440 × 900 at 2×, dark. No download link: Sender's desktop app is not
+  built by ci.yml yet.
 - Telling (`features/sender/lib/notify.ts`, wired in `useSender`): a message from the stream is
   a notification when it is to oneself, in a group, or names one (`mentionsIn`, shared) – not
   when that conversation is open and the window focused. One per conversation (`tag`), a click
@@ -1722,21 +1747,42 @@ hidden while pending and when nothing is unread. Slider's own start is „Präse
   Moving between a mail calendar and another is make-there + delete-here (new id; the panel
   follows it). Graph reads whole days as UTC – rounded to the nearest midnight; written at
   midnight `Europe/Berlin`. Graph colours are names: recolouring refused.
-- A Google calendar without a mailbox („Google Kalender verbinden“ on „Konten“, migration
-  0161): a `mail_accounts` row with `calendar_only` – Google's tokens, no servers (hosts empty),
-  started with `calendarOnly` (only `openid email` + the calendar scopes; Google's client alone, no
-  `GOOGLE_MAILBOXES` – sensitive scopes, no CASA), refused at finish without `calendar.events`
-  granted. Every mail path skips it (`listMailAccounts`, `ownAccount` – only delete takes it –,
-  sync, address book, logos); `GET /workspaces/:id/calendar-connections` lists it, deleted by
-  `DELETE /mail/accounts/:id`; signing in as a mailbox for the same address turns it into that
-  mailbox, the other way round is refused; renamed by `PATCH /mail/accounts/:id` with `label` alone.
+- An account's uses come and go apart (Anmeldung, Post, Kalender): one `mail_accounts` row per
+  address per workspace, `calendar_only` = no mailbox, `with_calendars` (migration 0164) = its
+  calendars stand in the calendar; the login is `user_identities`, matched only by provider +
+  address. „Microsoft/Google Kalender verbinden“ on „Konten“ (`calendarOnly`, offered where the
+  provider's login client is set up – `calendarOAuth`, no `GOOGLE_MAILBOXES`): only `openid email`
+  (+ Microsoft `offline_access`) + the calendar scopes, so Microsoft's code is traded for Graph's
+  token straight away (held under `<id>#calendar`, `holdCalendarToken`); refused at finish
+  without calendar rights. Google always asks `include_granted_scopes`, so adding one use keeps
+  the other. Removing calendars (`DELETE /mail/accounts/:id/calendars`): `with_calendars` off,
+  calendar rows dropped, never read or written (`mailEvents`, `writing()` → 404); calendars
+  alone → the row goes. Removing the mailbox (`DELETE /mail/accounts/:id`) with calendar rows:
+  the row turns `calendar_only`, mails/threads/uploads and folders dropped, hosts and password
+  kept (CalDAV); without calendars the row goes. On again: `POST …/calendars` turns them on if
+  the sign-in reads them (Google `calendarGrant().events`, Microsoft a Graph token) else
+  `{signIn:true}` → the client starts `calendarOnly` + `accountId`; `POST …/mailbox` for password
+  calendars alone (servers checked again), OAuth ones start the mail sign-in with `accountId`
+  (mail + calendar scopes). Signing in for one use with an address that has the other joins that
+  row; a password mailbox added for the address of password calendars alone joins it too. Every
+  mail path still skips `calendar_only` (`listMailAccounts`, `ownAccount` – only delete takes it –,
+  sync, `sendQueued`, address book, logos); `GET /workspaces/:id/calendar-connections` lists it
+  (`signIn` google/microsoft/password); renamed by `PATCH /mail/accounts/:id` with `label` alone.
+  `GET /me/mail-accounts` lists every workspace's rows with their uses for „Verknüpfte Konten“.
 - „Konten“ (`/dateien/kalender/konten`, „Konten“ at the calendar's top right as „Postfächer“ in Post;
   `CalendarAccounts.tsx`): every account with calendars – mailboxes with calendars or a refusal,
-  connections – state, „Neu anmelden“, „Umbenennen“ (the mailbox's `label`, shared with Post),
-  connection „Löschen“, mailbox „In Post verwalten“. Sign-ins return there (`useCalendarOAuthOutcome`
-  toasts). The side list only groups: an account's calendars under its `label` or address
-  (`useCalendarAccounts` – no group until mail accounts and connections loaded, never a made-up
-  name), a quiet key to „Konten“ when signed out or read-only.
+  calendars alone – state, „Auch Postfach“/„Auch Anmeldung“ in its line, „Neu anmelden“,
+  „Umbenennen“ (the mailbox's `label`, shared with Post), „Postfach hinzufügen“ (calendars alone),
+  „In Post verwalten“, „Entfernen“ (its calendars; the mailbox stays). Below, dimmed, mailboxes
+  whose calendars are off with „Verbinden“. Post › Postfächer mirrors it: „Auch Kalender“/„Auch
+  Anmeldung“, „Kalender verwalten“, „Entfernen“ (the mailbox; calendars stay), calendars alone
+  dimmed with „Verbinden“. „Entfernen“ everywhere here: the link goes, the account at the
+  provider stays. `/konto` „Verknüpfte Konten“ (`LinkedAccountsSection.tsx`, only once a mail
+  account exists): one row per provider + address with its uses, the menu leads to Post/Kalender
+  of each workspace and „Anmeldung entfernen“ (not the last login). Sign-ins return to the page
+  they started on (`useCalendarOAuthOutcome` toasts). The side list only groups: an account's
+  calendars under its `label` or address (`useCalendarAccounts` – no group until mail accounts and
+  connections loaded, never a made-up name), a quiet key to „Konten“ when signed out or read-only.
 - AI tools `list_calendars/list_events/create_event/update_event/delete_event`: definitions in
   `calendar/agent-tool-defs.ts` (kept free of service imports – `APP_TOOLS` is built at load and
   `calendars.ts` → `sender` → agents is a cycle), run by `calendar/agent-tools.ts` for apps/the

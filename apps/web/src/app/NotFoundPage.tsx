@@ -1,13 +1,19 @@
 import { useNavigate } from 'react-router';
 import { Button } from '@/ui';
-import { appStart, useCurrentApp } from '@/lib/apps';
+import { appBetween, appStart } from '@/lib/apps';
 import { CenteredMessage } from '@/shell/CenteredMessage';
 
 export function Component() {
   const navigate = useNavigate();
-  const home = appStart(useCurrentApp());
+  // No page of any app: the one last open (an unknown address would otherwise count as Slider's).
+  const app = appBetween();
+  const home = appStart(app);
   return (
-    <CenteredMessage title="Seite nicht gefunden" message="Diese Adresse gibt es nicht (mehr).">
+    <CenteredMessage
+      app={app}
+      title="Seite nicht gefunden"
+      message="Diese Adresse gibt es nicht (mehr)."
+    >
       <Button onClick={() => navigate(home.to)}>{home.label}</Button>
     </CenteredMessage>
   );

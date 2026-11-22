@@ -9,6 +9,7 @@ import {
   MAX_MAIL_UPLOAD_BYTES,
 } from '@slider/shared';
 import type {
+  LinkedMailAccount,
   MailAccount,
   MailAccountInput,
   MailAuth,
@@ -21,12 +22,14 @@ import type {
   MailUpload,
 } from '@slider/shared';
 import {
+  calendars,
   mailAccounts,
   mailMessages,
   mailThreads,
   mailUploads,
   users,
   workspaceMembers,
+  workspaces,
   type MailAccountRow,
   type MailAttachmentRow,
   type MailInlineImageRow,
@@ -46,7 +49,15 @@ import {
   type SeenFlag,
   type SeenMark,
 } from '../mail/servers';
-import { forgetMailToken, mailAccessToken, MailSignInNeeded } from '../mail/oauth';
+import {
+  calendarAccessToken,
+  calendarGrant,
+  forgetCalendarToken,
+  forgetMailToken,
+  mailAccessToken,
+  MailSignInNeeded,
+} from '../mail/oauth';
+import { dropAccountCalendars, syncMailCalendars } from './calendar/mail-calendars';
 import { cloudContext } from './cloud/context';
 import { requireRole } from './workspaces/roles';
 import { postFromMail, senderLive } from './sender';
@@ -101,6 +112,7 @@ export function accountDto(row: MailAccountRow): MailAccount {
     lastSyncAt: row.lastSyncAt?.toISOString() ?? null,
     aiReads: row.aiReads,
     folders: mailFolderList(row.folders),
+    calendars: row.withCalendars,
   };
 }
 
@@ -161,7 +173,7 @@ export async function listMailAccounts(
       and(
         eq(mailAccounts.workspaceId, workspaceId),
         eq(mailAccounts.userId, userId),
-        // A Google calendar alone is no mailbox (`calendar/mail-calendars.ts` has it).
+        // Calendars alone are no mailbox (`calendar/mail-calendars.ts` has them).
         eq(mailAccounts.calendarOnly, false),
       ),
     )
@@ -192,19 +204,47 @@ export async function addMailAccount(
   const login = { ...rest, name: input.name || input.address };
   await checked(deps, login);
   const now = deps.clock.now();
-  const [row] = await deps.db
-    .insert(mailAccounts)
-    .values({
-      id: crypto.randomUUID(),
-      workspaceId,
-      userId,
-      ...login,
-      label: label || null,
-      state: 'ok',
-      createdAt: now,
-      updatedAt: now,
-    })
-    .returning();
+  // Its calendars here already (the mailbox removed, they stayed): the same account again.
+  const [calendarsAlone] = await deps.db
+    .select()
+    .from(mailAccounts)
+    .where(
+      and(
+        eq(mailAccounts.workspaceId, workspaceId),
+        eq(mailAccounts.userId, userId),
+        eq(mailAccounts.auth, 'password'),
+        eq(mailAccounts.calendarOnly, true),
+      ),
+    )
+    .then((rows) =>
+      rows.filter((one) => one.address.toLowerCase() === login.address.toLowerCase()),
+    );
+  const [row] = calendarsAlone
+    ? await deps.db
+        .update(mailAccounts)
+        .set({
+          ...login,
+          ...(label ? { label } : {}),
+          calendarOnly: false,
+          state: 'ok',
+          error: null,
+          updatedAt: now,
+        })
+        .where(eq(mailAccounts.id, calendarsAlone.id))
+        .returning()
+    : await deps.db
+        .insert(mailAccounts)
+        .values({
+          id: crypto.randomUUID(),
+          workspaceId,
+          userId,
+          ...login,
+          label: label || null,
+          state: 'ok',
+          createdAt: now,
+          updatedAt: now,
+        })
+        .returning();
   if (!row) throw new Error('Mail account insert returned nothing');
   later(deps, () => syncMailAccount(deps, row.id));
   return accountDto(row);
@@ -295,20 +335,175 @@ export async function checkMailAccount(deps: AppDeps, userId: string, accountId:
   await checked(deps, await loginFor(deps, row));
 }
 
+/** One's calendars changed in a workspace: its views fetch them anew. */
+function tellCalendars(row: Pick<MailAccountRow, 'workspaceId' | 'userId'>) {
+  if (senderLive.open(row.workspaceId))
+    senderLive.publish(row.workspaceId, new Set([row.userId]), { type: 'calendar' });
+}
+
+/** Neither mail nor calendars left: the account goes – its token, its calendars, its mails. */
+async function dropAccount(deps: AppDeps, row: MailAccountRow) {
+  // Its refresh token goes with the row, its access token from memory.
+  await deps.db.delete(mailAccounts).where(eq(mailAccounts.id, row.id));
+  dropAccountCalendars(row.id);
+  forgetMailToken(row.id);
+  await deps.storage.deletePrefix(`mail/${row.id}/`);
+  if (!row.calendarOnly) tell(row, null);
+  tellCalendars(row);
+}
+
 /**
- * Deletes a mailbox here – its mails here and their attachments; on the server all stays. A
- * calendar alone goes the same way (its calendars with it).
+ * Removes a mailbox here („Post › Postfächer“ › „Entfernen“) – its mails here and their
+ * attachments; on the server all stays. Its calendars on and there, the account stays for them
+ * (a calendar alone from now on); else it goes. A calendar alone („Kalender › Konten“ before its
+ * own way, older pages) goes with its calendars.
  */
 export async function deleteMailAccount(deps: AppDeps, userId: string, accountId: string) {
   const row = await ownAccount(deps, userId, accountId, { calendar: true });
-  // Its refresh token goes with the row, its access token from memory.
-  await deps.db.delete(mailAccounts).where(eq(mailAccounts.id, accountId));
-  forgetMailToken(accountId);
-  await deps.storage.deletePrefix(`mail/${accountId}/`);
-  if (row.calendarOnly) {
-    if (senderLive.open(row.workspaceId))
-      senderLive.publish(row.workspaceId, new Set([row.userId]), { type: 'calendar' });
-  } else tell(row, null);
+  const [calendar] = row.withCalendars
+    ? await deps.db
+        .select({ id: calendars.id })
+        .from(calendars)
+        .where(eq(calendars.mailAccountId, row.id))
+        .limit(1)
+    : [];
+  if (row.calendarOnly || !calendar) return dropAccount(deps, row);
+  await deps.db.transaction(async (tx) => {
+    await tx.delete(mailUploads).where(eq(mailUploads.accountId, row.id));
+    await tx.delete(mailMessages).where(eq(mailMessages.accountId, row.id));
+    await tx.delete(mailThreads).where(eq(mailThreads.accountId, row.id));
+    // Its servers stay noted (added again, the sign-in is tried there); its password stays for
+    // the calendars (CalDAV), a provider's token likewise.
+    await tx
+      .update(mailAccounts)
+      .set({
+        calendarOnly: true,
+        sync: {},
+        folders: [],
+        htmlRead: false,
+        lastSyncAt: null,
+        ...(row.state === 'signin' ? {} : { state: 'ok' as const, error: null }),
+        updatedAt: deps.clock.now(),
+      })
+      .where(eq(mailAccounts.id, row.id));
+  });
+  await deps.storage.deletePrefix(`mail/${row.id}/`);
+  tell(row, null);
+  tellCalendars(row);
+}
+
+/**
+ * Removes an account's calendars („Kalender › Konten“ › „Entfernen“): off, its calendars here
+ * dropped, never read again; at the provider all stays. A mailbox stays as it is; a calendar
+ * alone goes.
+ */
+export async function removeMailCalendars(deps: AppDeps, userId: string, accountId: string) {
+  const row = await ownAccount(deps, userId, accountId, { calendar: true });
+  if (row.calendarOnly) return dropAccount(deps, row);
+  await deps.db
+    .update(mailAccounts)
+    .set({ withCalendars: false, updatedAt: deps.clock.now() })
+    .where(eq(mailAccounts.id, row.id));
+  await deps.db.delete(calendars).where(eq(calendars.mailAccountId, row.id));
+  dropAccountCalendars(row.id);
+  // Microsoft's token for the calendars goes; Google's one token still reads the mail.
+  forgetCalendarToken(row.id);
+  tell(row, null);
+  tellCalendars(row);
+}
+
+/**
+ * A mailbox's calendars on again: kept as they are where the sign-in already lets them be read
+ * (a password, a grant with the calendars) – `signIn` says the provider must be asked first
+ * (`startMailOAuth` with `calendarOnly` and the account, which turns them on).
+ */
+export async function addMailCalendars(
+  deps: AppDeps,
+  userId: string,
+  accountId: string,
+): Promise<{ signIn: boolean }> {
+  const row = await ownAccount(deps, userId, accountId);
+  if (row.withCalendars) return { signIn: false };
+  if (row.auth !== 'password') {
+    if (row.state === 'signin' || !row.refreshToken) return { signIn: true };
+    try {
+      // Google: one token, its scopes named as it comes; Microsoft: Graph's, refused without them.
+      const token =
+        row.auth === 'google'
+          ? await mailAccessToken(deps, row)
+          : await calendarAccessToken(deps, row);
+      if (!token) return { signIn: true };
+      if (row.auth === 'google' && !calendarGrant(row)?.events) return { signIn: true };
+    } catch {
+      return { signIn: true };
+    }
+  }
+  await deps.db
+    .update(mailAccounts)
+    .set({ withCalendars: true, updatedAt: deps.clock.now() })
+    .where(eq(mailAccounts.id, row.id));
+  later(deps, async () => {
+    await syncMailCalendars(deps, row.workspaceId, row.userId);
+    tellCalendars(row);
+  });
+  tell(row, null);
+  return { signIn: false };
+}
+
+/**
+ * A calendar alone becomes a mailbox again – one with a password: tried on its servers, then
+ * read. One signed in through its provider asks it (`startMailOAuth` with the account).
+ */
+export async function addMailboxToCalendars(deps: AppDeps, userId: string, accountId: string) {
+  const row = await ownAccount(deps, userId, accountId, { calendar: true });
+  if (!row.calendarOnly) return accountDto(row);
+  if (row.auth !== 'password' || !row.imapHost)
+    throw badRequest('Dieses Postfach meldet sich über seinen Anbieter an – melde es dort an.');
+  await checked(deps, loginOf(row));
+  const [saved] = await deps.db
+    .update(mailAccounts)
+    .set({ calendarOnly: false, state: 'ok', error: null, updatedAt: deps.clock.now() })
+    .where(eq(mailAccounts.id, row.id))
+    .returning();
+  if (!saved) throw notFound('Dieses Postfach gibt es nicht.');
+  later(deps, () => syncMailAccount(deps, saved.id));
+  tell(saved, null);
+  tellCalendars(saved);
+  return accountDto(saved);
+}
+
+/**
+ * One's accounts at mail providers in every workspace one is in – what each is linked for
+ * („Konto“ › „Verknüpfte Konten“).
+ */
+export async function linkedMailAccounts(
+  deps: AppDeps,
+  userId: string,
+): Promise<LinkedMailAccount[]> {
+  const rows = await deps.db
+    .select({ account: mailAccounts, workspaceName: workspaces.name })
+    .from(mailAccounts)
+    .innerJoin(workspaces, eq(workspaces.id, mailAccounts.workspaceId))
+    .innerJoin(
+      workspaceMembers,
+      and(
+        eq(workspaceMembers.workspaceId, mailAccounts.workspaceId),
+        eq(workspaceMembers.userId, userId),
+      ),
+    )
+    .where(eq(mailAccounts.userId, userId))
+    .orderBy(mailAccounts.createdAt);
+  return rows.map(({ account, workspaceName }) => ({
+    accountId: account.id,
+    workspaceId: account.workspaceId,
+    workspaceName,
+    address: account.address,
+    label: account.label || null,
+    signIn: account.auth,
+    mail: !account.calendarOnly,
+    calendars: account.withCalendars,
+    signedOut: account.state === 'signin',
+  }));
 }
 
 // ── Reading ────────────────────────────────────────────────────────────────
@@ -1373,7 +1568,8 @@ async function sendQueued(deps: AppDeps, id: string): Promise<string | null> {
     .select()
     .from(mailAccounts)
     .where(eq(mailAccounts.id, row.accountId));
-  if (!account) return null;
+  // No mailbox any more (its calendars stayed): nothing goes out through it.
+  if (!account || account.calendarOnly) return null;
   try {
     const attachments = [];
     for (const one of row.attachments) {

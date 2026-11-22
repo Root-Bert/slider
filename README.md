@@ -80,4 +80,4 @@ The EUPL covers the code. The name Slider, its logo and the website's texts and 
 (`apps/site`) are not licensed under it: all rights reserved.
 
 Support, hosting and operation for public administrations and companies, as well as a commercial
-license for those who need other terms: slider@bertro.dev.
+license for those who need other terms: office@bertro.dev.

@@ -12,6 +12,7 @@ import {
 import { DeleteAccountSection, ExportDataSection } from './components/DataSections';
 import { StorageSection } from './components/StorageSection';
 import { AppConnectionsSection } from './components/AppConnectionsSection';
+import { LinkedAccountsSection } from './components/LinkedAccountsSection';
 
 /** The groups inside a card, split by hairlines. */
 const GROUPS =
@@ -19,7 +20,8 @@ const GROUPS =
 
 /**
  * `/konto` – "Konto & Anmeldung": who you are, how you sign in ("Anmeldung": Microsoft, Google,
- * SSO, passkeys), where Slider reads files from ("Speicherorte": Nextcloud), AI apps let in over
+ * SSO, passkeys), what each account at a mail provider is linked for („Verknüpfte Konten“),
+ * where Slider reads files from ("Speicherorte": Nextcloud), AI apps let in over
  * MCP („KI-Apps“), and your data: download it, delete the account (BER-145). `?linkError=` after
  * a failed "Verbinden";
  * `?nextcloud=<server>&returnTo=` to connect that Nextcloud again (a review's banner). Your
@@ -64,6 +66,8 @@ export function Component() {
           </div>
         )}
       </Section>
+
+      <LinkedAccountsSection />
 
       <StorageSection
         onNotify={showToast}

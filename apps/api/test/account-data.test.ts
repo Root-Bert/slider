@@ -1768,7 +1768,7 @@ describe('unused accounts (BER-147)', () => {
     const person = await unusedAnna(12);
     await sweepUnusedAccounts(ctx.deps);
     await sweepUnusedAccounts(ctx.deps);
-    expect(subjects()).toEqual(['Dein Slider-Konto wird in 6 Monaten gelöscht']);
+    expect(subjects()).toEqual(['Dein Konto wird in 6 Monaten gelöscht']);
     expect(mailer.sent[0]?.to).toBe('anna@firma.de');
     const token = /\/daten\/([\w.-]+)/.exec(mailer.sent[0]?.text ?? '')?.[1] ?? '';
     expect(await (await ctx.request(`/api/data-requests/${token}`)).json()).toMatchObject({
@@ -1817,13 +1817,13 @@ describe('unused accounts (BER-147)', () => {
       await sweepUnusedAccounts(ctx.deps);
     }
     expect(subjects()).toEqual([
-      'Dein Slider-Konto wird in 6 Monaten gelöscht',
-      'Dein Slider-Konto wird in 3 Monaten gelöscht',
-      'Dein Slider-Konto wird in einem Monat gelöscht',
-      'Dein Slider-Konto wird in einer Woche gelöscht',
-      'Dein Slider-Konto wird in 3 Tagen gelöscht',
-      'Dein Slider-Konto wird übermorgen gelöscht',
-      'Dein Slider-Konto wird morgen gelöscht',
+      'Dein Konto wird in 6 Monaten gelöscht',
+      'Dein Konto wird in 3 Monaten gelöscht',
+      'Dein Konto wird in einem Monat gelöscht',
+      'Dein Konto wird in einer Woche gelöscht',
+      'Dein Konto wird in 3 Tagen gelöscht',
+      'Dein Konto wird übermorgen gelöscht',
+      'Dein Konto wird morgen gelöscht',
     ]);
     expect(await exists(person.user.id)).toBe(true);
 
@@ -1858,7 +1858,7 @@ describe('unused accounts (BER-147)', () => {
     expect(subjects()).toEqual([]);
     at(firstReminder, 0);
     await sweepUnusedAccounts(ctx.deps);
-    expect(subjects()).toEqual(['Dein Slider-Konto wird in 6 Monaten gelöscht']);
+    expect(subjects()).toEqual(['Dein Konto wird in 6 Monaten gelöscht']);
 
     // Off for a while: the sweep forgets when it was switched on.
     retention.deleteUnused = false;
@@ -1877,7 +1877,7 @@ describe('unused accounts (BER-147)', () => {
     nextReminder.setUTCMonth(nextReminder.getUTCMonth() + 12);
     at(nextReminder, 0);
     await sweepUnusedAccounts(ctx.deps);
-    expect(subjects().slice(1)).toEqual(['Dein Slider-Konto wird in 6 Monaten gelöscht']);
+    expect(subjects().slice(1)).toEqual(['Dein Konto wird in 6 Monaten gelöscht']);
     at(deadline, 60_000);
     await sweepUnusedAccounts(ctx.deps);
     expect(await exists(person.user.id)).toBe(true);

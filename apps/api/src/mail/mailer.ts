@@ -2,7 +2,13 @@ import { flatten, THEME } from '@slider/shared';
 import { createTransport, type Transporter } from 'nodemailer';
 import type { SmtpConfig } from '../config';
 import type { Logger } from '../logger';
-import { LOGO_PNG_BASE64 } from './logo';
+import {
+  CLOUD_LOGO_PNG_BASE64,
+  LOGO_PNG_BASE64,
+  READER_LOGO_PNG_BASE64,
+  SENDER_LOGO_PNG_BASE64,
+  WRITER_LOGO_PNG_BASE64,
+} from './logo';
 
 /** A file the mail carries – shown in its HTML part through `cid:<cid>` when it has one. */
 export interface MailAttachment {
@@ -136,13 +142,27 @@ export const createMailer = (
 
 const escapeHtml = (text: string) => text.replace(/[&<>"']/g, (char) => `&#${char.charCodeAt(0)};`);
 
-const LOGO_CID = 'slider-logo';
-const logo: InlineImage = {
-  cid: LOGO_CID,
-  filename: 'slider.png',
-  contentType: 'image/png',
-  content: Buffer.from(LOGO_PNG_BASE64, 'base64'),
+/** An app a mail belongs to: its mark and name stand in the mail's head and under its text. */
+export type MailApp = 'slider' | 'cloud' | 'writer' | 'reader' | 'sender';
+
+/** Each app's mark as a PNG 72 px wide (3× the 24 px it is shown at) and its height there. */
+const APP_MARKS: Record<MailApp, { name: string; png: string; height: number }> = {
+  slider: { name: 'Slider', png: LOGO_PNG_BASE64, height: 67 },
+  cloud: { name: 'Cloud', png: CLOUD_LOGO_PNG_BASE64, height: 64 },
+  writer: { name: 'Writer', png: WRITER_LOGO_PNG_BASE64, height: 67 },
+  reader: { name: 'Reader', png: READER_LOGO_PNG_BASE64, height: 67 },
+  sender: { name: 'Sender', png: SENDER_LOGO_PNG_BASE64, height: 71 },
 };
+
+/** The name over mails of the whole software (sign-in, account, data, plan): no app's. */
+const OFFICE = 'Office';
+
+const logoOf = (app: MailApp): InlineImage => ({
+  cid: `${app}-logo`,
+  filename: `${app}.png`,
+  contentType: 'image/png',
+  content: Buffer.from(APP_MARKS[app].png, 'base64'),
+});
 
 /**
  * Colours of the web app's dark theme (`THEME` in `@slider/shared`, mirroring
@@ -174,23 +194,26 @@ const FONT =
   "'Inter',-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif";
 
 /**
- * The mark at `width` px (the brand guide's 96.2 × 89 proportions). The size is set in CSS too – Apple Mail ignores the
- * attributes and would show the 3× PNG at full size.
+ * The app's mark at `width` px. The size is set in CSS too – Apple Mail ignores the attributes and
+ * would show the 3× PNG at full size.
  */
-const mark = (width: number) => {
-  const height = Math.round((width * 89) / 96.2);
-  return `<img src="cid:${LOGO_CID}" width="${width}" height="${height}" alt="" style="display:block;width:${width}px;height:${height}px;max-width:${width}px;border:0;outline:none;">`;
+const mark = (app: MailApp, width: number) => {
+  const height = Math.round((width * APP_MARKS[app].height) / 72);
+  return `<img src="cid:${app}-logo" width="${width}" height="${height}" alt="" style="display:block;width:${width}px;height:${height}px;max-width:${width}px;border:0;outline:none;">`;
 };
 
 /**
- * A short German mail with Slider's look inside one card: the app canvas with its dot grid, the
- * word mark (`Logo`), heading, the white primary button and the plain link as fallback (a mail
+ * A short German mail with the apps' look inside one card: the app canvas with its dot grid, the
+ * word mark of the app it belongs to (`AppLogo` – mark and name; a mail of the whole software
+ * names only „Office“, in the same type, and brings no picture), heading, the white primary button and the plain link as fallback (a mail
  * that brings its file along has none); around it the client's own background. `color-scheme: light dark` tells clients the card needs no
  * inverting. The mark travels inline (`cid:`). Gmail drops CSS gradients, so it shows the card
  * without dots.
  */
 export function inviteMail(input: {
   to: string;
+  /** The app the mail is about (a presentation: Slider); without one it speaks for Office. */
+  app?: MailApp;
   subject: string;
   heading: string;
   intro: string;
@@ -215,11 +238,13 @@ export function inviteMail(input: {
   const origin = new URL(input.url).origin;
   const imprint = escapeHtml(`${origin}/impressum`);
   const privacy = escapeHtml(`${origin}/datenschutz`);
+  const name = input.app ? APP_MARKS[input.app].name : OFFICE;
+  const wordStyle = `font-size:18px;line-height:24px;font-weight:600;letter-spacing:-0.025em;color:${C.fg};`;
   return {
     to: input.to,
     subject: input.subject,
-    text: `${input.intro}\n\n${input.quote ? `${input.quote}\n\n` : ''}${input.button ? `${input.button}: ${input.url}\n\n` : ''}${input.code ? `${input.code.label} ${input.code.value}\n\n` : ''}${input.outro}\n\n– Slider\n${input.legalLinks ? `Impressum: ${origin}/impressum | Datenschutz: ${origin}/datenschutz\n` : ''}`,
-    attachments: [logo, ...(input.files ?? [])],
+    text: `${input.intro}\n\n${input.quote ? `${input.quote}\n\n` : ''}${input.button ? `${input.button}: ${input.url}\n\n` : ''}${input.code ? `${input.code.label} ${input.code.value}\n\n` : ''}${input.outro}\n\n– ${name}\n${input.legalLinks ? `Impressum: ${origin}/impressum | Datenschutz: ${origin}/datenschutz\n` : ''}`,
+    attachments: [...(input.app ? [logoOf(input.app)] : []), ...(input.files ?? [])],
     html: `<!doctype html>
 <html lang="de">
 <head>
@@ -240,8 +265,7 @@ export function inviteMail(input: {
 <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="max-width:440px;">
 <tr><td align="center" bgcolor="${C.canvas}" style="background-color:${C.canvas};background-image:radial-gradient(${C.dots} 1px,transparent 1.2px);background-size:22px 22px;border:1px solid ${C.hairline};border-radius:16px;padding:36px 32px 32px;box-shadow:0 8px 32px rgba(0,0,0,0.12);">
 <table role="presentation" cellpadding="0" cellspacing="0"><tr>
-<td style="padding-right:6px;vertical-align:middle;">${mark(24)}</td>
-<td style="vertical-align:middle;font-size:18px;line-height:24px;font-weight:600;letter-spacing:-0.025em;color:${C.fg};">Slider</td>
+${input.app ? `<td style="padding-right:6px;vertical-align:middle;">${mark(input.app, 24)}</td>\n` : ''}<td style="vertical-align:middle;${wordStyle}">${name}</td>
 </tr></table>
 <h1 style="margin:32px 0 0;font-size:24px;line-height:32px;font-weight:600;letter-spacing:-0.01em;color:${C.fg};">${escapeHtml(input.heading)}</h1>
 <p style="margin:8px 0 0;font-size:14px;line-height:22px;color:${C.muted};">${escapeHtml(input.intro)}</p>

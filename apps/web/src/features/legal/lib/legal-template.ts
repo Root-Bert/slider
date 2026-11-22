@@ -1,4 +1,4 @@
-import type { SetupStatus } from '@slider/shared';
+import type { LegalTemplateInput, SetupStatus } from '@slider/shared';
 
 /*
  * The legal templates (BER-141) are filled in once, for imprint and privacy policy together:
@@ -40,7 +40,13 @@ export const TEMPLATE_FIELDS = [
     when: 'mail',
   },
   { key: 'oidcProvider', label: 'Anbieter des Firmen-Logins', when: 'oidc' },
-  { key: 'nextcloudOperator', label: 'Betreiber der Nextcloud', when: 'nextcloud' },
+  {
+    key: 'nextcloudOperator',
+    label: 'Betreiber der Nextcloud',
+    hint: 'Nur wenn du selbst eine Nextcloud anbietest',
+    when: 'nextcloud',
+    optional: true,
+  },
   {
     key: 'backupDays',
     label: 'Backups überschrieben nach (Tagen)',
@@ -106,7 +112,10 @@ export function templateDefaults(
       microsoft: set('MS_CLIENT_ID'),
       google: set('GOOGLE_CLIENT_ID'),
       oidc: set('OIDC_ISSUER'),
-      nextcloud: set('NEXTCLOUD_CLIENT_ID') || set('NEXTCLOUD_URL'),
+      nextcloud:
+        set('NEXTCLOUD_CLIENT_ID') ||
+        set('NEXTCLOUD_URL') ||
+        (settings?.features.nextcloudAnyServer ?? false),
       mail: set('SMTP_URL'),
       domains: (field('SIGNUP')?.value ?? 'open') !== 'invite',
       deleteUnused: !['false', '0'].includes(field('DELETE_UNUSED')?.value ?? ''),
@@ -115,6 +124,30 @@ export function templateDefaults(
       cloudflare: true,
     },
   };
+}
+
+/**
+ * The form as last filled (`LegalTexts.template`) over this instance's defaults: a switch or
+ * field a newer template brought starts as the instance is set up, the date is today's.
+ */
+export function rememberedTemplate(
+  saved: LegalTemplateInput,
+  settings: NonNullable<SetupStatus['settings']> | undefined,
+  today = new Date(),
+): { values: TemplateValues; options: TemplateOptions } {
+  const { values, options } = templateDefaults(settings, today);
+  for (const { key } of TEMPLATE_FIELDS) {
+    if (key !== 'date' && typeof saved.values[key] === 'string') values[key] = saved.values[key];
+  }
+  for (const { key } of TEMPLATE_OPTIONS) {
+    if (typeof saved.options[key] === 'boolean') options[key] = saved.options[key];
+  }
+  return { values, options };
+}
+
+/** The field a gap `[label]` stands for, when it is one of the form's. */
+export function fieldOfGap(gap: string): TemplateFieldKey | null {
+  return TEMPLATE_FIELDS.find((field) => `[${field.label}]` === gap)?.key ?? null;
 }
 
 function hostOf(url: string): string {

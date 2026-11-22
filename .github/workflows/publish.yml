@@ -99,8 +99,8 @@ jobs:
           gh release view "$TAG" --json body --jq .body > notes.md
           printf '%s\n\n' "${name:-Slider ${TAG#v}}" | cat - notes.md > message.md
 
-          export GIT_AUTHOR_NAME=Slider GIT_AUTHOR_EMAIL=slider@bertro.dev
-          export GIT_COMMITTER_NAME=Slider GIT_COMMITTER_EMAIL=slider@bertro.dev
+          export GIT_AUTHOR_NAME=Slider GIT_AUTHOR_EMAIL=office@bertro.dev
+          export GIT_COMMITTER_NAME=Slider GIT_COMMITTER_EMAIL=office@bertro.dev
           commit=$(git commit-tree "$tree" ${parent:+-p "$parent"} -F message.md)
           # The public repository scans its commits as they are there: new hashes, so no fingerprint
           # in .gitleaksignore holds for them. Scan this one the same way before it leaves.

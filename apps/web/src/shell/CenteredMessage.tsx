@@ -1,38 +1,30 @@
-import type { ReactNode } from 'react';
+import { useEffect, type ReactNode } from 'react';
 import { Link } from 'react-router';
-import { CloudLogo, SenderLogo, ReaderLogo, WriterLogo } from '@/features/cloud';
-import { appStart, useCurrentApp } from '@/lib/apps';
-import { EmptyState, Logo } from '@/ui';
+import { AppLogo } from '@/features/cloud';
+import { appStart, showAppManifest, useCurrentApp, type AppId } from '@/lib/apps';
+import { EmptyState } from '@/ui';
 
 /**
  * Full-page message on the dot grid: the logo of the app one is in (back to its start), title,
  * text, actions.
  */
 export function CenteredMessage({
+  app: given,
   title,
   message,
   children,
 }: {
+  /** The app it wears; the one one is in by default. */
+  app?: AppId;
   title: string;
   message: string;
   children?: ReactNode;
 }) {
-  const app = useCurrentApp();
-  const home = {
-    ...appStart(app),
-    logo:
-      app === 'cloud' ? (
-        <CloudLogo />
-      ) : app === 'reader' ? (
-        <ReaderLogo />
-      ) : app === 'writer' ? (
-        <WriterLogo />
-      ) : app === 'sender' ? (
-        <SenderLogo />
-      ) : (
-        <Logo tone="brand" />
-      ),
-  };
+  const current = useCurrentApp();
+  const app = given ?? current;
+  const home = appStart(app);
+  // The tab wears the app too (`AppHeader` does so on the app's pages).
+  useEffect(() => showAppManifest(app), [app]);
   return (
     <main className="dot-grid flex min-h-full flex-col items-center justify-center p-6">
       <EmptyState
@@ -43,7 +35,7 @@ export function CenteredMessage({
             aria-label={home.label}
             className="transition-opacity hover:opacity-80"
           >
-            {home.logo}
+            <AppLogo app={app} />
           </Link>
         }
         title={title}

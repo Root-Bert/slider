@@ -164,6 +164,7 @@ export async function sendExport(
     await deps.mailer.send({
       ...inviteMail({
         to: input.to,
+        app: 'slider',
         subject: `${name} schickt dir „${title}“`,
         heading: 'Eine Präsentation für dich',
         intro: `${name} schickt dir ${what}. Die Datei hängt an dieser Mail.`,

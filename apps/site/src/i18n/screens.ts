@@ -21,7 +21,10 @@ const en: ScreenWords = {
   title: 'A look inside.',
   soon: 'This is what {app} will look like. Screens from the prototype.',
   live: 'How a presentation gets better, step by step.',
-  liveOf: { reader: 'How a form gets filled in, signed and sent, step by step.' },
+  liveOf: {
+    reader: 'How a form gets filled in, signed and sent, step by step.',
+    sender: 'How a team talks, asks its agents and answers its mail, in one place.',
+  },
   previous: 'Previous screen',
   next: 'Next screen',
   captions: {
@@ -63,6 +66,13 @@ const en: ScreenWords = {
       search: 'Search it, print it, send it on',
       files: 'All files at a glance',
     },
+    sender: {
+      channel: 'A channel for every area',
+      now: 'What you missed, summed up',
+      group: 'Groups and direct messages',
+      agent: 'An agent at work',
+      mail: 'Mail beside the chats',
+    },
     cloud: {
       recent: 'What you worked on last',
       area: 'An area for every team',
@@ -82,7 +92,10 @@ const de: ScreenWords = {
   title: 'Ein Blick hinein.',
   soon: 'So wird {app} aussehen. Screens aus dem Prototyp.',
   live: 'So wird eine Präsentation besser, Schritt für Schritt.',
-  liveOf: { reader: 'So wird ein Formular ausgefüllt, unterschrieben und verschickt, Schritt für Schritt.' },
+  liveOf: {
+    reader: 'So wird ein Formular ausgefüllt, unterschrieben und verschickt, Schritt für Schritt.',
+    sender: 'So spricht ein Team, fragt seine Agenten und beantwortet seine Post, an einem Ort.',
+  },
   previous: 'Voriger Screen',
   next: 'Nächster Screen',
   captions: {
@@ -124,6 +137,13 @@ const de: ScreenWords = {
       search: 'Suchen, drucken, weitergeben',
       files: 'Alle Dateien auf einen Blick',
     },
+    sender: {
+      channel: 'Ein Kanal für jeden Bereich',
+      now: 'Was du verpasst hast, zusammengefasst',
+      group: 'Gruppen und Direktnachrichten',
+      agent: 'Ein Agent bei der Arbeit',
+      mail: 'Post neben den Chats',
+    },
     cloud: {
       recent: 'Woran du zuletzt gearbeitet hast',
       area: 'Ein Bereich für jedes Team',
@@ -143,7 +163,10 @@ const fr: ScreenWords = {
   title: 'Un regard à l’intérieur.',
   soon: 'Voici à quoi ressemblera {app}. Écrans du prototype.',
   live: 'Comment une présentation s’améliore, pas à pas.',
-  liveOf: { reader: 'Comment un formulaire est rempli, signé et envoyé, pas à pas.' },
+  liveOf: {
+    reader: 'Comment un formulaire est rempli, signé et envoyé, pas à pas.',
+    sender: 'Comment une équipe discute, interroge ses agents et répond à ses mails, au même endroit.',
+  },
   previous: 'Écran précédent',
   next: 'Écran suivant',
   captions: {
@@ -184,6 +207,13 @@ const fr: ScreenWords = {
       discuss: 'Commenter les mots dont vous parlez',
       search: 'Chercher, imprimer, transmettre',
       files: 'Tous les fichiers en un coup d’œil',
+    },
+    sender: {
+      channel: 'Un canal pour chaque espace',
+      now: 'Ce que vous avez manqué, résumé',
+      group: 'Groupes et messages directs',
+      agent: 'Un agent au travail',
+      mail: 'Les mails à côté des discussions',
     },
     cloud: {
       recent: 'Vos derniers fichiers',

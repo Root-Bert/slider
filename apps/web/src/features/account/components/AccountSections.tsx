@@ -152,7 +152,7 @@ export function CloudLoginSection() {
                 <Icon name="person" size={20} className="text-fg-muted" />
               </IconTile>
             }
-            title={account ? account.name : `Slider-Konto auf ${host}`}
+            title={account ? account.name : `Konto auf ${host}`}
             subtitle={
               account
                 ? account.email
@@ -189,8 +189,8 @@ export function CloudLoginSection() {
                   className="flex animate-pop-in flex-col gap-3 rounded-panel p-3 glass-control"
                 >
                   <TextField
-                    label="Adresse des Slider-Servers"
-                    placeholder="slider.firma.de"
+                    label="Adresse des Office-Servers"
+                    placeholder="office.firma.de"
                     inputMode="url"
                     autoComplete="url"
                     autoFocus
@@ -277,7 +277,7 @@ export function LoginsSection() {
                     label={`Aktionen für ${PROVIDER_LABELS[identity.provider]}`}
                     actions={[
                       {
-                        label: 'Trennen',
+                        label: 'Entfernen',
                         icon: 'delete',
                         tone: 'danger',
                         onSelect: () => setUnlinking(identity),
@@ -348,15 +348,22 @@ export function LoginsSection() {
   );
 }
 
-function UnlinkDialog({ identity, onClose }: { identity: LoginIdentity; onClose: () => void }) {
+/** „Microsoft entfernen?“ – that login goes, the account at the provider stays. */
+export function UnlinkDialog({
+  identity,
+  onClose,
+}: {
+  identity: LoginIdentity;
+  onClose: () => void;
+}) {
   const unlink = useUnlinkIdentity();
   const label = PROVIDER_LABELS[identity.provider];
   return (
     <ConfirmDialog
       onClose={onClose}
-      title={`${label} trennen?`}
+      title={`${label} entfernen?`}
       description={`Mit ${identity.email ?? `diesem ${label}-Konto`} meldest du dich dann nicht mehr an. Du kannst es jederzeit wieder verbinden.`}
-      confirmLabel="Trennen"
+      confirmLabel="Entfernen"
       pending={unlink.isPending}
       // In the dialog: a toast would sit behind its backdrop.
       error={unlink.error?.message}
@@ -386,7 +393,7 @@ export function PasskeysSection({ onNotify }: { onNotify: ShowToast }) {
     <Subsection
       title="Passkeys"
       icon={<PasskeyMark size={16} />}
-      description="Anmelden mit Fingerabdruck, Gesicht oder Geräte-PIN – ohne Passwort und ohne Mail. Ein Passkey gilt nur für dieses Konto und diese Slider-Adresse."
+      description="Anmelden mit Fingerabdruck, Gesicht oder Geräte-PIN – ohne Passwort und ohne Mail. Ein Passkey gilt nur für dieses Konto und diese Office-Adresse."
       aside={
         supported ? (
           <Button

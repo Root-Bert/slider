@@ -25,7 +25,7 @@ export function ExportDataSection() {
   return (
     <Section
       title="Deine Daten"
-      description="Alles, was Slider über dich speichert, als ZIP: Profil, Anmeldewege, deine Präsentationen mit Originaldateien, Kommentare, Nachrichten, Mails, deine Dateien in der Cloud, Agenten und Aufnahmen."
+      description="Alles, was Office über dich speichert, als ZIP: Profil, Anmeldewege, deine Präsentationen mit Originaldateien, Kommentare, Nachrichten, Mails, deine Dateien in der Cloud, Agenten und Aufnahmen."
       aside={<DownloadLink href={ACCOUNT_EXPORT_URL} label="Daten herunterladen" />}
     />
   );

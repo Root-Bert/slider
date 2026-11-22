@@ -870,11 +870,12 @@ describe('invitation mails', () => {
     expect(mail?.text).toContain(created.url);
     expect(mail?.html).toContain(`href="${created.url}"`);
     expect(JSON.stringify(mail)).not.toContain('robert@example.org');
-    // The logo travels inline with the mail.
-    expect(mail?.html).toContain('src="cid:slider-logo"');
-    expect(mail?.attachments).toEqual([
-      expect.objectContaining({ cid: 'slider-logo', contentType: 'image/png' }),
-    ]);
+    // A workspace is the whole office: the mail is Office's – its name, no app's mark.
+    expect(mail?.html).toContain('>Office</td>');
+    expect(mail?.html).not.toContain('cid:');
+    expect(mail?.attachments).toEqual([]);
+    expect(mail?.text).toContain('auf Office eingeladen');
+    expect(mail?.text).toContain('\n– Office\n');
 
     // Links are passed on by hand, never mailed.
     expect((await invite({})).emailSent).toBe(false);

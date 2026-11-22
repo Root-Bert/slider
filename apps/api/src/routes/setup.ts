@@ -184,6 +184,7 @@ export function setupRoutes(deps: AppDeps) {
             features: {
               payments: deps.config.billing !== null,
               stockPhotos: Boolean(deps.config.unsplash) || instancePhotos.length > 0,
+              nextcloudAnyServer: deps.config.nextcloud.loginAnyServer,
             },
           },
         });
@@ -195,7 +196,7 @@ export function setupRoutes(deps: AppDeps) {
         if (!(await authorized(c, claimed))) {
           throw forbidden(
             claimed
-              ? 'Nur der Admin dieser Slider-Instanz kann die Einrichtung ändern.'
+              ? 'Nur der Admin dieser Office-Instanz kann die Einrichtung ändern.'
               : claimant(c)
                 ? 'Gib zuerst den Setup-Token ein – damit wirst du Admin dieser Instanz.'
                 : WRONG_TOKEN,
@@ -264,7 +265,7 @@ export function setupRoutes(deps: AppDeps) {
 }
 
 const WRONG_TOKEN = 'Der Setup-Token stimmt nicht. Den aktuellen findest du im Server-Log.';
-const ALREADY_CLAIMED = 'Diese Slider-Instanz hat schon einen Admin.';
+const ALREADY_CLAIMED = 'Diese Office-Instanz hat schon einen Admin.';
 
 /** Wrong setup tokens per client address before it has to wait. */
 export const MAX_TOKEN_FAILURES = 10;

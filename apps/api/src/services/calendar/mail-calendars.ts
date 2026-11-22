@@ -34,7 +34,8 @@ import {
 
 /*
  * A person's mail accounts' calendars beside Slider's own (`services/calendars.ts`) – and those of
- * a Google account connected for its calendars alone (`mail_accounts.calendar_only`). Their list is
+ * an account connected for its calendars alone (`mail_accounts.calendar_only`); an account whose
+ * calendars were removed (`with_calendars` off) is never read. Their list is
  * kept as calendars of kind `mail` (name and address sealed), compared with the provider's now and
  * then; their events are never stored – asked for when a range is looked at and held here in
  * memory a few minutes. Events and calendars are written back only when their person makes,
@@ -247,15 +248,30 @@ async function syncAccount(deps: AppDeps, account: MailAccountRow) {
   }
 }
 
+/** An account's calendars removed (or the account): compared afresh once they come back. */
+export function dropAccountCalendars(accountId: string) {
+  nextSync.delete(accountId);
+}
+
+/** The caller's accounts in this workspace whose calendars are on. */
+const withCalendars = (deps: AppDeps, workspaceId: string, userId: string) =>
+  deps.db
+    .select()
+    .from(mailAccounts)
+    .where(
+      and(
+        eq(mailAccounts.workspaceId, workspaceId),
+        eq(mailAccounts.userId, userId),
+        eq(mailAccounts.withCalendars, true),
+      ),
+    );
+
 /**
  * Compares the caller's mail accounts' calendars in this workspace with their providers' where it
  * is time; resolves once that is done (the caller need not wait – a change comes live).
  */
 export async function syncMailCalendars(deps: AppDeps, workspaceId: string, userId: string) {
-  const accounts = await deps.db
-    .select()
-    .from(mailAccounts)
-    .where(and(eq(mailAccounts.workspaceId, workspaceId), eq(mailAccounts.userId, userId)));
+  const accounts = await withCalendars(deps, workspaceId, userId);
   const now = deps.clock.now().getTime();
   await Promise.all(
     accounts.map((account) => {
@@ -291,10 +307,7 @@ export async function syncMailCalendarsBriefly(deps: AppDeps, workspaceId: strin
  * not let Slider read – signed in before calendars were asked for: signing in anew lets it.
  */
 export async function mailCalendarsRefused(deps: AppDeps, workspaceId: string, userId: string) {
-  const accounts = await deps.db
-    .select()
-    .from(mailAccounts)
-    .where(and(eq(mailAccounts.workspaceId, workspaceId), eq(mailAccounts.userId, userId)));
+  const accounts = await withCalendars(deps, workspaceId, userId);
   return accounts
     .filter((account) => {
       const next = nextSync.get(account.id);
@@ -303,7 +316,10 @@ export async function mailCalendarsRefused(deps: AppDeps, workspaceId: string, u
     .map((account) => ({ accountId: account.id, signIn: account.auth as 'google' | 'microsoft' }));
 }
 
-/** The caller's Google calendars connected without a mailbox („Google Kalender verbinden“). */
+/**
+ * The caller's calendars without a mailbox („Google/Microsoft Kalender verbinden“, or a mailbox
+ * removed while its calendars stayed).
+ */
 export async function calendarConnections(
   deps: AppDeps,
   workspaceId: string,
@@ -324,7 +340,7 @@ export async function calendarConnections(
     accountId: row.id,
     address: row.address,
     label: row.label || null,
-    signIn: 'google',
+    signIn: row.auth,
     signedOut: row.state === 'signin',
   }));
 }
@@ -346,7 +362,7 @@ export async function mailEvents(
   const lists = await Promise.all(
     accountIds.map(async (accountId) => {
       const account = accounts.find((each) => each.id === accountId);
-      if (!account) return [];
+      if (!account?.withCalendars) return [];
       let source: CalendarSource | null = null;
       const mine = rows.filter((row) => row.mailAccountId === accountId);
       return Promise.all(
@@ -426,7 +442,7 @@ async function writing<T>(
     .select()
     .from(mailAccounts)
     .where(and(eq(mailAccounts.id, accountId), eq(mailAccounts.userId, ownerId)));
-  if (!account) throw notFound('Diesen Kalender gibt es nicht (mehr).');
+  if (!account?.withCalendars) throw notFound('Diesen Kalender gibt es nicht (mehr).');
   try {
     const source = await sourceFor(deps, account);
     if (!source?.create) throw forbidden(READ_ONLY);

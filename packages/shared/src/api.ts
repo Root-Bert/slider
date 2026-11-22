@@ -279,7 +279,19 @@ export type UpdateMeInput = z.infer<typeof updateMeInputSchema>;
 export interface LegalTexts {
   privacy: string | null;
   imprint: string | null;
+  /**
+   * What the templates were last filled with – the form's fields and switches – so a newer
+   * template is filled again without typing („Vorlage aktualisieren“). Only what the texts
+   * print anyway. `null`: written by hand or before the form remembered.
+   */
+  template: LegalTemplateInput | null;
 }
+
+export const legalTemplateSchema = z.object({
+  values: z.record(z.string().max(60), z.string().max(400)),
+  options: z.record(z.string().max(60), z.boolean()),
+});
+export type LegalTemplateInput = z.infer<typeof legalTemplateSchema>;
 
 const legalTextSchema = z
   .string()
@@ -289,6 +301,8 @@ const legalTextSchema = z
 export const updateLegalTextsInputSchema = z.object({
   privacy: legalTextSchema,
   imprint: legalTextSchema,
+  /** Left out: what was remembered stays. */
+  template: legalTemplateSchema.nullable().optional(),
 });
 export type UpdateLegalTextsInput = z.input<typeof updateLegalTextsInputSchema>;
 

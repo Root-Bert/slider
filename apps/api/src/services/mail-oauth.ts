@@ -18,6 +18,7 @@ import {
   exchangeMailCode,
   forgetMailToken,
   GOOGLE_CALENDAR_EVENTS,
+  holdCalendarToken,
   holdMailToken,
   mailAuthorizeUrl,
   mailOAuthConfigured,
@@ -34,8 +35,11 @@ import { senderLive } from './sender';
  * „Mit Microsoft/Google anmelden“ for a mailbox: the page asks for the provider's sign-in page
  * (`startMailOAuth`), the provider sends the browser back to the login's registered redirect URI
  * – the login's callback hands a state starting `mail.` here (`finishMailOAuth`) – and the page
- * reads how it ended (`mailOAuthResult`). „Google Kalender verbinden“ goes the same way with
- * `calendarOnly`: only the calendars asked for, no servers tried, a row that is no mailbox.
+ * reads how it ended (`mailOAuthResult`). „Google/Microsoft Kalender verbinden“ goes the same way
+ * with `calendarOnly`: only the calendars asked for, no servers tried, a row that is no mailbox.
+ * An account's uses come and go apart: a mailbox signed in for its calendars (`accountId`, or the
+ * same address) turns them on and keeps its mail; a calendar alone signed in as a mailbox becomes
+ * one and keeps its calendars.
  *
  * A sign-in in progress lives here in memory for 10 minutes: bound to the signed-in person and
  * workspace, to this browser (a signed cookie with the state) and used once – a state seen again
@@ -54,8 +58,10 @@ interface Pending {
   name: string;
   label: string;
   aiReads: boolean;
-  /** A calendar without a mailbox (`mail_accounts.calendar_only`). */
+  /** Signed in for the calendars (`mail_accounts.calendar_only` for a new one). */
   calendarOnly: boolean;
+  /** Mail was asked for too: an existing mailbox signing in for its calendars. */
+  mail: boolean;
   verifier: string;
   nonce: string;
   returnTo: string;
@@ -100,9 +106,7 @@ export async function startMailOAuth(
     throw new ApiError(
       503,
       'bad_request',
-      input.provider === 'google'
-        ? 'Die Anmeldung mit Google ist auf diesem Server nicht eingerichtet.'
-        : `Einen Kalender allein verbindet Slider nur über Google, nicht über ${label}.`,
+      `Die Anmeldung mit ${label} ist auf diesem Server nicht eingerichtet.`,
     );
   }
   if (!calendarOnly && !mailOAuthConfigured(deps.config, input.provider)) {
@@ -114,6 +118,9 @@ export async function startMailOAuth(
   }
   // Only pre-fills the provider's page; the address saved is the one the provider names.
   let hint = input.address;
+  // An existing account asks for what it keeps as well: its mail with its calendars, its
+  // calendars (if on) with its mail.
+  let uses = { mail: !calendarOnly, calendars: true };
   if (input.accountId) {
     const [row] = await deps.db
       .select()
@@ -121,13 +128,16 @@ export async function startMailOAuth(
       .where(eq(mailAccounts.id, input.accountId));
     if (!row || row.userId !== userId || row.workspaceId !== workspaceId)
       throw notFound('Dieses Postfach gibt es nicht.');
-    if (row.auth !== input.provider || row.calendarOnly !== calendarOnly)
+    if (row.auth !== input.provider)
       throw badRequest(
         calendarOnly
-          ? 'Dieser Kalender meldet sich so nicht an.'
+          ? `Dieser Kalender meldet sich nicht über ${label} an.`
           : `Dieses Postfach meldet sich nicht über ${label} an.`,
       );
     hint = row.address;
+    uses = calendarOnly
+      ? { mail: !row.calendarOnly, calendars: true }
+      : { mail: true, calendars: row.withCalendars };
   }
   const now = deps.clock.now().getTime();
   sweep(now);
@@ -142,6 +152,7 @@ export async function startMailOAuth(
     label: input.label ?? '',
     aiReads: input.aiReads ?? true,
     calendarOnly,
+    mail: uses.mail,
     verifier: pkce.verifier,
     nonce: pkce.nonce,
     returnTo: ownPath(input.returnTo),
@@ -151,7 +162,7 @@ export async function startMailOAuth(
     sameSite: 'Lax',
     maxAge: TTL_MS / 1000,
   });
-  return mailAuthorizeUrl(deps.config, input.provider, { ...pkce, state }, hint, calendarOnly);
+  return mailAuthorizeUrl(deps.config, input.provider, { ...pkce, state }, hint, uses);
 }
 
 /** Why the provider sent the person back without a code, in a sentence they can act on. */
@@ -164,11 +175,11 @@ function refusedText(
   const label = MAIL_OAUTH_LABELS[provider];
   const text = `${error} ${description}`;
   if (calendarOnly && error === 'access_denied')
-    return `Bei ${label} wurde der Zugriff auf den Kalender nicht erlaubt – ohne ihn kann Slider deine Termine nicht zeigen. Versuch es noch einmal und stimm dort zu.`;
+    return `Bei ${label} wurde der Zugriff auf den Kalender nicht erlaubt – ohne ihn kann Office deine Termine nicht zeigen. Versuch es noch einmal und stimm dort zu.`;
   if (/AADSTS(65001|90094|90095)\b|admin_policy_enforced|admin (approval|consent)/i.test(text))
-    return `Bei ${label} muss erst die IT deiner Firma Slider den Zugriff aufs Postfach erlauben. Bis dahin geht es mit Adresse und Passwort, wo die Firma das zulässt.`;
+    return `Bei ${label} muss erst die IT deiner Firma Office den Zugriff aufs Postfach erlauben. Bis dahin geht es mit Adresse und Passwort, wo die Firma das zulässt.`;
   if (error === 'access_denied')
-    return `Bei ${label} wurde der Zugriff aufs Postfach nicht erlaubt – ohne ihn kann Slider keine Mails lesen und senden. Versuch es noch einmal und stimm dort zu.`;
+    return `Bei ${label} wurde der Zugriff aufs Postfach nicht erlaubt – ohne ihn kann Office keine Mails lesen und senden. Versuch es noch einmal und stimm dort zu.`;
   return `Die Anmeldung bei ${label} hat nicht geklappt. Versuch es noch einmal.`;
 }
 
@@ -250,7 +261,7 @@ export async function finishMailOAuth(deps: AppDeps, c: Context<OptionalViewerEn
 
   let signedIn: Awaited<ReturnType<typeof exchangeMailCode>>;
   try {
-    signedIn = await exchangeMailCode(deps, flow.provider, query['code'], flow);
+    signedIn = await exchangeMailCode(deps, flow.provider, query['code'], flow, flow.mail);
   } catch (error) {
     // Only the code of the refusal is logged – the answer never holds a token then.
     deps.log.warn(
@@ -271,7 +282,8 @@ export async function finishMailOAuth(deps: AppDeps, c: Context<OptionalViewerEn
   }
 
   // Signed in anew: the same account. A new one already here (same person, workspace,
-  // address): that one signs in anew – a calendar alone becomes the mailbox signed in for it.
+  // address): that one signs in anew – for its calendars, a mailbox keeps its mail and turns
+  // them on; as a mailbox, a calendar alone becomes one and keeps its calendars.
   const mine = await deps.db
     .select()
     .from(mailAccounts)
@@ -296,11 +308,22 @@ export async function finishMailOAuth(deps: AppDeps, c: Context<OptionalViewerEn
       { step: 'oauth-account' },
     );
   }
-  if (existing && flow.calendarOnly && !existing.calendarOnly) {
+  // What the account is for once this sign-in is kept.
+  const uses = flow.calendarOnly
+    ? { mail: !!existing && !existing.calendarOnly, calendars: true }
+    : { mail: true, calendars: existing ? existing.withCalendars : true };
+  // Google's new grant replaces the old one: a mailbox signed in for its calendars only keeps
+  // reading mail when its mail scope came along (`include_granted_scopes`).
+  if (
+    uses.mail &&
+    flow.provider === 'google' &&
+    signedIn.granted &&
+    !signedIn.granted.includes('https://mail.google.com/')
+  ) {
     return fail(
       flow,
-      `${address} ist hier schon als Postfach verbunden – seine Kalender kommen mit dem Postfach. Fehlen sie, melde das Postfach unter Post › Postfächer neu an.`,
-      { step: 'oauth-account' },
+      `Bei ${label} wurde der Zugriff aufs Postfach von ${address} nicht mit erlaubt. Melde das Postfach unter Post › Postfächer neu an.`,
+      { step: 'oauth-consent' },
     );
   }
   try {
@@ -310,22 +333,29 @@ export async function finishMailOAuth(deps: AppDeps, c: Context<OptionalViewerEn
   }
 
   if (flow.calendarOnly) {
-    // No servers to try: only that the calendars may be read (Google lets one untick it).
-    if (signedIn.granted && !signedIn.granted.includes(GOOGLE_CALENDAR_EVENTS)) {
+    // No servers to try: only that the calendars may be read (Google lets one untick it;
+    // Microsoft's Graph token names what it carries).
+    if (signedIn.granted && !calendarsGranted(flow, signedIn.granted)) {
       return fail(
         flow,
-        `Bei ${label} wurde der Zugriff auf den Kalender nicht erlaubt – ohne ihn kann Slider deine Termine nicht zeigen. Versuch es noch einmal und setz dort das Häkchen beim Kalender.`,
+        `Bei ${label} wurde der Zugriff auf den Kalender nicht erlaubt – ohne ihn kann Office deine Termine nicht zeigen. Versuch es noch einmal und ${flow.provider === 'google' ? 'setz dort das Häkchen beim Kalender' : 'stimm dort zu'}.`,
         { step: 'oauth-consent' },
       );
     }
     const row = await keep(
       deps,
       flow,
+      uses,
       calendarLogin(address, existing?.name),
       signedIn,
       existing ?? null,
     );
-    return tell(flow, { ok: true, account: accountDto(row), renewed: !!existing });
+    // A mailbox whose calendars come on: added, not signed in anew.
+    return tell(flow, {
+      ok: true,
+      account: accountDto(row),
+      renewed: !!existing && (existing.withCalendars || existing.calendarOnly),
+    });
   }
 
   const login: MailLogin = {
@@ -344,7 +374,7 @@ export async function finishMailOAuth(deps: AppDeps, c: Context<OptionalViewerEn
       step: 'imap-server',
     });
   }
-  const row = await keep(deps, flow, login, signedIn, existing ?? null);
+  const row = await keep(deps, flow, uses, login, signedIn, existing ?? null);
   // A calendar alone that became this mailbox: added, not signed in anew.
   return tell(flow, {
     ok: true,
@@ -352,6 +382,13 @@ export async function finishMailOAuth(deps: AppDeps, c: Context<OptionalViewerEn
     renewed: !!existing && !existing.calendarOnly,
   });
 }
+
+/** The calendar scopes came along: Google's events, Microsoft's calendars (read or write). */
+const calendarsGranted = (flow: Pending, granted: string[]) =>
+  flow.provider === 'google'
+    ? granted.includes(GOOGLE_CALENDAR_EVENTS)
+    : // Microsoft's code is traded for the mail's token when mail was asked: not named there.
+      flow.mail || granted.some((one) => /calendars\.read/i.test(one));
 
 /** A calendar alone has no servers: nothing to read mail from or send it through. */
 const calendarLogin = (address: string, name: string | undefined): MailLogin => ({
@@ -370,19 +407,21 @@ const calendarLogin = (address: string, name: string | undefined): MailLogin => 
 async function keep(
   deps: AppDeps,
   flow: Pending,
+  uses: { mail: boolean; calendars: boolean },
   login: MailLogin,
-  tokens: MailTokens,
+  tokens: MailTokens & { granted?: string[] | null },
   existing: MailAccountRow | null,
 ) {
   const now = deps.clock.now();
-  // A calendar alone signed in as a mailbox: from now on it is that mailbox.
-  const becomesMailbox = !!existing?.calendarOnly && !flow.calendarOnly;
+  // A calendar alone signed in as a mailbox: from now on it is that mailbox too.
+  const becomesMailbox = !!existing?.calendarOnly && uses.mail;
   const [row] = existing
     ? await deps.db
         .update(mailAccounts)
         .set({
           refreshToken: tokens.refreshToken,
           ...(flow.accountId ? {} : { aiReads: flow.aiReads }),
+          withCalendars: uses.calendars,
           ...(becomesMailbox
             ? {
                 calendarOnly: false,
@@ -420,7 +459,8 @@ async function keep(
           auth: flow.provider,
           refreshToken: tokens.refreshToken,
           aiReads: flow.aiReads,
-          calendarOnly: flow.calendarOnly,
+          calendarOnly: !uses.mail,
+          withCalendars: uses.calendars,
           state: 'ok',
           createdAt: now,
           updatedAt: now,
@@ -429,13 +469,15 @@ async function keep(
   if (!row) throw new Error('Mail account write returned nothing');
   // Signed in anew: what the last sign-in let (a calendar token, its scopes) goes with it.
   forgetMailToken(row.id);
-  holdMailToken(row.id, tokens);
+  // Microsoft's code signed in for the calendars alone was traded for Graph's token.
+  if (flow.provider === 'microsoft' && !flow.mail) holdCalendarToken(row.id, tokens);
+  else holdMailToken(row.id, tokens);
   if (!row.calendarOnly) {
     tellMailbox(row);
     later(deps, () => syncMailAccount(deps, row.id));
-    return row;
+    if (!flow.calendarOnly) return row;
   }
-  // A calendar alone: its calendars at once (a mailbox's come with the calendar's next look).
+  // Signed in for the calendars: they come at once (a mailbox's with the calendar's next look).
   later(deps, async () => {
     await syncMailCalendars(deps, row.workspaceId, row.userId);
     if (senderLive.open(row.workspaceId))

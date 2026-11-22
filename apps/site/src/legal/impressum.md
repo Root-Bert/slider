@@ -9,7 +9,7 @@ Deutschland
 
 ## Kontakt
 
-E-Mail: [slider@bertro.dev](mailto:slider@bertro.dev)
+E-Mail: [office@bertro.dev](mailto:office@bertro.dev)
 Kontaktformular: [bertro.dev/slider/kontakt](/slider/kontakt)
 
 ## Verantwortlich für den Inhalt

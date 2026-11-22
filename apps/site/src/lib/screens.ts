@@ -2,8 +2,8 @@ import type { ImageMetadata } from 'astro';
 import type { ProductId } from './apps';
 
 /**
- * The apps' screens (Figma: each app's "Prototyp" page, exported at 2×; Reader's taken from the
- * running app at 1440 × 900, 2×) under
+ * The apps' screens (Figma: each app's "Prototyp" page, exported at 2×; Reader's and Sender's
+ * taken from the running app at 1440 × 900, 2×) under
  * `assets/screens/{app}/{nn-name}.png`. The number orders them, the name is the key their
  * caption is filed under (`i18n/screens.ts`).
  */
@@ -43,6 +43,7 @@ export const LEAD_SCREEN: Record<ProductId, string> = {
   writer: 'editor',
   solver: 'canvas',
   reader: 'fill',
+  sender: 'channel',
   cloud: 'recent',
 };
 export const PRINCIPLE_SCREENS: Record<ProductId, [string, string, string]> = {
@@ -50,5 +51,6 @@ export const PRINCIPLE_SCREENS: Record<ProductId, [string, string, string]> = {
   writer: ['focus', 'ai-done', 'slide-from-slider'],
   solver: ['in-slider', 'answer', 'origin'],
   reader: ['sign', 'discuss', 'search'],
+  sender: ['group', 'agent', 'mail'],
   cloud: ['ask', 'area', 'deleted'],
 };

@@ -2,7 +2,7 @@ import { routes } from '@/lib/routes';
 import { CloudPage } from './components/CloudPage';
 import {
   CalendarAccounts,
-  ConnectGoogleButton,
+  ConnectCalendarButtons,
   useCalendarOAuthOutcome,
 } from './components/calendar/CalendarAccounts';
 import { useCloud } from './hooks/useCloud';
@@ -21,7 +21,7 @@ export function Component() {
         { label: 'Kalender', to: routes.cloudCalendar(ui.workspace.id) },
         { label: 'Konten' },
       ]}
-      actions={<ConnectGoogleButton />}
+      actions={<ConnectCalendarButtons />}
       nodes={[]}
     >
       {() => <CalendarAccounts />}

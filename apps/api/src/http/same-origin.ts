@@ -20,6 +20,6 @@ export function sameOriginWrites(webOrigin: string, exemptPaths: readonly string
     // `same-origin`: the page itself (also behind the dev server's proxy or another host name).
     if (site === 'same-origin' || origin === webOrigin) return next();
     if (site === undefined && origin === undefined) return next();
-    throw forbidden('Diese Anfrage kommt nicht von Slider und wurde abgelehnt.');
+    throw forbidden('Diese Anfrage kommt nicht von Office und wurde abgelehnt.');
   });
 }

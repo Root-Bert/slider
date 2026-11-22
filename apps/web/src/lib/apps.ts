@@ -4,9 +4,31 @@ import { routes } from './routes';
 /** The apps of one account that are there to open. */
 export type AppId = 'slider' | 'cloud' | 'writer' | 'reader' | 'sender';
 
+/** Each app's name – the end of its pages' tab titles („Anmelden | Cloud“). */
+export const APP_NAMES: Record<AppId, string> = {
+  slider: 'Slider',
+  cloud: 'Cloud',
+  writer: 'Writer',
+  reader: 'Reader',
+  sender: 'Sender',
+};
+
 const KEY = 'slider.app';
-/** Pages that belong to no app – the account, its settings, usage, the instance, its setup, an invitation: they keep the app one came from. */
+/**
+ * Pages that belong to no app – the start page, signing in, the account, its settings, usage, the
+ * instance, its setup, an invitation, the legal pages: they keep the app one came from (or wear
+ * the one they lead to, `appOfTarget`).
+ */
 const NEUTRAL = [
+  '/',
+  '/login',
+  '/registrieren',
+  '/anmelden/:token',
+  '/konto-bestaetigen/:token',
+  '/datenschutz',
+  '/impressum',
+  '/datenanfrage',
+  '/daten/:token',
   '/w/:workspaceId/einstellungen/*',
   '/nutzung',
   '/instanz',
@@ -42,26 +64,38 @@ const isApp = (value: string | null): value is AppId =>
 /** The app a page is part of; `null` on the pages between the apps. */
 export function appOfPath(pathname: string): AppId | null {
   if (
-    pathname === WRITER_START ||
+    matchPath(WRITER_START, pathname) ||
     matchPath('/w/:workspaceId/dokumente/*', pathname) ||
     matchPath('/t/:documentId', pathname)
   )
     return 'writer';
-  if (pathname === SENDER_START || matchPath('/w/:workspaceId/nachrichten/*', pathname))
+  if (matchPath(SENDER_START, pathname) || matchPath('/w/:workspaceId/nachrichten/*', pathname))
     return 'sender';
   if (
-    pathname === READER_START ||
+    matchPath(READER_START, pathname) ||
     matchPath('/w/:workspaceId/pdfs/*', pathname) ||
     matchPath('/r/:pdfId', pathname)
   )
     return 'reader';
   if (
-    pathname === CLOUD_START ||
-    pathname === OLD_START ||
-    matchPath('/w/:workspaceId/dateien/*', pathname)
+    // `matchPath`: with a slash at the end too (`/cloud/`, as the router takes it).
+    matchPath(CLOUD_START, pathname) ||
+    matchPath(OLD_START, pathname) ||
+    matchPath('/w/:workspaceId/dateien/*', pathname) ||
+    // What a link of Cloud's shows to someone outside.
+    matchPath('/s/:token', pathname)
   )
     return 'cloud';
   return NEUTRAL.some((pattern) => matchPath(pattern, pathname)) ? null : 'slider';
+}
+
+/** The app an address leads to (a `returnTo`, query and hash left off); `null` between the apps. */
+export const appOfTarget = (to: string): AppId | null => appOfPath(to.split(/[?#]/)[0] ?? to);
+
+/** The app the login's `returnTo` in this address leads to – a window started on the login. */
+function appOfReturnTo(search: string): AppId | null {
+  const returnTo = new URLSearchParams(search).get('returnTo');
+  return returnTo?.startsWith('/') ? appOfTarget(returnTo) : null;
 }
 
 export function rememberApp(app: AppId): void {
@@ -105,9 +139,14 @@ export const installedApp: AppId | null = (() => {
       /\bElectron\//.test(navigator.userAgent);
     if (!standalone) return null;
     // The page it loads with says which app the window is (a window opened for the other app
-    // starts on that app's page); on a page between the apps, what the window was before.
+    // starts on that app's page); on a page between the apps, what the window was before – else
+    // where the login leads, else Cloud, the start page's.
     const kept = sessionStorage.getItem(INSTALLED_KEY);
-    const app = appOfPath(window.location.pathname) ?? (isApp(kept) ? kept : 'slider');
+    const app =
+      appOfPath(window.location.pathname) ??
+      (isApp(kept) ? kept : null) ??
+      appOfReturnTo(window.location.search) ??
+      'cloud';
     sessionStorage.setItem(INSTALLED_KEY, app);
     return app;
   } catch {
@@ -127,81 +166,75 @@ export function windowForApp(app: AppId): { go: (to: string) => void; close: () 
 }
 
 /**
+ * Each app's files in `public/`: the manifest it installs by, the tab's icon (the mark on nothing)
+ * and the installed app's (the mark on its tile). `index.html` names Cloud's – the start page's
+ * app, worn until the page says otherwise. After new pictures bump `?v=` here and in `index.html`.
+ */
+const APP_FILES: Record<AppId, { manifest: string; tab: string; tile: string }> = {
+  slider: {
+    manifest: '/manifest.webmanifest',
+    tab: '/favicon.svg?v=8',
+    tile: '/apple-touch-icon.png?v=12',
+  },
+  cloud: {
+    manifest: '/cloud.webmanifest',
+    tab: '/cloud-favicon.svg',
+    tile: '/cloud-icon-192.png?v=5',
+  },
+  writer: {
+    manifest: '/writer.webmanifest',
+    tab: '/writer-favicon.svg',
+    tile: '/writer-icon-192.png?v=4',
+  },
+  reader: {
+    manifest: '/reader.webmanifest',
+    tab: '/reader-favicon.svg',
+    tile: '/reader-icon-192.png?v=4',
+  },
+  sender: {
+    manifest: '/sender.webmanifest',
+    tab: '/sender-favicon.svg',
+    tile: '/sender-icon-192.png?v=2',
+  },
+};
+
+/**
  * Each app installs by itself: the page names the manifest (name, icon, start) of the app one is
- * in, so „Installieren“ in Cloud installs Cloud.
+ * in, so „Installieren“ in Cloud installs Cloud – and the tab wears that app's icon.
  */
 export function showAppManifest(app: AppId): void {
-  const href =
-    app === 'reader'
-      ? '/reader.webmanifest'
-      : app === 'cloud'
-        ? '/cloud.webmanifest'
-        : app === 'writer'
-          ? '/writer.webmanifest'
-          : app === 'sender'
-            ? '/sender.webmanifest'
-            : '/manifest.webmanifest';
+  const files = APP_FILES[app];
   const link = document.querySelector<HTMLLinkElement>('link[rel="manifest"]');
-  if (link && link.getAttribute('href') !== href) link.setAttribute('href', href);
-  showAppIcon(app);
-}
-
-/** The browser tab wears the app's icon; Slider's are the ones the page came with. */
-let sliderIcons: { rel: string; href: string; type: string | null; sizes: string | null }[] | null =
-  null;
-function showAppIcon(app: AppId): void {
-  const icons = [
-    ...document.querySelectorAll<HTMLLinkElement>('link[rel="icon"], link[rel="apple-touch-icon"]'),
-  ];
-  sliderIcons ??= icons.map((icon) => ({
-    rel: icon.rel,
-    href: icon.getAttribute('href') ?? '',
-    type: icon.getAttribute('type'),
-    sizes: icon.getAttribute('sizes'),
-  }));
-  icons.forEach((icon, at) => {
-    const own = sliderIcons?.[at];
-    if (!own) return;
-    // The tab: the mark on nothing. The installed app's icon is the mark on its tile.
-    const touch = own.rel === 'apple-touch-icon';
-    const href =
-      app === 'reader'
-        ? touch
-          ? '/reader-icon-192.png?v=4'
-          : '/reader-favicon.svg'
-        : app === 'cloud'
-          ? touch
-            ? '/cloud-icon-192.png?v=5'
-            : '/cloud-favicon.svg'
-          : app === 'writer'
-            ? touch
-              ? '/writer-icon-192.png?v=4'
-              : '/writer-favicon.svg'
-            : app === 'sender'
-              ? touch
-                ? '/sender-icon-192.png?v=2'
-                : '/sender-favicon.svg'
-              : own.href;
-    if (icon.getAttribute('href') === href) return;
-    const slider = app === 'slider';
-    const type = slider ? own.type : touch ? 'image/png' : 'image/svg+xml';
+  if (link && link.getAttribute('href') !== files.manifest)
+    link.setAttribute('href', files.manifest);
+  for (const icon of document.querySelectorAll<HTMLLinkElement>(
+    'link[rel="icon"], link[rel="apple-touch-icon"]',
+  )) {
+    const touch = icon.rel === 'apple-touch-icon';
+    const href = touch ? files.tile : files.tab;
+    if (icon.getAttribute('href') === href) continue;
     // A new element, not a changed address: Safari (and others now and then) keep the tab's icon
     // when only `href` changes – a link put in anew is read anew.
     const fresh = document.createElement('link');
-    fresh.rel = own.rel;
-    if (type) fresh.type = type;
-    // The 32 px size belongs to Slider's .ico; on an SVG it would only mislead the pick.
-    if (slider && own.sizes) fresh.setAttribute('sizes', own.sizes);
+    fresh.rel = icon.rel;
+    fresh.type = touch ? 'image/png' : 'image/svg+xml';
     fresh.href = href;
     icon.replaceWith(fresh);
-  });
+  }
 }
+
+/** The tab's title for the app: a page's „… | Slider“ ends in the app's name instead. */
+export const appTitle = (docTitle: string, app: AppId): string =>
+  docTitle.replace(/\| Slider$/, `| ${APP_NAMES[app]}`);
 
 /** The app of this page (`null` between the apps). */
 export const usePageApp = (): AppId | null => appOfPath(useLocation().pathname);
 
+/** On a page between the apps (or one that does not exist): the app last open, else Cloud. */
+export const appBetween = (): AppId => installedApp ?? lastApp();
+
 /** The app one is in: the page's, or – on settings, usage and the like – the one last open. */
-export const useCurrentApp = (): AppId => usePageApp() ?? installedApp ?? lastApp();
+export const useCurrentApp = (): AppId => usePageApp() ?? appBetween();
 
 /**
  * The app a way back leads to: the page's, or the one last open – `null` when none is known (a

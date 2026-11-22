@@ -8,10 +8,11 @@ import { useLegalTextsDraft } from './lib/legal-draft';
 
 const saved: LegalTexts[] = [];
 vi.mock('@/lib/api', () => ({
+  // What was saved last comes back, as the query does after saving.
   useLegalTexts: () => ({
     isPending: false,
     isError: false,
-    data: { imprint: null, privacy: null },
+    data: saved.at(-1) ?? { imprint: null, privacy: null, template: null },
   }),
   useSaveLegalTexts: () => ({
     isPending: false,
@@ -60,5 +61,22 @@ describe('LegalTextsSection', () => {
 
     await user.click(screen.getByRole('button', { name: 'Speichern' }));
     expect(saved.at(-1)?.imprint).toContain('Hauptstraße 1');
+    // The form's values are saved with them, the gap set by hand too.
+    expect(saved.at(-1)?.template?.values).toMatchObject({
+      name: 'Erika Muster',
+      street: 'Hauptstraße 1',
+    });
+
+    // „Vorlage bearbeiten“ opens the form on them …
+    expect(screen.queryByRole('button', { name: 'Vorlagen ausfüllen' })).toBeNull();
+    await user.click(screen.getByRole('button', { name: 'Vorlage bearbeiten' }));
+    expect(screen.getByLabelText('Name oder Firma')).toHaveProperty('value', 'Erika Muster');
+    await user.click(screen.getByRole('button', { name: 'Abbrechen' }));
+
+    // … „Vorlage aktualisieren“ fills the templates again without asking.
+    await user.click(screen.getByRole('button', { name: 'Vorlage aktualisieren' }));
+    const refreshed = screen.getByLabelText('Impressum') as HTMLTextAreaElement;
+    expect(refreshed.value).toContain('Erika Muster\nHauptstraße 1\n');
+    expect(refreshed.value).toContain('[PLZ und Ort]');
   });
 });

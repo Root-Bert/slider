@@ -63,7 +63,7 @@ export function NextcloudConnectForm({
       <Notice tone="neutral" variant="inline" icon="lock">
         Nextcloud erlaubt keine Nur-Lese-Freigabe. Slider liest nur Präsentationen und ändert
         nichts. Du kannst den Zugriff jederzeit in Nextcloud unter Einstellungen → Sicherheit
-        („Slider“) widerrufen.
+        („Office“) widerrufen.
       </Notice>
     </form>
   );

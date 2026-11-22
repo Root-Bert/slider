@@ -9,7 +9,7 @@ export const LEGAL_LABELS: Record<LegalKind, string> = {
   privacy: 'Datenschutzerklärung',
 };
 
-const NO_TEXTS: LegalTexts = { imprint: null, privacy: null };
+const NO_TEXTS: LegalTexts = { imprint: null, privacy: null, template: null };
 
 /**
  * The texts as edited on `/einrichtung`, saved with the page's one „Speichern“: what was typed

@@ -106,6 +106,7 @@ export async function sweepUnusedDecks(
           deps,
           inviteMail({
             to,
+            app: 'slider',
             url: new URL(`/d/${deck.id}`, deps.config.webOrigin).toString(),
             subject: `„${deck.title}“ wird ${when} gelöscht`,
             heading: 'Präsentation behalten?',

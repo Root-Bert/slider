@@ -1,6 +1,7 @@
 import { useState, type ReactNode } from 'react';
 import type { DomainWorkspace, PendingInvite } from '@slider/shared';
 import { useNavigate } from 'react-router';
+import { appTitle, useCurrentApp } from '@/lib/apps';
 import { routes } from '@/lib/routes';
 import { AppHeader } from '@/shell/AppHeader';
 import {
@@ -163,9 +164,11 @@ function InviteCard({ invite, onError }: { invite: PendingInvite; onError: ShowT
  * website's space theme, as people come on board. `narrow` when founding is all there is.
  */
 function Page({ narrow = false, children }: { narrow?: boolean; children: ReactNode }) {
+  // The start page belongs to no app: the one last open, else Cloud.
+  const app = useCurrentApp();
   return (
     <div className="dot-grid relative flex min-h-full flex-col">
-      <title>Willkommen | Slider</title>
+      <title>{appTitle('Willkommen | Slider', app)}</title>
       <SpaceBackdrop />
       <AppHeader />
       <main className="relative flex flex-1 justify-center px-4 pt-[clamp(8px,6vh,72px)] pb-16">

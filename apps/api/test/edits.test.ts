@@ -175,8 +175,11 @@ describe('editing an ODP deck', () => {
       fromName: expect.stringContaining('(über Slider)'),
       replyTo: expect.stringContaining('@'),
     });
-    expect(fromAddress('Slider <noreply@example.org>')).toBe('noreply@example.org');
+    expect(fromAddress('Office <noreply@example.org>')).toBe('noreply@example.org');
     expect(mail!.text).toContain('Für morgen');
+    // A presentation's mail is Slider's: its mark (inline) and name.
+    expect(mail!.html).toContain('src="cid:slider-logo"');
+    expect(mail!.text).toContain('\n– Slider\n');
     const attached = mail!.attachments!.find((file) => !file.cid)!;
     expect(attached).toMatchObject({
       filename: 'Strategie – Folie 2.png',

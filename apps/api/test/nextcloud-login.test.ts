@@ -138,7 +138,7 @@ describe("the organisation's Nextcloud as a login", () => {
       expect(stranger.answer).toEqual({ status: 'confirm', email: 'anna@firma.de' });
       expect(sessionCookieFrom(stranger.poll)).toBeNull();
       expect(mailer.sent.map((mail) => [mail.to, mail.subject])).toEqual([
-        ['anna@firma.de', 'Deine Anmeldung bei Slider bestätigen'],
+        ['anna@firma.de', 'Deine Anmeldung bei Office bestätigen'],
       ]);
       const link = /konto-bestaetigen\/([\w.-]+)/.exec(mailer.sent[0]?.text ?? '')?.[1] ?? '';
       // Anna opening it in her own browser confirms nothing there.

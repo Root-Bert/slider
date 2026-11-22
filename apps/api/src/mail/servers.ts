@@ -278,7 +278,7 @@ export function mailFailure(
       return {
         text:
           (host && MICROSOFT_HOST.test(host) && provider?.noPassword) ||
-          `Der ${side}-Server nimmt keine Passwörter an, auch keine App-Passwörter – nur die Anmeldung über den Anbieter selbst (OAuth). Die kann Slider noch nicht.`,
+          `Der ${side}-Server nimmt keine Passwörter an, auch keine App-Passwörter – nur die Anmeldung über den Anbieter selbst (OAuth). Die kann Office noch nicht.`,
         step,
         ...(serverSays ? { serverSays } : {}),
       };
@@ -301,7 +301,7 @@ export function mailFailure(
     /certificate/i.test(raw)
   )
     return {
-      text: `Dem Zertifikat des ${side}-Servers traut Slider nicht – es passt nicht zu seinem Namen oder ist abgelaufen. Stimmen Servername und Port?`,
+      text: `Dem Zertifikat des ${side}-Servers traut Office nicht – es passt nicht zu seinem Namen oder ist abgelaufen. Stimmen Servername und Port?`,
       step: `${lower}-tls`,
     };
   // Encryption that does not fit the port: TLS against a plain port fails the handshake, plain
@@ -393,7 +393,7 @@ export async function tooLargeMail(
     date: Number.isNaN(date.getTime()) ? new Date() : date,
     messageId: envelope.messageId || `<too-large-${place}@slider>`,
     inReplyTo: envelope.inReplyTo || undefined,
-    text: `Diese Mail ist zu groß für Slider (${Math.ceil(bytes / (1024 * 1024))} MB). Lies sie in deinem Postfach beim Anbieter.`,
+    text: `Diese Mail ist zu groß für Office (${Math.ceil(bytes / (1024 * 1024))} MB). Lies sie in deinem Postfach beim Anbieter.`,
   });
   const built = await new Promise<Buffer>((resolve, reject) =>
     composer.compile().build((error, message) => (error ? reject(error) : resolve(message))),

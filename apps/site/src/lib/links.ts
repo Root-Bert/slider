@@ -4,11 +4,13 @@ export const APP_URL = 'https://office.bertro.dev';
 export const CLOUD_URL = `${APP_URL}/cloud`;
 /** Reader in the hosted app: on to the PDFs of the workspace last open. */
 export const READER_URL = `${APP_URL}/reader`;
+/** Sender in the hosted app: on to the conversations of the workspace last open. */
+export const SENDER_URL = `${APP_URL}/sender`;
 export const REPO_URL = 'https://github.com/Root-Bert/slider';
 export const CHANGELOG_URL = `${REPO_URL}/releases`;
 /** The personal page of the person behind it all. */
 export const BERTRO_URL = '/me/';
-export const CONTACT_URL = 'mailto:slider@bertro.dev';
+export const CONTACT_URL = 'mailto:office@bertro.dev';
 /** Imprint and privacy policy: one each for the whole domain, at its root. */
 export const IMPRINT_URL = '/impressum';
 export const PRIVACY_URL = '/datenschutz';

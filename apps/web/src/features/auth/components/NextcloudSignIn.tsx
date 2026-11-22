@@ -114,7 +114,7 @@ export function NextcloudSignIn({
               {state.code}
             </p>
             <p className="text-xs leading-4.5 text-fg-subtle">
-              Bestätige nur, wenn bei „Slider ({window.location.host})“ genau dieser Code steht.
+              Bestätige nur, wenn bei „Office ({window.location.host})“ genau dieser Code steht.
             </p>
           </div>
         ) : null}

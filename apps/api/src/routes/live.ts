@@ -44,7 +44,7 @@ export function liveRoutes(
           throw new ApiError(
             429,
             'rate_limited',
-            'Du hast Slider in sehr vielen Tabs offen. Schließ ein paar davon und lade die Seite neu.',
+            'Du hast Office in sehr vielen Tabs offen. Schließ ein paar davon und lade die Seite neu.',
           );
         }
         // Someone in a deck is online in its workspace too – members only, not guests by link.

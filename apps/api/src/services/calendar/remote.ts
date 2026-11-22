@@ -828,9 +828,9 @@ const REGRANT_HINT =
 
 const GOOGLE_MESSAGES: VendorMessages = {
   expired: 'Die Anmeldung bei Google ist abgelaufen. Bitte melde das Postfach neu an.',
-  forbidden: 'Slider darf den Google-Kalender nicht lesen. Bitte melde das Postfach neu an.',
+  forbidden: 'Office darf den Google-Kalender nicht lesen. Bitte melde das Postfach neu an.',
   failed: 'Der Google-Kalender konnte gerade nicht geladen werden.',
-  regrant: `Slider darf diesen Google-Kalender noch nicht ändern. ${REGRANT_HINT}`,
+  regrant: `Office darf diesen Google-Kalender noch nicht ändern. ${REGRANT_HINT}`,
   rejected: 'Google hat die Änderung nicht angenommen.',
 };
 
@@ -1072,9 +1072,9 @@ function isoInstant(value: string | undefined): string | undefined {
 
 const MICROSOFT_MESSAGES: VendorMessages = {
   expired: 'Die Anmeldung bei Microsoft ist abgelaufen. Bitte melde das Postfach neu an.',
-  forbidden: 'Slider darf den Outlook-Kalender nicht lesen. Bitte melde das Postfach neu an.',
+  forbidden: 'Office darf den Outlook-Kalender nicht lesen. Bitte melde das Postfach neu an.',
   failed: 'Der Outlook-Kalender konnte gerade nicht geladen werden.',
-  regrant: `Slider darf diesen Outlook-Kalender noch nicht ändern. ${REGRANT_HINT}`,
+  regrant: `Office darf diesen Outlook-Kalender noch nicht ändern. ${REGRANT_HINT}`,
   rejected: 'Microsoft hat die Änderung nicht angenommen.',
 };
 

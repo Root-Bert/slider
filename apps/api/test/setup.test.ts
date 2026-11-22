@@ -122,7 +122,11 @@ describe('setup page before the first account', () => {
       value: null,
       set: false,
     });
-    expect(body.settings?.features).toEqual({ payments: false, stockPhotos: false });
+    expect(body.settings?.features).toEqual({
+      payments: false,
+      stockPhotos: false,
+      nextcloudAnyServer: false,
+    });
     // The token file stays until the server sees the first account.
     expect(readSetupToken(dataDir)).toBe(token);
   });

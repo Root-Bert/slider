@@ -645,7 +645,7 @@ describe('remote calendars', () => {
       'Der Termin wurde inzwischen woanders geändert.',
     );
     await expect(gw.update('anna@gmail.com', 'new1', { title: 'X' })).rejects.toThrow(
-      'Slider darf diesen Google-Kalender noch nicht ändern. Melde das Konto dafür in der Kalenderliste oder unter Postfächer mit „Neu anmelden“ neu an.',
+      'Office darf diesen Google-Kalender noch nicht ändern. Melde das Konto dafür in der Kalenderliste oder unter Postfächer mit „Neu anmelden“ neu an.',
     );
     await expect(gw.update('b@group', 'new1', { title: 'X' })).rejects.toThrow(
       'In diesem Kalender darfst du nur ansehen, nichts ändern.',

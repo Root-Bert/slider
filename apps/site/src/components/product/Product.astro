@@ -11,11 +11,11 @@ import Tile from '../Tile.astro';
 import { s, type Lang } from '~/i18n';
 import { SCREEN_WORDS } from '~/i18n/screens';
 import { APP_NAMES, isLive, type ProductId } from '~/lib/apps';
-import { APP_URL, CLOUD_URL, READER_URL } from '~/lib/links';
+import { APP_URL, CLOUD_URL, READER_URL, SENDER_URL } from '~/lib/links';
 import { LEAD_SCREEN, PRINCIPLE_SCREENS } from '~/lib/screens';
 
 /**
- * The page of an app (Slider, Writer, Solver, Reader, Cloud), the same in every language:
+ * The page of an app (Slider, Writer, Solver, Reader, Sender, Cloud), the same in every language:
  * what it is in one line, the way in right away – an account already includes it – its first
  * screen as wide as the page, what it does differently in one breath and as three tiles with the
  * screen that shows each, the rest of its screens as a row to walk through, the family and the plan. Slider's page adds its
@@ -32,9 +32,9 @@ const words = w.apps[app];
 const captions = SCREEN_WORDS[lang].captions[app];
 const shown = [LEAD_SCREEN[app], ...PRINCIPLE_SCREENS[app]];
 /** Whose cursor rests on the headline. */
-const BY = { slider: 'Rose', writer: 'Gesa', solver: 'Paul', reader: 'Lara', cloud: 'Anna' } as const;
-/** Cloud and Reader open at their own page of the hosted app; the others lead to the app's start. */
-const OWN: Partial<Record<ProductId, string>> = { cloud: `${CLOUD_URL}/`, reader: READER_URL };
+const BY = { slider: 'Rose', writer: 'Gesa', solver: 'Paul', reader: 'Lara', sender: 'Benni', cloud: 'Anna' } as const;
+/** Cloud, Reader and Sender open at their own page of the hosted app; the others lead to the app's start. */
+const OWN: Partial<Record<ProductId, string>> = { cloud: `${CLOUD_URL}/`, reader: READER_URL, sender: SENDER_URL };
 const own = OWN[app];
 const way = own ? { href: own, label: w.product.open.replace('{app}', APP_NAMES[app]) } : { href: `${APP_URL}/`, label: w.product.start };
 ---

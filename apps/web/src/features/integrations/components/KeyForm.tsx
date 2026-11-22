@@ -143,8 +143,8 @@ export function KeyForm({
         error={errors.apiKey}
         hint={
           selfHosted
-            ? 'Nur falls der Dienst einen verlangt. Slider fragt ihn nach seinen Modellen und wählt ein passendes.'
-            : `Slider prüft den Key bei ${named}${kind === 'photos' ? '' : ', wählt ein passendes Modell'} und speichert ihn verschlüsselt. Angezeigt wird danach nur sein Ende.`
+            ? 'Nur falls der Dienst einen verlangt. Office fragt ihn nach seinen Modellen und wählt ein passendes.'
+            : `Office prüft den Key bei ${named}${kind === 'photos' ? '' : ', wählt ein passendes Modell'} und speichert ihn verschlüsselt. Angezeigt wird danach nur sein Ende.`
         }
       />
       {keyPage && (

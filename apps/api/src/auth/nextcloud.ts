@@ -37,7 +37,7 @@ const PURPOSE = 'nextcloud-app-password';
 const LOGIN_TTL_MS = 20 * 60 * 1000;
 const MAX_PENDING_PER_USER = 5;
 /** Names the app password in Nextcloud → Settings → Security. */
-const DEVICE_NAME = 'Slider';
+const DEVICE_NAME = 'Office';
 const MAX_ANSWER_BYTES = 64 * 1024;
 
 interface PendingLogin {

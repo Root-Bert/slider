@@ -261,7 +261,7 @@ export function SetupForm({
       variant="secondary"
       icon="undo"
       disabled={!changed || busy}
-      title={changed ? 'Zurück zu dem, womit Slider gerade läuft' : 'Nichts geändert'}
+      title={changed ? 'Zurück zu dem, womit Office gerade läuft' : 'Nichts geändert'}
       onClick={reset}
       className={className}
     >
@@ -381,7 +381,7 @@ export function SetupForm({
 
           <Group
             {...GROUPS.login}
-            description="Wie man sich bei Slider anmeldet. Mindestens ein Weg muss eingerichtet sein; Passkeys gehen zusätzlich immer."
+            description="Wie man sich bei Office anmeldet. Mindestens ein Weg muss eingerichtet sein; Passkeys gehen zusätzlich immer."
           >
             <Section
               title="Microsoft"
@@ -554,13 +554,13 @@ export function SetupForm({
                       />
                     </div>
                   )}
-                  {field('MAIL_FROM', { placeholder: 'Slider <slider@firma.de>' })}
+                  {field('MAIL_FROM', { placeholder: 'Office <office@firma.de>' })}
                 </>,
               )}
             </Section>
           </Group>
 
-          <Group {...GROUPS.privacy} description="Wie lange Slider ungenutzte Daten aufhebt.">
+          <Group {...GROUPS.privacy} description="Wie lange Office ungenutzte Daten aufhebt.">
             <Section
               title="Ungenutzte Daten löschen"
               description="Konten und Präsentationen, die 18 Monate niemand genutzt hat, werden gelöscht. Die Frist zählt frühestens ab dem Einschalten, vorher wird nichts gelöscht."
@@ -621,7 +621,7 @@ export function SetupForm({
             <Notice
               tone="warning"
               role="alert"
-              title="Slider antwortet noch nicht"
+              title="Office antwortet noch nicht"
               footer={
                 <Button size="sm" variant="secondary" icon="refresh" onClick={() => void reload()}>
                   Erneut prüfen
@@ -635,7 +635,7 @@ export function SetupForm({
           <div className="flex flex-wrap items-center justify-end gap-3 xl:hidden">
             {phase === 'restarting' && (
               <span className="flex items-center gap-2 text-body text-fg-subtle">
-                <Spinner size="md" /> Slider startet neu …
+                <Spinner size="md" /> Office startet neu …
               </span>
             )}
             {resetButton()}
@@ -648,8 +648,8 @@ export function SetupForm({
               description={
                 settingsChanged
                   ? settings.restart === 'manual'
-                    ? 'Danach musst du den Slider-Server neu starten, damit sie gelten.'
-                    : 'Slider startet danach kurz neu.'
+                    ? 'Danach musst du den Office-Server neu starten, damit sie gelten.'
+                    : 'Office startet danach kurz neu.'
                   : undefined
               }
               confirmLabel="Speichern"
@@ -902,7 +902,7 @@ function SaveState({ phase }: { phase: Phase }) {
   if (phase === 'restarting') {
     return (
       <span className="flex items-center gap-2 text-xs text-fg-subtle">
-        <Spinner size="sm" /> Slider startet neu …
+        <Spinner size="sm" /> Office startet neu …
       </span>
     );
   }
@@ -955,7 +955,7 @@ function Saved({
   if (manual && restarted) {
     return (
       <Notice tone="warning" role="status">
-        Gespeichert. Starte den Slider-Server neu, damit die Änderungen gelten.
+        Gespeichert. Starte den Office-Server neu, damit die Änderungen gelten.
       </Notice>
     );
   }

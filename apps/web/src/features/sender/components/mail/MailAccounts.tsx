@@ -20,8 +20,12 @@ import {
   mailOAuthResult,
   startMailOAuth,
   useAddMailAccount,
+  useAddMailboxToCalendars,
   useAuthProviders,
+  useCalendarConnections,
+  useCalendars,
   useDeleteMailAccount,
+  useIdentities,
   useMailAccounts,
   useMailPrepared,
   useSyncMailAccount,
@@ -30,6 +34,7 @@ import {
 import { ApiError } from '@/lib/api-client';
 import { formatRelativeTime } from '@/lib/format';
 import { useOnPageRestore } from '@/lib/page-restore';
+import { routes } from '@/lib/routes';
 import { canCreateDecks } from '@/features/workspaces';
 import {
   Badge,
@@ -223,7 +228,7 @@ function GoogleMailPending() {
     <Tooltip
       side="bottom"
       maxWidth={64}
-      label="Kommt bald: Für Gmail mit Google-Anmeldung muss Google Slider erst prüfen – daran arbeiten wir. Bis dahin verbindest du Gmail unten mit Adresse und App-Passwort. Deinen Google Kalender verbindest du schon jetzt im Kalender."
+      label="Kommt bald: Für Gmail mit Google-Anmeldung muss Google Office erst prüfen – daran arbeiten wir. Bis dahin verbindest du Gmail unten mit Adresse und App-Passwort. Deinen Google Kalender verbindest du schon jetzt im Kalender."
     >
       <Button size="lg" variant="secondary" disabled className="gap-2.5 max-sm:flex-1">
         <GoogleMark size={16} />
@@ -927,13 +932,34 @@ export function NewMailbox() {
 
 /**
  * „Postfächer“: one's mailboxes in this workspace – how each is doing, read now, changed or
- * deleted here (on the server everything stays). A new one is added on its own page.
+ * removed here (on the server everything stays; its calendars stay in the calendar). Below,
+ * dimmed, calendars connected without their mailbox – „Verbinden“ adds it. A new one is added on
+ * its own page.
  */
 export function MailAccounts() {
   const ui = useSender();
   const accounts = useMailAccounts(ui.workspace.id);
   const sync = useSyncMailAccount(ui.workspace.id);
   const remove = useDeleteMailAccount(ui.workspace.id);
+  const addMailbox = useAddMailboxToCalendars(ui.workspace.id);
+  // Its other uses, said quietly in its line: its calendars in the calendar, its sign-in.
+  const calendars = useCalendars(ui.workspace.id).data ?? [];
+  const connections = useCalendarConnections(ui.workspace.id).data ?? [];
+  const identities = useIdentities().data ?? [];
+  const mailOAuth = useAuthProviders().data?.mailOAuth ?? [];
+  const hasCalendars = (account: MailAccount) =>
+    account.calendars && calendars.some((each) => each.mailAccountId === account.id);
+  const alsoOf = (account: Pick<MailAccount, 'signIn' | 'address'>, withCalendars: boolean) =>
+    [
+      withCalendars ? 'Auch Kalender' : null,
+      identities.some(
+        (one) =>
+          one.provider === account.signIn &&
+          one.email?.toLowerCase() === account.address.toLowerCase(),
+      )
+        ? 'Auch Anmeldung'
+        : null,
+    ].filter(Boolean);
   const location = useLocation();
   const navigate = useNavigate();
   const [editing, setEditing] = useState<string | null>(null);
@@ -977,7 +1003,12 @@ export function MailAccounts() {
       onSelect: () => setEditing(account.id),
     },
     {
-      label: 'Löschen',
+      label: 'Kalender verwalten',
+      icon: 'calendar',
+      onSelect: () => void navigate(routes.cloudCalendarAccounts(ui.workspace.id)),
+    },
+    {
+      label: 'Entfernen',
       icon: 'delete',
       tone: 'danger',
       onSelect: () => setDeleting(account),
@@ -1010,9 +1041,21 @@ export function MailAccounts() {
   if (!accounts.data) return null;
   const list = accounts.data;
   const labels = mailboxLabels(list);
+  // Calendars alone whose mailbox can be added here: by its password, or its provider's sign-in
+  // where mailboxes through it are set up.
+  const mailboxless = connections.filter(
+    (one) => one.signIn === 'password' || mailOAuth.includes(one.signIn),
+  );
+  const addMailboxOf = (connection: (typeof connections)[number]) =>
+    connection.signIn === 'password'
+      ? addMailbox.mutate(connection.accountId, {
+          onSuccess: () => ui.notify(`${connection.address} hinzugefügt`),
+          onError: fail,
+        })
+      : startOAuth({ provider: connection.signIn, accountId: connection.accountId }).catch(fail);
   return (
     <div className="flex flex-col gap-6">
-      {list.length === 0 ? (
+      {list.length === 0 && mailboxless.length === 0 ? (
         <EmptyState
           title="Noch kein Postfach"
           message="Trag dein Postfach ein – Gmail, Outlook, iCloud oder jeden anderen Mail-Server."
@@ -1070,9 +1113,15 @@ export function MailAccounts() {
                 subtitle={
                   account.state === 'error' || account.state === 'signin'
                     ? (account.error ?? 'Nicht erreichbar')
-                    : account.lastSyncAt
-                      ? `${account.address} | Abgerufen ${formatRelativeTime(account.lastSyncAt)}`
-                      : account.address
+                    : [
+                        account.address,
+                        account.lastSyncAt
+                          ? `Abgerufen ${formatRelativeTime(account.lastSyncAt)}`
+                          : null,
+                        ...alsoOf(account, hasCalendars(account)),
+                      ]
+                        .filter(Boolean)
+                        .join(' | ')
                 }
                 subtitleTitle={account.error ?? undefined}
                 onContextMenu={(event) => {
@@ -1086,6 +1135,37 @@ export function MailAccounts() {
               />
             ),
           )}
+          {mailboxless.map((connection) => (
+            <ListRow
+              key={connection.accountId}
+              variant="hover"
+              padding="wide"
+              dimmed
+              leading={
+                <span className="flex size-8 items-center justify-center rounded-chip bg-surface-2 text-fg-muted">
+                  <Icon name="mail" size={18} />
+                </span>
+              }
+              title={connection.label || connection.address}
+              subtitle={[
+                connection.label ? connection.address : null,
+                'Postfach nicht verbunden',
+                ...alsoOf(connection, true),
+              ]
+                .filter(Boolean)
+                .join(' | ')}
+              trailing={
+                <Button
+                  variant="secondary"
+                  size="sm"
+                  loading={addMailbox.isPending && addMailbox.variables === connection.accountId}
+                  onClick={() => addMailboxOf(connection)}
+                >
+                  Verbinden
+                </Button>
+              }
+            />
+          ))}
         </RowList>
       )}
       {menu && (
@@ -1099,15 +1179,19 @@ export function MailAccounts() {
       {deleting && (
         <ConfirmDialog
           onClose={() => setDeleting(null)}
-          title={`${deleting.address} löschen?`}
-          description="Seine Mails verschwinden hier. Auf dem Mail-Server bleibt alles."
-          confirmLabel="Löschen"
+          title={`${deleting.address} entfernen?`}
+          description={
+            hasCalendars(deleting)
+              ? 'Seine Mails verschwinden hier, seine Kalender bleiben im Kalender. Auf dem Mail-Server bleibt alles.'
+              : 'Seine Mails verschwinden hier. Auf dem Mail-Server bleibt alles.'
+          }
+          confirmLabel="Entfernen"
           confirmIcon="delete"
           pending={remove.isPending}
           onConfirm={() =>
             remove.mutate(deleting.id, {
               onSuccess: () => {
-                ui.notify(`${deleting.address} gelöscht`);
+                ui.notify(`${deleting.address} entfernt`);
                 setDeleting(null);
               },
               onError: fail,

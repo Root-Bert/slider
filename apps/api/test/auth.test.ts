@@ -223,8 +223,8 @@ describe('GET /api/auth/providers', () => {
       emailLogin: false,
       // Microsoft's client signs mailboxes in too; Google's only with GOOGLE_MAILBOXES.
       mailOAuth: ['microsoft'],
-      // No Google login here: no Google calendar to connect alone either.
-      calendarOAuth: [],
+      // Calendars alone through every login's client set up – no GOOGLE_MAILBOXES asked.
+      calendarOAuth: ['microsoft'],
     });
 
     // Open sign-up while the instance has no admin, then SIGNUP again.
@@ -771,11 +771,11 @@ describe('sessions', () => {
       };
       expect(await refusal('http://slider.firma.de')).toEqual([
         400,
-        'Der Slider-Server muss über https:// erreichbar sein.',
+        'Der Office-Server muss über https:// erreichbar sein.',
       ]);
       expect(await refusal('http://127.0.0.1:5')).toEqual([
         400,
-        'Unter 127.0.0.1:5 läuft kein Slider.',
+        'Unter 127.0.0.1:5 läuft kein Office.',
       ]);
       expect(await refusal('https://weg.test')).toEqual([502, 'weg.test ist nicht erreichbar.']);
       const selfHosted = (await (await startAt('http://localhost:7/egal?x=1')).json()) as {

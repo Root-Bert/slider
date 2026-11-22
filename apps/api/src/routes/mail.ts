@@ -22,10 +22,13 @@ import { assertWithinLimit, fixedWindow } from '../http/rate-limit';
 import { readJson } from '../http/validate';
 import {
   addMailAccount,
+  addMailboxToCalendars,
+  addMailCalendars,
   deleteMailAccount,
   deleteMailThread,
   dropMailUpload,
   getMailThread,
+  linkedMailAccounts,
   listMailAccounts,
   listMailThreads,
   mailAttachment,
@@ -35,6 +38,7 @@ import {
   markMailSpam,
   ownThread,
   readMailThread,
+  removeMailCalendars,
   unreadMailThread,
   replyMail,
   sendMailAgain,
@@ -127,10 +131,27 @@ export function mailRoutes(deps: AppDeps) {
           tried(c, userId);
         return c.json(await updateMailAccount(deps, userId, c.req.param('accountId'), input));
       })
+      // Its mailbox removed (its calendars, if on, stay – `deleteMailAccount`).
       .delete('/mail/accounts/:accountId', viewer, async (c) => {
         await deleteMailAccount(deps, me(c), c.req.param('accountId'));
         return c.body(null, 204);
       })
+      // Its calendars removed or on again (`signIn`: the provider must be asked first).
+      .delete('/mail/accounts/:accountId/calendars', viewer, async (c) => {
+        await removeMailCalendars(deps, me(c), c.req.param('accountId'));
+        return c.body(null, 204);
+      })
+      .post('/mail/accounts/:accountId/calendars', viewer, async (c) =>
+        c.json(await addMailCalendars(deps, me(c), c.req.param('accountId'))),
+      )
+      // Calendars alone with a password become a mailbox again – tried on its servers.
+      .post('/mail/accounts/:accountId/mailbox', viewer, async (c) => {
+        const userId = me(c);
+        tried(c, userId);
+        return c.json(await addMailboxToCalendars(deps, userId, c.req.param('accountId')));
+      })
+      // One's accounts at mail providers in every workspace, what each is linked for (Konto).
+      .get('/me/mail-accounts', viewer, async (c) => c.json(await linkedMailAccounts(deps, me(c))))
       // How often one's mailboxes are read from their servers (Einstellungen › Mail).
       .get('/mail/sync', viewer, async (c) => c.json(await mailSyncOf(deps, me(c))))
       .put('/mail/sync', viewer, async (c) => {

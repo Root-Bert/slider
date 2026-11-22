@@ -3,6 +3,7 @@ import { RouterProvider } from 'react-router/dom';
 import { CallProvider } from '@/features/calls';
 import { installEditOutbox } from '@/features/viewer';
 import { followAccountSwitches } from '@/lib/api';
+import { appOfPath, showAppManifest } from '@/lib/apps';
 import { createQueryClient } from './query-client';
 import { router } from './router';
 
@@ -11,6 +12,15 @@ const queryClient = createQueryClient();
 installEditOutbox(queryClient);
 // Another tab switched accounts or signed out: this one follows.
 followAccountSwitches();
+
+// The tab wears the icon of the page's app – also where no app header stands (a presentation, a
+// document, a PDF open; `index.html` names Cloud's). The pages between the apps say theirs.
+const showPageApp = (pathname: string) => {
+  const app = appOfPath(pathname);
+  if (app) showAppManifest(app);
+};
+showPageApp(router.state.location.pathname);
+router.subscribe((state) => showPageApp(state.location.pathname));
 
 const navigate = (to: string) => void router.navigate(to);
 const pathname = () => router.state.location.pathname;

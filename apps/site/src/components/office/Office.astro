@@ -8,12 +8,12 @@ import Plans from '../Plans.astro';
 import Tile from '../Tile.astro';
 import { appPage, s, type Lang } from '~/i18n';
 import { APP_NAMES, PRODUCTS, isLive, type ProductId } from '~/lib/apps';
-import { APP_URL, CLOUD_URL, READER_URL } from '~/lib/links';
+import { APP_URL, CLOUD_URL, READER_URL, SENDER_URL } from '~/lib/links';
 import { LEAD_SCREEN, screenOf } from '~/lib/screens';
 import { SCREEN_WORDS } from '~/i18n/screens';
 
 /**
- * The office's page, the same in every language: all five apps at once, as one thing. It opens
+ * The office's page, the same in every language: all six apps at once, as one thing. It opens
  * on one night-dark tile glowing in the apps' colours with three of their screens side by side, shows each app as a dark tile with its screen rising out of
  * it (a product shelf: name, one line, two ways on), says what they share in three light tiles
  * and ends on the plan that covers all of them.
@@ -24,10 +24,10 @@ interface Props {
 
 const { lang } = Astro.props;
 const w = s(lang);
-/** Slider opens the grid across its width, Writer and Solver share a row, Reader and Cloud the last. */
-const SIZE = { slider: 'wide', writer: 'half', solver: 'half', reader: 'half', cloud: 'half' } as const;
-/** Cloud and Reader open at their own page of the hosted app. */
-const OWN: Partial<Record<ProductId, string>> = { cloud: `${CLOUD_URL}/`, reader: READER_URL };
+/** Slider and Cloud open and close the grid across its width, Writer and Solver share a row, Reader and Sender the next. */
+const SIZE = { slider: 'wide', writer: 'half', solver: 'half', reader: 'half', sender: 'half', cloud: 'wide' } as const;
+/** Cloud, Reader and Sender open at their own page of the hosted app. */
+const OWN: Partial<Record<ProductId, string>> = { cloud: `${CLOUD_URL}/`, reader: READER_URL, sender: SENDER_URL };
 /** The screens of the opening: Slider in front, Writer and Solver behind it left and right. */
 const STAGE = (['writer', 'slider', 'solver'] as const).map((id) => ({
   id,
@@ -253,7 +253,7 @@ const STAGE = (['writer', 'slider', 'solver'] as const).map((id) => ({
     padding: clamp(96px, 12vw, 200px) clamp(12px, 1.6vw, 24px) 0;
   }
 
-  /* What the five share: a centred line and three light tiles. */
+  /* What the six share: a centred line and three light tiles. */
   .together {
     display: flex;
     flex-direction: column;

@@ -4,7 +4,7 @@ import { appPage, s, type Lang } from '~/i18n';
 import { APP_NAMES, PRODUCTS, isLive, type ProductId } from '~/lib/apps';
 
 /**
- * The five apps as one hand of tiles (Figma: App Icons): each in its colour running into the
+ * The six apps as one hand of tiles (Figma: App Icons): each in its colour running into the
  * next one's, the mark on it in white, on its paler copy down left. They are dealt from the top
  * right, lean towards the pointer and step forward when hovered. Each leads to its app's page.
  */
@@ -20,9 +20,10 @@ const words = s(lang);
 /** The colour each tile runs into, and how it sits in the hand. */
 const LOOK: Record<ProductId, { to: string; turn: number; drop: number }> = {
   slider: { to: 'var(--app-writer)', turn: -9, drop: 7 },
-  writer: { to: 'var(--app-solver)', turn: -4.5, drop: 2 },
-  solver: { to: 'var(--app-writer)', turn: 0, drop: 0 },
-  reader: { to: 'var(--app-cloud)', turn: 4.5, drop: 2 },
+  writer: { to: 'var(--app-solver)', turn: -5.4, drop: 3 },
+  solver: { to: 'var(--app-writer)', turn: -1.8, drop: 0 },
+  reader: { to: 'var(--app-cloud)', turn: 1.8, drop: 0 },
+  sender: { to: 'var(--app-writer)', turn: 5.4, drop: 3 },
   cloud: { to: 'var(--app-writer)', turn: 9, drop: 7 },
 };
 ---
@@ -107,6 +108,7 @@ const LOOK: Record<ProductId, { to: string; turn: number; drop: number }> = {
     --m-ground: transparent;
     --m-line: #fff;
     --m-ink: #fff;
+    --m-face: var(--c);
     width: 58%;
     height: auto;
     filter: drop-shadow(0 calc(var(--tile) * 0.02) calc(var(--tile) * 0.04) rgb(0 0 0 / 0.22));

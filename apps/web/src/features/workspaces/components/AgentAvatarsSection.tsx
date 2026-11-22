@@ -6,7 +6,7 @@ import { cn, Icon, Section, type ShowToast } from '@/ui';
 
 /** Each style's name, and whose it is. */
 const STYLES: Record<AgentAvatarStyle, { label: string; source: string }> = {
-  flowers: { label: 'Blumen', source: 'Sliders eigener Stil „Glaze Flowers“' },
+  flowers: { label: 'Blumen', source: 'Eigener Stil „Glaze Flowers“' },
   cameo: { label: 'Köpfe', source: '„Cameo“ von DiceBear' },
 };
 

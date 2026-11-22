@@ -98,7 +98,7 @@ export async function sendEmailLogin(
   // Mails without a link: why there is none.
   const noLink = {
     ...base,
-    subject: 'Deine Anmeldung bei Slider',
+    subject: 'Deine Anmeldung bei Office',
     outro: 'Du warst das nicht? Dann ignoriere diese Mail, es ändert sich nichts.',
   };
 
@@ -112,7 +112,7 @@ export async function sendEmailLogin(
       inviteMail({
         ...noLink,
         heading: 'Du hast schon ein Konto',
-        intro: `Für diese Adresse gibt es schon ein Slider-Konto. Es meldet sich ${how} an – nicht per Link aus einer Mail. Nach der Anmeldung kannst du unter „Konto & Anmeldung“ einen Passkey hinzufügen.`,
+        intro: `Für diese Adresse gibt es schon ein Konto. Es meldet sich ${how} an – nicht per Link aus einer Mail. Nach der Anmeldung kannst du unter „Konto & Anmeldung“ einen Passkey hinzufügen.`,
         button: 'Zur Anmeldung',
         url: url(loginPath(input.returnTo)),
       }),
@@ -125,8 +125,8 @@ export async function sendEmailLogin(
         ...noLink,
         heading: 'Noch kein Konto',
         intro:
-          'Für diese Adresse gibt es auf dieser Slider-Instanz kein Konto, und neue Konten entstehen hier nur mit einer Einladung. Bitte jemanden aus deinem Team, dich in euren Workspace einzuladen.',
-        button: 'Zu Slider',
+          'Für diese Adresse gibt es auf dieser Office-Instanz kein Konto, und neue Konten entstehen hier nur mit einer Einladung. Bitte jemanden aus deinem Team, dich in euren Workspace einzuladen.',
+        button: 'Zu Office',
         url: url(loginPath()),
       }),
     );
@@ -149,16 +149,16 @@ export async function sendEmailLogin(
     deps,
     inviteMail({
       ...base,
-      subject: known ? 'Bei Slider anmelden' : 'Dein Slider-Konto erstellen',
-      heading: known ? 'Bei Slider anmelden' : 'Konto erstellen',
+      subject: known ? 'Bei Office anmelden' : 'Dein Konto erstellen',
+      heading: known ? 'Bei Office anmelden' : 'Konto erstellen',
       intro: known
-        ? 'Mit diesem Link meldest du dich bei Slider an.'
-        : 'Mit diesem Link erstellst du dein Slider-Konto, ganz ohne Passwort. Danach kannst du einen Passkey anlegen und dich künftig damit anmelden.',
+        ? 'Mit diesem Link meldest du dich bei Office an.'
+        : 'Mit diesem Link erstellst du dein Konto, ganz ohne Passwort. Danach kannst du einen Passkey anlegen und dich künftig damit anmelden.',
       button: known ? 'Anmelden' : 'Konto erstellen',
       url: url(`/anmelden/${token}`),
       code: {
         label:
-          'Öffnet sich der Link in einem anderen Browser, etwa aus der Slider-App heraus? Dann gib dort, wo du ihn angefordert hast, diesen Code ein:',
+          'Öffnet sich der Link in einem anderen Browser, etwa aus einer Desktop-App heraus? Dann gib dort, wo du ihn angefordert hast, diesen Code ein:',
         value: code,
       },
       outro:
@@ -211,7 +211,7 @@ export async function redeemEmailLogin(
   if (link.usedAt) throw new ApiError(410, 'link_expired', USED_MESSAGE);
   // Another browser: the link stays unused and still works in the right one.
   throw forbidden(
-    'Angefordert hast du den Link woanders, etwa in der Slider-App. Gib dort den Code aus der Mail ein, oder öffne den Link in dem Browser, in dem du ihn angefordert hast.',
+    'Angefordert hast du den Link woanders, etwa in einer Desktop-App. Gib dort den Code aus der Mail ein, oder öffne den Link in dem Browser, in dem du ihn angefordert hast.',
   );
 }
 

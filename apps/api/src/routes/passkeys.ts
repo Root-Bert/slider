@@ -282,7 +282,7 @@ export function passkeysRoutes(deps: AppDeps) {
             : [];
         if (!row) {
           throw badRequest(
-            'Diesen Passkey kennt Slider nicht (mehr). Melde dich anders an und lege ihn unter „Konto & Anmeldung“ neu an.',
+            'Diesen Passkey kennt Office nicht (mehr). Melde dich anders an und lege ihn unter „Konto & Anmeldung“ neu an.',
           );
         }
         let verification: Awaited<ReturnType<typeof webauthn.verifyAuthenticationResponse>>;

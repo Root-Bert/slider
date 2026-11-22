@@ -16,13 +16,13 @@ export function NextcloudSafetyDialog({
   /** Linking from /konto: Nextcloud names the account asking instead of showing a code. */
   linking?: boolean;
 }) {
-  const slider = `Slider (${window.location.host})`;
+  const client = `Office (${window.location.host})`;
   return (
     <Dialog
       open={open}
       onClose={onClose}
       title="Sicher mit Nextcloud anmelden"
-      description="Gleich öffnet sich deine Nextcloud und fragt, ob Slider zugreifen darf. Darauf kommt es an:"
+      description="Gleich öffnet sich deine Nextcloud und fragt, ob Office zugreifen darf. Darauf kommt es an:"
       footer={
         <Button className="w-full" onClick={onClose}>
           Verstanden
@@ -31,18 +31,18 @@ export function NextcloudSafetyDialog({
     >
       <div className="flex flex-col gap-4">
         <Part icon="checkCircleOutline" tone="text-success" title="So ist es richtig">
-          <li>Du hast die Anmeldung hier in Slider selbst gestartet.</li>
+          <li>Du hast die Anmeldung hier in Office selbst gestartet.</li>
           <li>
             {linking
-              ? `Nextcloud zeigt „${slider} für …“ mit deiner eigenen Slider-Adresse.`
-              : `Nextcloud zeigt „${slider} | Code …“ mit genau dem Code, den dir Slider anzeigt.`}
+              ? `Nextcloud zeigt „${client} für …“ mit deiner eigenen Office-Adresse.`
+              : `Nextcloud zeigt „${client} | Code …“ mit genau dem Code, den dir Office anzeigt.`}
           </li>
           <li>Du bestätigst innerhalb von 5 Minuten.</li>
         </Part>
         <Part icon="warning" tone="text-danger" title="Niemals bestätigen, wenn …">
           <li>
             dir jemand einen Nextcloud-Link schickt (Mail, Chat, Telefon) und um Bestätigung bittet.
-            Wer ihn geschickt hat, wäre danach in deinem Slider-Konto.
+            Wer ihn geschickt hat, wäre danach in deinem Konto.
           </li>
           <li>
             {linking
@@ -50,9 +50,9 @@ export function NextcloudSafetyDialog({
               : 'der Code fehlt oder nicht übereinstimmt.'}
           </li>
         </Part>
-        <Part icon="lock" tone="text-fg-muted" title="Was Slider damit darf">
+        <Part icon="lock" tone="text-fg-muted" title="Was Office damit darf">
           <li>Dich anmelden und Präsentationen aus deiner Nextcloud einfügen.</li>
-          <li>Slider ändert in deiner Nextcloud nichts.</li>
+          <li>Office ändert in deiner Nextcloud nichts.</li>
           <li>
             Widerrufen kannst du den Zugriff jederzeit in Nextcloud unter Einstellungen →
             Sicherheit.
@@ -60,9 +60,9 @@ export function NextcloudSafetyDialog({
         </Part>
         <Part icon="error" tone="text-warning" title="Versehentlich bestätigt?">
           <li>
-            Widerrufe in Nextcloud unter Einstellungen → Sicherheit den Eintrag „{slider}“, trenne
-            die Nextcloud in Slider unter „Konto &amp; Anmeldung“ und sag dem Betreiber dieser
-            Slider-Instanz Bescheid.
+            Widerrufe in Nextcloud unter Einstellungen → Sicherheit den Eintrag „{client}“, trenne
+            die Nextcloud in Office unter „Konto &amp; Anmeldung“ und sag dem Betreiber dieser
+            Office-Instanz Bescheid.
           </li>
         </Part>
       </div>

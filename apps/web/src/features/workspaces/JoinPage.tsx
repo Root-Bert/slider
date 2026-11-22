@@ -1,5 +1,4 @@
 import { useParams } from 'react-router';
-import { routes } from '@/lib/routes';
 import { ApiError } from '@/lib/api-client';
 import { useJoinPreview, useMe } from '@/lib/api';
 import { CenteredCard, CenteredLayout } from '@/shell/layouts/CenteredLayout';
@@ -15,11 +14,7 @@ export function Component() {
   const signedIn = Boolean(me.data?.user);
 
   return (
-    <CenteredLayout
-      docTitle="Einladung | Slider"
-      logoLink={{ to: routes.reviews(), label: 'Slider' }}
-      headerEnd={signedIn && <AccountMenu />}
-    >
+    <CenteredLayout docTitle="Einladung | Slider" logoHome headerEnd={signedIn && <AccountMenu />}>
       {preview.isPending || me.isPending ? (
         <LoadingState padding="lg" size={28} />
       ) : preview.isError ? (

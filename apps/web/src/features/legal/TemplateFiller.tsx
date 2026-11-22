@@ -16,17 +16,20 @@ import {
  */
 export function TemplateFiller({
   settings,
+  initial,
   replaces,
   onFill,
   onClose,
 }: {
   settings: NonNullable<SetupStatus['settings']> | undefined;
+  /** What the form was last filled with; else as the instance is set up. */
+  initial?: { values: TemplateValues; options: TemplateOptions } | undefined;
   /** Something is written already that the templates replace. */
   replaces: boolean;
   onFill: (values: TemplateValues, options: TemplateOptions) => void;
   onClose: () => void;
 }) {
-  const [{ values, options }, setForm] = useState(() => templateDefaults(settings));
+  const [{ values, options }, setForm] = useState(() => initial ?? templateDefaults(settings));
   const setValue = (key: keyof TemplateValues, value: string) =>
     setForm((form) => ({ ...form, values: { ...form.values, [key]: value } }));
   const setOption = (key: keyof TemplateOptions, on: boolean) =>

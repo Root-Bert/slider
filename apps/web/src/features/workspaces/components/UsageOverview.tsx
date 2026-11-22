@@ -172,7 +172,7 @@ function PlanSection({
     usage.maxStorageBytes !== null && `${formatFileSize(usage.maxStorageBytes)} Speicher`,
   ].filter((part): part is string => Boolean(part));
   const description = billing.granted
-    ? 'Freigeschaltet von der Person, die Slider hier betreibt. Hier gibt es nichts zu bezahlen.'
+    ? 'Freigeschaltet von der Person, die Office hier betreibt. Hier gibt es nichts zu bezahlen.'
     : billing.endsAt
       ? `Endet am ${formatPlanDate(billing.endsAt)}.`
       : billing.trialEndsAt

@@ -17,6 +17,7 @@ import type {
   SenderUnread,
   SenderDraft,
   WorkspaceRole,
+  LinkedMailAccount,
   MailAccount,
   MailOAuthResult,
   MailSignIn,
@@ -238,6 +239,8 @@ const heldAnthropic = () =>
       },
     },
   }) as unknown as Anthropic;
+/** Mailboxes (by address) given a calendar by the fake below, besides calendars alone. */
+const withCalendar = new Set<string>();
 /** Microsoft's and Google's token endpoints: each call kept, answered by `tokenAnswer`. */
 const tokenCalls: { url: string; form: URLSearchParams }[] = [];
 let tokenAnswer: (form: URLSearchParams) => Response = () =>
@@ -260,7 +263,7 @@ beforeEach(async () => {
     },
     // A Google calendar alone has one calendar; mailboxes' calendars stay out of these tests.
     mailCalendars: (account) =>
-      account.calendarOnly
+      account.calendarOnly || withCalendar.has(account.address)
         ? {
             list: async () => [{ remoteId: 'primary', name: 'Robert privat', color: '#0b8043' }],
             events: async () => [],
@@ -2237,7 +2240,7 @@ describe('Sender – the workspace’s messages', () => {
     );
     const large = await ingestMail(ctx.deps, kept!, { folder: 'inbox', uid: 7777, raw: big });
     expect((await ok<MailThread>(send('GET', `/mail/threads/${large}`))).messages[0]).toMatchObject(
-      { subject: 'Pläne', text: expect.stringContaining('zu groß für Slider (50 MB)') },
+      { subject: 'Pläne', text: expect.stringContaining('zu groß für Office (50 MB)') },
     );
     // Writing and answering share an hour's budget per person: a loop is stopped (refused tries count).
     let tries = 0;
@@ -2946,15 +2949,6 @@ describe('Sender – the workspace’s messages', () => {
     expect(
       (await send('POST', oauthPath, { provider: 'google', returnTo: mailboxesPage })).status,
     ).toBe(503);
-    expect(
-      (
-        await send('POST', oauthPath, {
-          provider: 'microsoft',
-          calendarOnly: true,
-          returnTo: mailboxesPage,
-        })
-      ).status,
-    ).toBe(503);
     const calendarToken = (nonce: string, scope: string) => () =>
       Response.json({
         id_token: idToken(
@@ -3054,17 +3048,12 @@ describe('Sender – the workspace’s messages', () => {
         signInToChange: false,
       },
     ]);
-    // „Neu anmelden“ as a calendar only: not as a mailbox (Google's mailboxes on again).
+    // Its mailbox added through the same account (Google's mailboxes on again): the mail asked
+    // for with the calendars it keeps.
     ctx.deps.config.auth.googleMailboxes = true;
-    expect(
-      (
-        await send('POST', oauthPath, {
-          provider: 'google',
-          accountId: calendarId,
-          returnTo: mailboxesPage,
-        })
-      ).status,
-    ).toBe(400);
+    const asMailbox = (await startOAuth({ provider: 'google', accountId: calendarId })).url;
+    expect(asMailbox.searchParams.get('scope')).toMatch(/mail\.google\.com.*calendar\.events/);
+    expect(asMailbox.searchParams.get('include_granted_scopes')).toBe('true');
     const cal3 = await startOAuth({
       provider: 'google',
       calendarOnly: true,
@@ -3086,6 +3075,142 @@ describe('Sender – the workspace’s messages', () => {
       calendars: false,
       list: false,
     });
+    // „Microsoft Kalender verbinden“: Graph's calendars alone – no mail scope, the code traded
+    // for Graph's token, which carries the calendars.
+    const msCal = await startOAuth({ provider: 'microsoft', calendarOnly: true });
+    const msCalScope =
+      'openid email offline_access https://graph.microsoft.com/Calendars.ReadWrite';
+    expect(msCal.url.searchParams.get('scope')).toBe(msCalScope);
+    const msToken =
+      (nonce: string, email = 'kalender@outlook.de', scope = 'Calendars.ReadWrite') =>
+      () =>
+        Response.json({
+          id_token: msClaims(email, nonce),
+          access_token: 'graph-1',
+          refresh_token: 'msc-refresh',
+          expires_in: 3600,
+          scope: `https://graph.microsoft.com/${scope} https://graph.microsoft.com/User.Read`,
+        });
+    tokenAnswer = msToken(
+      msCal.url.searchParams.get('nonce') ?? '',
+      'kalender@outlook.de',
+      'User.Read',
+    );
+    expect(
+      await comeBack('microsoft', { state: msCal.state, code: 'c' }, msCal.cookie),
+    ).toMatchObject({ ok: false, error: expect.stringContaining('Kalender nicht erlaubt') });
+    const msCal2 = await startOAuth({ provider: 'microsoft', calendarOnly: true });
+    tokenAnswer = msToken(msCal2.url.searchParams.get('nonce') ?? '');
+    const msConnected = await comeBack(
+      'microsoft',
+      { state: msCal2.state, code: 'c' },
+      msCal2.cookie,
+    );
+    expect(msConnected).toMatchObject({
+      ok: true,
+      renewed: false,
+      account: {
+        address: 'kalender@outlook.de',
+        signIn: 'microsoft',
+        imapHost: '',
+        calendars: true,
+      },
+    });
+    expect(tokenCalls.at(-1)?.form.get('scope')).toBe(msCalScope);
+    const both = msConnected.ok ? msConnected.account.id : '';
+    expect(calendarGrant({ id: both, auth: 'microsoft' })).toMatchObject({ events: true });
+    const linked = () => ok<LinkedMailAccount[]>(send('GET', '/me/mail-accounts'));
+    const msLinked = async () => (await linked()).find((one) => one.accountId === both);
+    expect(await msLinked()).toMatchObject({
+      address: 'kalender@outlook.de',
+      signIn: 'microsoft',
+      workspaceId: ctx.workspaceId,
+      mail: false,
+      calendars: true,
+    });
+    // The same address signed in as a mailbox: that account – mail added, its calendars kept.
+    withCalendar.add('kalender@outlook.de');
+    const msBox = await startOAuth({ provider: 'microsoft' });
+    tokenAnswer = () =>
+      Response.json({
+        id_token: msClaims('kalender@outlook.de', msBox.url.searchParams.get('nonce') ?? ''),
+        access_token: 'ms-mail',
+        refresh_token: 'msb-refresh',
+        expires_in: 3600,
+      });
+    expect(
+      await comeBack('microsoft', { state: msBox.state, code: 'c' }, msBox.cookie),
+    ).toMatchObject({
+      ok: true,
+      renewed: false,
+      account: { id: both, imapHost: 'outlook.office365.com', calendars: true },
+    });
+    expect(await msLinked()).toMatchObject({ mail: true, calendars: true });
+    const calendarsOf = async (accountId: string) =>
+      (await ok<Calendar[]>(send('GET', `/workspaces/${ctx.workspaceId}/calendars`))).filter(
+        (one) => one.mailAccountId === accountId,
+      );
+    expect(await calendarsOf(both)).toHaveLength(1);
+    // Its calendars removed (Kalender › Konten): the mailbox stays, its calendars go and are
+    // neither read nor written any more.
+    await ok(send('DELETE', `/mail/accounts/${both}/calendars`), 204);
+    expect(
+      (await ok<MailAccount[]>(send('GET', `/workspaces/${ctx.workspaceId}/mail/accounts`))).find(
+        (one) => one.id === both,
+      ),
+    ).toMatchObject({ calendars: false, imapHost: 'outlook.office365.com' });
+    expect(await calendarsOf(both)).toEqual([]);
+    expect(
+      (
+        await send('POST', '/calendars', {
+          mailAccountId: both,
+          name: 'Neu',
+        })
+      ).status,
+    ).toBe(404);
+    expect(await msLinked()).toMatchObject({ mail: true, calendars: false });
+    // On again: the sign-in asked first – Microsoft refusing the calendars, the provider is
+    // asked (`signIn`); granting them, they are back without a new sign-in.
+    tokenAnswer = () =>
+      Response.json({ error: 'invalid_grant', error_description: 'AADSTS65001' }, { status: 400 });
+    expect(await ok<{ signIn: boolean }>(send('POST', `/mail/accounts/${both}/calendars`))).toEqual(
+      { signIn: true },
+    );
+    expect(await msLinked()).toMatchObject({ mail: true, calendars: false, signedOut: false });
+    tokenAnswer = () =>
+      Response.json({
+        access_token: 'graph-2',
+        scope: 'https://graph.microsoft.com/Calendars.ReadWrite',
+        expires_in: 3600,
+      });
+    expect(await ok<{ signIn: boolean }>(send('POST', `/mail/accounts/${both}/calendars`))).toEqual(
+      { signIn: false },
+    );
+    await ctx.deps.background?.idle();
+    expect(await calendarsOf(both)).toHaveLength(1);
+    // Its mailbox removed in Post while its calendars are on: calendars alone from now on – out
+    // of Post, its mails gone, a connection of the calendar.
+    await ok(send('DELETE', `/mail/accounts/${both}`), 204);
+    expect(
+      (await ok<MailAccount[]>(send('GET', `/workspaces/${ctx.workspaceId}/mail/accounts`))).some(
+        (one) => one.id === both,
+      ),
+    ).toBe(false);
+    expect(
+      (
+        await ok<CalendarConnection[]>(
+          send('GET', `/workspaces/${ctx.workspaceId}/calendar-connections`),
+        )
+      ).find((one) => one.accountId === both),
+    ).toMatchObject({ signIn: 'microsoft', address: 'kalender@outlook.de' });
+    expect(await calendarsOf(both)).toHaveLength(1);
+    expect(await msLinked()).toMatchObject({ mail: false, calendars: true });
+    // Both gone: the account goes, its token with it.
+    await ok(send('DELETE', `/mail/accounts/${both}/calendars`), 204);
+    expect(await msLinked()).toBeUndefined();
+    expect(
+      (await ctx.deps.db.select().from(mailAccounts).where(eq(mailAccounts.id, both))).length,
+    ).toBe(0);
     // Deleted as a mailbox is – its calendars and its token with it.
     await ok(send('DELETE', `/mail/accounts/${calendarId}`), 204);
     expect(

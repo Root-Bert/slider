@@ -29,7 +29,7 @@ export const workspaceBlocked = () =>
   new ApiError(
     403,
     'workspace_blocked',
-    'Dieser Workspace wurde von der Person gesperrt, die Slider hier betreibt. Austreten geht weiter.',
+    'Dieser Workspace wurde von der Person gesperrt, die Office hier betreibt. Austreten geht weiter.',
   );
 
 /**

@@ -50,7 +50,7 @@ export function Component() {
     <SettingsLayout
       header="logo"
       docTitle="Einrichtung | Slider"
-      title="Slider einrichten"
+      title="Office einrichten"
       subtitle={status.data?.settings ? SUBTITLES[tab] : SUBTITLES.settings}
       back="app"
       truncate={false}
@@ -95,5 +95,5 @@ const SUBTITLES: Record<SetupTab, string> = {
   settings: 'Anmeldung, E-Mail-Versand, wer ein Konto anlegen darf, Impressum und Datenschutz.',
   integrations:
     'Das allgemeine KI-Modell, Sprache zu Text, Bildquellen und Bildgenerierung für alle Workspaces – und was Workspaces davon nutzen dürfen.',
-  env: 'Was die .env des Servers festlegt – nur dort änderbar, danach Slider neu starten.',
+  env: 'Was die .env des Servers festlegt – nur dort änderbar, danach Office neu starten.',
 };

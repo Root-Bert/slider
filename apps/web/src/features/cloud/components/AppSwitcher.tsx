@@ -3,7 +3,7 @@ import { useNavigate } from 'react-router';
 import { HeaderPopover } from '@/features/workspaces';
 import { installedApp, windowForApp, useCurrentApp, type AppId } from '@/lib/apps';
 import { routes } from '@/lib/routes';
-import { Badge, cn, Icon, LogoMark, MenuHeading, MenuItem } from '@/ui';
+import { Badge, cn, Icon, Logo, LogoMark, MenuHeading, MenuItem } from '@/ui';
 import cloudMark from '../assets/cloud-mark.svg';
 import senderMark from '../assets/sender-mark.svg';
 import readerMark from '../assets/reader-mark.svg';
@@ -76,6 +76,15 @@ export function SenderLogo({ className }: { className?: string }) {
       <span className="text-lg font-semibold tracking-tight">Sender</span>
     </span>
   );
+}
+
+/** An app's word mark – top left on its pages and on the pages between the apps that lead to it. */
+export function AppLogo({ app, className }: { app: AppId; className?: string }) {
+  if (app === 'cloud') return <CloudLogo className={className} />;
+  if (app === 'reader') return <ReaderLogo className={className} />;
+  if (app === 'writer') return <WriterLogo className={className} />;
+  if (app === 'sender') return <SenderLogo className={className} />;
+  return <Logo tone="brand" className={className} />;
 }
 
 interface AppEntry {

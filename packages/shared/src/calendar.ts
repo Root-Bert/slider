@@ -53,16 +53,18 @@ export interface MailCalendarRefusal {
 }
 
 /**
- * A calendar connected without a mailbox („Google Kalender verbinden“): one's Google account,
- * asked only for its calendars. Its calendars come as a mailbox's (`mailAccountId` = `accountId`);
- * `signedOut`: Google ended its sign-in – „Neu anmelden“.
+ * Calendars connected without a mailbox: „Google/Microsoft Kalender verbinden“ (the account asked
+ * only for its calendars), or a mailbox removed in Post while its calendars stayed. Its calendars
+ * come as a mailbox's (`mailAccountId` = `accountId`); `signedOut`: the provider ended its sign-in
+ * – „Neu anmelden“.
  */
 export interface CalendarConnection {
   accountId: string;
   address: string;
   /** What its person called it („Kalender › Konten“) – `null`: its address. */
   label: string | null;
-  signIn: 'google';
+  /** Through its provider, or its password (a mailbox's CalDAV, the mailbox removed). */
+  signIn: 'google' | 'microsoft' | 'password';
   signedOut: boolean;
 }
 

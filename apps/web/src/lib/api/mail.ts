@@ -1,4 +1,5 @@
 import type {
+  LinkedMailAccount,
   MailAccount,
   MailAccountInput,
   MailDraft,
@@ -182,8 +183,38 @@ export const startMailOAuth = (workspaceId: string, input: MailOAuthStart) =>
 export const mailOAuthResult = (id: string) =>
   api.get<MailOAuthResult>(`/mail/oauth/${encodeURIComponent(id)}`);
 
-export const useDeleteMailAccount = (workspaceId: string) =>
-  useMailChange(workspaceId, (id: string) => api.delete(`/mail/accounts/${id}`));
+/** Removes a mailbox („Entfernen“ in Post) – its calendars, if on, stay in the calendar. */
+export function useDeleteMailAccount(workspaceId: string) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (id: string) => api.delete(`/mail/accounts/${id}`),
+    onSettled: () =>
+      Promise.all([
+        queryClient.invalidateQueries({ queryKey: mailKeys.all(workspaceId) }),
+        queryClient.invalidateQueries({ queryKey: ['calendar', workspaceId] }),
+      ]),
+  });
+}
+
+/** Calendars alone with a password become a mailbox again (tried on its servers first). */
+export function useAddMailboxToCalendars(workspaceId: string) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (id: string) => api.post<MailAccount>(`/mail/accounts/${id}/mailbox`),
+    onSettled: () =>
+      Promise.all([
+        queryClient.invalidateQueries({ queryKey: mailKeys.all(workspaceId) }),
+        queryClient.invalidateQueries({ queryKey: ['calendar', workspaceId] }),
+      ]),
+  });
+}
+
+/** One's accounts at mail providers in every workspace and what each is linked for (Konto). */
+export const useLinkedMailAccounts = () =>
+  useQuery({
+    queryKey: ['me', 'mail-accounts'] as const,
+    queryFn: () => api.get<LinkedMailAccount[]>('/me/mail-accounts'),
+  });
 
 /** How often one's mailboxes are read (Einstellungen › Mail › Aktualisieren) – for the account. */
 const mailSyncKey = ['mail', 'sync'] as const;

@@ -1,14 +1,19 @@
 import { useId, type ReactNode } from 'react';
-import type { To } from 'react-router';
 import { cn, IconTile } from '@/ui';
+import { appStart, appTitle, useCurrentApp, type AppId } from '@/lib/apps';
 import { LegalLinks } from '@/features/legal';
 import { LogoHeader } from './LogoHeader';
 
 export interface CenteredLayoutProps {
-  /** Document title (`<title>`), e.g. "Anmelden | Slider". */
+  /** Document title (`<title>`), e.g. "Anmelden | Slider" – „Slider“ becomes the app's name. */
   docTitle: string;
-  /** Makes the header logo a link home. */
-  logoLink?: { to: To; label: string };
+  /**
+   * The app the page leads to (the login's `returnTo`): its logo, name and icon. Left out or
+   * `null`: the app one is in – the one last open, else Cloud.
+   */
+  app?: AppId | null;
+  /** Makes the header logo a link to that app's start. */
+  logoHome?: boolean;
   /** Right end of the header, e.g. the account menu when signed in. */
   headerEnd?: ReactNode;
   /** Stacked with 16px gaps in a 440px column (banner, card, hint). */
@@ -19,19 +24,23 @@ export interface CenteredLayoutProps {
 
 /**
  * Shell of the standalone pages outside the app (login, join): logo header and a narrow column
- * that sits a little above the middle of the dot grid.
+ * that sits a little above the middle of the dot grid. They belong to no app and wear the one
+ * they lead to.
  */
 export function CenteredLayout({
   docTitle,
-  logoLink,
+  app: leadsTo,
+  logoHome = false,
   headerEnd,
   children,
   wide = false,
 }: CenteredLayoutProps) {
+  const current = useCurrentApp();
+  const app = leadsTo ?? current;
   return (
     <div className="dot-grid flex min-h-full flex-col">
-      <title>{docTitle}</title>
-      <LogoHeader logoLink={logoLink} end={headerEnd} />
+      <title>{appTitle(docTitle, app)}</title>
+      <LogoHeader app={app} logoLink={logoHome ? appStart(app) : undefined} end={headerEnd} />
       <main
         className={cn(
           'flex flex-1 flex-col items-center px-4',

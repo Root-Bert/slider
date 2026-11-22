@@ -32,7 +32,7 @@ const LOOPBACK = new Set(['localhost', '127.0.0.1', '[::1]']);
 /** `slider.firma.de/irgendwas` → `https://slider.firma.de`: a Slider lives at its origin. */
 export function cloudServerOrigin(typed: string): string {
   const trimmed = typed.trim();
-  if (!trimmed) throw badRequest('Gib die Adresse des Slider-Servers ein.');
+  if (!trimmed) throw badRequest('Gib die Adresse des Office-Servers ein.');
   const withScheme = /^[a-z][a-z0-9+.-]*:\/\//i.test(trimmed) ? trimmed : `https://${trimmed}`;
   let url: URL;
   try {
@@ -41,7 +41,7 @@ export function cloudServerOrigin(typed: string): string {
     throw badRequest('Das ist keine gültige Adresse.');
   }
   if (url.protocol !== 'https:' && !(url.protocol === 'http:' && LOOPBACK.has(url.hostname))) {
-    throw badRequest('Der Slider-Server muss über https:// erreichbar sein.');
+    throw badRequest('Der Office-Server muss über https:// erreichbar sein.');
   }
   return url.origin;
 }
@@ -83,7 +83,7 @@ export function desktopCloudRoutes(deps: AppDeps) {
       throw unreachable(server);
     }
     if (!answer || typeof answer !== 'object' || !('ok' in answer) || answer.ok !== true) {
-      throw badRequest(`Unter ${new URL(server).host} läuft kein Slider.`);
+      throw badRequest(`Unter ${new URL(server).host} läuft kein Office.`);
     }
   };
 

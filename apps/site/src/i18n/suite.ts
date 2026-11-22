@@ -1,7 +1,7 @@
 import type { ProductId } from '~/lib/apps';
 
 /**
- * The office's words: what the five apps are, how they belong together and what a plan covers.
+ * The office's words: what the six apps are, how they belong together and what a plan covers.
  * English is the shape the other languages follow. Slider's own pages keep their words in
  * `en.ts`, `de.ts`, `fr.ts`.
  */
@@ -21,19 +21,20 @@ const en = {
     writer: 'Documents',
     solver: 'Numbers',
     reader: 'Forms',
+    sender: 'Messages',
     cloud: 'Files',
   } as Record<ProductId, string>,
   office: {
-    metaTitle: 'The Office | Presentations, documents, numbers, forms and files in one place',
+    metaTitle: 'The Office | Presentations, documents, numbers, forms, conversations and files in one place',
     metaDescription:
-      'The Office is five apps that work as one: Slider for presentations, Writer for documents, Solver for numbers, Reader for forms and Cloud for files. One account, one AI, one plan. Slider, Reader and Cloud are available now.',
+      'The Office is six apps that work as one: Slider for presentations, Writer for documents, Solver for numbers, Reader for forms, Sender for conversations and Cloud for files. One account, one AI, one plan. Slider, Reader, Sender and Cloud are available now.',
     title: ['Present. Write.', 'Calculate. Share.'],
     sub: 'The AI native office for Open Document. Presentations, documents, numbers and files your team and the AI work on together.',
     cta: 'Open Slider',
     more: 'Meet the apps',
-    note: 'Slider, Reader and Cloud are available now. Writer and Solver are coming soon.',
+    note: 'Slider, Reader, Sender and Cloud are available now. Writer and Solver are coming soon.',
     together: {
-      title: 'Use one. Get all five.',
+      title: 'Use one. Get all six.',
       kind: 'One account',
       sub: 'There is nothing to add on later. Every account has every app, and they share what matters.',
       items: [
@@ -137,6 +138,27 @@ const en = {
         },
       ],
     },
+    sender: {
+      metaTitle: 'Sender | Conversations that matter',
+      metaDescription:
+        'Sender is where your team talks: a channel for every area, groups and direct messages, calls, your mail and your agents in one place. Part of The Office.',
+      tagline: 'Conversations that matter.',
+      line: 'Channels for every area, groups, direct messages and calls, your mail right beside them. Call an agent in with @ and it answers in the conversation; the AI sums up what you missed.',
+      principles: [
+        {
+          t: 'Every team its channel',
+          b: 'Each area of your Cloud has its channel, beside it groups and direct messages. Call right from the conversation, with voice or video.',
+        },
+        {
+          t: 'Agents in the conversation',
+          b: 'Write @Agent and the area’s agent answers right there, from what was said. Or give your own agent a job in its chat.',
+        },
+        {
+          t: 'Mail in the same place',
+          b: 'Connect your mailboxes and read and answer mail beside the chats. The AI sums it up, finds the matching files and drafts your reply. You send it.',
+        },
+      ],
+    },
     cloud: {
       metaTitle: 'Cloud | Files everyone finds again',
       metaDescription:
@@ -166,13 +188,13 @@ const en = {
     soonNote: '{app} is coming soon. Your account includes it on the day it arrives.',
     liveNote: 'No payment method needed.',
     learn: 'Learn more',
-    familyTitle: 'One of five.',
+    familyTitle: 'One of six.',
     familySub:
       'It works on its own and gets better with the others. All of them come with your account.',
   },
   plans: {
     title: 'One plan. Every app.',
-    sub: 'It does not matter if you use one app or all five. Every plan covers the whole office, and no app is sold on its own.',
+    sub: 'It does not matter if you use one app or all six. Every plan covers the whole office, and no app is sold on its own.',
     includes: 'Includes',
     soon: 'Coming soon',
     forever: 'forever',
@@ -255,18 +277,18 @@ const de: Suite = {
     blog: 'Blog',
     overview: 'Das ganze Office',
   },
-  kinds: { slider: 'Präsentationen', writer: 'Dokumente', solver: 'Zahlen', reader: 'Formulare', cloud: 'Dateien' },
+  kinds: { slider: 'Präsentationen', writer: 'Dokumente', solver: 'Zahlen', reader: 'Formulare', sender: 'Nachrichten', cloud: 'Dateien' },
   office: {
-    metaTitle: 'The Office | Präsentationen, Dokumente, Zahlen, Formulare und Dateien an einem Ort',
+    metaTitle: 'The Office | Präsentationen, Dokumente, Zahlen, Formulare, Gespräche und Dateien an einem Ort',
     metaDescription:
-      'The Office sind fünf Apps, die wie eine arbeiten: Slider für Präsentationen, Writer für Dokumente, Solver für Zahlen, Reader für Formulare und Cloud für Dateien. Ein Konto, eine KI, ein Plan. Slider, Reader und Cloud gibt es schon.',
+      'The Office sind sechs Apps, die wie eine arbeiten: Slider für Präsentationen, Writer für Dokumente, Solver für Zahlen, Reader für Formulare, Sender für Gespräche und Cloud für Dateien. Ein Konto, eine KI, ein Plan. Slider, Reader, Sender und Cloud gibt es schon.',
     title: ['Präsentieren. Schreiben.', 'Rechnen. Teilen.'],
     sub: 'Das KI-native Office für Open Document. Präsentationen, Dokumente, Zahlen und Dateien, an denen dein Team und die KI gemeinsam arbeiten.',
     cta: 'Slider öffnen',
     more: 'Die Apps ansehen',
-    note: 'Slider, Reader und Cloud gibt es schon. Writer und Solver kommen bald.',
+    note: 'Slider, Reader, Sender und Cloud gibt es schon. Writer und Solver kommen bald.',
     together: {
-      title: 'Nutze eine. Bekomm alle fünf.',
+      title: 'Nutze eine. Bekomm alle sechs.',
       kind: 'Ein Konto',
       sub: 'Nichts muss später dazugebucht werden. Jedes Konto hat jede App, und sie teilen, worauf es ankommt.',
       items: [
@@ -373,6 +395,27 @@ const de: Suite = {
         },
       ],
     },
+    sender: {
+      metaTitle: 'Sender | Gespräche, die zählen',
+      metaDescription:
+        'Sender ist der Ort, an dem dein Team spricht: ein Kanal für jeden Bereich, Gruppen und Direktnachrichten, Anrufe, deine Post und deine Agenten an einem Ort. Teil von The Office.',
+      tagline: 'Gespräche, die zählen.',
+      line: 'Kanäle für jeden Bereich, Gruppen, Direktnachrichten und Anrufe, deine Post gleich daneben. Ruf mit @ einen Agenten dazu, und er antwortet im Gespräch; die KI fasst zusammen, was du verpasst hast.',
+      principles: [
+        {
+          t: 'Jedem Team sein Kanal',
+          b: 'Jeder Bereich deiner Cloud hat seinen Kanal, daneben Gruppen und Direktnachrichten. Ruf direkt aus dem Gespräch an, mit Ton oder Video.',
+        },
+        {
+          t: 'Agenten im Gespräch',
+          b: 'Schreib @Agent, und der Agent des Bereichs antwortet gleich dort, aus dem, was gesagt wurde. Oder gib deinem eigenen Agenten in seinem Chat einen Auftrag.',
+        },
+        {
+          t: 'Post am selben Ort',
+          b: 'Verbinde deine Postfächer und lies und beantworte Mails neben den Chats. Die KI fasst sie zusammen, findet passende Dateien und entwirft deine Antwort. Senden tust du.',
+        },
+      ],
+    },
     cloud: {
       metaTitle: 'Cloud | Dateien, die jeder wiederfindet',
       metaDescription:
@@ -401,13 +444,13 @@ const de: Suite = {
     soonNote: '{app} kommt bald. Dein Konto hat es an dem Tag, an dem es da ist.',
     liveNote: 'Keine Zahlungsart nötig.',
     learn: 'Mehr erfahren',
-    familyTitle: 'Eine von fünf.',
+    familyTitle: 'Eine von sechs.',
     familySub:
       'Sie funktioniert für sich und wird mit den anderen besser. Alle gehören zu deinem Konto.',
   },
   plans: {
     title: 'Ein Plan. Jede App.',
-    sub: 'Es ist egal, ob du eine App nutzt oder alle fünf. Jeder Plan gilt für das ganze Office, und keine App wird einzeln verkauft.',
+    sub: 'Es ist egal, ob du eine App nutzt oder alle sechs. Jeder Plan gilt für das ganze Office, und keine App wird einzeln verkauft.',
     includes: 'Enthält',
     soon: 'Kommt bald',
     forever: 'für immer',
@@ -487,18 +530,18 @@ const fr: Suite = {
     blog: 'Blog',
     overview: 'Tout l’office',
   },
-  kinds: { slider: 'Présentations', writer: 'Documents', solver: 'Chiffres', reader: 'Formulaires', cloud: 'Fichiers' },
+  kinds: { slider: 'Présentations', writer: 'Documents', solver: 'Chiffres', reader: 'Formulaires', sender: 'Messages', cloud: 'Fichiers' },
   office: {
-    metaTitle: 'The Office | Présentations, documents, chiffres, formulaires et fichiers au même endroit',
+    metaTitle: 'The Office | Présentations, documents, chiffres, formulaires, conversations et fichiers au même endroit',
     metaDescription:
-      'The Office, ce sont cinq apps qui travaillent comme une seule : Slider pour les présentations, Writer pour les documents, Solver pour les chiffres, Reader pour les formulaires et Cloud pour les fichiers. Un compte, une IA, une offre. Slider, Reader et Cloud sont déjà disponibles.',
+      'The Office, ce sont six apps qui travaillent comme une seule : Slider pour les présentations, Writer pour les documents, Solver pour les chiffres, Reader pour les formulaires, Sender pour les conversations et Cloud pour les fichiers. Un compte, une IA, une offre. Slider, Reader, Sender et Cloud sont déjà disponibles.',
     title: ['Présenter. Écrire.', 'Calculer. Partager.'],
     sub: 'L’office natif IA pour Open Document. Présentations, documents, chiffres et fichiers sur lesquels votre équipe et l’IA travaillent ensemble.',
     cta: 'Ouvrir Slider',
     more: 'Découvrir les apps',
-    note: 'Slider, Reader et Cloud sont déjà disponibles. Writer et Solver arrivent bientôt.',
+    note: 'Slider, Reader, Sender et Cloud sont déjà disponibles. Writer et Solver arrivent bientôt.',
     together: {
-      title: 'Utilisez-en une. Recevez les cinq.',
+      title: 'Utilisez-en une. Recevez les six.',
       kind: 'Un compte',
       sub: 'Rien à ajouter plus tard. Chaque compte a chaque app, et elles partagent l’essentiel.',
       items: [
@@ -602,6 +645,27 @@ const fr: Suite = {
         },
       ],
     },
+    sender: {
+      metaTitle: 'Sender | Des conversations qui comptent',
+      metaDescription:
+        'Sender est l’endroit où votre équipe se parle : un canal pour chaque espace, des groupes et des messages directs, des appels, vos mails et vos agents au même endroit. Fait partie de The Office.',
+      tagline: 'Des conversations qui comptent.',
+      line: 'Des canaux pour chaque espace, des groupes, des messages directs et des appels, vos mails juste à côté. Appelez un agent avec @ et il répond dans la conversation ; l’IA résume ce que vous avez manqué.',
+      principles: [
+        {
+          t: 'À chaque équipe son canal',
+          b: 'Chaque espace de votre Cloud a son canal, à côté des groupes et des messages directs. Appelez depuis la conversation, en audio ou en vidéo.',
+        },
+        {
+          t: 'Des agents dans la conversation',
+          b: 'Écrivez @Agent et l’agent de l’espace répond sur place, à partir de ce qui a été dit. Ou confiez une mission à votre propre agent dans son chat.',
+        },
+        {
+          t: 'Les mails au même endroit',
+          b: 'Connectez vos boîtes mail, lisez et répondez à côté des discussions. L’IA résume, trouve les fichiers qui vont avec et rédige votre réponse. C’est vous qui l’envoyez.',
+        },
+      ],
+    },
     cloud: {
       metaTitle: 'Cloud | Des fichiers que chacun retrouve',
       metaDescription:
@@ -630,13 +694,13 @@ const fr: Suite = {
     soonNote: '{app} arrive bientôt. Votre compte l’inclut le jour de sa sortie.',
     liveNote: 'Aucun moyen de paiement requis.',
     learn: 'En savoir plus',
-    familyTitle: 'Une sur cinq.',
+    familyTitle: 'Une sur six.',
     familySub:
       'Elle fonctionne seule et devient meilleure avec les autres. Toutes font partie de votre compte.',
   },
   plans: {
     title: 'Une offre. Toutes les apps.',
-    sub: 'Peu importe que vous utilisiez une app ou les cinq. Chaque offre couvre tout l’office, et aucune app n’est vendue seule.',
+    sub: 'Peu importe que vous utilisiez une app ou les six. Chaque offre couvre tout l’office, et aucune app n’est vendue seule.',
     includes: 'Comprend',
     soon: 'Bientôt',
     forever: 'pour toujours',

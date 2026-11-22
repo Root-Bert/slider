@@ -1,15 +1,24 @@
-import { MAX_MAILBOX_LABEL, type Calendar, type MailAccount } from '@slider/shared';
+import {
+  MAIL_OAUTH_LABELS,
+  MAX_MAILBOX_LABEL,
+  type Calendar,
+  type MailAccount,
+  type MailOAuthProvider,
+} from '@slider/shared';
 import { useEffect, useRef, useState } from 'react';
 import { useNavigate, useSearchParams } from 'react-router';
 import {
   mailOAuthResult,
   startMailOAuth,
+  useAddAccountCalendars,
+  useAddMailboxToCalendars,
   useAuthProviders,
   useCalendarConnections,
   useCalendars,
-  useDeleteCalendarConnection,
+  useIdentities,
   useMailAccounts,
   useMailCalendarRefusals,
+  useRemoveAccountCalendars,
   useRenameCalendarConnection,
   useRenameMailAccount,
 } from '@/lib/api';
@@ -35,8 +44,8 @@ import {
 import { useCloud } from '../../hooks/useCloud';
 
 /**
- * An account whose calendars stand in the calendar: a mailbox of Post, or a Google calendar
- * connected alone („Google Kalender verbinden“).
+ * An account whose calendars stand in the calendar: a mailbox of Post, or calendars connected
+ * alone („Google/Microsoft Kalender verbinden“, or a mailbox removed while its calendars stayed).
  */
 export interface CalendarAccount {
   id: string;
@@ -44,7 +53,7 @@ export interface CalendarAccount {
   name: string;
   address: string;
   label: string | null;
-  /** Connected for its calendars alone; else a mailbox (changed and deleted in Post). */
+  /** Its calendars alone, no mailbox; else a mailbox too (changed and removed in Post). */
   connection: boolean;
   signIn: MailAccount['signIn'];
   calendars: Calendar[];
@@ -148,9 +157,9 @@ export function useCalendarOAuthOutcome() {
 }
 
 /**
- * To the provider's sign-in, in this tab; it comes back to this page. `connect`: Google for one's
- * calendars alone (a new connection, or that one anew); `renew`: a mailbox, asking for its
- * calendars too.
+ * To the provider's sign-in, in this tab; it comes back to this page. `connect`: calendars alone
+ * (a new connection, that one anew, or a mailbox's calendars on again); `renew`: that account
+ * anew as it is; `mailboxOf`: calendars alone become a mailbox.
  */
 function useSignIn() {
   const ui = useCloud();
@@ -167,36 +176,57 @@ function useSignIn() {
       },
     );
   };
-  const connect = (accountId?: string) =>
+  const connect = (provider: MailOAuthProvider, accountId?: string) =>
     go({
-      provider: 'google',
+      provider,
       calendarOnly: true,
       ...(accountId ? { accountId } : {}),
       returnTo: returnHere(),
     });
   const renew = (account: CalendarAccount) => {
-    if (account.connection) return connect(account.id);
     if (account.signIn === 'password') return;
+    if (account.connection) return connect(account.signIn, account.id);
     go({ provider: account.signIn, accountId: account.id, returnTo: returnHere() });
   };
-  return { leaving, connect, renew };
+  const mailboxOf = (account: CalendarAccount) => {
+    if (account.signIn !== 'password')
+      go({ provider: account.signIn, accountId: account.id, returnTo: returnHere() });
+  };
+  return { leaving, connect, renew, mailboxOf };
 }
 
-/** Google's sign-in for the calendars alone is set up on this server. */
-function useCanConnectGoogle() {
-  return useAuthProviders().data?.calendarOAuth.includes('google') ?? false;
+/** The providers whose sign-in for calendars alone is set up here (Microsoft first). */
+function useCalendarProviders(): MailOAuthProvider[] {
+  const offered = useAuthProviders().data?.calendarOAuth ?? [];
+  return (['microsoft', 'google'] as const).filter((one) => offered.includes(one));
 }
 
-/** „Google Kalender verbinden“ at the top right of „Konten“ (as „Neues Postfach“ on „Postfächer“). */
-export function ConnectGoogleButton() {
-  const canConnect = useCanConnectGoogle();
+const ProviderLogo = ({ provider }: { provider: MailOAuthProvider }) =>
+  provider === 'google' ? <GoogleMark size={16} /> : <MicrosoftMark size={16} />;
+
+/**
+ * „Microsoft Kalender verbinden“, „Google Kalender verbinden“ at the top right of „Konten“ (as
+ * „Neues Postfach“ on „Postfächer“) – calendars without a mailbox.
+ */
+export function ConnectCalendarButtons() {
+  const providers = useCalendarProviders();
   const { leaving, connect } = useSignIn();
-  if (!canConnect) return null;
+  if (providers.length === 0) return null;
   return (
-    <Button variant="secondary" loading={leaving} className="gap-2" onClick={() => connect()}>
-      {!leaving && <GoogleMark size={16} />}
-      Google Kalender verbinden
-    </Button>
+    <div className="flex flex-wrap justify-end gap-2">
+      {providers.map((provider) => (
+        <Button
+          key={provider}
+          variant="secondary"
+          disabled={leaving}
+          className="gap-2"
+          onClick={() => connect(provider)}
+        >
+          <ProviderLogo provider={provider} />
+          {MAIL_OAUTH_LABELS[provider]} Kalender verbinden
+        </Button>
+      ))}
+    </div>
   );
 }
 
@@ -261,12 +291,12 @@ function AccountNameInput({ account, onDone }: { account: CalendarAccount; onDon
   );
 }
 
-function ProviderMark({ account }: { account: CalendarAccount }) {
+function ProviderMark({ signIn }: { signIn: MailAccount['signIn'] }) {
   return (
     <span className="flex size-8 items-center justify-center rounded-chip bg-surface-2 text-fg-muted">
-      {account.signIn === 'google' ? (
+      {signIn === 'google' ? (
         <GoogleMark size={16} />
-      ) : account.signIn === 'microsoft' ? (
+      ) : signIn === 'microsoft' ? (
         <MicrosoftMark size={16} />
       ) : (
         <Icon name="mail" size={18} />
@@ -275,10 +305,29 @@ function ProviderMark({ account }: { account: CalendarAccount }) {
   );
 }
 
+/** Where an account's address also signs one in (`provider:address`). */
+function useSignInAddresses(): ReadonlySet<string> {
+  const identities = useIdentities().data ?? [];
+  return new Set(
+    identities.flatMap((one) => (one.email ? [`${one.provider}:${one.email.toLowerCase()}`] : [])),
+  );
+}
+
+/** Its other uses, in a word each: „Auch Postfach“, „Auch Anmeldung“. */
+function alsoOf(
+  account: Pick<CalendarAccount, 'signIn' | 'address'> & { mailbox: boolean },
+  signIns: ReadonlySet<string>,
+) {
+  return [
+    account.mailbox ? 'Auch Postfach' : null,
+    signIns.has(`${account.signIn}:${account.address.toLowerCase()}`) ? 'Auch Anmeldung' : null,
+  ];
+}
+
 /** How an account is doing, in a line: why to sign in anew, else what it brings. */
-function stateLine(account: CalendarAccount) {
+function stateLine(account: CalendarAccount, signIns: ReadonlySet<string>) {
   if (account.refused)
-    return 'Slider darf die Kalender noch nicht lesen – nach dem neuen Anmelden stehen sie im Kalender.';
+    return 'Die Kalender dürfen noch nicht gelesen werden – nach dem neuen Anmelden stehen sie im Kalender.';
   if (account.signedOut)
     return 'Die Anmeldung ist abgelaufen – nach dem neuen Anmelden stehen die Kalender wieder im Kalender.';
   const count = account.calendars.length;
@@ -286,74 +335,123 @@ function stateLine(account: CalendarAccount) {
     account.label ? account.address : null,
     count === 1 ? '1 Kalender' : `${count} Kalender`,
     account.readOnly ? 'Nur zum Ansehen – zum Ändern neu anmelden' : null,
-    account.connection ? 'Ohne Postfach' : 'Postfach in Post',
+    ...alsoOf({ ...account, mailbox: !account.connection }, signIns),
   ]
     .filter(Boolean)
     .join(' | ');
 }
 
+/** Where the provider keeps it all: said when its calendars are removed here. */
+const keptAt = (signIn: MailAccount['signIn']) =>
+  signIn === 'password'
+    ? 'Auf dem Server bleibt alles.'
+    : `Bei ${MAIL_OAUTH_LABELS[signIn]} bleibt alles.`;
+
 /**
  * „Konten“ of the calendar: the accounts whose calendars stand in it – how each is doing, signed in
- * anew, renamed; a Google calendar connected alone is deleted here, a mailbox in Post.
+ * anew, renamed, their calendars removed („Entfernen“: a mailbox stays in Post, calendars alone go);
+ * below, dimmed, the mailboxes whose calendars were removed – „Verbinden“ brings them back.
  */
 export function CalendarAccounts() {
   const ui = useCloud();
   const navigate = useNavigate();
   const calendars = useCalendars(ui.workspace.id).data;
   const accounts = useCalendarAccounts(ui.workspace.id, calendars);
-  const remove = useDeleteCalendarConnection(ui.workspace.id);
-  const canConnect = useCanConnectGoogle();
-  const { connect, renew } = useSignIn();
+  const mailboxes = useMailAccounts(ui.workspace.id).data;
+  const mailOAuth = useAuthProviders().data?.mailOAuth ?? [];
+  const signIns = useSignInAddresses();
+  const remove = useRemoveAccountCalendars(ui.workspace.id);
+  const addCalendars = useAddAccountCalendars(ui.workspace.id);
+  const addMailbox = useAddMailboxToCalendars(ui.workspace.id);
+  const providers = useCalendarProviders();
+  const { leaving, connect, renew, mailboxOf } = useSignIn();
   const [renaming, setRenaming] = useState<string | null>(null);
-  const [deleting, setDeleting] = useState<CalendarAccount | null>(null);
+  const [removing, setRemoving] = useState<CalendarAccount | null>(null);
   // An account's menu at the pointer (right click on its row) – the same as its „…“ one.
   const [menu, setMenu] = useState<{
     account: CalendarAccount;
     at: { x: number; y: number };
   } | null>(null);
-  const actionsFor = (account: CalendarAccount): MenuAction[] => [
-    ...(account.signIn !== 'password'
-      ? [{ label: 'Neu anmelden', icon: 'key' as const, onSelect: () => renew(account) }]
-      : []),
-    { label: 'Umbenennen', icon: 'edit', onSelect: () => setRenaming(account.id) },
-    account.connection
-      ? {
-          label: 'Löschen',
-          icon: 'delete',
-          tone: 'danger',
-          onSelect: () => setDeleting(account),
-        }
-      : {
-          label: 'In Post verwalten',
-          icon: 'mail',
-          onSelect: () => void navigate(routes.cloudMailAccounts(ui.workspace.id)),
-        },
-  ];
-  if (!accounts) return null;
-  const addMailbox = (
+  const fail = (error: Error) => ui.notify(error.message, 'danger');
+  // Calendars alone become a mailbox: through the provider where its mailboxes are set up here,
+  // with the password kept for its calendars otherwise.
+  const canAddMailbox = (account: CalendarAccount) =>
+    account.connection && (account.signIn === 'password' || mailOAuth.includes(account.signIn));
+  const actionsFor = (account: CalendarAccount): MenuAction[] => {
+    const all: (MenuAction | null)[] = [
+      ...(account.signIn !== 'password'
+        ? [{ label: 'Neu anmelden', icon: 'key' as const, onSelect: () => renew(account) }]
+        : []),
+      { label: 'Umbenennen', icon: 'edit', onSelect: () => setRenaming(account.id) },
+      account.connection
+        ? canAddMailbox(account)
+          ? {
+              label: 'Postfach hinzufügen',
+              icon: 'mail',
+              onSelect: () =>
+                account.signIn === 'password'
+                  ? addMailbox.mutate(account.id, {
+                      onSuccess: () => ui.notify(`${account.address} in Post hinzugefügt`),
+                      onError: fail,
+                    })
+                  : mailboxOf(account),
+            }
+          : null
+        : {
+            label: 'In Post verwalten',
+            icon: 'mail',
+            onSelect: () => void navigate(routes.cloudMailAccounts(ui.workspace.id)),
+          },
+      {
+        label: 'Entfernen',
+        icon: 'delete',
+        tone: 'danger',
+        onSelect: () => setRemoving(account),
+      },
+    ];
+    return all.filter((one): one is MenuAction => one !== null);
+  };
+  if (!accounts || !mailboxes) return null;
+  // Mailboxes whose calendars were removed here: to bring back.
+  const off = mailboxes.filter((mailbox) => !mailbox.calendars);
+  const turnOn = (mailbox: MailAccount) =>
+    addCalendars.mutate(mailbox.id, {
+      onSuccess: ({ signIn }) => {
+        if (signIn && mailbox.signIn !== 'password') connect(mailbox.signIn, mailbox.id);
+        else ui.notify(`Kalender von ${mailbox.address} verbunden`);
+      },
+      onError: fail,
+    });
+  const addMailboxNote = (
     <>
-      Kalender von Microsoft, iCloud und anderen kommen mit ihrem Postfach –{' '}
+      Kalender von iCloud und anderen kommen mit ihrem Postfach –{' '}
       <TextLink to={routes.cloudNewMailbox(ui.workspace.id)}>Postfach hinzufügen</TextLink>
     </>
   );
   return (
     <div className="flex flex-col gap-6">
-      {accounts.length === 0 ? (
+      {accounts.length === 0 && off.length === 0 ? (
         <EmptyState
           title="Noch kein Konto"
           message={
-            canConnect
-              ? 'Verbinde deinen Google Kalender – oder füge in Post ein Postfach hinzu, seine Kalender kommen mit.'
+            providers.length > 0
+              ? `Verbinde deinen Kalender bei ${providers.map((one) => MAIL_OAUTH_LABELS[one]).join(' oder ')} – oder füge in Post ein Postfach hinzu, seine Kalender kommen mit.`
               : 'Füge in Post ein Postfach hinzu – seine Kalender kommen mit.'
           }
           action={
             <div className="flex flex-wrap justify-center gap-2">
-              {canConnect && (
-                <Button variant="secondary" className="gap-2" onClick={() => connect()}>
-                  <GoogleMark size={16} />
-                  Google Kalender verbinden
+              {providers.map((provider) => (
+                <Button
+                  key={provider}
+                  variant="secondary"
+                  className="gap-2"
+                  disabled={leaving}
+                  onClick={() => connect(provider)}
+                >
+                  <ProviderLogo provider={provider} />
+                  {MAIL_OAUTH_LABELS[provider]} Kalender verbinden
                 </Button>
-              )}
+              ))}
               <ButtonLink to={routes.cloudNewMailbox(ui.workspace.id)} variant="ghost" icon="add">
                 Postfach hinzufügen
               </ButtonLink>
@@ -368,7 +466,7 @@ export function CalendarAccounts() {
                 key={account.id}
                 variant="hover"
                 padding="wide"
-                leading={<ProviderMark account={account} />}
+                leading={<ProviderMark signIn={account.signIn} />}
                 title={
                   renaming === account.id ? (
                     <AccountNameInput account={account} onDone={() => setRenaming(null)} />
@@ -383,8 +481,8 @@ export function CalendarAccounts() {
                     <Badge>Nur ansehen</Badge>
                   ) : null
                 }
-                subtitle={stateLine(account)}
-                subtitleTitle={stateLine(account)}
+                subtitle={stateLine(account, signIns)}
+                subtitleTitle={stateLine(account, signIns)}
                 onContextMenu={(event) => {
                   if (event.shiftKey || renaming === account.id) return;
                   event.preventDefault();
@@ -395,10 +493,38 @@ export function CalendarAccounts() {
                 }
               />
             ))}
+            {off.map((mailbox) => (
+              <ListRow
+                key={mailbox.id}
+                variant="hover"
+                padding="wide"
+                dimmed
+                leading={<ProviderMark signIn={mailbox.signIn} />}
+                title={mailbox.label || mailbox.address}
+                subtitle={[
+                  mailbox.label ? mailbox.address : null,
+                  'Kalender nicht verbunden',
+                  ...alsoOf({ ...mailbox, mailbox: true }, signIns),
+                ]
+                  .filter(Boolean)
+                  .join(' | ')}
+                trailing={
+                  <Button
+                    variant="secondary"
+                    size="sm"
+                    loading={addCalendars.isPending && addCalendars.variables === mailbox.id}
+                    disabled={leaving}
+                    onClick={() => turnOn(mailbox)}
+                  >
+                    Verbinden
+                  </Button>
+                }
+              />
+            ))}
           </RowList>
           <p className="flex items-start gap-2 px-2.5 text-body text-fg-muted">
             <Icon name="info" size={16} className="mt-0.5 shrink-0" />
-            <span>{addMailbox}</span>
+            <span>{addMailboxNote}</span>
           </p>
         </>
       )}
@@ -410,21 +536,25 @@ export function CalendarAccounts() {
           actions={actionsFor(menu.account)}
         />
       )}
-      {deleting && (
+      {removing && (
         <ConfirmDialog
-          onClose={() => setDeleting(null)}
-          title={`${deleting.address} löschen?`}
-          description="Seine Kalender verschwinden hier. Bei Google bleibt alles."
-          confirmLabel="Löschen"
+          onClose={() => setRemoving(null)}
+          title={`Kalender von ${removing.address} entfernen?`}
+          description={
+            removing.connection
+              ? `Seine Kalender verschwinden hier. ${keptAt(removing.signIn)}`
+              : `Seine Kalender verschwinden hier, das Postfach bleibt in Post. ${keptAt(removing.signIn)}`
+          }
+          confirmLabel="Entfernen"
           confirmIcon="delete"
           pending={remove.isPending}
           onConfirm={() =>
-            remove.mutate(deleting.id, {
+            remove.mutate(removing.id, {
               onSuccess: () => {
-                ui.notify(`${deleting.address} gelöscht`);
-                setDeleting(null);
+                ui.notify(`Kalender von ${removing.address} entfernt`);
+                setRemoving(null);
               },
-              onError: (error: Error) => ui.notify(error.message, 'danger'),
+              onError: fail,
             })
           }
         />

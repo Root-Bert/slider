@@ -35,10 +35,7 @@ export function Component() {
     (choices.isSuccess && successorsComplete(choices.data, successors));
 
   return (
-    <CenteredLayout
-      docTitle="Deine Daten | Slider"
-      logoLink={{ to: routes.reviews(), label: 'Slider' }}
-    >
+    <CenteredLayout docTitle="Deine Daten | Slider" logoHome>
       {request.isPending ? (
         <LoadingState padding="lg" size={28} />
       ) : confirm.isSuccess && request.data ? (
@@ -46,9 +43,9 @@ export function Component() {
           <CenteredCard
             icon={<Icon name="checkCircle" size={24} />}
             title="Dein Konto bleibt"
-            message="Danke! Die Frist beginnt neu – du bekommst keine weiteren Erinnerungen, solange du Slider ab und zu nutzt."
+            message="Danke! Die Frist beginnt neu – du bekommst keine weiteren Erinnerungen, solange du dein Konto ab und zu nutzt."
           >
-            <TextLink to={routes.login()}>Zu Slider</TextLink>
+            <TextLink to={routes.login()}>Zur Anmeldung</TextLink>
           </CenteredCard>
         ) : (
           <CenteredCard
@@ -56,7 +53,7 @@ export function Component() {
             title="Gelöscht"
             message={
               request.data.hasAccount
-                ? `Das Slider-Konto von ${request.data.email} ist gelöscht.`
+                ? `Das Konto von ${request.data.email} ist gelöscht.`
                 : `Die Einladungen an ${request.data.email} sind gelöscht.`
             }
           />
@@ -76,7 +73,7 @@ export function Component() {
           title="Deine Daten herunterladen"
           message={`${
             request.data.hasAccount
-              ? 'Alles, was Slider über dich speichert, als ZIP.'
+              ? 'Alles, was Office über dich speichert, als ZIP.'
               : 'Zu dieser Adresse gibt es kein Konto – gespeichert sind nur Einladungen. Du bekommst sie als ZIP.'
           } Der Link gilt bis ${formatDateTime(request.data.expiresAt)} und lädt die Daten höchstens dreimal herunter.`}
         >

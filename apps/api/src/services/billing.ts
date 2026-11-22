@@ -181,7 +181,7 @@ async function userOf(db: Executor, userId: string) {
 }
 
 const GRANTED_MESSAGE =
-  'Der Workspace ist schon im Paid-Plan – freigeschaltet von der Person, die Slider hier betreibt. Hier gibt es nichts zu bezahlen.';
+  'Der Workspace ist schon im Paid-Plan – freigeschaltet von der Person, die Office hier betreibt. Hier gibt es nichts zu bezahlen.';
 
 /** `POST /workspaces/:id/billing/checkout`: Stripe Checkout for the paid plan. */
 export async function startCheckout(
@@ -296,7 +296,7 @@ async function mailTransferRequest(
         to: target.email,
         subject: `${from.name} bittet dich, die Zahlung für „${row.name}“ zu übernehmen`,
         heading: 'Zahlung übernehmen',
-        intro: `${from.name} bezahlt bisher für „${row.name}“ auf Slider und möchte das an dich übergeben. Sobald du deine Zahlungsmethode hinterlegt hast, läuft das Abo über dich.`,
+        intro: `${from.name} bezahlt bisher für „${row.name}“ auf Office und möchte das an dich übergeben. Sobald du deine Zahlungsmethode hinterlegt hast, läuft das Abo über dich.`,
         button: 'Anfrage ansehen',
         url: usagePageUrl(deps.config.webOrigin, workspaceId),
         outro: 'Bis dahin ändert sich nichts. Du kannst die Anfrage auch ablehnen.',

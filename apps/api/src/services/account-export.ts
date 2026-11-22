@@ -95,7 +95,7 @@ import { audienceOf } from './sender';
  */
 const EXPORTS_AT_ONCE = 2;
 const MAX_EXPORT_FILE_BYTES = 1024 ** 3;
-const LEFT_OUT = 'Zu groß für dieses Archiv. In Slider lässt sich die Datei einzeln herunterladen.';
+const LEFT_OUT = 'Zu groß für dieses Archiv. In Office lässt sich die Datei einzeln herunterladen.';
 const running = new WeakMap<object, Set<string>>();
 
 export async function exportAccount(
@@ -1246,7 +1246,7 @@ const safeName = (name: string) =>
     .slice(-100)
     .trim() || 'praesentation.pptx';
 
-const README = `Deine Daten aus Slider
+const README = `Deine Daten aus Office
 
 konto.json            Profil, Anmeldewege, Passkeys, verbundene Nextcloud-Konten, KI-Apps, Sitzungen, Workspaces, Verbindungen, Bereiche, Angepinntes (in der Cloud und im Sender), Favoriten, zuletzt Geöffnetes, Unterhaltungen im Sender, Wörter für Workspaces
 praesentationen.json  Präsentationen, die dir gehören; die Originaldateien liegen in praesentationen/

@@ -27,15 +27,12 @@ export function Component() {
   };
 
   return (
-    <CenteredLayout
-      docTitle="Datenanfrage | Slider"
-      logoLink={{ to: routes.reviews(), label: 'Slider' }}
-    >
+    <CenteredLayout docTitle="Datenanfrage | Slider" logoHome>
       {create.isSuccess ? (
         <CenteredCard
           icon={<Icon name="send" size={24} />}
           title="Schau in dein Postfach"
-          message={`Falls Slider Daten zu ${email.trim()} speichert, ist gerade eine Mail mit einem Link dorthin unterwegs. Der Link gilt ${purpose === 'delete' ? '24 Stunden' : '48 Stunden'}. Keine Mail bekommen? Dann sind zu dieser Adresse keine Daten gespeichert – oder schau im Spam-Ordner nach.`}
+          message={`Falls Office Daten zu ${email.trim()} speichert, ist gerade eine Mail mit einem Link dorthin unterwegs. Der Link gilt ${purpose === 'delete' ? '24 Stunden' : '48 Stunden'}. Keine Mail bekommen? Dann sind zu dieser Adresse keine Daten gespeichert – oder schau im Spam-Ordner nach.`}
         >
           <TextLink to={routes.login()}>Zur Anmeldung</TextLink>
         </CenteredCard>
@@ -70,7 +67,7 @@ export function Component() {
       <div className="flex flex-col gap-2 text-left text-body leading-5 text-fg-subtle">
         <p className="font-medium text-fg-muted">Wie wird geprüft, dass du es bist?</p>
         <p>
-          Slider schickt den Link nur an die Adresse, die du eingibst. Herunterladen oder löschen
+          Office schickt den Link nur an die Adresse, die du eingibst. Herunterladen oder löschen
           kann nur, wer dieses Postfach hat – mehr musst du nicht nachweisen, kein Ausweis, kein
           Formular. Wer eine fremde Adresse eingibt, löst nur eine Mail an diese Person aus und
           sieht selbst nichts.

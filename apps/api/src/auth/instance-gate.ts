@@ -55,14 +55,14 @@ export class InstanceGate {
       throw new ApiError(
         403,
         'instance_unclaimed',
-        'Diese Slider-Instanz ist noch nicht eingerichtet. Wer sie betreibt, gibt zuerst unter /einrichtung den Setup-Token aus dem Server-Log ein.',
+        'Diese Office-Instanz ist noch nicht eingerichtet. Wer sie betreibt, gibt zuerst unter /einrichtung den Setup-Token aus dem Server-Log ein.',
       );
     }
     if (!isOpen(c.req.method, c.req.path) && (await this.mustClaim(c))) {
       throw new ApiError(
         403,
         'instance_unclaimed',
-        'Diese Slider-Instanz hat noch keinen Admin. Gib zuerst den Setup-Token aus dem Server-Log ein.',
+        'Diese Office-Instanz hat noch keinen Admin. Gib zuerst den Setup-Token aus dem Server-Log ein.',
       );
     }
     await next();

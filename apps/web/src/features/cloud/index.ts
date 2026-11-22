@@ -1,5 +1,6 @@
 /** Public API of Cloud (the workspace's files). Route pages stay out: each keeps its own chunk. */
 export {
+  AppLogo,
   AppSwitcher,
   CloudLogo,
   SenderLogo,

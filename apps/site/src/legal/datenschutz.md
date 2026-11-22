@@ -7,7 +7,7 @@ Diese Erklärung gilt für die Website unter bertro.dev und für die Desktop App
 Robert Hofmann<br />
 Parststraße 14B<br />
 94469 Deggendorf<br />
-E-Mail: [slider@bertro.dev](mailto:slider@bertro.dev)
+E-Mail: [office@bertro.dev](mailto:office@bertro.dev)
 
 ## Kurz gesagt
 
@@ -44,7 +44,7 @@ Die App Slider unter office.bertro.dev hat eine eigene, ausführliche Datenschut
 - **Google Kalender:** Die Kalender dieses Kontos zeigt Slider nur dir neben deinen anderen Kalendern (`calendar.events`, `calendar.calendars`, `calendar.calendarlist`). Termine und Kalender legt Slider dort nur an, ändert oder löscht sie nur, wenn du es in Slider tust oder einen Agenten darum bittest; einen Kalender, der dir nicht gehört, nimmt Slider dann nur aus deiner Kalenderliste. Deinen Hauptkalender löscht Slider nie. Du kannst ihn auch ohne Postfach verbinden („Google Kalender verbinden“ im Kalender); dann bittet Slider nur um deine E-Mail-Adresse und diese Kalender-Rechte, nicht um deine Mails. Wir speichern nur Name, Farbe und Adresse jedes Kalenders und das Token von Google verschlüsselt; Termine fragt Slider ab, wenn du einen Zeitraum ansiehst, und speichert sie nicht.
 - **KI:** Hat dein Workspace einen KI-Dienst, schätzt die KI neue Mails ein und entwirft auf deinen Klick Antworten. Dafür geht der Text der Unterhaltung an diesen Dienst, nur für diese Funktion; beim Postfach lässt sich abschalten, dass die KI neue Mails von selbst liest. Die Einzelheiten stehen in der Datenschutzerklärung von Slider.
 - **Eingeschränkte Nutzung:** Die Nutzung und Übertragung von Daten, die Slider über Googles Schnittstellen erhält, hält sich an die [Google API Services User Data Policy](https://developers.google.com/terms/api-services-user-data-policy) einschließlich ihrer Anforderungen an eingeschränkte Nutzung („Limited Use“). Wir nutzen diese Daten nur für die Funktionen, die du in Slider siehst, geben sie nur dafür weiter, verkaufen sie nicht, nutzen sie nicht für Werbung und nicht zum Training von KI-Modellen. Menschen sehen sie nur mit deiner Zustimmung, zur Sicherheit oder wo das Gesetz es verlangt.
-- **Widerruf und Löschen:** Löschst du das Postfach oder die Kalender-Verbindung in Slider, löschen wir Token, Mails, Anhänge und Kalender bei uns; in deinem Google-Konto bleibt alles, wie es ist. Den Zugriff kannst du außerdem jederzeit unter [myaccount.google.com/permissions](https://myaccount.google.com/permissions) entziehen.
+- **Widerruf und Löschen:** Postfach und Kalender entfernst du in Slider einzeln: mit dem Postfach löschen wir Mails und Anhänge bei uns, mit den Kalendern ihre Namen und Adressen, und sind beide entfernt, auch das Token; in deinem Google-Konto bleibt alles, wie es ist. Den Zugriff kannst du außerdem jederzeit unter [myaccount.google.com/permissions](https://myaccount.google.com/permissions) entziehen.
 
 ## Desktop App
 
@@ -59,7 +59,7 @@ Die App sendet keine Nutzungsdaten oder Absturzberichte an uns.
 
 ## E-Mail
 
-Wenn du uns schreibst, verarbeiten wir deine Adresse und Nachricht, um dir zu antworten (Art. 6 Abs. 1 lit. b DSGVO bei Fragen zu einem Vertrag, sonst lit. f). Mails an slider@bertro.dev nimmt Cloudflare (siehe oben) entgegen und leitet sie an unser Postfach weiter; Cloudflare speichert sie dabei nicht. Wir löschen die Mails, wenn die Sache erledigt ist und keine Aufbewahrungspflicht besteht.
+Wenn du uns schreibst, verarbeiten wir deine Adresse und Nachricht, um dir zu antworten (Art. 6 Abs. 1 lit. b DSGVO bei Fragen zu einem Vertrag, sonst lit. f). Mails an office@bertro.dev nimmt Cloudflare (siehe oben) entgegen und leitet sie an unser Postfach weiter; Cloudflare speichert sie dabei nicht. Wir löschen die Mails, wenn die Sache erledigt ist und keine Aufbewahrungspflicht besteht.
 
 ## Kontaktformular
 

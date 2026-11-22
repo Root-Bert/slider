@@ -140,7 +140,7 @@ class Kept implements OAuthClientProvider {
   }
   get clientMetadata() {
     return {
-      client_name: 'Slider',
+      client_name: 'Office',
       client_uri: this.deps.config.webOrigin,
       redirect_uris: [callbackUrl(this.deps)],
       grant_types: ['authorization_code', 'refresh_token'],
@@ -305,7 +305,7 @@ class Session {
     const said = await this.request('initialize', {
       protocolVersion: LATEST_PROTOCOL_VERSION,
       capabilities: {},
-      clientInfo: { name: 'Slider', version: '1' },
+      clientInfo: { name: 'Office', version: '1' },
     });
     this.version = typeof said.protocolVersion === 'string' ? said.protocolVersion : null;
     await this.post({ jsonrpc: '2.0', method: 'notifications/initialized' });

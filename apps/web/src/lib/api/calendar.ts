@@ -17,6 +17,7 @@ import {
   type QueryClient,
 } from '@tanstack/react-query';
 import { api } from '../api-client';
+import { mailKeys } from './mail';
 
 /** Calendars (`services/calendars.ts`): the ones one sees, their events by range. */
 export const calendarKeys = {
@@ -84,7 +85,10 @@ export function useMailCalendarRefusals(workspaceId: string) {
   });
 }
 
-/** One's Google calendars connected without a mailbox („Google Kalender verbinden“). */
+/**
+ * One's calendars without a mailbox („Google/Microsoft Kalender verbinden“, or a mailbox removed
+ * in Post while its calendars stayed).
+ */
 export function useCalendarConnections(workspaceId: string) {
   return useQuery({
     queryKey: [...calendarKeys.all(workspaceId), 'connections'] as const,
@@ -93,12 +97,36 @@ export function useCalendarConnections(workspaceId: string) {
   });
 }
 
-/** Deletes such a connection – as a mailbox is deleted; its calendars go with it. */
-export function useDeleteCalendarConnection(workspaceId: string) {
+/**
+ * Removes an account's calendars („Entfernen“ on „Konten“): a mailbox stays in Post, calendars
+ * alone go with them. At the provider all stays.
+ */
+export function useRemoveAccountCalendars(workspaceId: string) {
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: (accountId: string) => api.delete(`/mail/accounts/${accountId}`),
-    onSettled: settle(queryClient, workspaceId),
+    mutationFn: (accountId: string) => api.delete(`/mail/accounts/${accountId}/calendars`),
+    onSettled: () =>
+      Promise.all([
+        settle(queryClient, workspaceId)(),
+        queryClient.invalidateQueries({ queryKey: mailKeys.accounts(workspaceId) }),
+      ]),
+  });
+}
+
+/**
+ * A mailbox's calendars on again – at once where its sign-in lets them be read, else `signIn`:
+ * its provider is asked first (`startMailOAuth` with `calendarOnly` and the account).
+ */
+export function useAddAccountCalendars(workspaceId: string) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (accountId: string) =>
+      api.post<{ signIn: boolean }>(`/mail/accounts/${accountId}/calendars`),
+    onSettled: () =>
+      Promise.all([
+        settle(queryClient, workspaceId)(),
+        queryClient.invalidateQueries({ queryKey: mailKeys.accounts(workspaceId) }),
+      ]),
   });
 }
 

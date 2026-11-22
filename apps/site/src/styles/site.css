@@ -238,6 +238,7 @@
   --app-solver: #009572;
   --app-cloud: #6a3fc4;
   --app-reader: #b3261e;
+  --app-sender: #e8590c;
 }
 
 /*
@@ -278,6 +279,9 @@ html[data-app='reader'] {
 /* Reader's red is too dark to read on the dark page: lines and words get a lighter one there. */
 html[data-app='reader']:not([data-theme='light']) {
   --brand-line: #e5675c;
+}
+html[data-app='sender'] {
+  --brand: var(--app-sender);
 }
 html[data-app='office'] {
   --brand-fill: linear-gradient(

@@ -14,7 +14,7 @@ const TOKEN_TITLE = 'Setup-Token aus dem Server-Log eingeben';
  */
 test('/einrichtung without the setup token', async ({ page }) => {
   await page.goto('/einrichtung');
-  await expect(page.getByRole('heading', { level: 1, name: 'Slider einrichten' })).toBeVisible();
+  await expect(page.getByRole('heading', { level: 1, name: 'Office einrichten' })).toBeVisible();
   await expect(page.getByRole('heading', { name: TOKEN_TITLE })).toBeVisible();
   await expect(page.getByText('docker logs slider')).toBeVisible();
   await expect(page.getByRole('button', { name: /Speichern/ })).toHaveCount(0);

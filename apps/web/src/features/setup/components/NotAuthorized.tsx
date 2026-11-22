@@ -132,7 +132,7 @@ function ClaimInstance({ initialToken }: { initialToken: string | null }) {
         title="Setup-Token eingeben"
         description={
           <>
-            Diese Slider-Instanz hat noch keinen Admin. Mit dem Setup-Token wirst du es
+            Diese Office-Instanz hat noch keinen Admin. Mit dem Setup-Token wirst du es
             {user ? ` – als ${user.name} (${user.email})` : ''}, danach geht es los. {WHERE_TOKEN}
           </>
         }
@@ -179,7 +179,7 @@ function AdminOnly() {
   if (!user) {
     return (
       <Notice tone="warning">
-        Nur der Admin dieser Slider-Instanz kann die Einrichtung ändern.{' '}
+        Nur der Admin dieser Office-Instanz kann die Einrichtung ändern.{' '}
         <TextLink to={routes.login(SETUP_PATH)} variant="inline">
           Als Admin anmelden
         </TextLink>
@@ -202,7 +202,7 @@ function AdminOnly() {
         </div>
       }
     >
-      Nur der Admin dieser Slider-Instanz kann die Einrichtung ändern. Du bist als{' '}
+      Nur der Admin dieser Office-Instanz kann die Einrichtung ändern. Du bist als{' '}
       {`${user.name} (${user.email})`} angemeldet.
     </Notice>
   );

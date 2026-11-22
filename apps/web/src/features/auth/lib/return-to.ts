@@ -11,7 +11,7 @@ const LOGIN_ERROR_COPY: Record<LoginError, { title: string; message: string }> =
   signup_closed: {
     title: 'Kein Konto gefunden',
     message:
-      'Für diese Adresse gibt es noch kein Slider-Konto, und auf diesem Server entstehen neue Konten nur über eine Einladung oder mit einer freigegebenen Firmenadresse. Bitte jemanden aus deinem Team, dich in euren Workspace einzuladen.',
+      'Für diese Adresse gibt es noch kein Konto, und auf diesem Server entstehen neue Konten nur über eine Einladung oder mit einer freigegebenen Firmenadresse. Bitte jemanden aus deinem Team, dich in euren Workspace einzuladen.',
   },
   account_exists: {
     title: 'Konto meldet sich anders an',
@@ -31,7 +31,7 @@ const LOGIN_ERROR_COPY: Record<LoginError, { title: string; message: string }> =
   admin_consent: {
     title: 'Freigabe durch Admin nötig',
     message:
-      'Deine Organisation erlaubt die Anmeldung bei Slider noch nicht. Ein Microsoft-365-Admin muss die App einmal freigeben.',
+      'Deine Organisation erlaubt die Anmeldung bei Office noch nicht. Ein Microsoft-365-Admin muss die App einmal freigeben.',
   },
   denied: {
     title: 'Anmeldung abgebrochen',
@@ -50,7 +50,7 @@ const LOGIN_ERROR_COPY: Record<LoginError, { title: string; message: string }> =
   mail_unavailable: {
     title: 'Neues Konto gerade nicht möglich',
     message:
-      'Für ein neues Konto über Nextcloud bestätigst du deine Adresse per Mail, und diese Slider-Instanz kann keine Mails senden. Melde dich anders an oder frag, wer Slider betreibt.',
+      'Für ein neues Konto über Nextcloud bestätigst du deine Adresse per Mail, und diese Office-Instanz kann keine Mails senden. Melde dich anders an oder frag, wer Slider betreibt.',
   },
   rate_limited: {
     title: 'Zu viele Anmeldeversuche',
@@ -59,7 +59,7 @@ const LOGIN_ERROR_COPY: Record<LoginError, { title: string; message: string }> =
   account_blocked: {
     title: 'Konto gesperrt',
     message:
-      'Dieses Konto wurde von der Person gesperrt, die Slider hier betreibt. Wende dich an sie, wenn du glaubst, dass das ein Irrtum ist.',
+      'Dieses Konto wurde von der Person gesperrt, die Office hier betreibt. Wende dich an sie, wenn du glaubst, dass das ein Irrtum ist.',
   },
   failed: {
     title: 'Anmeldung fehlgeschlagen',
@@ -77,7 +77,7 @@ export function signupHintCopy(signup: SignupMode): string {
     case 'domains':
       return 'Noch kein Konto? Es wird beim ersten Anmelden mit deiner Firmenadresse automatisch erstellt.';
     case 'company':
-      return 'Noch kein Konto? Du brauchst eine Einladung – oder deine Firma nutzt Slider schon, dann meldest du dich einfach mit deiner Firmenadresse an.';
+      return 'Noch kein Konto? Du brauchst eine Einladung – oder deine Firma ist schon dabei, dann meldest du dich einfach mit deiner Firmenadresse an.';
     case 'invite':
       return 'Noch kein Konto? Du brauchst eine Einladung – das Konto wird beim ersten Anmelden über den Einladungslink erstellt.';
   }

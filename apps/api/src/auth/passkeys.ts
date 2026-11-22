@@ -28,7 +28,7 @@ export const simpleWebAuthn: WebAuthn = {
   verifyAuthenticationResponse,
 };
 
-export const RP_NAME = 'Slider';
+export const RP_NAME = 'Office';
 /** A ceremony (options → browser → verify) must finish within this. */
 export const CHALLENGE_TTL_MS = 5 * 60 * 1000;
 

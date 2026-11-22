@@ -509,7 +509,7 @@ export function authRoutes(deps: AppDeps, gate: InstanceGate) {
           sso: await anyWorkspaceSso(deps),
           emailLogin: deps.mailer.configured,
           mailOAuth: MAIL_OAUTH_PROVIDERS.filter((id) => mailOAuthConfigured(config, id)),
-          calendarOAuth: calendarOAuthConfigured(config, 'google') ? ['google'] : [],
+          calendarOAuth: MAIL_OAUTH_PROVIDERS.filter((id) => calendarOAuthConfigured(config, id)),
         });
       })
 

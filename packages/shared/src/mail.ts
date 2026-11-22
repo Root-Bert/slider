@@ -44,6 +44,32 @@ export interface MailAccount {
   aiReads: boolean;
   /** Its folders in the order they show (`mailFolderList`): Posteingang first. */
   folders: MailFolder[];
+  /**
+   * Its calendars stand in the calendar too (on unless removed in „Kalender › Konten“) – each of
+   * an account's uses comes and goes apart (`LinkedMailAccount`).
+   */
+  calendars: boolean;
+}
+
+/**
+ * One's account at a mail provider as „Konto“ lists it (`GET /me/mail-accounts`): what it is
+ * linked for in a workspace – its mail in Post, its calendars in the calendar. Each use is added
+ * and removed apart; the account goes once neither is left. Signing in is the login's
+ * (`LoginIdentity`), matched by address.
+ */
+export interface LinkedMailAccount {
+  accountId: string;
+  workspaceId: string;
+  workspaceName: string;
+  address: string;
+  label: string | null;
+  signIn: MailSignIn;
+  /** A mailbox in Post. */
+  mail: boolean;
+  /** Its calendars in the calendar. */
+  calendars: boolean;
+  /** The provider ended its sign-in: „Neu anmelden“ where it is managed. */
+  signedOut: boolean;
 }
 
 /**
@@ -540,8 +566,9 @@ export const mailOAuthStartSchema = z.object({
   address: z.string().trim().email().max(320).optional(),
   returnTo: z.string().max(500),
   /**
-   * Only the account's calendars, no mailbox („Google Kalender verbinden“, Google only): asks
-   * for the calendar scopes and the address alone (`CalendarConnection`).
+   * Signed in for the account's calendars: a new one without a mailbox („Google/Microsoft
+   * Kalender verbinden“ – the calendar scopes and the address alone, `CalendarConnection`), or a
+   * mailbox's calendars turned on again (`accountId`; its mail scopes asked along).
    */
   calendarOnly: z.boolean().default(false),
 });

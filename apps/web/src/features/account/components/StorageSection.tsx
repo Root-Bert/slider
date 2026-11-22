@@ -153,7 +153,7 @@ export function StorageSection({
   );
 }
 
-/** One connected account: its mark, where it reads from, "Neu verbinden" when expired, "Trennen". */
+/** One connected account: its mark, where it reads from, "Neu verbinden" when expired, "Entfernen". */
 function StorageRow({
   mark,
   title,
@@ -191,7 +191,9 @@ function StorageRow({
           )}
           <Menu
             label={`Aktionen für ${menuLabel}`}
-            actions={[{ label: 'Trennen', icon: 'delete', tone: 'danger', onSelect: onDisconnect }]}
+            actions={[
+              { label: 'Entfernen', icon: 'delete', tone: 'danger', onSelect: onDisconnect },
+            ]}
           />
         </>
       }
@@ -220,9 +222,9 @@ function DisconnectNextcloudDialog({
   return (
     <ConfirmDialog
       onClose={onClose}
-      title={`Nextcloud (${host}) trennen?`}
-      description={`Slider löscht seinen Zugang in deiner Nextcloud und liest keine Dateien mehr darüber. ${consequence}`}
-      confirmLabel="Trennen"
+      title={`Nextcloud (${host}) entfernen?`}
+      description={`Office löscht seinen Zugang in deiner Nextcloud und liest keine Dateien mehr darüber. ${consequence}`}
+      confirmLabel="Entfernen"
       pending={disconnect.isPending}
       // In the dialog: a toast would sit behind its backdrop.
       error={disconnect.error?.message}
@@ -231,8 +233,8 @@ function DisconnectNextcloudDialog({
           onSuccess: ({ revoked }) => {
             onNotify(
               revoked
-                ? `Nextcloud (${host}) getrennt`
-                : `Getrennt – Nextcloud war nicht erreichbar. Entferne „Slider“ dort unter Einstellungen → Sicherheit.`,
+                ? `Nextcloud (${host}) entfernt`
+                : `Entfernt – Nextcloud war nicht erreichbar. Entferne „Office“ (früher „Slider“) dort unter Einstellungen → Sicherheit.`,
             );
             onClose();
           },

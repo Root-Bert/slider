@@ -20,7 +20,7 @@ import { CONTACT_URL, PRIVACY_URL } from '~/lib/links';
         <h1 class="text-[40px] leading-[1.1] font-black tracking-[-0.02em] text-fg">Contact</h1>
         <p class="text-[15px] leading-[1.65] text-fg-muted">
           Questions, feedback, a bug? Leave us a comment, we answer by email. Or mail us directly at{' '}
-          <a href={CONTACT_URL} class="text-fg underline decoration-fg-faint underline-offset-3 hover:decoration-fg">slider@bertro.dev</a>.
+          <a href={CONTACT_URL} class="text-fg underline decoration-fg-faint underline-offset-3 hover:decoration-fg">office@bertro.dev</a>.
         </p>
       </div>
 
@@ -149,10 +149,10 @@ import { CONTACT_URL, PRIVACY_URL } from '~/lib/links';
       } else if (res.status === 429) {
         status.textContent = 'Too many messages for now. Please try again later or mail us.';
       } else {
-        status.textContent = 'That didn’t work. Please mail us at slider@bertro.dev.';
+        status.textContent = 'That didn’t work. Please mail us at office@bertro.dev.';
       }
     } catch {
-      status.textContent = 'That didn’t work. Please mail us at slider@bertro.dev.';
+      status.textContent = 'That didn’t work. Please mail us at office@bertro.dev.';
     } finally {
       button.disabled = false;
     }

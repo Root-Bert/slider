@@ -3,16 +3,8 @@ import { useSearchParams } from 'react-router';
 import { handCodeToDesktop, useMe } from '@/lib/api';
 import { CenteredCard, CenteredLayout } from '@/shell/layouts/CenteredLayout';
 import { routes } from '@/lib/routes';
+import { APP_NAMES } from '@/lib/apps';
 import { Button, ErrorText, Icon, TextLink } from '@/ui';
-
-/** The apps that sign in here (`DESKTOP_SCHEMES`), as people read them. */
-const APP_NAMES = {
-  slider: 'Slider',
-  cloud: 'Cloud',
-  writer: 'Writer',
-  reader: 'Reader',
-  sender: 'Sender',
-} as const;
 
 /**
  * `/desktop-anmelden?challenge=…&state=…` – „Anmelden“ in the desktop app opens it in the
@@ -42,7 +34,7 @@ export function Component() {
 
   if (!challenge || !state) {
     return (
-      <CenteredLayout docTitle={docTitle}>
+      <CenteredLayout app={app} docTitle={docTitle}>
         <CenteredCard
           icon={<Icon name="desktopWindows" size={28} />}
           title="Dieser Link ist unvollständig"
@@ -68,7 +60,7 @@ export function Component() {
 
   if (link) {
     return (
-      <CenteredLayout docTitle={docTitle}>
+      <CenteredLayout app={app} docTitle={docTitle}>
         <CenteredCard
           icon={<Icon name="checkCircle" size={28} />}
           title="Zurück zur App"
@@ -91,7 +83,7 @@ export function Component() {
   }
 
   return (
-    <CenteredLayout docTitle={docTitle}>
+    <CenteredLayout app={app} docTitle={docTitle}>
       <CenteredCard
         icon={<Icon name="desktopWindows" size={28} />}
         title={add ? `Konto zur ${name}-App hinzufügen` : `In der ${name}-App anmelden`}

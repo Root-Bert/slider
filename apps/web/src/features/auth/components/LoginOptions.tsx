@@ -58,7 +58,7 @@ export function LoginOptions({ config, returnTo }: { config: AuthProviders; retu
     // No admin yet: only the browser that typed in the setup token signs in, to claim it.
     return (
       <Notice tone="warning" variant="plain" title="Noch nicht eingerichtet">
-        Diese Slider-Instanz hat noch keinen Admin. Wer sie betreibt, gibt zuerst unter{' '}
+        Diese Office-Instanz hat noch keinen Admin. Wer sie betreibt, gibt zuerst unter{' '}
         <TextLink to={routes.setup()} variant="inline">
           /einrichtung
         </TextLink>{' '}
@@ -104,8 +104,8 @@ export function LoginOptions({ config, returnTo }: { config: AuthProviders; retu
     return (
       <div className="flex w-full flex-col gap-3">
         <Notice tone="warning" variant="plain" title="Anmeldung nicht eingerichtet">
-          Für diese Slider-Instanz ist keine Anmeldung über Microsoft, Google, Nextcloud oder SSO
-          eingerichtet. Wer Slider betreibt, richtet sie unter{' '}
+          Für diese Office-Instanz ist keine Anmeldung über Microsoft, Google, Nextcloud oder SSO
+          eingerichtet. Wer Office betreibt, richtet sie unter{' '}
           <code className="rounded-badge bg-surface-2 px-1 py-0.5 text-xs text-fg-muted">
             /einrichtung
           </code>{' '}

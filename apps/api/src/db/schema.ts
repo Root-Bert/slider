@@ -2704,11 +2704,19 @@ export const mailAccounts = pgTable(
      */
     htmlRead: boolean('html_read').notNull().default(false),
     /**
-     * Only a calendar (0161): „Google Kalender verbinden“ – Google's tokens for its calendars
-     * alone, no IMAP/SMTP. Never read for mail, never among the mailboxes; its calendars show as
-     * a mailbox's do (`calendar/mail-calendars.ts`).
+     * No mailbox, only its calendars (0161): „Google/Microsoft Kalender verbinden“ – the
+     * provider's tokens for its calendars alone, no IMAP/SMTP – or a mailbox removed in Post
+     * while its calendars stayed (a password account keeps its password for CalDAV). Never read
+     * for mail, never among the mailboxes; its calendars show as a mailbox's do
+     * (`calendar/mail-calendars.ts`).
      */
     calendarOnly: boolean('calendar_only').notNull().default(false),
+    /**
+     * Its calendars stand in the calendar (0164) – an account's uses come and go apart: off
+     * („Kalender › Konten“ › „Entfernen“), its calendars are dropped and never read; off with no
+     * mailbox either (`calendarOnly`), the row is deleted.
+     */
+    withCalendars: boolean('with_calendars').notNull().default(true),
     lastSyncAt: timestamptz('last_sync_at'),
     createdAt: createdAt(),
     updatedAt: timestamptz('updated_at').notNull().defaultNow(),

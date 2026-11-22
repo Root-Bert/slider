@@ -356,11 +356,11 @@ async function tellNewAdmins(
       subject: `Du bist jetzt Admin von „${workspaceName}“`,
       heading: `Du bist jetzt Admin von „${workspaceName}“`,
       intro: unused
-        ? `Das Slider-Konto von ${name} wurde gelöscht, weil es lange nicht genutzt wurde. Du warst am längsten dabei und bist jetzt Admin des Workspace; die hochgeladenen Präsentationen von ${name} dort gehören jetzt dir, die verknüpften wurden gelöscht.`
-        : `${name} hat das Slider-Konto gelöscht und dich als neuen Admin des Workspace bestimmt. Die hochgeladenen Präsentationen von ${name} dort gehören jetzt dir, die verknüpften wurden gelöscht.`,
+        ? `Das Konto von ${name} wurde gelöscht, weil es lange nicht genutzt wurde. Du warst am längsten dabei und bist jetzt Admin des Workspace; die hochgeladenen Präsentationen von ${name} dort gehören jetzt dir, die verknüpften wurden gelöscht.`
+        : `${name} hat das Konto gelöscht und dich als neuen Admin des Workspace bestimmt. Die hochgeladenen Präsentationen von ${name} dort gehören jetzt dir, die verknüpften wurden gelöscht.`,
       button: 'Workspace öffnen',
       outro:
-        'Kam das unerwartet? Frag bei der Person nach oder wende dich an den Betreiber dieser Slider-Instanz.',
+        'Kam das unerwartet? Frag bei der Person nach oder wende dich an den Betreiber dieser Office-Instanz.',
     });
     await deps.mailer.send(message).catch((error: unknown) => {
       deps.log.warn(`Mail to the new admin ${userId} failed: ${String(error)}`);

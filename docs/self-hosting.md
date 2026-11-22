@@ -260,6 +260,8 @@ neuen Adresse neu verbinden. Kommt niemand mehr über die alte, `SLIDER_OLD_DOMA
   dem, was die Instanz nutzt (Logins, E-Mail, Stripe, Unsplash, Löschfristen – vorbelegt aus der
   Einrichtung); KI ist immer drin, weil jeder Workspace einen Key hinterlegen kann. Was leer
   bleibt, steht als `[Lücke]` im Text und lässt sich unter dem Feld einzeln setzen oder streichen.
+  Die Werte merkt sich die Seite: Kommt mit einem Update eine neuere Vorlage, füllt
+  **„Vorlage aktualisieren“** sie mit ihnen neu, **„Vorlage bearbeiten“** öffnet das Formular darauf.
   Die Vorlagen ersetzen keine Rechtsberatung.
 - **Auskunft und Löschung** erledigen Nutzer:innen selbst: unter Konto & Anmeldung oder ohne
   Login über `/datenanfrage` (braucht E-Mail-Versand).

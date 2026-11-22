@@ -6,13 +6,23 @@ import { fillGap, findGaps } from './lib/legal-template';
  * The `[…]` left in a legal text, each with a field: what is typed goes in everywhere the gap
  * stands, „Streichen“ takes it out – also the notes of older templates („nur wenn …“).
  */
-export function GapList({ text, onChange }: { text: string; onChange: (text: string) => void }) {
+export function GapList({
+  text,
+  onChange,
+  onSet,
+}: {
+  text: string;
+  onChange: (text: string) => void;
+  /** A gap was set to `value` (empty: struck out). */
+  onSet?: (gap: string, value: string) => void;
+}) {
   const gaps = findGaps(text);
   const [typed, setTyped] = useState<Record<string, string>>({});
   if (gaps.length === 0) return null;
 
   const fill = (gap: string, value: string) => {
     onChange(fillGap(text, gap, value));
+    onSet?.(gap, value.trim());
     setTyped(({ [gap]: _, ...rest }) => rest);
   };
 

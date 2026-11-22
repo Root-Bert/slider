@@ -191,6 +191,7 @@ async function insertInvite(
           input.deck
             ? {
                 ...shared,
+                app: 'slider',
                 subject: `${actor.name} teilt „${input.deck.title}“ mit dir`,
                 heading: 'Eine Präsentation für dich',
                 intro: `${actor.name} hat die Präsentation „${input.deck.title}“ auf Slider mit dir geteilt.`,
@@ -198,10 +199,10 @@ async function insertInvite(
               }
             : {
                 ...shared,
-                subject: `${actor.name} lädt dich zu „${workspace?.name ?? 'Slider'}“ ein`,
+                subject: `${actor.name} lädt dich zu „${workspace?.name ?? 'Office'}“ ein`,
                 heading: 'Du bist eingeladen',
-                // Worded for where Slider is heading (AI does the editing), not today's feature set.
-                intro: `${actor.name} hat dich zu „${workspace?.name ?? ''}“ auf Slider eingeladen. Dort entstehen eure Präsentationen gemeinsam, von der ersten Idee bis zur fertigen Folie.`,
+                // The whole office, not one app: the workspace holds files, presentations, documents, chats.
+                intro: `${actor.name} hat dich zu „${workspace?.name ?? ''}“ auf Office eingeladen. Dort arbeitet ihr gemeinsam an Dateien, Präsentationen, Dokumenten und Nachrichten.`,
                 button: 'Einladung annehmen',
               },
         ),

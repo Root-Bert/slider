@@ -57,7 +57,7 @@ export const accountBlocked = () =>
   new ApiError(
     403,
     'account_blocked',
-    'Dieses Konto wurde von der Person gesperrt, die Slider hier betreibt.',
+    'Dieses Konto wurde von der Person gesperrt, die Office hier betreibt.',
   );
 
 /**

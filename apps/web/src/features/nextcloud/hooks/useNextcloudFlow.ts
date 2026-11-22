@@ -15,7 +15,7 @@ export type NextcloudConnectState =
 type Unfinished = { status: 'pending' } | { status: 'expired' };
 
 const POPUP_BLOCKED_MESSAGE =
-  'Das Anmeldefenster wurde blockiert. Erlaube Popups für Slider und versuch es noch einmal.';
+  'Das Anmeldefenster wurde blockiert. Erlaube Popups für Office und versuch es noch einmal.';
 
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 

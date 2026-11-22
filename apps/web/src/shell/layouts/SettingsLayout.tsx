@@ -2,7 +2,7 @@ import type { ReactNode } from 'react';
 import type { To } from 'react-router';
 import { cn, PageHeader, Toast, type IconName, type ToastMessage } from '@/ui';
 import { LegalLinks } from '@/features/legal';
-import { appHome, useBackApp, useCurrentApp } from '@/lib/apps';
+import { appHome, appStart, appTitle, useBackApp, useCurrentApp } from '@/lib/apps';
 import { routes } from '@/lib/routes';
 import { useActiveWorkspace } from '@/features/workspaces';
 import { AppHeader } from '../AppHeader';
@@ -10,7 +10,7 @@ import { LogoHeader } from './LogoHeader';
 import { SectionNav } from './SectionNav';
 
 export interface SettingsLayoutProps {
-  /** Document title (`<title>`), e.g. "Einstellungen | Slider". */
+  /** Document title (`<title>`), e.g. "Einstellungen | Slider" – „Slider“ becomes the app's name. */
   docTitle: string;
   /** The page's `<h1>`. */
   title: ReactNode;
@@ -36,7 +36,7 @@ export interface SettingsLayoutProps {
    * wrapping the section (`SectionNav`).
    */
   nav?: readonly { id: string; title: string; icon: IconName }[];
-  /** Where the logo leads; the reviews by default. */
+  /** Where Slider's logo in the `app` header leads; the reviews by default. */
   logoLink?: { to: string; label: string };
   /** The page's toast (from `useToast`), rendered at the bottom. */
   toast?: ToastMessage | null;
@@ -71,13 +71,12 @@ export function SettingsLayout({
   // Opened first, before any app: back to the start page rather than to one app.
   const backApp = useBackApp();
   const backLink = back === 'app' ? appHome(backApp, workspace?.id) : back;
-  const pageTitle = app === 'cloud' ? docTitle.replace(/\| Slider$/, '| Cloud') : docTitle;
   return (
     <div className={logoOnly ? 'dot-grid flex min-h-full flex-col' : 'dot-grid min-h-full'}>
-      <title>{pageTitle}</title>
+      <title>{appTitle(docTitle, app)}</title>
       {logoOnly ? (
-        // Home from here too: signed out, the reviews send to the login.
-        <LogoHeader logoLink={logoLink} />
+        // Home from here too: signed out, the app's start sends to the login.
+        <LogoHeader app={app} logoLink={appStart(app)} />
       ) : (
         header === 'app' && <AppHeader logoLink={logoLink} />
       )}

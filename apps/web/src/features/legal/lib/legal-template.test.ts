@@ -99,7 +99,7 @@ describe('defaults', () => {
       url: 'https://slider.example',
       restart: 'automatic',
       redirectUris: { microsoft: '', google: '', oidc: '', nextcloud: '' },
-      features: { payments: true, stockPhotos: false },
+      features: { payments: true, stockPhotos: false, nextcloudAnyServer: false },
       fields: {
         MS_CLIENT_ID: field('id'),
         GOOGLE_CLIENT_ID: field(null),
@@ -122,5 +122,16 @@ describe('defaults', () => {
       stockPhotos: false,
     });
     expect(values.nextcloudOperator).toBe('cloud.example.de');
+
+    // Signing in with any Nextcloud alone: the paragraphs on, no operator of our own.
+    const anyServer = templateDefaults({
+      url: 'https://slider.example',
+      restart: 'automatic',
+      redirectUris: { microsoft: '', google: '', oidc: '', nextcloud: '' },
+      features: { payments: false, stockPhotos: false, nextcloudAnyServer: true },
+      fields: {} as never,
+    });
+    expect(anyServer.options.nextcloud).toBe(true);
+    expect(anyServer.values.nextcloudOperator).toBe('');
   });
 });
