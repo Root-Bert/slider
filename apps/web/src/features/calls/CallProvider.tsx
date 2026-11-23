@@ -136,14 +136,23 @@ export function CallProvider({
     }
   }, [incoming, snap.me]);
 
-  // The call's own parts broke: hung up and said – never a call going on unseen.
+  // The call's own parts broke: hung up and said – never a call going on unseen, never one ringing
+  // where it cannot be answered (declined, so its caller is not left waiting).
+  const activeId = active?.id ?? null;
+  const shown = [...(activeId ? [activeId] : []), ...incoming.map((call) => call.id)];
   const crashed = useCallback(
-    (callId: string | null) => {
-      if (!callId) return;
-      void client.leave();
-      notify('Der Anruf wurde wegen eines Fehlers beendet.', 'danger');
+    (callIds: readonly string[]) => {
+      if (callIds.length === 0) return;
+      if (activeId && callIds.includes(activeId)) void client.leave();
+      for (const id of callIds) if (id !== activeId) client.decline(id);
+      notify(
+        activeId
+          ? 'Der Anruf wurde wegen eines Fehlers beendet.'
+          : 'Ein Anruf ließ sich wegen eines Fehlers nicht zeigen und wurde abgelehnt.',
+        'danger',
+      );
     },
-    [client, notify],
+    [activeId, client, notify],
   );
 
   const ui = useMemo<CallsUi>(
@@ -162,7 +171,7 @@ export function CallProvider({
   return (
     <Context value={ui}>
       {children}
-      <CallGuard callId={active?.id ?? null} onCrash={crashed}>
+      <CallGuard calls={shown} onCrash={crashed}>
         {(incoming.length > 0 || active) && (
           <div className="pointer-events-none fixed right-4 bottom-18 z-(--z-popover) flex w-[min(360px,calc(100vw-32px))] flex-col gap-2">
             {incoming.map((call) => (
@@ -183,22 +192,23 @@ export function CallProvider({
 }
 
 /**
- * Catches what breaks in the dock or the ringing card: the page goes on, the call is hung up
- * (`onCrash`). The next call shows again.
+ * Catches what breaks in the dock or the ringing cards: the page goes on, the calls shown are hung
+ * up or declined (`onCrash`). Once the calls shown change, they show again.
  */
 class CallGuard extends Component<
-  { callId: string | null; onCrash: (callId: string | null) => void; children: ReactNode },
-  { broken: boolean; callId: string | null }
+  { calls: readonly string[]; onCrash: (callIds: readonly string[]) => void; children: ReactNode },
+  { broken: boolean; key: string }
 > {
-  override state = { broken: false, callId: this.props.callId };
+  override state = { broken: false, key: this.props.calls.join(' ') };
 
-  /** Broken stays broken for its call; another call (or none) is shown again. */
+  /** Broken stays broken for the calls it showed; any other set (or none) is shown again. */
   static getDerivedStateFromProps(
-    props: { callId: string | null },
-    state: { broken: boolean; callId: string | null },
+    props: { calls: readonly string[] },
+    state: { broken: boolean; key: string },
   ) {
-    if (props.callId === state.callId) return null;
-    return { broken: false, callId: props.callId };
+    const key = props.calls.join(' ');
+    if (key === state.key) return null;
+    return { broken: false, key };
   }
 
   static getDerivedStateFromError() {
@@ -207,7 +217,7 @@ class CallGuard extends Component<
 
   override componentDidCatch(error: Error, info: ErrorInfo) {
     console.error('Calls: the call broke', error, info.componentStack);
-    this.props.onCrash(this.props.callId);
+    this.props.onCrash(this.props.calls);
   }
 
   override render() {

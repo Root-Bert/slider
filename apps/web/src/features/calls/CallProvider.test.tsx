@@ -51,7 +51,11 @@ const snapshot = (state: CallState): CallsSnapshot => ({
 });
 
 // The client's stream, microphone and connections stay out: only what the dock is shown matters.
-const fake = vi.hoisted(() => ({ snap: null as unknown, listeners: new Set<() => void>() }));
+const fake = vi.hoisted(() => ({
+  snap: null as unknown,
+  listeners: new Set<() => void>(),
+  declined: [] as string[],
+}));
 vi.mock('./lib/call-client', () => ({
   CallClient: class {
     subscribe = (listener: () => void) => {
@@ -62,8 +66,19 @@ vi.mock('./lib/call-client', () => ({
     setTell() {}
     signedIn() {}
     goingAway() {}
+    decline(callId: string) {
+      fake.declined.push(callId);
+    }
   },
 }));
+// A ringing card that breaks on one call („kaputt“), to see the guard around it; no ring tone.
+vi.mock('./components/IncomingCall', () => ({
+  IncomingCall: ({ call }: { call: CallState }) => {
+    if (call.id === 'kaputt') throw new Error('broken card');
+    return <p>Klingelt {call.id}</p>;
+  },
+}));
+vi.mock('./lib/sounds', () => ({ ring: () => () => {}, ringBack: () => () => {} }));
 
 afterEach(() => vi.restoreAllMocks());
 
@@ -149,5 +164,22 @@ describe('CallProvider', () => {
       'Gast 19',
       'Gast 20',
     ]);
+
+    // A ringing card that breaks with no call going on: declined and said – and the next call
+    // that rings shows again (the guard once stayed blank for good).
+    vi.spyOn(console, 'error').mockImplementation(() => {});
+    const ringing = (id: string): CallsSnapshot => ({
+      ...snapshot({ ...call, id, peers: [call.peers[1]!], ringing: [me.id] }),
+      active: null,
+    });
+    fake.snap = ringing('kaputt');
+    act(() => fake.listeners.forEach((listener) => listener()));
+    expect(fake.declined).toEqual(['kaputt']);
+    expect(
+      screen.getByText('Ein Anruf ließ sich wegen eines Fehlers nicht zeigen und wurde abgelehnt.'),
+    ).toBeTruthy();
+    fake.snap = ringing('c2');
+    act(() => fake.listeners.forEach((listener) => listener()));
+    expect(screen.getByText('Klingelt c2')).toBeTruthy();
   });
 });
