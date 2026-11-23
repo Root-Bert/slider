@@ -87,8 +87,11 @@ export interface OutgoingMail {
 }
 
 export interface MailServers {
-  /** Signs in to both servers; throws with what went wrong. */
-  check(login: MailLogin): Promise<void>;
+  /**
+   * Signs in to both servers; throws with what went wrong. Returns the SMTP way that worked when
+   * it is not the one given (`checkSmtp`) – to keep instead.
+   */
+  check(login: MailLogin): Promise<SmtpSetting | undefined | void>;
   /**
    * The mails that came since `state` – on a folder's first read only its latest few. Returns
    * the state to keep.
@@ -341,17 +344,7 @@ export function mailFailure(
       } (dann per STARTTLS).`,
       step: `${lower}-tls`,
     };
-  if (
-    [
-      'ECONNREFUSED',
-      'ETIMEDOUT',
-      'CONNECT_TIMEOUT',
-      'ECONNECTION',
-      'EHOSTUNREACH',
-      'ENETUNREACH',
-    ].includes(code) ||
-    /timeout/i.test(raw)
-  )
+  if (silent(code, raw))
     return {
       text: `Der ${side}-Server antwortet nicht – stimmen Server und Port?`,
       step: `${lower}-server`,
@@ -361,6 +354,68 @@ export function mailFailure(
     text: `Der ${side}-Server lehnt die Verbindung ab – stimmen Server, Port und Verschlüsselung?`,
     step: `${lower}-server`,
   };
+}
+
+/** No answer at all from the server's port: refused, dropped, timed out – not even a refusal. */
+const silent = (code: string, raw: string) =>
+  [
+    'ECONNREFUSED',
+    'ETIMEDOUT',
+    'CONNECT_TIMEOUT',
+    'ECONNECTION',
+    'EHOSTUNREACH',
+    'ENETUNREACH',
+  ].includes(code) || /timeout/i.test(raw);
+
+/** How a mailbox sends: the SMTP port and whether TLS starts at once (else STARTTLS). */
+export type SmtpSetting = Pick<MailLogin, 'smtpPort' | 'smtpSecure'>;
+
+/** The other usual way into the same SMTP server: 465 with TLS at once ↔ 587 with STARTTLS. */
+export function otherSmtp({ smtpPort, smtpSecure }: SmtpSetting): SmtpSetting | undefined {
+  if (smtpPort === 465 && smtpSecure) return { smtpPort: 587, smtpSecure: false };
+  if (smtpPort === 587 && !smtpSecure) return { smtpPort: 465, smtpSecure: true };
+  return undefined;
+}
+
+async function verifySmtp(login: MailLogin) {
+  const transport = await smtp(login);
+  try {
+    await transport.verify();
+  } finally {
+    transport.close();
+  }
+}
+
+/**
+ * Signs in to SMTP. A port that does not answer at all is tried the other usual way
+ * (`otherSmtp`): many hosts block 465 or 587 going out (Hetzner, AWS, … block 465), and a
+ * person cannot know that. Only the same server, and never in the clear – 587 requires STARTTLS
+ * (`smtpOptions`), the certificate is checked against the name either way. Returns the way that
+ * worked when it was the other one; a refusal there (a password, say) tells more than silence.
+ */
+export async function checkSmtp(
+  login: MailLogin,
+  verify: (login: MailLogin) => Promise<void> = verifySmtp,
+): Promise<SmtpSetting | undefined> {
+  try {
+    await verify(login);
+    return undefined;
+  } catch (error) {
+    const other = otherSmtp(login);
+    const unanswered = (one: unknown) =>
+      mailFailure(one, 'SMTP', login).step === 'smtp-server' &&
+      silent((one as { code?: string }).code ?? '', one instanceof Error ? one.message : '');
+    if (!other || !unanswered(error)) throw checkError(error, 'SMTP', login);
+    const next = { ...login, ...other };
+    try {
+      await verify(next);
+      return other;
+    } catch (second) {
+      throw unanswered(second)
+        ? checkError(error, 'SMTP', login)
+        : checkError(second, 'SMTP', next);
+    }
+  }
 }
 
 /** What a server's refusal means, in a sentence a person can act on. */
@@ -635,16 +690,7 @@ export const realMailServers: MailServers = {
     } finally {
       await client.logout().catch(() => client.close());
     }
-    const transport = await smtp(login).catch((error: unknown) => {
-      throw checkError(error, 'SMTP', login);
-    });
-    try {
-      await transport.verify();
-    } catch (error) {
-      throw checkError(error, 'SMTP', login);
-    } finally {
-      transport.close();
-    }
+    return checkSmtp(login);
   },
 
   async fetch(login, state) {

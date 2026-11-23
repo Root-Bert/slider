@@ -367,7 +367,8 @@ export async function finishMailOAuth(deps: AppDeps, c: Context<OptionalViewerEn
     accessToken: signedIn.accessToken,
   };
   try {
-    await mailServersOf(deps).check(login);
+    // The SMTP way that worked (465 blocked going out: 587) is the one kept.
+    Object.assign(login, await mailServersOf(deps).check(login));
   } catch (error) {
     if (error instanceof MailCheckError) return fail(flow, error.message, error.failure);
     return fail(flow, error instanceof Error ? error.message : String(error), {

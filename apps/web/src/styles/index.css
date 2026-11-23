@@ -1130,6 +1130,31 @@
     font-feature-settings: 'cv11', 'ss01';
   }
 
+  /*
+   * Scroll bars have no rail of their own: a thin thumb over the page, the track transparent
+   * (also with macOS' „always show“ or a mouse). Safari without `scrollbar-color` gets the same
+   * from the webkit pseudo-elements.
+   */
+  * {
+    scrollbar-width: thin;
+    scrollbar-color: var(--color-surface-4) transparent;
+  }
+  @supports not (scrollbar-color: auto) {
+    ::-webkit-scrollbar {
+      width: 8px;
+      height: 8px;
+      background: transparent;
+    }
+    ::-webkit-scrollbar-thumb {
+      border-radius: 4px;
+      background: var(--color-surface-4);
+    }
+    ::-webkit-scrollbar-track,
+    ::-webkit-scrollbar-corner {
+      background: transparent;
+    }
+  }
+
   :focus-visible {
     outline: 2px solid var(--color-focus);
     outline-offset: 2px;

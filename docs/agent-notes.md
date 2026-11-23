@@ -1543,7 +1543,11 @@ hidden while pending and when nothing is unread. Slider's own start is „Präse
   `NodeNameInput`): double-click the open tab or right-click a tab „Umbenennen“, or „Umbenennen“ in
   a row's menu under „Postfächer“; PATCH `{label}` optimistic (`useRenameMailAccount`), owner only
   (others 404). `mailAccountPatchSchema` has no defaults – zod 4 fills a `.default()` in even under
-  `.partial()`, so a rename once set the name empty and the ports to 993/465. „Neues Postfach“ is
+  `.partial()`, so a rename once set the name empty and the ports to 993/465. SMTP whose port is
+  silent (timeout/refused, `silent` in `mail/servers.ts`) is tried once the other usual way – 465
+  TLS ↔ 587 STARTTLS, same host – and the way that worked is saved (`checkSmtp`): Hetzner Cloud
+  (also AWS, GCP) blocks 25/465 going out, so CCT's kasserver with 465 failed from prod while it
+  worked from a Mac (probed 2026-11-23). „Neues Postfach“ is
   a page of its own (`…/nachrichten|dateien/mail/postfaecher/neu`, `routes.*NewMailbox`,
   `ui.newMailboxPath`; `NewMailbox` in `MailAccounts.tsx`, Sender's page wraps it in a
   `CloudProvider` for the chat): only the add form; old `#hinzufuegen` links redirect there, OAuth

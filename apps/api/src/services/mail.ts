@@ -182,9 +182,10 @@ export async function listMailAccounts(
   return rows.map(accountDto);
 }
 
+/** Tries a mailbox's sign-in; the SMTP way that worked instead of the one given goes into it. */
 async function checked(deps: AppDeps, login: MailLogin) {
   try {
-    await mailServersOf(deps).check(login);
+    Object.assign(login, await mailServersOf(deps).check(login));
   } catch (error) {
     // The form shows the step where it stopped and what the server said.
     if (error instanceof MailCheckError)

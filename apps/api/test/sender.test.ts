@@ -56,7 +56,7 @@ import type {
   SeenFlag,
   SeenMark,
 } from '../src/mail/servers';
-import { imapOptions, smtpOptions } from '../src/mail/servers';
+import { checkSmtp, imapOptions, otherSmtp, smtpOptions } from '../src/mail/servers';
 import {
   calendarAccessToken,
   calendarGrant,
@@ -2465,6 +2465,58 @@ describe('Sender – the workspace’s messages', () => {
     expect(
       mailFailure(Object.assign(new Error('connect'), { code: 'ECONNREFUSED' }), 'IMAP').step,
     ).toBe('imap-server');
+    // SMTP's port silent (465 blocked going out, as at Hetzner): the other usual way into the
+    // same server is tried and kept – 587 only with STARTTLS. A refusal is never worked around.
+    const cct = {
+      ...gmx,
+      name: 'Ich',
+      address: 'ich@cct-ev.de',
+      username: 'ich@cct-ev.de',
+      imapHost: 'mail.kas.de',
+      imapPort: 993,
+      imapSecure: true,
+      smtpHost: 'mail.kas.de',
+      smtpPort: 465,
+      smtpSecure: true,
+    };
+    const tried: string[] = [];
+    const via = (answers: Record<number, Error | undefined>) => async (one: typeof cct) => {
+      tried.push(`${one.smtpHost}:${one.smtpPort}:${one.smtpSecure}`);
+      const error = answers[one.smtpPort];
+      if (error) throw error;
+    };
+    const timeout = Object.assign(new Error('Connection timeout'), { code: 'ETIMEDOUT' });
+    await expect(checkSmtp(cct, via({ 465: timeout }))).resolves.toEqual({
+      smtpPort: 587,
+      smtpSecure: false,
+    });
+    expect(tried).toEqual(['mail.kas.de:465:true', 'mail.kas.de:587:false']);
+    expect(smtpOptions({ ...cct, smtpPort: 587, smtpSecure: false }, '1.2.3.4')).toMatchObject({
+      secure: false,
+      requireTLS: true,
+    });
+    await expect(checkSmtp(cct, via({}))).resolves.toBeUndefined();
+    const smtpRefused = Object.assign(new Error('Invalid login'), {
+      code: 'EAUTH',
+      responseCode: 535,
+    });
+    tried.length = 0;
+    await expect(checkSmtp(cct, via({ 465: smtpRefused }))).rejects.toMatchObject({
+      failure: { step: 'smtp-login' },
+    });
+    expect(tried).toEqual(['mail.kas.de:465:true']);
+    // Both silent: what 465 said; 587 reached and refusing: what it said.
+    await expect(checkSmtp(cct, via({ 465: timeout, 587: timeout }))).rejects.toMatchObject({
+      message: expect.stringContaining('antwortet nicht'),
+    });
+    await expect(checkSmtp(cct, via({ 465: timeout, 587: smtpRefused }))).rejects.toMatchObject({
+      failure: { step: 'smtp-login' },
+    });
+    expect(otherSmtp({ smtpPort: 587, smtpSecure: false })).toEqual({
+      smtpPort: 465,
+      smtpSecure: true,
+    });
+    expect(otherSmtp({ smtpPort: 25, smtpSecure: false })).toBeUndefined();
     expect(
       ['ich@hotmail.co.uk', 'ich@live.de', 'ich@msn.com', 'ich@Outlook.fr'].map(
         (one) => mailProviderOf(one)?.name,
