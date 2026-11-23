@@ -18,6 +18,7 @@ import { CloudSidebar } from './components/CloudSidebar';
 import { Preview } from './components/Preview';
 import { TodoPanel } from './components/todos/TodoList';
 import { EventPanel } from './components/calendar/EventPanel';
+import { CallPanel } from './components/CallPanel';
 import { SearchPalette } from './components/SearchPalette';
 import { useBarSearch } from './hooks/useBarSearch';
 import { SearchResults } from './SearchResults';
@@ -141,6 +142,7 @@ export function Component() {
         <Preview />
         <TodoPanel />
         <EventPanel />
+        <CallPanel />
         <SearchPalette />
         <SenderToast />
       </CloudProvider>

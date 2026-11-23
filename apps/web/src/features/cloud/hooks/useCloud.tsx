@@ -40,7 +40,13 @@ import {
   useMailAccounts,
 } from '@/lib/api';
 import { windowForApp } from '@/lib/apps';
-import { CLOUD_EVENT_PARAM, CLOUD_FILE_PARAM, CLOUD_TODO_PARAM, routes } from '@/lib/routes';
+import {
+  CLOUD_CALL_PARAM,
+  CLOUD_EVENT_PARAM,
+  CLOUD_FILE_PARAM,
+  CLOUD_TODO_PARAM,
+  routes,
+} from '@/lib/routes';
 import { useAccount } from '@/features/auth';
 import { handToNewMail, NEW_MAIL } from '@/features/sender';
 import { canCreateDecks } from '@/features/workspaces';
@@ -289,6 +295,7 @@ export function CloudProvider({
           // One panel beside the page: a to-do's or an event's makes way.
           next.delete(CLOUD_TODO_PARAM);
           next.delete(CLOUD_EVENT_PARAM);
+          next.delete(CLOUD_CALL_PARAM);
           return next;
         },
         { replace },
@@ -1009,6 +1016,7 @@ export function CloudProvider({
       {dialog?.kind === 'color' && (
         <FolderColorDialog
           node={dialog.node}
+          areas={home?.areas}
           onClose={close}
           onPick={(color) => {
             close();

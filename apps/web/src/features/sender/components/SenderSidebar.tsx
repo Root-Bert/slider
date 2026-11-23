@@ -1,10 +1,11 @@
 import { useState, type ReactNode } from 'react';
 import { NavLink, useNavigate, useSearchParams } from 'react-router';
 import type { SenderAgent, SenderArea, SenderPinKind } from '@slider/shared';
-import { AgentAvatar, AreaDot } from '@/features/cloud';
+import { AgentAvatar, AreaDot, useDeleteAgentAction } from '@/features/cloud';
 import { canCreateDecks, WorkspaceMark } from '@/features/workspaces';
 import { Avatar, Button, cn, ContextMenu, Icon } from '@/ui';
-import { useMailThreads } from '@/lib/api';
+import { accentColor, onAccentClass } from '@/lib/accent';
+import { useMailThreads, useOwnColor } from '@/lib/api';
 import { routes } from '@/lib/routes';
 import { BarStartLink } from '@/shell/BarStartLink';
 import { useSender } from '../hooks/useSender';
@@ -33,16 +34,18 @@ export function SidebarDivider() {
   return <div role="separator" className="mx-2 my-2 shrink-0 border-t border-hairline-strong" />;
 }
 
-/** What is unread: a count, red when someone wrote one's name. */
+/** What is unread: a count in one's own colour (Einstellungen), „@“ when someone wrote one's name. */
 export function Unread({ count, mentioned }: { count: number; mentioned?: boolean }) {
+  const color = useOwnColor();
   if (count === 0 && !mentioned) return null;
   return (
     <span
       aria-label={mentioned ? `${count} ungelesen, du bist erwähnt` : `${count} ungelesen`}
       className={cn(
         'flex h-[18px] min-w-[18px] shrink-0 items-center justify-center rounded-full px-1.5 text-micro font-semibold tabular-nums',
-        'bg-logo text-white',
+        color ? onAccentClass(color) : 'bg-logo text-white',
       )}
+      style={color ? { backgroundColor: accentColor(color) } : undefined}
     >
       {mentioned && count === 0 ? '@' : count}
     </span>
@@ -59,6 +62,7 @@ function Row({
   after,
   title,
   pin,
+  agent,
 }: {
   to: string;
   mark: ReactNode;
@@ -70,10 +74,19 @@ function Row({
   title?: string;
   /** A chat: its menu (right click, long press) pins it to the top of the list or lets it go. */
   pin?: { kind: SenderPinKind; id: string; pinnedAt?: string | null };
+  /** An agent's chat: „Löschen“ in that menu too, for who may. */
+  agent?: SenderAgent;
 }) {
   const ui = useSender();
   const menu = useRowMenu();
   const pinAction = usePinAction(ui.workspace.id, ui.notify);
+  const remove = useDeleteAgentAction({
+    agent: agent ?? null,
+    to,
+    homePath: ui.homePath,
+    workspaceId: ui.workspace.id,
+    notify: ui.notify,
+  });
   return (
     <>
       <NavLink
@@ -93,11 +106,12 @@ function Row({
       {pin && menu.at && (
         <ContextMenu
           label={`Aktionen für „${name}“`}
-          actions={[pinAction(pin.kind, pin.id, pin.pinnedAt)]}
+          actions={[pinAction(pin.kind, pin.id, pin.pinnedAt), ...remove.actions]}
           at={menu.at}
           onClose={menu.close}
         />
       )}
+      {remove.dialog}
     </>
   );
 }
@@ -147,6 +161,7 @@ function AgentRow({ agent }: { agent: SenderAgent }) {
       title={agent.title}
       unread={agent.unread}
       pin={{ kind: pinKindOf(agent), id: agent.id, pinnedAt: agent.pinnedAt }}
+      agent={agent}
       mark={<AgentAvatar id={agent.id} size={18} className="rounded-mark" />}
       after={
         agent.running ? (

@@ -9,17 +9,7 @@ import { Link } from 'react-router';
 import type { CloudArea, CloudAreaMember } from '@slider/shared';
 import { pluralize } from '@/lib/format';
 import { routes } from '@/lib/routes';
-import {
-  Avatar,
-  Badge,
-  Button,
-  cn,
-  Icon,
-  IconButton,
-  Menu,
-  TextField,
-  type MenuAction,
-} from '@/ui';
+import { Avatar, Badge, Button, cn, Icon, IconButton, Menu, type MenuAction } from '@/ui';
 import { WorkspaceMark } from '@/features/workspaces';
 import { useCloud } from '../hooks/useCloud';
 
@@ -46,13 +36,16 @@ const clamp = (zoom: number) => Math.min(MAX_ZOOM, Math.max(MIN_ZOOM, zoom));
  * „Bereiche“ › „Personen“ as a net: the workspace in the middle, the areas around it, each
  * area's people as dots around it – who works in several areas stands in each of them, and
  * all their dots light up together. Free to move (drag) and to zoom (pinch, ⌘ and the wheel, the buttons), so it holds
- * hundreds of people; an area picked – or a name typed – lights up its people.
+ * hundreds of people; an area picked – or a name typed in the page's bar (`query`) – lights up
+ * its people.
  */
 export function PeopleGraph({
   areas,
+  query,
   actionsFor,
 }: {
   areas: readonly CloudArea[];
+  query: string;
   actionsFor: (area: CloudArea) => MenuAction[];
 }) {
   const ui = useCloud();
@@ -132,19 +125,7 @@ export function PeopleGraph({
   const [overArea, setOverArea] = useState<string | null>(null);
   // The dot the pointer is on: a person stands once in each of their areas.
   const [overDot, setOverDot] = useState<string | null>(null);
-  const [query, setQuery] = useState('');
   const [dragging, setDragging] = useState(false);
-  /** Over the whole window – for a net larger than the page. */
-  const [full, setFull] = useState(false);
-  // Esc leaves it wherever the focus stands.
-  useEffect(() => {
-    if (!full) return;
-    const leave = (event: KeyboardEvent) => {
-      if (event.key === 'Escape') setFull(false);
-    };
-    window.addEventListener('keydown', leave);
-    return () => window.removeEventListener('keydown', leave);
-  }, [full]);
 
   const drag = useRef<{ x: number; y: number; from: Camera; far: boolean } | null>(null);
   const onPointerDown = (event: ReactPointerEvent<HTMLDivElement>) => {
@@ -181,12 +162,6 @@ export function PeopleGraph({
       `${memberOf.get(personId)?.name ?? ''} ${memberOf.get(personId)?.title ?? ''}`
         .toLowerCase()
         .includes(words));
-  const found =
-    words === ''
-      ? 0
-      : new Set(graph.people.filter((person) => isLit(person.id, person.areaIds)).map((p) => p.id))
-          .size;
-
   const pickedArea = picked ? areaOf.get(picked) : undefined;
 
   const pointedMember = overPerson ? memberOf.get(overPerson) : undefined;
@@ -197,14 +172,10 @@ export function PeopleGraph({
     member.id === ui.userId ? 'Du' : (member.name.split(' ')[0] ?? member.name);
 
   return (
-    <div
-      className={cn(
-        // As tall as the page has room: the net scrolls and zooms in itself, the page stays put.
-        // Free on the page's ground as „Ordner“'s tree, no box around it (the user, 2026-11-23:
-        // „Order ist so frei und personen mit box. Personen sollen auch frei sein.“).
-        full ? 'fixed inset-0 z-(--z-panel) bg-canvas' : 'relative min-h-[320px] flex-1',
-      )}
-    >
+    // As tall as the page has room: the net scrolls and zooms in itself, the page stays put.
+    // Free on the page's ground as „Ordner“'s tree, no box around it (the user, 2026-11-23:
+    // „Order ist so frei und personen mit box. Personen sollen auch frei sein.“).
+    <div className="relative min-h-[320px] flex-1">
       <div
         ref={frame}
         role="group"
@@ -382,71 +353,41 @@ export function PeopleGraph({
         </div>
       )}
 
-      <div className="pointer-events-none absolute inset-x-3 top-3 flex items-start justify-between gap-3">
-        {pickedArea ? (
-          <div className="glass pointer-events-auto flex max-w-72 items-center gap-3 rounded-panel py-2 pr-2 pl-3">
-            <AreaDot color={pickedArea.color} size="lg" />
-            <span className="flex min-w-0 flex-1 flex-col">
-              <span className="flex min-w-0 items-center gap-1.5">
-                <Link
-                  to={routes.cloudArea(ui.workspace.id, pickedArea.id)}
-                  className="truncate rounded-mark text-body font-semibold text-fg outline-none hover:underline focus-visible:ring-2 focus-visible:ring-focus"
-                >
-                  {pickedArea.name}
-                </Link>
-                {pickedArea.visibility === 'members' && (
-                  <Icon
-                    name="lock"
-                    size={14}
-                    className="shrink-0 text-fg-subtle"
-                    label="Nur für seine Personen"
-                  />
-                )}
-              </span>
-              <span className="text-xs text-fg-muted">
-                {pluralize(pickedArea.members.length, 'Person', 'Personen')}
-              </span>
+      {/* On the page's edges, as the bar above and the zoom below. */}
+      {pickedArea && (
+        <div className="glass absolute top-0 left-0 flex max-w-72 items-center gap-3 rounded-panel py-2 pr-2 pl-3">
+          <AreaDot color={pickedArea.color} size="lg" />
+          <span className="flex min-w-0 flex-1 flex-col">
+            <span className="flex min-w-0 items-center gap-1.5">
+              <Link
+                to={routes.cloudArea(ui.workspace.id, pickedArea.id)}
+                className="truncate rounded-mark text-body font-semibold text-fg outline-none hover:underline focus-visible:ring-2 focus-visible:ring-focus"
+              >
+                {pickedArea.name}
+              </Link>
+              {pickedArea.visibility === 'members' && (
+                <Icon
+                  name="lock"
+                  size={14}
+                  className="shrink-0 text-fg-subtle"
+                  label="Nur für seine Personen"
+                />
+              )}
             </span>
-            {actionsFor(pickedArea).length > 0 && (
-              <Menu
-                label={`Aktionen für den Bereich ${pickedArea.name}`}
-                actions={actionsFor(pickedArea)}
-              />
-            )}
-          </div>
-        ) : (
-          <span />
-        )}
-        <div className="pointer-events-auto flex flex-col items-end gap-1">
-          <div className="flex items-center gap-1.5">
-            <div className="w-56">
-              <TextField
-                aria-label="Person suchen"
-                placeholder="Person suchen"
-                icon="search"
-                autoComplete="off"
-                value={query}
-                onChange={(event) => setQuery(event.target.value)}
-              />
-            </div>
-            <span className="glass flex rounded-control">
-              <IconButton
-                icon={full ? 'closeFullscreen' : 'openInFull'}
-                label={full ? 'Vollbild verlassen' : 'Vollbild'}
-                aria-pressed={full}
-                onClick={() => setFull(!full)}
-              />
+            <span className="text-xs text-fg-muted">
+              {pluralize(pickedArea.members.length, 'Person', 'Personen')}
             </span>
-          </div>
-          {words !== '' && (
-            <span className="rounded-mark bg-surface-1/80 px-1 text-xs text-fg-muted" role="status">
-              {found === 0 ? 'Niemand gefunden' : pluralize(found, 'Person', 'Personen')}
-            </span>
+          </span>
+          {actionsFor(pickedArea).length > 0 && (
+            <Menu
+              label={`Aktionen für den Bereich ${pickedArea.name}`}
+              actions={actionsFor(pickedArea)}
+            />
           )}
         </div>
-      </div>
+      )}
 
-      <div className="glass absolute right-3 bottom-3 flex items-center gap-0.5 rounded-control p-1">
+      <div className="glass absolute right-0 bottom-0 flex items-center gap-0.5 rounded-control p-1">
         <IconButton
           icon="remove"
           label="Verkleinern"

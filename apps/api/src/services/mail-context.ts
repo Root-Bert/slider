@@ -2,10 +2,12 @@ import type Anthropic from '@anthropic-ai/sdk';
 import { eq } from 'drizzle-orm';
 import {
   MAIL_VERDICTS,
+  type MailAuth,
   type MailContext,
   type MailContextDocument,
   type MailContextFiling,
   type MailContextLink,
+  type MailVerdict,
 } from '@slider/shared';
 import {
   mailAccounts,
@@ -13,6 +15,7 @@ import {
   mailThreads,
   type MailAccountRow,
   type MailMessageRow,
+  type MailThreadRow,
 } from '../db/schema';
 import type { AppDeps } from '../deps';
 import { badRequest, notFound } from '../http/errors';
@@ -195,33 +198,67 @@ const decoded = (text: string) =>
     .replace(/&#39;/g, "'")
     .replace(/&amp;/g, '&');
 
+/** What a link to unsubscribe says in its words or its address. */
+const UNSUBSCRIBE = /abmeld|abbestell|austragen|unsubscri|opt.?out/i;
+
+/** A mail's HTML links (sanitized: attributes quoted, `services/mail-html.ts`) with their words. */
+const anchors = (html: string | null) =>
+  [...(html ?? '').matchAll(/<a\b[^>]*?\bhref="([^"]+)"[^>]*>([\s\S]*?)<\/a>/gi)].map(
+    ([, href, inner]) => ({
+      href: decoded(href!),
+      words: decoded(inner!.replace(/<[^>]*>/g, ' '))
+        .replace(/\s+/g, ' ')
+        .trim(),
+    }),
+  );
+
+const TEXT_URL = /https:\/\/[^\s<>"')\]]+/g;
+const textUrl = (url: string) => url.replace(/[.,;:!?]+$/, '');
+
+const https = (url: string): URL | null => {
+  try {
+    const parsed = new URL(url);
+    return parsed.protocol === 'https:' ? parsed : null;
+  } catch {
+    return null;
+  }
+};
+
 /**
- * The https links in a mail – its HTML's (sanitized: attributes quoted, `services/mail-html.ts`)
- * with their words, else the addresses in its text –, each once, unsubscribing left out.
+ * The https links in a mail – its HTML's with their words, else the addresses in its text –,
+ * each once, unsubscribing left out (`unsubscribeLink`).
  */
 export function mailLinks(row: Pick<MailMessageRow, 'html' | 'text'>): MailContextLink[] {
   const found: MailContextLink[] = [];
   const add = (url: string, label: string) => {
-    try {
-      const parsed = new URL(url);
-      if (parsed.protocol !== 'https:' || found.some((one) => one.url === parsed.href)) return;
-      const words = label.replace(/\s+/g, ' ').trim().slice(0, 80) || parsed.hostname;
-      if (/abmelden|abbestellen|unsubscribe|opt.?out/i.test(`${words} ${parsed.href}`)) return;
-      found.push({ label: words, url: parsed.href });
-    } catch {
-      // Not an address: left out.
-    }
+    const parsed = https(url);
+    if (!parsed || found.some((one) => one.url === parsed.href)) return;
+    const words = label.slice(0, 80) || parsed.hostname;
+    if (UNSUBSCRIBE.test(`${words} ${parsed.href}`)) return;
+    found.push({ label: words, url: parsed.href });
   };
-  if (row.html) {
-    for (const [, href, inner] of row.html.matchAll(
-      /<a\b[^>]*?\bhref="([^"]+)"[^>]*>([\s\S]*?)<\/a>/gi,
-    )) {
-      add(decoded(href!), decoded(inner!.replace(/<[^>]*>/g, ' ')));
-    }
-  }
-  for (const [url] of row.text.matchAll(/https:\/\/[^\s<>"')\]]+/g))
-    add(url.replace(/[.,;:!?]+$/, ''), '');
+  for (const { href, words } of anchors(row.html)) add(href, words);
+  for (const [url] of row.text.matchAll(TEXT_URL)) add(textUrl(url), '');
   return found.slice(0, MAX_MAIL_LINKS);
+}
+
+/**
+ * Where a newsletter is unsubscribed from: its HTML's https link whose words say so, else one
+ * whose address does, else such an address in its text (or right after words that say so).
+ * `null`: none – no newsletter.
+ */
+export function unsubscribeLink(row: Pick<MailMessageRow, 'html' | 'text'>): string | null {
+  const links = anchors(row.html).filter(({ href }) => https(href));
+  const hit =
+    links.find(({ words }) => UNSUBSCRIBE.test(words)) ??
+    links.find(({ href }) => UNSUBSCRIBE.test(href));
+  if (hit) return https(hit.href)!.href;
+  for (const found of row.text.matchAll(TEXT_URL)) {
+    const before = row.text.slice(Math.max(0, found.index - 80), found.index);
+    const url = https(textUrl(found[0]));
+    if (url && UNSUBSCRIBE.test(`${before} ${url.href}`)) return url.href;
+  }
+  return null;
 }
 
 /**
@@ -406,23 +443,27 @@ export function askMailContext(deps: AppDeps, threadId: string): void {
 /** Mails the AI looks at by itself per mailbox and hour – strangers' mails cannot spend the
  * workspace's AI without end; past it, a conversation is looked at when asked. */
 const MAX_LOOKS_PER_HOUR = 30;
+/** The provider's spam folder has a share of its own: a flood there takes none of the inbox's. */
+const MAX_SPAM_LOOKS_PER_HOUR = 15;
 const looks = new Map<string, number[]>();
 
-function mayLookBySelf(accountId: string, now: number): boolean {
-  const recent = (looks.get(accountId) ?? []).filter((at) => now - at < 60 * 60 * 1000);
-  const allowed = recent.length < MAX_LOOKS_PER_HOUR;
+function mayLookBySelf(key: string, max: number, now: number): boolean {
+  const recent = (looks.get(key) ?? []).filter((at) => now - at < 60 * 60 * 1000);
+  const allowed = recent.length < max;
   if (allowed) recent.push(now);
-  looks.set(accountId, recent);
+  looks.set(key, recent);
   return allowed;
 }
 
-// A new mail in a conversation (not one in the provider's spam folder): the AI looks at it.
+// A new mail in a conversation: the AI looks at it – in the provider's spam folder too, whether
+// it is spam after all; not one the filter, the AI or its person put into spam before.
 onNewMail((deps, threadId) => {
   void (async () => {
     const [thread] = await deps.db
       .select({
         accountId: mailThreads.accountId,
         spam: mailThreads.spam,
+        spamBy: mailThreads.spamBy,
         contextState: mailThreads.contextState,
         aiReads: mailAccounts.aiReads,
       })
@@ -430,10 +471,37 @@ onNewMail((deps, threadId) => {
       .innerJoin(mailAccounts, eq(mailAccounts.id, mailThreads.accountId))
       .where(eq(mailThreads.id, threadId));
     // Its person turned the AI's reading off: looked at only when asked.
-    if (!thread?.aiReads || (thread.spam && thread.contextState === 'none')) return;
-    if (mayLookBySelf(thread.accountId, deps.clock.now().getTime())) askMailContext(deps, threadId);
+    if (!thread?.aiReads) return;
+    const providers = thread.spam && thread.spamBy === 'server';
+    if (thread.spam && !providers && thread.contextState === 'none') return;
+    const now = deps.clock.now().getTime();
+    if (
+      providers
+        ? mayLookBySelf(`${thread.accountId}:spam`, MAX_SPAM_LOOKS_PER_HOUR, now)
+        : mayLookBySelf(thread.accountId, MAX_LOOKS_PER_HOUR, now)
+    )
+      askMailContext(deps, threadId);
   })();
 });
+
+/**
+ * Where the AI's verdict puts a conversation: spam or phishing from someone never answered goes
+ * out of the way; what the provider put into spam comes back to the inbox when the AI finds it
+ * fine and the latest mail's domain vouched for its sender. Both marked `ai`, to be checked; what
+ * its person decided (by hand or by a rule for the sender) stays. `null`: it stays where it is.
+ */
+export function spamAfterLook(
+  thread: Pick<MailThreadRow, 'spam' | 'spamBy'>,
+  verdict: MailVerdict,
+  answered: boolean,
+  lastAuth: MailAuth | null,
+): Pick<MailThreadRow, 'spam' | 'spamBy'> | null {
+  if (thread.spamBy === 'person' || thread.spamBy === 'rule') return null;
+  if (verdict !== 'ok' && !answered && !thread.spam) return { spam: true, spamBy: 'ai' };
+  if (verdict === 'ok' && thread.spam && thread.spamBy === 'server' && lastAuth === 'pass')
+    return { spam: false, spamBy: 'ai' };
+  return null;
+}
 
 async function owner(deps: AppDeps, threadId: string) {
   const [row] = await deps.db
@@ -547,6 +615,11 @@ async function lookAt(deps: AppDeps, threadId: string): Promise<void> {
 
   const user = [
     `Postfach der Person: ${account.address}`,
+    ...(thread.spam && thread.spamBy === 'server'
+      ? [
+          'Der Mail-Anbieter hat diese Unterhaltung in den Spam-Ordner gelegt. Urteile selbst, ob sie Spam oder Phishing ist – Anbieter irren sich auch bei echten Mails.',
+        ]
+      : []),
     `Die Unterhaltung, älteste Mail zuerst:\n${conversationText(rows)}`,
     ownLinks.length > 0
       ? `Links in der letzten Mail:\n${ownLinks.map((link, index) => `${index}. ${link.label} – ${link.url.slice(0, 200)}`).join('\n')}`
@@ -635,15 +708,23 @@ async function lookAt(deps: AppDeps, threadId: string): Promise<void> {
     documents,
     filing,
   };
-  // Spam or phishing from someone never answered: out of the way (the person can take it back).
-  const answered = rows.some((row) => row.outgoing);
+  // Into spam or out of the provider's (the person can take it back) – as it lies now: its person
+  // may have decided while the AI looked.
+  const [now] = await deps.db
+    .select({ spam: mailThreads.spam, spamBy: mailThreads.spamBy })
+    .from(mailThreads)
+    .where(eq(mailThreads.id, threadId));
+  const moved = now
+    ? spamAfterLook(
+        now,
+        verdict,
+        rows.some((row) => row.outgoing),
+        lastIn?.auth ?? null,
+      )
+    : null;
   await deps.db
     .update(mailThreads)
-    .set({
-      context,
-      contextState: 'done',
-      ...(verdict !== 'ok' && !answered && !thread.spam ? { spam: true } : {}),
-    })
+    .set({ context, contextState: 'done', ...moved })
     .where(eq(mailThreads.id, threadId));
   await tellThread(deps, threadId);
 }

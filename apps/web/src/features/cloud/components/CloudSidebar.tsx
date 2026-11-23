@@ -61,6 +61,7 @@ import { useShownEvent } from './calendar/EventPanel';
 import { DROP_FAILED, droppedFiles } from '../lib/upload';
 import { areaColor } from './AreaDot';
 import { AgentAvatar } from './AgentAvatar';
+import { useDeleteAgentAction } from './AgentActions';
 import { AreaMark } from './AreaMark';
 import { useBarSearch } from '../hooks/useBarSearch';
 import { BarHits } from './BarHits';
@@ -84,6 +85,8 @@ const rowClass = ({ isActive }: { isActive: boolean }) =>
     isActive ? 'bg-selected font-medium text-fg' : 'text-fg-muted hover:bg-hover hover:text-fg',
   );
 const foldedRow = 'lg:w-[38px] lg:justify-center lg:px-0';
+/** The storage meter's box at the bar's foot: a row's inset, 46px high like the folded ring's. */
+const FOOT_BOX = 'h-[46px] px-2.5 py-1.5';
 
 /**
  * A row of the side bar as a place to drop onto: what is dragged inside the page goes to
@@ -423,6 +426,13 @@ function ChatRow({
   const folded = use(Folded);
   const menu = useRowMenu();
   const pinAction = usePinAction(ui.workspace.id, ui.notify);
+  const remove = useDeleteAgentAction({
+    agent: !isMailChat(chat) && 'title' in chat ? chat : null,
+    to,
+    homePath: routes.cloud(ui.workspace.id),
+    workspaceId: ui.workspace.id,
+    notify: ui.notify,
+  });
   // A mail a colleague is on: as a group.
   const mark = isMailChat(chat) ? (
     <Icon name="groups" size={18} />
@@ -462,11 +472,12 @@ function ChatRow({
       {menu.at && (
         <ContextMenu
           label={`Aktionen für „${name}“`}
-          actions={[pinAction(pinKindOf(chat), chat.id, chat.pinnedAt)]}
+          actions={[pinAction(pinKindOf(chat), chat.id, chat.pinnedAt), ...remove.actions]}
           at={menu.at}
           onClose={menu.close}
         />
       )}
+      {remove.dialog}
     </>
   );
 }
@@ -686,9 +697,8 @@ export function CloudSidebar({
       <nav
         aria-label="Cloud"
         className={cn(
-          // Room at its foot for the meter fixed there – folded only for its small ring.
-          'relative flex w-57 shrink-0 flex-col gap-0.5',
-          folded ? 'lg:pb-12' : 'lg:pb-16',
+          // Room at its foot for the meter fixed there – open or folded the same (46px and a gap).
+          'relative flex w-57 shrink-0 flex-col gap-0.5 lg:pb-16',
           // Folding and unfolding glides: the page beside it follows the width.
           'lg:transition-[width] lg:duration-200 lg:ease-emphasized motion-reduce:transition-none',
           folded && 'lg:w-[38px]',
@@ -752,16 +762,6 @@ export function CloudSidebar({
               <NavRow to={routes.cloudConnections(workspace.id)} icon="link">
                 Verbindungen
               </NavRow>
-              {home?.ownFiles !== false && (
-                <NavRow
-                  to={routes.cloudOwn(workspace.id)}
-                  icon="folder"
-                  onNodes={(nodes) => ui.moveInto(nodes, OWN_FILES)}
-                  onFiles={(data) => filesInto(data, OWN_FILES)}
-                >
-                  Meine Dateien
-                </NavRow>
-              )}
               {/* Only where something is shared: a presentation open to chosen people lies here. */}
               {(home?.sharing || home?.shared) && (
                 <NavRow
@@ -802,12 +802,23 @@ export function CloudSidebar({
                   Gelöscht
                 </NavRow>
               )}
-              {/* Agents and to-dos, a section of their own under the places, set apart by a line:
-                each an overview of one's own, the workspace's and every area's. */}
+              {/* Files, agents and to-dos, a section of their own under the places, set apart by a
+                line: each an overview of one's own, the workspace's and every area's. */}
               {/* The same line as the handles' (`BarHandle`), only not dragged. */}
               <div role="separator" className="mx-2 flex h-4 shrink-0 items-center">
                 <div className="h-px w-full bg-hairline-strong" />
               </div>
+              {home?.ownFiles !== false && (
+                // Dropped on, it goes to one's own – as what comes in on „Dateien“'s „Alle“.
+                <NavRow
+                  to={routes.cloudFiles(workspace.id)}
+                  icon="folder"
+                  onNodes={(nodes) => ui.moveInto(nodes, OWN_FILES)}
+                  onFiles={(data) => filesInto(data, OWN_FILES)}
+                >
+                  Dateien
+                </NavRow>
+              )}
               <NavRow to={routes.cloudAgents(workspace.id)} icon="autoAwesome">
                 Agenten
               </NavRow>
@@ -919,6 +930,7 @@ export function CloudSidebar({
         >
           {home && (
             <>
+              {/* A row's box: its text where the rows' icons begin, as high as the ring's folded. */}
               <div className={cn(folded && foldedHide)}>
                 {overviewTo ? (
                   <NavLink
@@ -926,7 +938,8 @@ export function CloudSidebar({
                     title="Übersicht öffnen"
                     className={({ isActive }) =>
                       cn(
-                        '-m-2 block rounded-chip p-2 transition-colors',
+                        'block rounded-chip transition-colors',
+                        FOOT_BOX,
                         isActive ? 'bg-selected' : 'hover:bg-hover',
                       )
                     }
@@ -934,7 +947,9 @@ export function CloudSidebar({
                     <StorageMeter storage={home.storage} />
                   </NavLink>
                 ) : (
-                  <StorageMeter storage={home.storage} />
+                  <div className={FOOT_BOX}>
+                    <StorageMeter storage={home.storage} />
+                  </div>
                 )}
               </div>
               {/* Folded there is no room for the bar: the same parts as a ring, in the middle of the
@@ -947,7 +962,7 @@ export function CloudSidebar({
                       aria-label="Übersicht öffnen"
                       className={({ isActive }) =>
                         cn(
-                          'hidden h-[38px] w-full items-center justify-center rounded-chip transition-colors lg:flex',
+                          'hidden h-[46px] w-full items-center justify-center rounded-chip transition-colors lg:flex',
                           isActive ? 'bg-selected' : 'hover:bg-hover',
                         )
                       }
@@ -955,7 +970,7 @@ export function CloudSidebar({
                       <StorageRing storage={home.storage} />
                     </NavLink>
                   ) : (
-                    <span className="hidden w-full justify-center lg:flex">
+                    <span className="hidden h-[46px] w-full items-center justify-center lg:flex">
                       <StorageRing storage={home.storage} />
                     </span>
                   )}

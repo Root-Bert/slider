@@ -2608,6 +2608,33 @@ export async function createCloudAgent(
 }
 
 /**
+ * A new agent without an order yet – „Neuer Agent“ in a call: it hears along and works once it is
+ * spoken to. Same rights as `createCloudAgent`; nothing runs, its chat starts empty.
+ */
+export async function createIdleCloudAgent(
+  deps: AppDeps,
+  viewer: Viewer,
+  workspaceId: string,
+  title: string,
+  areaId: string | null = null,
+): Promise<CloudAgentDetail> {
+  const userId = viewer.author.id;
+  await membersWork(deps, workspaceId, userId);
+  if (areaId) await areaToWorkIn(deps, workspaceId, userId, areaId);
+  const found = await workspaceAiConnection(deps, workspaceId);
+  if (!found.connection) throw new ApiError(409, 'ai_not_configured', found.error);
+  const now = deps.clock.now();
+  const id = crypto.randomUUID();
+  await deps.db.transaction(async (tx) => {
+    await tx
+      .insert(cloudAgents)
+      .values({ id, workspaceId, userId, areaId, title, createdAt: now, updatedAt: now });
+    await tx.insert(cloudAgentChats).values({ id, agentId: id, userId, createdAt: now });
+  });
+  return getCloudAgent(deps, viewer.author, id);
+}
+
+/**
  * An agent writes and changes files: members and admins give it work. Who only looks or
  * comments (`viewer`, `reviewer`) reads what agents did, and ask the chat, which finds and reads for them.
  */

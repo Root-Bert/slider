@@ -1,4 +1,9 @@
-import { CLOUD_AREA_MAX_DEPTH, type CloudArea } from '@slider/shared';
+import {
+  CLOUD_AREA_MAX_DEPTH,
+  type CloudArea,
+  type CloudAreaColor,
+  type CloudNode,
+} from '@slider/shared';
 import { routes } from '@/lib/routes';
 
 /** The areas as lists show them: each followed by those under it, with how deep it lies. */
@@ -73,3 +78,16 @@ export const canHaveAreasUnder = (areas: readonly CloudArea[], area: CloudArea) 
   !isWorkspaceOwn(area) &&
   area.access === 'manage' &&
   areasAbove(areas, area).length + 1 < CLOUD_AREA_MAX_DEPTH;
+
+/**
+ * A folder's colour as drawn: its own, else its area's – not the workspace's own area's, which
+ * shows a picture, no colour. `null`: the plain folder.
+ */
+export function folderColor(
+  node: Pick<CloudNode, 'color' | 'areaId'>,
+  areas: readonly Pick<CloudArea, 'id' | 'color' | 'root'>[] | undefined,
+): CloudAreaColor | null {
+  if (node.color) return node.color;
+  const area = node.areaId ? areas?.find((each) => each.id === node.areaId) : undefined;
+  return area && !isWorkspaceOwn(area) ? area.color : null;
+}

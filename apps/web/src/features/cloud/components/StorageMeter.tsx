@@ -142,7 +142,7 @@ export function StorageRing({
 export function StorageMeter({ storage }: { storage: CloudHome['storage'] }) {
   const full = storage.maxBytes !== null && storage.usedBytes >= storage.maxBytes * 0.95;
   return (
-    <div className="flex flex-col gap-2.5">
+    <div className="flex flex-col gap-1.5">
       <div className="flex items-baseline justify-between gap-2 whitespace-nowrap">
         <span className="text-body font-medium text-fg">Speicher</span>
         <span className={cn('text-xs tabular-nums', full ? 'text-warning' : 'text-fg-muted')}>

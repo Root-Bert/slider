@@ -5,6 +5,7 @@ import { GlassPanel, SegmentedControl } from '@/ui';
 import { AreaMark } from './components/AreaMark';
 import { AreaViews } from './components/AreaViews';
 import { CloudPage } from './components/CloudPage';
+import { useShownCall } from './components/CallPanel';
 import { useCloud } from './hooks/useCloud';
 import { areaTrail } from './lib/areas';
 
@@ -18,6 +19,7 @@ export function Component() {
   const ui = useCloud();
   const sender = useSenderOrNull();
   const navigate = useNavigate();
+  const shownCall = useShownCall();
   const { workspace } = ui;
   const areas = ui.home?.areas;
   const area = areas?.find((each) => each.id === areaId) ?? null;
@@ -70,7 +72,7 @@ export function Component() {
             className="flex min-h-0 flex-1 flex-col"
             onMouseDown={(event) => event.stopPropagation()}
           >
-            <Conversation channelId={open.id} compact />
+            <Conversation channelId={open.id} compact callHref={shownCall.href} />
           </div>
         ) : null
       }

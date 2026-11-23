@@ -8,6 +8,7 @@ import {
   mailOAuthStartSchema,
   mailReplySchema,
   mailSendSchema,
+  mailRuleSchema,
   mailSpamSchema,
   mailSyncSchema,
   MAX_MAIL_UPLOAD_BYTES,
@@ -50,6 +51,7 @@ import {
   uploadMailFile,
 } from '../services/mail';
 import { askMailContext, fileMailAttachment } from '../services/mail-context';
+import { addMailRule, deleteMailRule, listMailRules } from '../services/mail-rules';
 import { workspaceAiConnection } from '../services/integration-keys';
 import { draftMailReply } from '../services/mail-draft';
 import { getMailInsights, summarizeMailThread } from '../services/mail-insights';
@@ -90,6 +92,8 @@ export function mailRoutes(deps: AppDeps) {
   const logoLookups = fixedWindow({ limit: 400, windowMs: 60 * 60 * 1000, clock: deps.clock });
   // Each picture from outside a mail is fetched by the server: dozens of newsletters an hour.
   const pictures = fixedWindow({ limit: 1500, windowMs: 60 * 60 * 1000, clock: deps.clock });
+  // A new rule reads all one's conversations to place them.
+  const rules = fixedWindow({ limit: 120, windowMs: 60 * 60 * 1000, clock: deps.clock });
   return (
     new Hono<ViewerEnv>()
       .get('/workspaces/:workspaceId/mail/accounts', viewer, async (c) =>
@@ -293,6 +297,22 @@ export function mailRoutes(deps: AppDeps) {
       .post('/mail/threads/:threadId/spam', viewer, async (c) => {
         const input = await readJson(c, mailSpamSchema);
         await markMailSpam(deps, me(c), c.req.param('threadId'), input.spam);
+        return c.body(null, 204);
+      })
+      .get('/workspaces/:workspaceId/mail/rules', viewer, async (c) =>
+        c.json(await listMailRules(deps, me(c), c.req.param('workspaceId'))),
+      )
+      .post('/mail/threads/:threadId/rule', viewer, async (c) => {
+        const input = await readJson(c, mailRuleSchema);
+        assertWithinLimit(
+          c,
+          rules.hit(me(c)),
+          'Zu viele Regeln auf einmal. Bitte warte ein wenig.',
+        );
+        return c.json(await addMailRule(deps, me(c), c.req.param('threadId'), input), 201);
+      })
+      .delete('/mail/rules/:ruleId', viewer, async (c) => {
+        await deleteMailRule(deps, me(c), c.req.param('ruleId'));
         return c.body(null, 204);
       })
       .delete('/mail/threads/:threadId', viewer, async (c) => {

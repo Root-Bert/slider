@@ -174,6 +174,34 @@ Länge). Der eigene Server gilt überall, wo kein Key für Sprache zu Text aktiv
 Anderes Modell: `docker compose build --build-arg WHISPER_MODEL=large-v3 stt` (genauer,
 doppelt so langsam, ~4 GB RAM) und `SPEECH_MODEL=whisper-large-v3` in `.env`.
 
+## Spamfilter (optional)
+
+Ohne eigenen Filter gilt, was der Spam-Ordner des Postfachs sagt (und die eigenen Regeln unter
+„Postfächer“). Mit [Rspamd](https://rspamd.com) prüft der eigene Server zusätzlich jede Mail, die
+im Posteingang ankommt, und Antworten in Unterhaltungen, auf die noch niemand geantwortet hat.
+Was er aussortiert, steht in Spam mit „Vom Filter aussortiert“, der Grund im Tooltip.
+
+Starten mit `docker compose --profile spam up -d` (Rspamd, Redis für das Gelernte und ein
+eigener DNS-Resolver – Sperrlisten wie Spamhaus antworten öffentlichen Resolvern nicht), dann in
+`.env` `RSPAMD_URL=http://rspamd:11333` und `RSPAMD_PASSWORD=` (z. B. `openssl rand -hex 24`)
+setzen und `docker compose up -d slider rspamd`. Mit `deploy/deploy.sh` (auch dem Deploy aus
+GitHub Actions) reicht `COMPOSE_PROFILES=spam`: Adresse und Passwort setzt es selbst, das Passwort
+einmal erzeugt in `/var/lib/slider/rspamd-password`. Etwa 300 MB RAM, ein Kern.
+
+- **Lernen** nur aus dem, was Menschen entscheiden: „Als Spam markieren“, „Kein Spam“ und neue
+  Regeln („Absender blockieren“/„vertrauen“) – nie aus dem Urteil der KI oder des Filters selbst.
+  Gelernt wird für den ganzen Server (Bayes), ab 200 Spam- und 200 anderen Mails zählt es.
+  Ohne `RSPAMD_PASSWORD` prüft Rspamd nur und lernt nichts. Das Passwort geht im internen
+  Docker-Netz unverschlüsselt an Rspamd; seine Ports sind nicht veröffentlicht.
+- **Was den Server verlässt:** DNS-Anfragen zu Absender-Servern und Links (Sperrlisten) und
+  Prüfsummen von Mailteilen an Rspamds Fuzzy-Dienst (`fuzzy_check`, keine Inhalte). Abschalten
+  mit `enabled = false;` in `deploy/rspamd/local.d/fuzzy_check.conf`.
+- **Spamhaus** ist frei für nicht-kommerzielle Nutzung mit wenig Mails; für mehr einen kostenlosen
+  [DQS-Key](https://www.spamhaus.com/free-trial/sign-up-for-a-free-data-query-service-account/)
+  holen (`deploy/rspamd/local.d/rbl.conf` laut Rspamd-Doku).
+- Der Filter verschiebt nichts im Postfach selbst; die Rettung aus Spam und „Kein Spam“ gelten
+  wie bei der KI.
+
 ## Anrufe mit vielen Personen (optional)
 
 Ohne Weiteres schicken sich die Browser in einem Anruf Ton und Bild gegenseitig zu, höchstens 8
@@ -398,6 +426,9 @@ gehen auch auf der Einrichtungsseite.
 | `REMBG_MODEL`                                                     | nein              | Modell von rembg, Standard `isnet-general-use`.                                                                   |
 | `SPEECH_URL`                                                      | nein              | Sprache zu Text auf dem eigenen Server: Adresse von deploy/stt, z. B. `http://stt:8000/v1`.                       |
 | `SPEECH_MODEL`                                                    | nein              | Modell von deploy/stt, Standard `whisper-large-v3-turbo`.                                                         |
+| `RSPAMD_URL`                                                      | nein              | Spamfilter: Adresse von Rspamd (Profil `spam`), z. B. `http://rspamd:11333`.                                      |
+| `RSPAMD_PASSWORD`                                                 | nein              | Passwort von Rspamds Controller (ab 12 Zeichen): damit lernt er aus Entscheidungen.                               |
+| `RSPAMD_CONTROLLER_URL`                                           | nein              | Nur wenn Rspamds Controller nicht unter `RSPAMD_URL` auf Port 11334 liegt.                                        |
 | `CALL_DOMAIN`                                                     | nein              | Anrufe mit bis zu 50 Personen über LiveKit (Profil `call`), siehe [oben](#anrufe-mit-vielen-personen-optional).   |
 | `LIVEKIT_NODE_IP`                                                 | nein (Compose)    | Öffentliche IPv4 für LiveKit, wenn STUN eine falsche findet.                                                      |
 | `LIVEKIT_URL`, `LIVEKIT_API_KEY`, `LIVEKIT_API_SECRET`            | nein              | Ein LiveKit anderswo statt des Profils (`wss://…`, Schlüsselpaar dann Pflicht); `LIVEKIT_API_URL` für seine API.  |

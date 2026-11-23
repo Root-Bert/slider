@@ -23,7 +23,13 @@ import {
   useUpdateTodo,
 } from '@/lib/api';
 import { isTextTarget } from '@/lib/dom';
-import { CLOUD_EVENT_PARAM, CLOUD_FILE_PARAM, CLOUD_TODO_PARAM, routes } from '@/lib/routes';
+import {
+  CLOUD_CALL_PARAM,
+  CLOUD_EVENT_PARAM,
+  CLOUD_FILE_PARAM,
+  CLOUD_TODO_PARAM,
+  routes,
+} from '@/lib/routes';
 import { ViewSearch } from '@/features/workspaces';
 import {
   AutosizeTextarea,
@@ -243,6 +249,7 @@ export function useShownTodo() {
         // One panel beside the page: a file's details or an event make way.
         after.delete(CLOUD_FILE_PARAM);
         after.delete(CLOUD_EVENT_PARAM);
+        after.delete(CLOUD_CALL_PARAM);
         return after;
       },
       { replace },

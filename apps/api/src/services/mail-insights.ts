@@ -30,9 +30,10 @@ import { searchNodes } from './cloud/nodes';
 import { workspaceAiConnection } from './integration-keys';
 import { ATTACHMENTS_ARE_DATA, attachmentsText } from './mail-attachment-text';
 import { freshPart, ownThread, threadMessages } from './mail';
-import { searchWords } from './mail-context';
+import { searchWords, unsubscribeLink } from './mail-context';
 import { DAY_MS } from './retention-rules';
 import { isCompanyMailDomain } from './workspaces/domains';
+import { orgDomain } from '@slider/shared';
 
 /*
  * The AI panel beside a mail conversation: who is on it from outside (firms by their domain, their
@@ -57,16 +58,8 @@ const EARLIER_MAILS = 300;
 
 // ── Who is on it ────────────────────────────────────────────────────────────
 
-const SECOND_LEVEL = new Set(['co', 'com', 'org', 'net', 'ac', 'gov', 'edu', 'or', 'ne', 'go']);
-
-/** The domain a firm goes by: `mail.acme.com` → `acme.com`, `shop.acme.co.uk` → `acme.co.uk`. */
-export function orgDomain(domain: string): string {
-  const labels = domain.toLowerCase().replace(/\.$/, '').split('.').filter(Boolean);
-  if (labels.length <= 2) return labels.join('.');
-  const top = labels.at(-1) ?? '';
-  const take = top.length === 2 && SECOND_LEVEL.has(labels.at(-2) ?? '') ? 3 : 2;
-  return labels.slice(-take).join('.');
-}
+// `orgDomain` is shared (`@slider/shared`): the web app names a firm's domain as the rules keep it.
+export { orgDomain };
 
 const firmOf = (address: string): string | null => {
   const domain = emailDomain(address);
@@ -742,7 +735,16 @@ async function insightsOf(
       nodeId,
     });
   }
-  return { version, summary, parties, documents: documents.slice(0, MAX_DOCUMENTS), filing };
+  // A newsletter's own way out, from its latest mail – never on spam or a mail warned of.
+  const unsubscribe = linked && lastIn ? unsubscribeLink(lastIn) : null;
+  return {
+    version,
+    summary,
+    parties,
+    documents: documents.slice(0, MAX_DOCUMENTS),
+    filing,
+    unsubscribe,
+  };
 }
 
 /** The panel beside a conversation – for its person alone (anyone else: 404). */

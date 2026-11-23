@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate, useParams } from 'react-router';
 import {
   CONVERSATION_AGENT_TAG,
@@ -23,9 +23,9 @@ import {
   useUpdateSenderChannel,
 } from '@/lib/api';
 import { routes } from '@/lib/routes';
-import { CallButtons } from '@/features/calls';
-import { AreaDot } from '@/features/cloud';
-import { useAgentAvatars, WorkspaceMark } from '@/features/workspaces';
+import { CallBoxes, CallButtons, useChannelCall } from '@/features/calls';
+import { AreaDot, useAgentAside } from '@/features/cloud';
+import { useAgentAvatars, ViewSearch, WorkspaceMark } from '@/features/workspaces';
 import {
   Avatar,
   AvatarStack,
@@ -35,6 +35,7 @@ import {
   Icon,
   Menu,
   type MenuAction,
+  useMediaQuery,
 } from '@/ui';
 import { AddPeople } from './components/AddPeople';
 import { Composer } from './components/Composer';
@@ -141,14 +142,17 @@ export function Component() {
 /**
  * One conversation: its name above, the messages, who is writing, the field. What one
  * writes stands at once; changes and deletions too. `compact`: under a title of its own (an
- * area's „Chat“ in Cloud) – the head keeps only the calls, the people and the menu.
+ * area's „Chat“ in Cloud) – the head keeps only the calls, the people and the menu. `callHref`:
+ * where a call over opens – in Cloud beside the chat (`CallPanel`), so one stays where one is.
  */
 export function Conversation({
   channelId,
   compact = false,
+  callHref,
 }: {
   channelId: string;
   compact?: boolean;
+  callHref?: (callId: string) => string;
 }) {
   const ui = useSender();
   const navigate = useNavigate();
@@ -165,6 +169,12 @@ export function Conversation({
   const [renaming, setRenaming] = useState<'name' | null>(null);
   const [adding, setAdding] = useState(false);
   const [asking, setAsking] = useState<Asking | null>(null);
+  const [search, setSearch] = useState('');
+  // In its call: the call beside the messages, as on an agent's page (the corner's dock stands
+  // back); where there is no room for both, the dock as always.
+  const inCall = useChannelCall(channelId);
+  const asideRef = useRef<HTMLDivElement>(null);
+  const aside = useAgentAside(useMediaQuery('(min-width: 1024px)') && !!inCall, 360, asideRef);
 
   const messages = useMemo(() => messagesOf(query.data), [query.data]);
   const page = query.data?.pages[0];
@@ -182,7 +192,15 @@ export function Conversation({
     setEditing(null);
     setRenaming(null);
     setAdding(false);
+    setSearch('');
   }
+
+  // Searched, its older messages come in too: the search looks through the whole conversation.
+  const searching = search.trim() !== '';
+  const { hasNextPage, isFetchingNextPage, fetchNextPage } = query;
+  useEffect(() => {
+    if (searching && hasNextPage && !isFetchingNextPage) void fetchNextPage();
+  }, [searching, hasNextPage, isFetchingNextPage, fetchNextPage]);
 
   const { setOpenChannel } = ui;
   useEffect(() => {
@@ -284,7 +302,7 @@ export function Conversation({
 
   return (
     <section aria-label={shownName} className="flex min-h-0 flex-1 flex-col gap-3">
-      <header className={cn(PAGE_HEADER, compact && 'min-h-8')}>
+      <header className={cn(PAGE_HEADER, 'max-sm:flex-wrap', compact && 'min-h-8')}>
         <MenuButton />
         {!compact && <Mark channel={channel} />}
         <div className="flex min-w-0 flex-1 flex-col">
@@ -303,6 +321,13 @@ export function Conversation({
             <h1 className={PAGE_TITLE}>{shownName}</h1>
           )}
         </div>
+        <ViewSearch
+          label="Chat durchsuchen"
+          value={search}
+          onChange={setSearch}
+          // On a phone on a line of its own, under the name.
+          className="w-64 max-sm:order-last max-sm:w-full"
+        />
         <CallButtons channel={channel} />
         {!inArea(channel) && !channel.agent && channel.canWrite && (
           <AddAgent
@@ -320,43 +345,60 @@ export function Conversation({
       {adding && channel.kind === 'group' && (
         <AddPeople channel={channel} onDone={() => setAdding(false)} />
       )}
-      <div className="flex min-h-0 flex-1 flex-col">
-        <MessageList
-          conversationId={channelId}
-          messages={messages}
-          readSeq={readAt?.id === channelId ? readAt.seq : (page?.readSeq ?? 0)}
-          me={ui.me}
-          people={ui.home?.people ?? []}
-          editing={editing}
-          older={{
-            more: query.hasNextPage,
-            loading: query.isFetchingNextPage,
-            load: () => void query.fetchNextPage(),
-          }}
-          intro={<Intro channel={channel} />}
-          onEditing={setEditing}
-          onSave={(message, text) =>
-            edit.mutate({ id: message.id, text, before: message }, { onError: fail })
-          }
-          onDelete={(message) => setAsking({ kind: 'message', message })}
-          callHref={(callId) => routes.messagesChannelCall(workspaceId, channelId, callId)}
-        />
+      <div className={cn('flex min-h-0 flex-1', !aside.handle && 'gap-5')}>
+        <div className="flex min-h-0 min-w-0 flex-1 flex-col gap-3">
+          <div className="flex min-h-0 flex-1 flex-col">
+            <MessageList
+              conversationId={channelId}
+              messages={messages}
+              readSeq={readAt?.id === channelId ? readAt.seq : (page?.readSeq ?? 0)}
+              me={ui.me}
+              people={ui.home?.people ?? []}
+              editing={editing}
+              older={{
+                more: query.hasNextPage,
+                loading: query.isFetchingNextPage,
+                load: () => void query.fetchNextPage(),
+              }}
+              intro={<Intro channel={channel} />}
+              onEditing={setEditing}
+              onSave={(message, text) =>
+                edit.mutate({ id: message.id, text, before: message }, { onError: fail })
+              }
+              onDelete={(message) => setAsking({ kind: 'message', message })}
+              callHref={
+                callHref ?? ((callId) => routes.messagesChannelCall(workspaceId, channelId, callId))
+              }
+              search={{ query: search, clear: () => setSearch('') }}
+            />
+          </div>
+          <TypingLine people={typing} />
+          {channel.canWrite ? (
+            <Composer
+              conversationId={channelId}
+              target={{ kind: 'conversation', workspaceId }}
+              placeholder={`Nachricht an ${shownName}`}
+              people={people}
+              agent={agentToTag(channel, ui.me.id)}
+              onSend={send}
+              onTyping={() => tellTypingInSender(channelId)}
+              onEditLast={lastOwn ? () => setEditing(lastOwn.id) : undefined}
+            />
+          ) : (
+            <p className="shrink-0 text-xs text-fg-subtle">Du liest in diesem Bereich mit.</p>
+          )}
+        </div>
+        {aside.handle}
+        {aside.handle && inCall && (
+          <div
+            ref={asideRef}
+            style={aside.style}
+            className="flex min-h-0 shrink-0 flex-col overflow-y-auto overscroll-contain"
+          >
+            <CallBoxes call={inCall} className="flex flex-col gap-5" />
+          </div>
+        )}
       </div>
-      <TypingLine people={typing} />
-      {channel.canWrite ? (
-        <Composer
-          conversationId={channelId}
-          target={{ kind: 'conversation', workspaceId }}
-          placeholder={`Nachricht an ${shownName}`}
-          people={people}
-          agent={agentToTag(channel, ui.me.id)}
-          onSend={send}
-          onTyping={() => tellTypingInSender(channelId)}
-          onEditLast={lastOwn ? () => setEditing(lastOwn.id) : undefined}
-        />
-      ) : (
-        <p className="shrink-0 text-xs text-fg-subtle">Du liest in diesem Bereich mit.</p>
-      )}
       {asking?.kind === 'message' && (
         <ConfirmDialog
           title="Nachricht löschen?"

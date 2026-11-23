@@ -21,9 +21,10 @@ import {
   type SenderChannelKind,
   type Viewer,
 } from '@slider/shared';
-import { eq } from 'drizzle-orm';
+import { and, eq } from 'drizzle-orm';
+import { ownerAuthor } from '../authors';
 import type { AppDeps } from '../deps';
-import { cloudAgents, workspaces } from '../db/schema';
+import { cloudAgents, users, workspaceMembers, workspaces } from '../db/schema';
 import { aiLimits } from '../http/ai-limits';
 import { ApiError, badRequest, forbidden, notFound } from '../http/errors';
 import { prepareSpeech, speechStream, type AiConnection } from './ai-providers';
@@ -31,7 +32,13 @@ import { hearAudiences } from './call-audience';
 import { voiceAnswer, VOICE_HISTORY, type ProposedOrder, type VoiceTurn } from './call-voice';
 import { personsVoice } from './call-voices';
 import type { KeptCall } from './call-records';
-import { createCloudAgent, getCloudAgent, messageCloudAgent, noteCallTurn } from './cloud-agents';
+import {
+  createCloudAgent,
+  createIdleCloudAgent,
+  getCloudAgent,
+  messageCloudAgent,
+  noteCallTurn,
+} from './cloud-agents';
 import { workspaceAiConnection, workspaceLiveConnection } from './integration-keys';
 import { audienceOf, conversationForCall } from './sender';
 import type { CallSfu, SfuEvent } from './call-sfu';
@@ -180,8 +187,13 @@ interface Call {
   kind: SenderChannelKind;
   title: string;
   people: AccountAuthor[];
-  /** Who sees the conversation: they hear of the call (user ids). */
+  /** Who sees the conversation, and the guests: they hear of the call (user ids). */
   audience: Set<string>;
+  /**
+   * Members of the workspace rung into the call from it (`invite`) – they need not see its
+   * conversation: they hear of the call, may join it and are among its `people`.
+   */
+  guests: Map<string, AccountAuthor>;
   /** Works out `audience` anew (a conversation's call), `audienceAt` when it last did. */
   audienceFrom: (() => Promise<Set<string>>) | null;
   audienceAt: number;
@@ -339,17 +351,22 @@ export class CallHub {
     channelId: string,
     input: { peerId: string; video: boolean; mic: boolean },
   ): Promise<CallJoined> {
-    const place = await conversationForCall(deps, me.id, channelId);
-    if (place.row.kind === 'direct' && place.people.length < 2)
-      throw forbidden('Diese Person ist nicht mehr im Workspace.');
     let call = this.calls.get(this.byChannel.get(channelId) ?? '');
-    const notes = call ? call.notes : await notesIn(deps, place.row.workspaceId);
+    // A guest rung into the call joins it without seeing its conversation.
+    const guest = call?.guests.has(me.id) ?? false;
+    const place = guest ? null : await conversationForCall(deps, me.id, channelId);
+    if (place?.row.kind === 'direct' && place.people.length < 2)
+      throw forbidden('Diese Person ist nicht mehr im Workspace.');
+    call = this.calls.get(this.byChannel.get(channelId) ?? '');
+    if (!place && !call) throw callNotFound();
+    const notes = call ? call.notes : await notesIn(deps, place!.row.workspaceId);
     this.ownTab(me.id, input.peerId);
     this.leaveOthers(me.id, input.peerId, channelId);
     const now = deps.clock.now();
     const sfuUp = !call && this.options.sfu ? await this.options.sfu.ready() : false;
     call = this.calls.get(this.byChannel.get(channelId) ?? '');
-    if (!call) {
+    if (!call && !place) throw callNotFound();
+    if (!call && place) {
       call = {
         id: randomUUID(),
         viaSfu: sfuUp,
@@ -364,6 +381,7 @@ export class CallHub {
         audienceFrom: () => audienceOf(deps.db, place.row),
         audienceAt: this.now(),
         sending: null,
+        guests: new Map(),
         startedBy: me,
         startedAt: now,
         video: input.video,
@@ -399,13 +417,14 @@ export class CallHub {
       if (place.row.kind === 'direct' || place.row.kind === 'group') {
         for (const person of place.people) if (person.id !== me.id) this.ring(call, person.id);
       }
-    } else {
+    } else if (call && place) {
       // Who sees the conversation may have changed since it began.
-      call.audience = place.audience;
+      call.audience = withGuests(call, place.audience);
       call.audienceAt = this.now();
-      call.people = place.people;
+      call.people = peopleWithGuests(call, place.people);
       call.title = place.title;
     }
+    if (!call) throw callNotFound();
     return this.withTicket(call, me, input.peerId, this.enter(call, me, input, now));
   }
 
@@ -444,6 +463,7 @@ export class CallHub {
         audienceFrom: null,
         audienceAt: this.now(),
         sending: null,
+        guests: new Map(),
         startedBy: me,
         startedAt: now,
         video: false,
@@ -666,13 +686,14 @@ export class CallHub {
     deps: AppDeps,
     viewer: Viewer,
     callId: string,
-    input: { peerId: string; agentId: string },
+    input: { peerId: string; agentId: string | null },
   ): Promise<CallState> {
     const call = this.calls.get(callId);
     const peer = call?.peers.get(input.peerId);
     if (!call || !peer || peer.userId !== viewer.author.id) throw callNotFound();
     if (!call.channelId) throw badRequest('In diesem Anruf ist schon ein Agent.');
-    const { agent, workspaceId } = await agentForCall(deps, viewer, input.agentId);
+    const agentId = input.agentId ?? (await this.newAgent(deps, viewer, call));
+    const { agent, workspaceId } = await agentForCall(deps, viewer, agentId);
     if (workspaceId !== call.workspaceId) throw notFound('Agent nicht gefunden.');
     if (!bringsIntoCall({ ...agent, areaId: agent.areaId ?? null }, call.areaId))
       throw forbidden(
@@ -694,6 +715,71 @@ export class CallHub {
     // What was said shortly before it came is part of what it hears first.
     call.heardFrom = Math.max(0, call.lines.length - 10);
     this.warm(deps, viewer, call);
+    this.changed(call);
+    return stateOf(call);
+  }
+
+  /**
+   * „Neuer Agent“: one made for the call, without an order – the conversation's area's where one
+   * may make agents there, else one's own private one. Live writing is asked first, so no agent is
+   * left over where it could not join.
+   */
+  private async newAgent(deps: AppDeps, viewer: Viewer, call: Call): Promise<string> {
+    if (!(await workspaceLiveConnection(deps, call.workspaceId))) {
+      throw new ApiError(
+        409,
+        'ai_not_configured',
+        'Für Agenten in Anrufen braucht der Workspace einen Key für Live-Mitschrift (Einstellungen › Sprache).',
+      );
+    }
+    const title = agentTitle(call, viewer.author);
+    let problem: unknown = null;
+    for (const areaId of call.areaId ? [call.areaId, null] : [null]) {
+      try {
+        return (await createIdleCloudAgent(deps, viewer, call.workspaceId, title, areaId)).id;
+      } catch (error) {
+        problem = error;
+        if (error instanceof ApiError && (error.status === 403 || error.status === 404)) continue;
+        break;
+      }
+    }
+    throw problem;
+  }
+
+  /**
+   * Rings a member of the workspace into a conversation's call from inside it: a guest of the
+   * call – they hear of it and may join, without seeing the conversation.
+   */
+  async invite(
+    deps: AppDeps,
+    me: AccountAuthor,
+    callId: string,
+    input: { peerId: string; userId: string },
+  ): Promise<CallState> {
+    const call = this.calls.get(callId);
+    const peer = call?.peers.get(input.peerId);
+    if (!call || !peer || peer.userId !== me.id) throw callNotFound();
+    if (!call.channelId) throw badRequest('Zu einem Anruf mit einem Agenten kommt niemand dazu.');
+    const [row] = await deps.db
+      .select({ user: users })
+      .from(workspaceMembers)
+      .innerJoin(users, eq(users.id, workspaceMembers.userId))
+      .where(
+        and(
+          eq(workspaceMembers.workspaceId, call.workspaceId),
+          eq(workspaceMembers.userId, input.userId),
+        ),
+      );
+    if (!row) throw notFound('Diese Person ist nicht im Workspace.');
+    if (!this.calls.has(callId)) throw callNotFound();
+    if ([...call.peers.values()].some((each) => each.userId === input.userId)) return stateOf(call);
+    const person = ownerAuthor(row.user);
+    if (!call.audience.has(person.id)) {
+      call.guests.set(person.id, person);
+      call.audience.add(person.id);
+    }
+    if (!call.people.some((each) => each.id === person.id)) call.people = [...call.people, person];
+    this.ring(call, person.id);
     this.changed(call);
     return stateOf(call);
   }
@@ -1343,7 +1429,8 @@ export class CallHub {
     if (!call) throw callNotFound();
     if (!call.ringing.has(userId)) return;
     this.stopRinging(call, userId);
-    if (call.ringing.size === 0 && call.peers.size < 2) return this.end(call, 'declined');
+    if (call.ringing.size === 0 && call.peers.size < 2 && rings(call.kind))
+      return this.end(call, 'declined');
     this.changed(call);
   }
 
@@ -1399,7 +1486,8 @@ export class CallHub {
       later(() => {
         call.ringing.delete(userId);
         if (!this.calls.has(call.id)) return;
-        if (call.ringing.size === 0 && call.peers.size < 2) return this.end(call, 'unanswered');
+        if (call.ringing.size === 0 && call.peers.size < 2 && rings(call.kind))
+          return this.end(call, 'unanswered');
         this.changed(call);
       }, this.ringMs),
     );
@@ -1560,6 +1648,7 @@ export class CallHub {
       // Not to be asked just now: the known audience a little longer.
       return;
     }
+    audience = withGuests(call, audience);
     call.audience = audience;
     const gone: CallEvent = {
       type: 'ended',
@@ -1588,6 +1677,20 @@ function later(run: () => void, ms: number): ReturnType<typeof setTimeout> {
   const timer = setTimeout(run, ms);
   (timer as { unref?: () => void }).unref?.();
   return timer;
+}
+
+/** A direct conversation or a group rings at its people – and ends when nobody answers. */
+const rings = (kind: SenderChannelKind) => kind === 'direct' || kind === 'group';
+
+/** Who hears of the call: who sees its conversation, and its guests. */
+function withGuests(call: Call, audience: Set<string>): Set<string> {
+  return new Set([...audience, ...call.guests.keys()]);
+}
+
+/** The conversation's people, and the guests rung into its call. */
+function peopleWithGuests(call: Call, people: AccountAuthor[]): AccountAuthor[] {
+  const known = new Set(people.map((person) => person.id));
+  return [...people, ...[...call.guests.values()].filter((guest) => !known.has(guest.id))];
 }
 
 function stateOf(call: Call): CallState {
@@ -1731,13 +1834,18 @@ export function replyTo(text: string, ownCall: boolean): 'yes' | 'no' | null {
 
 /** What a brought-in agent gets when spoken to: who is there, the talk since, the words to it. */
 /** The name of the agent that writes along in a call – the first line of its order. */
-function notesTitle(call: Call, as: AccountAuthor): string {
+/** „Neuer Agent“'s name: the call it was made in – „Anruf mit Max Muster am 23.11.2026“. */
+function agentTitle(call: Call, as: AccountAuthor): string {
+  return notesTitle(call, as, call.people).replace(/^Notizen: /, '');
+}
+
+function notesTitle(call: Call, as: AccountAuthor, among?: AccountAuthor[]): string {
   const day = call.startedAt.toLocaleDateString('de-DE', {
     day: 'numeric',
     month: 'numeric',
     year: 'numeric',
   });
-  const others = [...call.joined.values()]
+  const others = (among ?? [...call.joined.values()])
     .filter((each) => each.id !== as.id)
     .map((each) => each.name);
   const where =

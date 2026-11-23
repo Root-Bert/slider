@@ -83,6 +83,7 @@ export const MAIL_INPUTS = {
     mailbox: mailboxRef,
     label: mailAccountInputSchema.shape.label,
     name: z.string().trim().max(200).optional(),
+    signature: mailAccountInputSchema.shape.signature,
     aiReads: z.boolean().optional(),
   }),
   search_mail: z.object({ query: z.string().trim().max(200).optional() }),
@@ -161,13 +162,14 @@ export const MAIL_TOOLS: Anthropic.Beta.BetaTool[] = [
   {
     name: 'update_mailbox',
     description:
-      "Changes one of the person's mailboxes: what it is called here (label, empty: its default), the name mails go out with, whether the AI reads new mails along. Its servers and password the person changes on „Postfächer“ („Bearbeiten“) – the password goes to no other server unless they type it again.",
+      "Changes one of the person's mailboxes: what it is called here (label, empty: its default), the name mails go out with, the signature put under every mail it sends (plain text, empty: none), whether the AI reads new mails along. Its servers and password the person changes on „Postfächer“ („Bearbeiten“) – the password goes to no other server unless they type it again.",
     input_schema: {
       type: 'object',
       properties: {
         mailbox: MAILBOX,
         label: { type: 'string' },
         name: { type: 'string' },
+        signature: { type: 'string' },
         aiReads: { type: 'boolean' },
       },
       required: ['mailbox'],

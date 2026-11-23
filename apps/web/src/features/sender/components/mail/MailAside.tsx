@@ -274,9 +274,11 @@ export function MailAside({
   const parties = data?.parties ?? [];
   const links = context?.verdict === 'ok' ? context.links : [];
   const documents = data?.documents ?? [];
+  const unsubscribe = data?.unsubscribe ?? null;
   const empty =
     !!data &&
     !showSummary &&
+    !unsubscribe &&
     parties.length + links.length + documents.length + filing.length === 0;
 
   // One ask for all the AI makes of a mail it did not read by itself: its bullets and what it is
@@ -377,6 +379,22 @@ export function MailAside({
                 Als Aufgabe anlegen
               </Button>
             )}
+          </AsidePart>
+        )}
+        {/* A newsletter's own way out, from the mail itself – not to be looked for in it. */}
+        {unsubscribe && (
+          <AsidePart label="Newsletter" icon="unsubscribe">
+            <a
+              href={unsubscribe}
+              {...BESIDE}
+              className="-mx-1 flex items-center gap-2 rounded-chip px-1 py-1 transition-colors hover:bg-hover focus-visible:ring-2 focus-visible:ring-focus focus-visible:outline-none"
+            >
+              <Icon name="openInNew" size={16} className="shrink-0 text-fg-muted" />
+              <span className="shrink-0 text-body text-fg">Abbestellen</span>
+              <span className="min-w-0 flex-1 truncate text-right text-xs text-fg-subtle">
+                {hostOf(unsubscribe)}
+              </span>
+            </a>
           </AsidePart>
         )}
         {(unassessed || bullets.length > 0 || summary?.state === 'ask' || summarize.isPending) && (

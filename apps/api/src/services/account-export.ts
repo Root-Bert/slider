@@ -30,6 +30,7 @@ import {
   mailAccounts,
   mailMessages,
   mailInsights,
+  mailRules,
   mailThreads,
   mailUploads,
   materialQuestions,
@@ -82,7 +83,8 @@ import { audienceOf } from './sender';
  * and Reader: comments, reactions, AI requests, their entries on PDFs, signatures in
  * `unterschriften/`), `todos.json` (their own to-dos and those they wrote in areas),
  * `kalender.json` (their own calendars and the events in them or that they made elsewhere),
- * `mail.json` (their mailboxes and mail, attachments in `mail/`),
+ * `mail.json` (their mailboxes and mail, attachments in `mail/`), `mail-regeln.json` (their rules
+ * for senders),
  * `bearbeitungen.json` (their edit steps), `woerterbuch.json` (their own spelling words),
  * `dateien.json` (their own files in Cloud, listed) and `aufnahmen/` (their recordings, with
  * transcripts, and rehearsals). Others' words stay out, except in what is one's own (a
@@ -1191,6 +1193,7 @@ async function buildExport(
       conversations.push({
         subject: thread.subject,
         spam: thread.spam,
+        spamBy: thread.spamBy,
         lastAt: thread.lastAt.toISOString(),
         readAt: thread.readAt?.toISOString() ?? null,
         aiContext: thread.context,
@@ -1208,6 +1211,7 @@ async function buildExport(
       address: account.address,
       name: account.name,
       label: account.label,
+      signature: account.signature,
       imapServer: account.imapHost,
       smtpServer: account.smtpHost,
       /** How it signs in (`password`, `microsoft`, `google`) – never the password or token. */
@@ -1222,6 +1226,25 @@ async function buildExport(
     });
   }
   zip.file('mail.json', json(mailEntries));
+  // Their own rules for senders (blocked, trusted), per workspace.
+  const ruleRows = await db
+    .select({ rule: mailRules, workspace: workspaces.name })
+    .from(mailRules)
+    .leftJoin(workspaces, eq(workspaces.id, mailRules.workspaceId))
+    .where(eq(mailRules.userId, userId))
+    .orderBy(asc(mailRules.createdAt));
+  zip.file(
+    'mail-regeln.json',
+    json(
+      ruleRows.map(({ rule, workspace }) => ({
+        workspace: { id: rule.workspaceId, name: workspace },
+        kind: rule.kind === 'block' ? 'blockiert' : 'vertraut',
+        match: rule.match === 'address' ? 'Adresse' : 'Domain',
+        value: rule.value,
+        createdAt: rule.createdAt.toISOString(),
+      })),
+    ),
+  );
 
   const bytes = await zip.generateAsync({ type: 'uint8array', compression: 'DEFLATE' });
   return { fileName: `slider-daten-${now.toISOString().slice(0, 10)}.zip`, bytes };
@@ -1269,6 +1292,7 @@ dokumente.json        Deine Kommentare in Textdokumenten und PDFs, deine Reaktio
 todos.json            Deine eigenen Aufgaben und die, die du in Bereichen angelegt hast
 kalender.json         Deine eigenen Kalender (privat, Unterkalender, die Namen der Kalender deiner Postfächer) mit ihren Terminen und die Termine, die du in Kalendern von Bereichen angelegt hast; Termine aus Postfächern bleiben beim Anbieter
 mail.json             Deine Postfächer (Adresse, Server – ohne Anmeldedaten), die hier gelesenen und geschriebenen Mails (Text und gestaltete Fassung, Empfänger mit Bcc, was noch im Postausgang liegt) mit dem, was die KI dazu notiert hat; Anhänge und Bilder der Mails und Dateien, die an noch nicht gesendeten Mails hängen, in mail/
+mail-regeln.json      Deine Regeln für Absender: blockiert (landet in Spam) oder vertraut (nie in Spam)
 
 Zugangsdaten (Tokens, Passkey-Schlüssel) sind aus Sicherheitsgründen nicht enthalten.
 `;

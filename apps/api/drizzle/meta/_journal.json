@@ -1156,6 +1156,34 @@
       "when": 1798977600000,
       "tag": "0164_mail_with_calendars",
       "breakpoints": true
+    },
+    {
+      "idx": 165,
+      "version": "7",
+      "when": 1799064000000,
+      "tag": "0165_mail_signature",
+      "breakpoints": true
+    },
+    {
+      "idx": 166,
+      "version": "7",
+      "when": 1799150400000,
+      "tag": "0166_mail_spam_by",
+      "breakpoints": true
+    },
+    {
+      "idx": 167,
+      "version": "7",
+      "when": 1799236800000,
+      "tag": "0167_mail_rules",
+      "breakpoints": true
+    },
+    {
+      "idx": 168,
+      "version": "7",
+      "when": 1799323200000,
+      "tag": "0168_mail_spam_symbols",
+      "breakpoints": true
     }
   ]
 }

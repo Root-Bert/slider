@@ -1,8 +1,9 @@
 import { type ReactNode, useEffect, useMemo, useState } from 'react';
+import { useQueryClient } from '@tanstack/react-query';
 import { bringsIntoCall, type CallState } from '@slider/shared';
 import { useWorkspaceAgentAvatars } from '@/features/workspaces';
-import { useCloudAgents } from '@/lib/api';
-import { Avatar, Button, cn, Icon, IconButton, Menu, TextLink } from '@/ui';
+import { cloudAgentKeys, useCloudAgents, useMembers } from '@/lib/api';
+import { Avatar, Button, cn, Icon, IconButton, Menu, type MenuAction, TextLink } from '@/ui';
 import { useCalls } from '../CallProvider';
 import { callTitle, duration } from '../lib/names';
 import { CallOrders } from './CallOrders';
@@ -395,14 +396,7 @@ export function CallDock({ call, place = 'dock' }: { call: CallState; place?: 'd
               label={snap.local.screen ? 'Teilen beenden' : 'Bildschirm teilen'}
               onClick={() => void client.toggleScreen()}
             />
-            {!call.agent && (
-              <BringAgent
-                workspaceId={call.workspaceId}
-                areaId={call.areaId}
-                size={expanded ? 'md' : 'lg'}
-                onPick={(agentId) => void client.bringAgent(agentId)}
-              />
-            )}
+            <AddToCall call={call} me={snap.me} size={expanded ? 'md' : 'lg'} />
           </>
         )}
         <Button
@@ -420,56 +414,75 @@ export function CallDock({ call, place = 'dock' }: { call: CallState; place?: 'd
 }
 
 /**
- * „Agent dazuholen“: one's own private agents and the area's ones one may write to (`bringsIntoCall`), newest first – the picked one joins the call
- * and answers when spoken to.
+ * „Hinzufügen“: first a new agent, made for the call (picked on open – ↵ brings it), then one's own
+ * private agents and the area's ones one may write to (`bringsIntoCall`), newest first – while no
+ * agent is in the call – and below them the workspace's other members, who are rung into it.
  */
-function BringAgent({
-  workspaceId,
-  areaId,
-  size,
-  onPick,
-}: {
-  workspaceId: string;
-  areaId: string | null;
-  size: 'md' | 'lg';
-  onPick: (agentId: string) => void;
-}) {
-  const agents = useCloudAgents(workspaceId);
-  const avatarOf = useWorkspaceAgentAvatars(workspaceId);
-  const mine = (agents.data ?? [])
-    .filter((agent) => agent.canWrite && bringsIntoCall(agent, areaId))
-    .slice(0, 10);
+function AddToCall({ call, me, size }: { call: CallState; me: string | null; size: 'md' | 'lg' }) {
+  const { client } = useCalls();
+  const queryClient = useQueryClient();
+  const agents = useCloudAgents(call.workspaceId);
+  const members = useMembers(call.workspaceId);
+  const avatarOf = useWorkspaceAgentAvatars(call.workspaceId);
+  const bring = (agentId: string | null) =>
+    void client.bringAgent(agentId).then((brought) => {
+      if (brought && !agentId)
+        void queryClient.invalidateQueries({ queryKey: cloudAgentKeys.list(call.workspaceId) });
+    });
+  const agentActions: MenuAction[] = call.agent
+    ? []
+    : [
+        {
+          label: 'Neuer Agent',
+          key: 'new-agent',
+          icon: 'autoAwesome',
+          onSelect: () => bring(null),
+        },
+        ...(agents.data ?? [])
+          .filter((agent) => agent.canWrite && bringsIntoCall(agent, call.areaId))
+          .slice(0, 10)
+          .map((agent) => ({
+            label: agent.title,
+            key: agent.id,
+            icon: (
+              <img
+                src={avatarOf(agent.id)}
+                alt=""
+                className="size-5 rounded-control object-cover"
+              />
+            ),
+            onSelect: () => bring(agent.id),
+          })),
+      ];
+  const inCall = new Set(call.peers.map((peer) => peer.author.id));
+  const people: MenuAction[] = (members.data ?? [])
+    .filter((member) => member.userId !== me && !inCall.has(member.userId))
+    .sort((a, b) => a.name.localeCompare(b.name, 'de'))
+    .map((member, index) => {
+      const ringing = call.ringing.includes(member.userId);
+      return {
+        label: member.name,
+        key: member.userId,
+        icon: (
+          <Avatar author={{ name: member.name, color: member.color, type: 'owner' }} size={20} />
+        ),
+        onSelect: () => void client.invite(member.userId),
+        disabled: ringing,
+        title: ringing ? 'Klingelt gerade' : undefined,
+        divider: index === 0 && agentActions.length > 0,
+      };
+    });
+  const actions = [...agentActions, ...people];
+  if (actions.length === 0) return null;
   return (
     <Menu
-      label="Agent dazuholen"
-      triggerIcon="autoAwesome"
+      label={call.agent ? 'Person dazuholen' : 'Hinzufügen'}
+      triggerIcon="personAdd"
       triggerShape="round"
       triggerVariant="glass"
       triggerSize={size}
-      actions={
-        mine.length > 0
-          ? mine.map((agent) => ({
-              label: agent.title,
-              key: agent.id,
-              icon: (
-                <img
-                  src={avatarOf(agent.id)}
-                  alt=""
-                  className="size-5 rounded-control object-cover"
-                />
-              ),
-              onSelect: () => onPick(agent.id),
-            }))
-          : [
-              {
-                label: agents.isPending ? 'Agenten werden geladen …' : 'Noch keine Agenten',
-                icon: 'autoAwesome',
-                onSelect: () => {},
-                disabled: true,
-                title: 'Agenten legst du in Cloud an.',
-              },
-            ]
-      }
+      pickFirst={!call.agent}
+      actions={actions}
     />
   );
 }

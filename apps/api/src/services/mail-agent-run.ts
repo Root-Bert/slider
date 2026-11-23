@@ -137,6 +137,7 @@ function mailboxLine(account: MailAccount, label: string) {
     `- „${label}“ (id ${account.id}): ${account.address}`,
     `  signs in by ${signInWords(account)}; IMAP ${account.imapHost}:${account.imapPort} ${secured(account.imapSecure)}, SMTP ${account.smtpHost}:${account.smtpPort} ${secured(account.smtpSecure)}, user name ${account.username}`,
     `  ${state}; last read ${account.lastSyncAt ?? 'never'}; the AI reads new mails along: ${account.aiReads ? 'yes' : 'no'}; sends as „${account.name}“`,
+    `  signature (added under every mail it sends – a draft does not repeat it): ${account.signature ? `„${account.signature}“` : 'none'}`,
   ].join('\n');
 }
 
@@ -247,10 +248,11 @@ export async function runMailTool(
       const saved = await updateMailAccount(deps, userId, account.id, {
         ...(input.label !== undefined && { label: input.label }),
         ...(input.name !== undefined && { name: input.name }),
+        ...(input.signature !== undefined && { signature: input.signature }),
         ...(input.aiReads !== undefined && { aiReads: input.aiReads }),
       }).catch(refused);
       return {
-        content: `${saved.address} is called „${mailboxLabels([saved]).get(saved.id) ?? saved.address}“ here, sends as „${saved.name}“; the AI reads new mails along: ${saved.aiReads ? 'yes' : 'no'}.`,
+        content: `${saved.address} is called „${mailboxLabels([saved]).get(saved.id) ?? saved.address}“ here, sends as „${saved.name}“ with ${saved.signature ? `the signature „${saved.signature}“` : 'no signature'}; the AI reads new mails along: ${saved.aiReads ? 'yes' : 'no'}.`,
         changed: true,
       };
     }

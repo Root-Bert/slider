@@ -76,6 +76,67 @@ services:
     cpus: 2
     mem_limit: 3g
 
+  # Optional: a spam filter of this server's own (Rspamd) for the mailboxes Slider reads – it
+  # learns, for the whole server, only from what people decide („Als Spam markieren“, „Kein Spam“,
+  # their rules). Starts with `docker compose --profile spam up -d` and in .env
+  # RSPAMD_URL=http://rspamd:11333 and RSPAMD_PASSWORD (docs/self-hosting.md, „Spamfilter“).
+  rspamd:
+    profiles: [spam]
+    image: rspamd/rspamd:4.2.3
+    restart: unless-stopped
+    environment:
+      # Its controller's password (learning); unset, only Rspamd itself reaches it.
+      RSPAMD_PASSWORD: ${RSPAMD_PASSWORD:-}
+    volumes:
+      - ./rspamd/local.d:/etc/rspamd/local.d:ro
+      - rspamd-data:/var/lib/rspamd
+    # Not published: only Slider reaches it – 11333 checks, 11334 learns.
+    expose:
+      - '11333'
+      - '11334'
+    depends_on:
+      rspamd-redis:
+        condition: service_healthy
+      rspamd-dns:
+        condition: service_healthy
+    cpus: 1
+    mem_limit: 1g
+
+  # What Rspamd learned (Bayes) and knows: kept on disk, its oldest words go first when full.
+  rspamd-redis:
+    profiles: [spam]
+    image: redis:8.8.4-alpine
+    restart: unless-stopped
+    command:
+      [
+        'redis-server',
+        '--save',
+        '300',
+        '1',
+        '--appendonly',
+        'no',
+        '--maxmemory',
+        '512mb',
+        '--maxmemory-policy',
+        'volatile-ttl',
+      ]
+    volumes:
+      - rspamd-redis-data:/data
+    healthcheck:
+      test: ['CMD', 'redis-cli', 'ping']
+      interval: 10s
+      timeout: 3s
+      retries: 5
+    mem_limit: 640m
+
+  # A resolver of its own for Rspamd: DNS blocklists (Spamhaus …) answer no public resolver.
+  rspamd-dns:
+    profiles: [spam]
+    build: ./rspamd/dns
+    image: slider-rspamd-dns:local
+    restart: unless-stopped
+    mem_limit: 128m
+
   # Optional: calls with many people (up to 50) – LiveKit forwards sound and pictures instead of
   # every browser sending to every other (8 at most). Starts with COMPOSE_PROFILES=call and
   # CALL_DOMAIN=call.example.com in .env: a DNS-only A record for it at this server, and the
@@ -142,6 +203,8 @@ volumes:
   postgres-data:
   caddy-data:
   caddy-config:
+  rspamd-data:
+  rspamd-redis-data:
 
 networks:
   default:

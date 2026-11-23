@@ -27,6 +27,7 @@ import {
   Tooltip,
 } from '@/ui';
 import { useCloud, type CloudUi } from '../hooks/useCloud';
+import { folderColor } from '../lib/areas';
 import { useOnThisComputer } from '../lib/computer';
 import { flyStyle } from '../lib/fly';
 import { carriesNodes, carryNodes, NODES_DRAG } from '../lib/drag';
@@ -301,13 +302,20 @@ const MINI_SHEETS = [
   'left-[22%] right-[10%] top-[18%] group-hover:-translate-y-[10%] group-hover:rotate-3',
 ] as const;
 
+/** The folder's colour as drawn (`folderColor`): its own, else its area's; `null` plain. */
+function useFolderTint(node: CloudNode): string | null {
+  const color = folderColor(node, useCloud().home?.areas);
+  return color ? areaColor(color) : null;
+}
+
 /**
- * The folder of the cards (`FolderCard`), small, for a row: its back – plain or in its colour –
+ * The folder of the cards (`FolderCard`), small, for a row: its back – plain or in its colour
+ * (its area's by default) –
  * its newest files peeking out and the frosted flap in front, which tips on the row's hover.
  */
 function FolderMini({ node, size }: { node: CloudNode; size: 20 | 32 }) {
   const peek = (node.peek ?? []).slice(0, MINI_SHEETS.length).reverse();
-  const tint = node.color ? areaColor(node.color) : null;
+  const tint = useFolderTint(node);
   const radius = size === 32 ? 7 : 5;
   return (
     <span
@@ -700,7 +708,8 @@ function Sheet({
 }
 
 /**
- * A folder as a folder: a round back – plain, or in the folder's own colour – the newest files
+ * A folder as a folder: a round back – plain, or in the folder's colour (its area's by default) –
+ * the newest files
  * peeking out, and a frosted
  * flap in front that blurs them – one guesses what is inside. On hover the flap tips forward and
  * the sheets rise and fan.
@@ -716,7 +725,7 @@ function FolderCard({
 }) {
   const { selected, alone, over, props, menu } = useItem(node, selection, nodes);
   const peek = node.peek ?? [];
-  const tint = node.color ? areaColor(node.color) : null;
+  const tint = useFolderTint(node);
   return (
     <li
       {...props}

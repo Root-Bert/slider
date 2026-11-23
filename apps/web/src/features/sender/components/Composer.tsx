@@ -40,6 +40,7 @@ export function Composer({
   onFiles,
   flat = false,
   typeInto = true,
+  signature,
 }: {
   /** Drafts are kept per conversation. */
   conversationId: string;
@@ -73,6 +74,8 @@ export function Composer({
    * where letters are the page's keys (a mail's R, A, F, j/k).
    */
   typeInto?: boolean;
+  /** What goes under it on sending (a mail's reply, `withSignature`): shown once words stand. */
+  signature?: string | null;
 }) {
   const fieldRef = useRef<HTMLTextAreaElement>(null);
   const pickerRef = useRef<HTMLInputElement>(null);
@@ -287,8 +290,9 @@ export function Composer({
             onFiles(files);
           }}
           onKeyDown={(event) => {
-            // The page's keys are not meant while one writes – ⌘F (search) is.
-            if (!(isModKey(event) && event.key.toLowerCase() === 'f')) event.stopPropagation();
+            // The page's keys are not meant while one writes – ⌘F and ⌘K (the searches) are.
+            if (!(isModKey(event) && 'fk'.includes(event.key.toLowerCase())))
+              event.stopPropagation();
             if (event.nativeEvent.isComposing) return;
             if (open) {
               if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
@@ -321,6 +325,14 @@ export function Composer({
           }}
           className="text-body leading-4.5 text-fg placeholder:text-fg-subtle"
         />
+        {signature && body.trim() && (
+          <p
+            aria-label="Signatur"
+            className="pt-3 pb-1 text-body leading-4.5 whitespace-pre-wrap text-fg-subtle select-none"
+          >
+            {signature}
+          </p>
+        )}
       </div>
       {onFiles && (
         <>

@@ -22,6 +22,21 @@ fi
 
 command -v docker >/dev/null || curl -fsSL https://get.docker.com | sh
 
+# Spam filter (COMPOSE_PROFILES with spam): Slider and Rspamd share a controller password made once
+# on this server, outside the copied release – nothing to set. A line in deploy/.env wins.
+profiles=$(sed -n 's/^COMPOSE_PROFILES=//p' .env | tail -n 1 | tr -d "\"' \t")
+if [[ ",$profiles," == *,spam,* ]]; then
+  secret=/var/lib/slider/rspamd-password
+  if [[ ! -s $secret ]]; then
+    install -d -m 700 /var/lib/slider
+    (umask 077 && head -c 24 /dev/urandom | od -An -tx1 | tr -d ' \n' >"$secret")
+  fi
+  # An empty line (copied from .env.example) counts as none.
+  sed -i -E "/^RSPAMD_(URL|PASSWORD)=[\"']{0,2}\$/d" .env
+  grep -q '^RSPAMD_URL=' .env || echo 'RSPAMD_URL=http://rspamd:11333' >>.env
+  grep -q '^RSPAMD_PASSWORD=' .env || echo "RSPAMD_PASSWORD=$(cat "$secret")" >>.env
+fi
+
 echo "→ building and starting"
 docker compose pull --quiet postgres caddy
 docker compose build slider
@@ -37,6 +52,10 @@ fi
 # so it is built once and kept – `up --no-build` below would fail without it.
 if grep -qx stt <<<"$services" && ! docker image inspect slider-stt:local >/dev/null 2>&1; then
   docker compose build stt
+fi
+# Spam filter: its resolver's image is small and built each time (cached), as Rspamd needs it.
+if grep -qx rspamd-dns <<<"$services"; then
+  docker compose build rspamd-dns
 fi
 docker compose up -d --no-build --remove-orphans
 

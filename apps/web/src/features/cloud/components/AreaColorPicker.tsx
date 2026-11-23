@@ -44,12 +44,15 @@ export function AreaColorPicker({
   onChange,
   labelledBy,
   none = false,
+  noneColor = null,
 }: {
   value: CloudAreaColor | null;
   onChange: (color: CloudAreaColor | null) => void;
   labelledBy: string;
   /** A first swatch for no colour of its own (folders): `null`. */
   none?: boolean;
+  /** What that one takes instead – a folder its area's – drawn in it; else the plain one. */
+  noneColor?: CloudAreaColor | null;
 }) {
   const group = useRef<HTMLDivElement>(null);
   const [mixing, setMixing] = useState(false);
@@ -86,8 +89,8 @@ export function AreaColorPicker({
             role="radio"
             data-swatch="none"
             aria-checked={value === null}
-            aria-label="Ohne Farbe"
-            title="Ohne Farbe"
+            aria-label={noneColor ? 'Farbe des Bereichs' : 'Ohne Farbe'}
+            title={noneColor ? 'Farbe des Bereichs' : 'Ohne Farbe'}
             tabIndex={value === null ? 0 : -1}
             onClick={() => {
               setMixing(false);
@@ -95,11 +98,14 @@ export function AreaColorPicker({
             }}
             className={cn(
               SWATCH,
-              'bg-surface-3 text-fg inset-ring inset-ring-border',
+              !noneColor && 'bg-surface-3 text-fg inset-ring inset-ring-border',
               value === null && PICKED,
             )}
+            style={noneColor ? { backgroundColor: areaColor(noneColor) } : undefined}
           >
-            {value === null && <Icon name="check" size={14} />}
+            {value === null && (
+              <Icon name="check" size={14} className={noneColor ? onFill(noneColor) : undefined} />
+            )}
           </button>
         )}
         {AREA_COLORS.map(({ color, name }) => {

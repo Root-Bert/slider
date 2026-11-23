@@ -1469,6 +1469,12 @@ hidden while pending and when nothing is unread. Slider's own start is „Präse
   the list's tab), An (comma/space separated, checked client-side; server: `mailSendSchema`
   refuses CR/LF and non-addresses), Betreff, text; ⌘↵ / „Senden“ closes at once with „Mail
   gesendet“, a refusal puts the draft back, toasts and reopens the form if still on the list.
+- Signature (`mail_accounts.signature`, 0165, plain text): set in a mailbox's „Bearbeiten“ (both
+  forms, not when adding – the provider's sign-in would lose it) or by an agent's
+  `update_mailbox`. Added on sending in `queueMail` (`withSignature`, shared – a blank line, then
+  it), so drafts never hold it and agents' mails carry it; taken back from the outbox it comes off
+  again (`withoutSignature`). Shown grey under the words: „Neue Mail“ always, a reply once it has
+  words (`Composer`'s `signature`). The AI's reply draft is told not to repeat it.
 - Mail (`services/mail*.ts`, `features/sender/components/mail/`, `lib/api/mail.ts`): one's
   IMAP/SMTP mailboxes per workspace. A colleague's mail with no one from outside on it is a chat
   message (`message.mail`, subject shown above its text); a conversation with colleagues only
@@ -1495,6 +1501,38 @@ hidden while pending and when nothing is unread. Slider's own start is „Präse
   mail arrived in inbox/spam or was written here; spam = `thread.spam`; others = not spam and a mail
   lies there; none = the side bar's list. Nothing is moved on the server – only the read state
   is written there.
+- Who put a mail where it is: `mail_threads.spam_by` (migration 0166, `MailSpamBy`): `server` (the
+  provider's spam folder), `filter` (Rspamd, only with `RSPAMD_URL`), `ai`, `person` (the menu's
+  „Als Spam markieren“/„Kein Spam“), `null` = where it arrived. The AI also looks at what the
+  provider put into spam (own hourly share, 15 vs 30, so a flood there starves no inbox look) and,
+  told the provider said spam, judges itself: `spamAfterLook` – not ok and never answered → spam
+  `ai`; ok on `server` spam with the latest mail's `auth` pass → back to the inbox, `ai`; never over
+  `person`. `SpamMark` shows `ai`/`filter` spam („Von KI/Vom Filter aussortiert“) and `ai` not spam
+  („Aus Spam geholt“) in the row and the head until its person decides. Server-side nothing moves.
+- Own rules for senders (`mail_rules`, migration 0167, `services/mail-rules.ts`): per person and
+  workspace, `block`/`trust` × `address`/`domain`, value sealed + `emailHash` for lookup. Address
+  before domain; a domain only a firm's (`ruleDomain`, never gmail.com & co., never one's own);
+  `trust` counts only with the mail's `auth` pass. Ingest asks `senderRule` before the provider's
+  folder and Rspamd (`spam_by` `rule`), also for a new mail into an existing thread (not over
+  `person`); the AI (`spamAfterLook`) never overrides `rule`. A new rule places at once the
+  person's threads whose latest incoming mail matches (`moved` in the answer); deleting one leaves
+  them where they lie and clears `rule` unless another rule still counts. Set from the mail menu
+  (`ruleActions`, 1:1 rows and the open mail – a group row has no single sender), listed under
+  „Postfächer“ (`MailRules.tsx`), exported as `mail-regeln.json`. `orgDomain` lives in
+  `@slider/shared` now (web names the domain as the server keeps it).
+- Own spam filter (Rspamd, compose profile `spam`: `rspamd` + `rspamd-redis` + `rspamd-dns`,
+  config in `deploy/rspamd/local.d`; `services/mail-filter.ts`): `filterCheck` posts the raw mail to
+  `/checkv2` with `From` (Return-Path), `Rcpt` and `IP`/`Helo` from `senderHop` – only the
+  provider's own `Received` run from the top down to the first outside server, and a
+  `Received-SPF client-ip` / `Authentication-Results` „sender IP is“ above it (fields below are
+  forgeable; Gmail's top `by 2002:…` hop has no name). Inbox mails only; a reply in a never
+  answered, unplaced, not-spam thread is checked too. `spam_symbols` (migration 0168) keeps up to 6
+  positive symbols, web words them (`filterReasons`). Learning (`filterLearn`, controller 11334,
+  `RSPAMD_PASSWORD`, background, 208 = learned before) only from `markMailSpam` and a new rule's
+  placed threads – never the AI or the filter. Rspamd must use `rspamd-dns`: Spamhaus answers no
+  public resolver (checked: stopping it drops `DBL_SPAM`). The raw mail is not kept, learning sends
+  it rebuilt by MailComposer. Locally: colima + standalone `docker-compose` (the `docker compose`
+  plugin is missing).
 - Mail as it looks (HTML, migration 0151, `services/mail-html.ts`, `MailHtml.tsx`): a mail's
   HTML part is sanitized with `sanitize-html` (pinned 2.18.1; allowlist – no script, handlers,
   form/input, iframe/object/embed, svg, base, meta, link; links only http(s)/mailto/tel, made
@@ -1909,7 +1947,12 @@ hidden while pending and when nothing is unread. Slider's own start is „Präse
   `--use-fake-ui-for-media-stream --use-fake-device-for-media-stream` and context permissions
   `camera`, `microphone` gives each browser a moving test picture; `--auto-select-desktop-capture-source=Entire screen`
   answers screen sharing. Two browser contexts (the second with a seeded session cookie) call
-  each other; check `video.videoWidth` > 0 on both sides.
+  each other; check `video.videoWidth` > 0 on both sides. More people: with the scratch API
+  stopped, a bun script inserts `users` + `workspace_members` + `sessions` (`token_hash` = sha256
+  hex of the cookie's `slider_session`) into `<DATA_DIR>/db`. A call over only becomes an entry
+  when something was said: while „Wird mitgeschrieben“ shows, `POST /api/calls/:id/transcript`
+  `{peerId, text}` per context (its `peerId` from its `calls/live?peer=` request) gives real
+  lines. A `page.goto` reloads and so hangs up – move around by clicks while in a call.
 - Looking at it through LiveKit: `brew install livekit livekit-cli`, `livekit-server --dev`
   (ws://localhost:7880, devkey/secret) and the scratch API with `LIVEKIT_URL=ws://localhost:7880`
   (the webhook needs a config file with `webhook: {api_key: devkey, urls: [http://localhost:<api
@@ -1957,10 +2000,26 @@ hidden while pending and when nothing is unread. Slider's own start is „Präse
   turn) loads the live key, the voice list and the chat summary ahead – the first answer was
   ~0.8 s slower cold. Not a word after 700 ms (about one turn in ten): a cached „Moment.“ is said
   meanwhile (`ACK`, made once per call, not in the history).
-- Bringing an agent into a conversation's call: ✨ „Agent dazuholen“ in the dock (agents one may
-  write to) → `POST /calls/:id/agent` (same rights and `live` 409 as calling it; `invitedBy`;
-  it works with the inviter's rights), ✕ on its tile → `POST /calls/:id/agent/leave` (anyone in
-  the call). It answers only turns matching `CALL_AGENT_ADDRESS` (`\bagent(in)?\b`, not
+- Adding to a conversation's call: „Hinzufügen“ (`personAdd`) in the dock (`AddToCall`) – first
+  „Neuer Agent“ (marked on open, `Menu`'s `pickFirst`; ↵ brings it), then the agents one may write
+  to, a line (`MenuAction.divider`), the workspace's members not in the call (ringing ones greyed).
+  With an agent in it only people („Person dazuholen“). An agent → `POST /calls/:id/agent`
+  (same rights and `live` 409 as calling it; `invitedBy`; it works with the inviter's rights);
+  `agentId: null` makes one first (`createIdleCloudAgent`: no order, empty chat, titled „Anruf mit
+  … am …“, the area's where one may, else private; the `live` check comes before, so none is left
+  over). ✕ on its tile → `POST /calls/:id/agent/leave` (anyone in the call). A member →
+  `POST /calls/:id/invite`: rung 45 s as a guest of the call (`Call.guests`) – in its audience and
+  `people` though they do not see the conversation (`freshen` keeps them), they join through the
+  conversation's call route like the others. Only direct and group calls end „unanswered“ /
+  „declined“; a meeting whose guest does not answer goes on.
+- No call goes on with nobody in it: a tab that dropped its call without hanging up (an error, a
+  sign-in change, a page part reloaded) but still is a peer at the hub sees itself in the next
+  `hello` / `call` and hangs up there (`leaveIfLeftBehind`, not while joining or handing over the
+  last words); `signedIn` hangs up (`goingAway`) instead of only tearing down – a stream reopened
+  with the same `peerId` cancels the hub's 12 s leave, which kept a lone „Beitreten“ with one's
+  own face. A stream event that throws is caught (the stream goes on); what breaks in the dock or
+  ringing card is caught by `CallGuard`: hung up, toast „Der Anruf wurde wegen eines Fehlers
+  beendet.“, the app goes on. It answers only turns matching `CALL_AGENT_ADDRESS` (`\bagent(in)?\b`, not
   „Agentur“); the message carries who is there plus the lines since it was last asked
   (`heardFrom`, at most 40 lines / 8000 chars), ending „<Name> zu dir: …“. Measured with Claude:
   „Agent, wann ist laut uns der Launch?“ after „Launch ist am dritten März“ → right answer in

@@ -68,7 +68,7 @@ test('the search finds slide text and opens the review at that slide (BER-175), 
   await page.goto(`/w/${deck.workspaceId}/dateien/meine`);
   // Come to it from another page of Cloud: one Esc still ends details and pick together.
   await page.getByRole('link', { name: 'Entwürfe' }).click();
-  await page.getByRole('link', { name: 'Meine Dateien' }).click();
+  await page.getByRole('link', { name: 'Dateien', exact: true }).click();
   const key = page.getByRole('link', { name: 'Vision.key' });
   await key.click();
   const details = page.getByRole('complementary', { name: 'Details zu „Vision.key“' });

@@ -94,6 +94,9 @@ import type {
   MailContext,
   MailSummary,
   MailContextState,
+  MailSpamBy,
+  MailRuleKind,
+  MailRuleMatch,
   MailPerson,
   TodoPriority,
   TodoSource,
@@ -2672,6 +2675,11 @@ export const mailAccounts = pgTable(
     name: encryptedText('mail_accounts', 'name').notNull(),
     /** What its person called it („Arbeit“); `null`: its default name (`mailboxLabels`). */
     label: encryptedText('mail_accounts', 'label'),
+    /**
+     * What stands under every mail it sends (0165), plain text; `null`: none. Added on sending
+     * (`queueMail`), so agents' mails carry it too.
+     */
+    signature: encryptedText('mail_accounts', 'signature'),
     imapHost: text('imap_host').notNull(),
     imapPort: integer('imap_port').notNull(),
     imapSecure: boolean('imap_secure').notNull(),
@@ -2739,6 +2747,10 @@ export const mailThreads = pgTable(
       .references(() => mailAccounts.id, { onDelete: 'cascade' }),
     subject: encryptedText('mail_threads', 'subject').notNull(),
     spam: boolean('spam').notNull().default(false),
+    /** Who said spam – or, `ai` with `spam` false, took it out of the provider's spam. */
+    spamBy: text('spam_by').$type<MailSpamBy>(),
+    /** Why the instance's filter moved it (`spam_by` filter): Rspamd's strongest symbols. */
+    spamSymbols: jsonb('spam_symbols').$type<string[]>(),
     lastAt: timestamptz('last_at').notNull(),
     readAt: timestamptz('read_at'),
     context: encryptedJson<MailContext>('mail_threads', 'context'),
@@ -2748,6 +2760,30 @@ export const mailThreads = pgTable(
   (t) => [index('mail_threads_account_idx').on(t.accountId, t.lastAt)],
 );
 export type MailThreadRow = typeof mailThreads.$inferSelect;
+
+/**
+ * One's own rule for a sender in a workspace (`MailRule`): `value` the address or domain, sealed;
+ * `value_hash` its keyed hash (`emailHash`) – how a mail's sender finds it, one rule per value.
+ */
+export const mailRules = pgTable(
+  'mail_rules',
+  {
+    id: text('id').primaryKey(),
+    workspaceId: text('workspace_id')
+      .notNull()
+      .references(() => workspaces.id, { onDelete: 'cascade' }),
+    userId: text('user_id')
+      .notNull()
+      .references(() => users.id, { onDelete: 'cascade' }),
+    kind: text('kind').$type<MailRuleKind>().notNull(),
+    match: text('match').$type<MailRuleMatch>().notNull(),
+    value: encryptedText('mail_rules', 'value').notNull(),
+    valueHash: text('value_hash').notNull(),
+    createdAt: createdAt(),
+  },
+  (t) => [uniqueIndex('mail_rules_value_idx').on(t.workspaceId, t.userId, t.match, t.valueHash)],
+);
+export type MailRuleRow = typeof mailRules.$inferSelect;
 
 /** An attachment as kept: its bytes lie under `key` in the blob store. */
 export interface MailAttachmentRow {

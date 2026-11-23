@@ -9,7 +9,12 @@ import {
   useUpdateEvent,
 } from '@/lib/api';
 import { isTextTarget } from '@/lib/dom';
-import { CLOUD_EVENT_PARAM, CLOUD_FILE_PARAM, CLOUD_TODO_PARAM } from '@/lib/routes';
+import {
+  CLOUD_CALL_PARAM,
+  CLOUD_EVENT_PARAM,
+  CLOUD_FILE_PARAM,
+  CLOUD_TODO_PARAM,
+} from '@/lib/routes';
 import { readString, writeString } from '@/lib/storage';
 import {
   AutosizeTextarea,
@@ -59,6 +64,7 @@ export function useShownEvent() {
         }
         after.delete(CLOUD_TODO_PARAM);
         after.delete(CLOUD_FILE_PARAM);
+        after.delete(CLOUD_CALL_PARAM);
         return after;
       },
       { replace: true },

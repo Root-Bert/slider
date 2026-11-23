@@ -1,5 +1,5 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { act, fireEvent, render, screen } from '@testing-library/react';
+import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { AccountAuthor, CallState, MeResponse } from '@slider/shared';
 import { api } from '@/lib/api-client';
@@ -68,8 +68,20 @@ vi.mock('./lib/call-client', () => ({
 afterEach(() => vi.restoreAllMocks());
 
 describe('CallProvider', () => {
-  it('shows the call one is in around the router – no router hook in the dock (it blanked the app)', () => {
-    vi.spyOn(api, 'get').mockResolvedValue([]);
+  it('shows the call one is in around the router – no router hook in the dock (it blanked the app)', async () => {
+    // The workspace's members: oneself, Anna (in the call) and Ben – only Ben can be rung in.
+    const member = (person: AccountAuthor) => ({
+      userId: person.id,
+      name: person.name,
+      color: person.color,
+    });
+    vi.spyOn(api, 'get').mockImplementation((path: string) =>
+      Promise.resolve(
+        path.endsWith('/members')
+          ? [member(me), member(anna), member({ ...anna, id: 'u9', name: 'Ben Wolf' })]
+          : [],
+      ),
+    );
     const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
     queryClient.setQueryData<Partial<MeResponse>>(queryKeys.me, {
       user: { ...me, email: 'r@example.test', isInstanceAdmin: false },
@@ -86,8 +98,17 @@ describe('CallProvider', () => {
     );
     expect(screen.getByText('Seite')).toBeTruthy();
     expect(screen.getByRole('region', { name: 'Anruf: Anna Beck' })).toBeTruthy();
-    expect(screen.getByRole('button', { name: 'Agent dazuholen' })).toBeTruthy();
     expect(screen.getByRole('button', { name: 'Auflegen' })).toBeTruthy();
+    // „Hinzufügen“: a new agent first, marked on open; then the members not in the call.
+    fireEvent.click(screen.getByRole('button', { name: 'Hinzufügen' }));
+    await waitFor(() =>
+      expect(screen.getAllByRole('menuitem').map((item) => item.textContent)).toEqual([
+        'Neuer Agent',
+        'Ben Wolf',
+      ]),
+    );
+    expect(document.activeElement?.textContent).toBe('Neuer Agent');
+    fireEvent.keyDown(document.activeElement!, { key: 'Escape' });
 
     // An agent brought in: its tile, drawn as the workspace has its agents look.
     fake.snap = snapshot({
@@ -97,11 +118,18 @@ describe('CallProvider', () => {
     act(() => fake.listeners.forEach((listener) => listener()));
     expect(screen.getByText('Hört zu – sag „Agent, …“')).toBeTruthy();
     expect(screen.getByRole('button', { name: 'Aus dem Anruf entfernen' })).toBeTruthy();
+    // With an agent in the call only people are added.
+    expect(screen.getByRole('button', { name: 'Person dazuholen' })).toBeTruthy();
 
     // Twenty in the call (through the server): small, who speaks and how many; large, 4 × 4 a page.
     const guests = Array.from({ length: 18 }, (_, i) => ({
       peerId: `p${i + 3}`,
-      author: { id: `u${i + 3}`, name: `Gast ${i + 3}`, type: 'owner' as const, color: 'green' as const },
+      author: {
+        id: `u${i + 3}`,
+        name: `Gast ${i + 3}`,
+        type: 'owner' as const,
+        color: 'green' as const,
+      },
       mic: true,
       camera: false,
       screen: false,

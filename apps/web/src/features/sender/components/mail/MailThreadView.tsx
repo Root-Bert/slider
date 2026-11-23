@@ -25,6 +25,7 @@ import {
   useMailInsights,
   useMailSpam,
   useMailThread,
+  useMailAccounts,
   useMailAddressBook,
   useReadMailThread,
   useUnreadMailThread,
@@ -53,6 +54,7 @@ import {
 import { GIVE_WAY_TO_PANEL, useAgentAside } from '@/features/cloud';
 import { useMailListLook } from '../../hooks/useMailListLook';
 import { useMailUploads } from '../../hooks/useMailUploads';
+import { useMailRuleActions } from '../../hooks/useMailRuleActions';
 import { usePinAction } from '../../hooks/usePinAction';
 import { useMailAside, useMailPane } from '../../hooks/useMailView';
 import { useSender } from '../../hooks/useSender';
@@ -61,12 +63,14 @@ import {
   mailGroupName,
   mailName,
   NEW_MAIL,
+  spamActions,
+  spamMarkOf,
   splitQuoted,
   unverifiedMail,
 } from '../../lib/mail';
 import { MAIL_ADDRESS, whenItGoes } from '../../lib/mail-address';
 import { forwardedText, forwardSubject, mailPersonLine } from '../../lib/mail-forward';
-import { PAGE_HEADER, PAGE_TITLE } from '../../lib/title';
+import { MAIL_SUBJECT, PAGE_HEADER } from '../../lib/title';
 import { Composer } from '../Composer';
 import { MenuButton } from '../MenuButton';
 import { MessageList } from '../MessageList';
@@ -77,6 +81,7 @@ import { MailHtml } from './MailHtml';
 import { MailOutboxLine } from './MailOutboxLine';
 import { MailUploads } from './MailUploads';
 import { ReplyRecipients } from './ReplyRecipients';
+import { SpamMark } from './SpamMark';
 
 const mailDay = new Intl.DateTimeFormat('de-DE', { dateStyle: 'medium' });
 const mailTime = new Intl.DateTimeFormat('de-DE', { timeStyle: 'short' });
@@ -515,7 +520,11 @@ export function MailThreadView({ threadId }: { threadId: string }) {
   const own = thread
     ? { address: thread.account.address, name: ui.me.name }
     : { address: '', name: '' };
-  const reply = useReplyMail(workspaceId, threadId, own);
+  // Its mailbox's signature: under the words being written, and under the sent one at once.
+  const signature =
+    useMailAccounts(workspaceId).data?.find((one) => one.id === thread?.account.id)?.signature ??
+    null;
+  const reply = useReplyMail(workspaceId, threadId, own, signature);
   const takeBack = useTakeBackMail(workspaceId);
   const draftReply = useDraftMailReply(threadId);
   const sendAgain = useSendMailAgain(workspaceId);
@@ -531,6 +540,7 @@ export function MailThreadView({ threadId }: { threadId: string }) {
   const [recipientsOpen, setRecipientsOpen] = useState(false);
   const book = useMailAddressBook(workspaceId, recipientsOpen);
   const pinAction = usePinAction(workspaceId, ui.notify);
+  const ruleActions = useMailRuleActions(workspaceId, ui.notify);
   // Passing a mail on over a new mail already begun: asked first, this goes on once yes.
   const [replacing, setReplacing] = useState<(() => void) | null>(null);
   // Files put on the reply: kept with its draft (on every device), up before it goes.
@@ -851,25 +861,10 @@ export function MailThreadView({ threadId }: { threadId: string }) {
           },
         ]
       : []),
-    thread.spam
-      ? {
-          label: 'Kein Spam',
-          icon: 'mail',
-          onSelect: () =>
-            spam.mutate(
-              { threadId, spam: false },
-              { onSuccess: () => ui.notify('Zurück im Posteingang'), onError: fail },
-            ),
-        }
-      : {
-          label: 'Als Spam markieren',
-          icon: 'report',
-          onSelect: () =>
-            spam.mutate(
-              { threadId, spam: true },
-              { onSuccess: () => ui.notify('Als Spam markiert'), onError: fail },
-            ),
-        },
+    ...spamActions(thread, (isSpam, toast) =>
+      spam.mutate({ threadId, spam: isSpam }, { onSuccess: () => ui.notify(toast), onError: fail }),
+    ),
+    ...ruleActions(threadId, thread.ruleSender, thread.spam),
     { label: 'Löschen', icon: 'delete', tone: 'danger', onSelect: () => setDeleting(true) },
   ];
   const peopleAuthors = thread.people.map((each) => mailAuthor(each, ui.home?.people ?? []));
@@ -887,6 +882,7 @@ export function MailThreadView({ threadId }: { threadId: string }) {
       }
       people={[]}
       onSend={send}
+      signature={group ? null : signature}
       focusOnOpen={!split}
       // A mail's reply grows with its words under the mail (`MailCards`); a group's keeps its cap.
       maxHeight={group ? undefined : Infinity}
@@ -947,13 +943,18 @@ export function MailThreadView({ threadId }: { threadId: string }) {
           </span>
         )}
         <div className="flex min-w-0 flex-1 flex-col">
-          <h1 className={PAGE_TITLE}>{title}</h1>
+          <h1 className={MAIL_SUBJECT}>{title}</h1>
         </div>
-        {thread.spam && (
-          <span className="flex shrink-0 items-center gap-1 text-xs text-danger">
-            <Icon name="report" size={16} />
-            Spam
-          </span>
+        {/* What Slider moved, to be checked; else plain spam as the provider put it. */}
+        {spamMarkOf(thread) ? (
+          <SpamMark thread={thread} />
+        ) : (
+          thread.spam && (
+            <span className="flex shrink-0 items-center gap-1 text-xs text-danger">
+              <Icon name="report" size={16} />
+              Spam
+            </span>
+          )
         )}
         {group && peopleAuthors.length > 0 && (
           <AvatarStack authors={peopleAuthors} max={4} size={24} interactive />

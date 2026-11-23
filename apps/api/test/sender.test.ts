@@ -22,6 +22,8 @@ import type {
   MailOAuthResult,
   MailSignIn,
   MailInsights,
+  MailRule,
+  MailRuleAdded,
   MailThread,
   MailThreadSummary,
 } from '@slider/shared';
@@ -90,7 +92,16 @@ import {
   syncAllMail,
 } from '../src/services/mail';
 import { workspaceStorage } from '../src/services/workspace-storage';
-import { lookUpQuestion, mailLinks, searchWords, todoLinks } from '../src/services/mail-context';
+import {
+  lookUpQuestion,
+  mailLinks,
+  searchWords,
+  spamAfterLook,
+  todoLinks,
+  unsubscribeLink,
+} from '../src/services/mail-context';
+import { ruleDomain } from '../src/services/mail-domains';
+import { isPublicIp, senderHop } from '../src/services/mail-filter';
 import { attachmentText, attachmentsText } from '../src/services/mail-attachment-text';
 import JSZip from 'jszip';
 import { firmSite, foundWhy, mailParties, sweepMailInsights } from '../src/services/mail-insights';
@@ -632,9 +643,11 @@ describe('Sender – the workspace’s messages', () => {
     expect((await pin('deck', lunch.id, true)).status).toBe(400);
     expect((await home(ben.cookie)).groups).toHaveLength(0);
     await ok(pin('agent', bensAgent, true, ben.cookie));
-    expect((await home(ben.cookie)).agents.find((each) => each.id === bensAgent)?.pinnedAt).toEqual(
-      expect.any(String),
-    );
+    // His own: pinned, and his to delete (the side bar's menu offers „Löschen“).
+    expect((await home(ben.cookie)).agents.find((each) => each.id === bensAgent)).toMatchObject({
+      pinnedAt: expect.any(String),
+      canDelete: true,
+    });
     expect((await home()).agents.some((each) => each.id === bensAgent)).toBe(false);
     // Let go: back among the rest.
     expect(await ok(pin('channel', salesChannel.id, false))).toEqual({ pinnedAt: null });
@@ -1278,7 +1291,13 @@ describe('Sender – the workspace’s messages', () => {
       404,
     );
     // The outbox: with a delay it waits – in the conversation at once, to whom one set, its blind
-    // copy only on one's own; taken back, it never goes and its words come back.
+    // copy only on one's own, under it the mailbox's signature; taken back, it never goes and its
+    // words come back without it.
+    expect(
+      await ok<MailAccount>(
+        send('PATCH', `/mail/accounts/${account.id}`, { signature: '  Viele Grüße\nRobert  ' }),
+      ),
+    ).toMatchObject({ signature: 'Viele Grüße\nRobert' });
     const outboxThread = () => ok<MailThread>(send('GET', `/mail/threads/${offer.id}`));
     const waiting = await ok<MailThread['messages'][number]>(
       send('POST', `/mail/threads/${offer.id}/reply`, {
@@ -1291,6 +1310,7 @@ describe('Sender – the workspace’s messages', () => {
       201,
     );
     expect(waiting).toMatchObject({
+      text: 'Doch noch etwas.\n\nViele Grüße\nRobert',
       to: [{ address: 'kunde@acme.com' }],
       cc: [{ address: 'chef@acme.com' }],
       bcc: [{ address: 'archiv@firma.de' }],
@@ -1300,6 +1320,9 @@ describe('Sender – the workspace’s messages', () => {
     expect(
       await ok(send('DELETE', `/mail/threads/${offer.id}/messages/${waiting.id}/outbox`)),
     ).toMatchObject({ text: 'Doch noch etwas.', bcc: ['archiv@firma.de'], threadGone: false });
+    expect(
+      await ok<MailAccount>(send('PATCH', `/mail/accounts/${account.id}`, { signature: '' })),
+    ).toMatchObject({ signature: null });
     expect((await outboxThread()).messages.some((one) => one.id === waiting.id)).toBe(false);
     // Left in the outbox it goes once due – with its blind copy and its own Message-ID; taken back
     // after that, it refuses.
@@ -1496,9 +1519,10 @@ describe('Sender – the workspace’s messages', () => {
         ),
       );
     expect((await folderList('sent')).map((t) => t.subject)).toEqual(['Angebot Messestand']);
-    expect((await folderList('Kunden/Acme')).map((t) => [t.subject, t.unread])).toEqual([
-      ['Rahmenvertrag', 0],
+    // Both written the same minute: their order is not told.
+    expect((await folderList('Kunden/Acme')).map((t) => [t.subject, t.unread]).sort()).toEqual([
       ['Alte Notiz', 0],
+      ['Rahmenvertrag', 0],
     ]);
     expect((await folderList('inbox')).map((t) => t.subject)).toEqual([
       'Angebot Messestand',
@@ -1789,6 +1813,8 @@ describe('Sender – the workspace’s messages', () => {
     expect(insights.parties.map((one) => [one.name, one.url])).toEqual([
       ['acme.com', 'https://acme.com'],
     ]);
+    // No newsletter: no way out to show.
+    expect(insights.unsubscribe).toBeNull();
     // Without the workspace's AI: no bullets to ask for; the filed PDF is noted on the attachment.
     expect([insights.summary, insights.filing[0]?.nodeId]).toEqual([
       { state: 'off' },
@@ -1878,10 +1904,30 @@ describe('Sender – the workspace’s messages', () => {
       .where(eq(integrationKeys.workspaceId, ctx.workspaceId));
     await ok(send('PATCH', `/mail/accounts/${account.id}`, { aiReads: true }));
     await ok(send('POST', `/mail/threads/${threads[1]?.id}/spam`, { spam: true }), 204);
-    expect(
-      (await ok<MailThreadSummary[]>(send('GET', `/workspaces/${ctx.workspaceId}/mail/threads`)))[1]
-        ?.spam,
-    ).toBe(true);
+    const byHand = (
+      await ok<MailThreadSummary[]>(send('GET', `/workspaces/${ctx.workspaceId}/mail/threads`))
+    )[1];
+    expect([byHand?.spam, byHand?.spamBy]).toEqual([true, 'person']);
+    // The AI's verdict: spam from someone never answered goes out of the way; the provider's spam
+    // comes back where the AI finds it fine and the domain vouched – both marked `ai`; its
+    // person's word stands.
+    expect([
+      spamAfterLook({ spam: false, spamBy: null }, 'phishing', false, 'pass'),
+      spamAfterLook({ spam: false, spamBy: null }, 'spam', true, 'pass'),
+      spamAfterLook({ spam: true, spamBy: 'server' }, 'ok', false, 'pass'),
+      spamAfterLook({ spam: true, spamBy: 'server' }, 'ok', false, 'none'),
+      spamAfterLook({ spam: true, spamBy: 'filter' }, 'ok', false, 'pass'),
+      spamAfterLook({ spam: false, spamBy: 'person' }, 'phishing', false, 'pass'),
+      spamAfterLook({ spam: true, spamBy: 'person' }, 'ok', false, 'pass'),
+    ]).toEqual([
+      { spam: true, spamBy: 'ai' },
+      null,
+      { spam: false, spamBy: 'ai' },
+      null,
+      null,
+      null,
+      null,
+    ]);
     // Pinned („Anpinnen“): for its person alone – a colleague finds no such mail; it says so in
     // every list it is in, and a colleague's pin is nowhere.
     await ok(send('POST', '/sender/pins', { kind: 'mail', id: offer.id, pinned: true }));
@@ -2273,6 +2319,223 @@ describe('Sender – the workspace’s messages', () => {
     expect((await ok<MailThread>(send('GET', `/mail/threads/${large}`))).messages[0]).toMatchObject(
       { subject: 'Pläne', text: expect.stringContaining('zu groß für Office (50 MB)') },
     );
+    // From the provider's spam folder: spam, said by the provider (`server`) – no mark to check.
+    const junk = await ingestMail(ctx.deps, kept!, {
+      ...mail('Gewinn <win@lotto.example>', 'Gewonnen', 'Klicken.', [
+        'Message-ID: <junk@lotto.example>',
+      ]),
+      folder: 'spam',
+      uid: 7778,
+    });
+    const junkThread = await ok<MailThread>(send('GET', `/mail/threads/${junk}`));
+    expect([junkThread.spam, junkThread.spamBy]).toEqual([true, 'server']);
+    // One's own rules for senders: a blocked one's conversations go to spam at once (`rule`), its
+    // new mails too; trust lifts the provider's spam only where the sender's domain vouched; a
+    // domain only a firm's; a rule lifted leaves its mails where they lie, unmarked; others' are not
+    // one's.
+    expect([
+      ruleDomain('a@gmail.com'),
+      ruleDomain('x@mail.acme.co.uk'),
+      ruleDomain('info@news.acme.com'),
+    ]).toEqual([null, 'acme.co.uk', 'acme.com']);
+    const shop = await ingestMail(ctx.deps, kept!, {
+      ...mail('Shop <Vertrieb@shop.example>', 'Angebot', 'Nur heute.', [
+        'Message-ID: <a1@shop.example>',
+      ]),
+      uid: 7779,
+    });
+    const blocked = await ok<MailRuleAdded>(
+      send('POST', `/mail/threads/${shop}/rule`, { kind: 'block', match: 'address' }),
+      201,
+    );
+    expect([blocked.rule.value, blocked.moved]).toEqual(['vertrieb@shop.example', 1]);
+    // The menu offers what the server takes: the latest incoming sender, a firm's domain only.
+    expect(
+      (
+        await ok<MailThreadSummary[]>(send('GET', `/workspaces/${ctx.workspaceId}/mail/threads`))
+      ).find((t) => t.id === shop)?.ruleSender,
+    ).toEqual({ address: 'vertrieb@shop.example', domain: 'shop.example' });
+    expect(await ok<MailThread>(send('GET', `/mail/threads/${shop}`))).toMatchObject({
+      spam: true,
+      spamBy: 'rule',
+    });
+    const shopAgain = await ingestMail(ctx.deps, kept!, {
+      ...mail('Shop <vertrieb@shop.example>', 'Noch ein Angebot', 'Morgen auch.', [
+        'Message-ID: <a2@shop.example>',
+      ]),
+      uid: 7780,
+    });
+    expect(await ok<MailThread>(send('GET', `/mail/threads/${shopAgain}`))).toMatchObject({
+      spam: true,
+      spamBy: 'rule',
+    });
+    const unvouched = await ok<MailRuleAdded>(
+      send('POST', `/mail/threads/${junk}/rule`, { kind: 'trust', match: 'domain' }),
+      201,
+    );
+    expect([unvouched.rule.value, unvouched.moved]).toEqual(['lotto.example', 0]);
+    const vouched = await sign(
+      mail('Buchhaltung <buchhaltung@firma.de>', 'Rechnung', 'Anbei.', [
+        'Message-ID: <bill@firma.de>',
+      ]),
+    );
+    const bill = await ingestMail(ctx.deps, kept!, { ...vouched, folder: 'spam', uid: 7781 });
+    expect(await ok<MailThread>(send('GET', `/mail/threads/${bill}`))).toMatchObject({
+      spam: true,
+      spamBy: 'server',
+    });
+    const trusted = await ok<MailRuleAdded>(
+      send('POST', `/mail/threads/${bill}/rule`, { kind: 'trust', match: 'address' }),
+      201,
+    );
+    expect(trusted.moved).toBe(1);
+    expect(await ok<MailThread>(send('GET', `/mail/threads/${bill}`))).toMatchObject({
+      spam: false,
+      spamBy: 'rule',
+    });
+    expect([
+      (await send('POST', `/mail/threads/${bill}/rule`, { kind: 'block', match: 'domain' })).status,
+      (await send('POST', `/mail/threads/${shop}/rule`, { kind: 'block' })).status,
+      (
+        await send(
+          'POST',
+          `/mail/threads/${shop}/rule`,
+          { kind: 'block', match: 'address' },
+          mia.cookie,
+        )
+      ).status,
+      (await send('DELETE', `/mail/rules/${blocked.rule.id}`, undefined, mia.cookie)).status,
+      spamAfterLook({ spam: true, spamBy: 'rule' }, 'ok', false, 'pass'),
+    ]).toEqual([400, 400, 404, 404, null]);
+    const rules = await ok<MailRule[]>(send('GET', `/workspaces/${ctx.workspaceId}/mail/rules`));
+    expect(rules.map((one) => [one.kind, one.match, one.value]).sort()).toEqual([
+      ['block', 'address', 'vertrieb@shop.example'],
+      ['trust', 'address', 'buchhaltung@firma.de'],
+      ['trust', 'domain', 'lotto.example'],
+    ]);
+    await ok(send('DELETE', `/mail/rules/${blocked.rule.id}`), 204);
+    expect(await ok<MailThread>(send('GET', `/mail/threads/${shop}`))).toMatchObject({
+      spam: true,
+      spamBy: null,
+    });
+    // The instance's filter (Rspamd): told where a mail came from only by the fields the
+    // mailbox's provider wrote on top (hops below anyone can write); a mail it calls spam goes
+    // there with its strongest reasons, a reply in a conversation one never answered too; what
+    // people decide teaches it, in the background.
+    const headed = (lines: string[]) =>
+      new TextEncoder().encode(`${lines.join('\r\n')}\r\n\r\nHallo\r\n`);
+    expect([
+      senderHop(
+        headed([
+          'Received: by 2002:a05:6a10:1234:b0:5a1:aa:bb with SMTP id x; Mon, 23 Nov 2026 01:00:00 -0800',
+          'Received: from mail.example.org (mail.example.org. [209.85.220.41])',
+          '  by mx.google.com with ESMTPS id z; Mon, 23 Nov 2026 01:00:00 -0800',
+          'Received-SPF: pass (google.com: domain of bob@example.org designates 209.85.220.41) client-ip=209.85.220.41;',
+          'Received: from evil (unknown [6.6.6.6]) by mx.google.com; Mon, 23 Nov 2026 00:00:00 -0800',
+        ]),
+      ),
+      senderHop(
+        headed([
+          'Received: from AM0PR01.eurprd01.prod.outlook.com (2603:10a6:208:1::1) by DB9PR01.eurprd01.prod.outlook.com (2603:10a6:10:2::2); Mon, 23 Nov 2026',
+          'Authentication-Results: spf=pass (sender IP is 40.92.18.7) smtp.mailfrom=shop.example',
+          'Received: from mx.shop.example (40.92.18.7) by AM4PEPF01.mail.protection.outlook.com (10.167.1.1); Mon, 23 Nov 2026',
+          'Received-SPF: Pass (protection.outlook.com) client-ip=6.6.6.6; helo=evil;',
+          'Received: from evil ([6.6.6.6]) by AM4PEPF02.mail.protection.outlook.com; Mon, 23 Nov 2026',
+        ]),
+      ),
+      senderHop(
+        headed([
+          'Received: from mout.example.org ([212.227.15.9]) by mx.posteo.de; Mon, 23 Nov 2026',
+          'Received: from [192.168.1.5] (helo=laptop) by mout.example.org; Mon, 23 Nov 2026',
+        ]),
+      ),
+      senderHop(headed(['Received: from laptop ([10.0.0.2]) by mx.posteo.de; Mon, 23 Nov 2026'])),
+      senderHop(headed(['From: a@b.de'])),
+    ]).toEqual([
+      { ip: '209.85.220.41', helo: 'mail.example.org' },
+      { ip: '40.92.18.7', helo: 'mx.shop.example' },
+      { ip: '212.227.15.9', helo: 'mout.example.org' },
+      null,
+      null,
+    ]);
+    expect(
+      ['::ffff:192.168.1.5', '224.0.0.1', '198.18.0.1', '::ffff:209.85.220.41'].map(isPublicIp),
+    ).toEqual([false, false, false, true]);
+    ctx.deps.config.rspamdUrl = 'http://rspamd.test:11333';
+    ctx.deps.config.rspamdPassword = 'rspamd-passwort';
+    const rspamdAsked: { url: string; headers: Record<string, string>; body: string }[] = [];
+    const rspamd = vi.spyOn(globalThis, 'fetch').mockImplementation(async (input, init) => {
+      const url = String(input);
+      const body = new TextDecoder().decode(init?.body as Uint8Array);
+      rspamdAsked.push({ url, headers: init?.headers as Record<string, string>, body });
+      const spammy = body.includes('Kredit');
+      return Response.json(
+        url.endsWith('/checkv2')
+          ? {
+              action: spammy ? 'add header' : 'no action',
+              symbols: spammy
+                ? {
+                    R_SPF_FAIL: { score: 1 },
+                    DBL_SPAM: { score: 6.5 },
+                    DKIM_TRACE: { score: 0 },
+                    ARC_NA: { score: -0.1 },
+                  }
+                : {},
+            }
+          : { success: true },
+      );
+    });
+    const loan = await ingestMail(ctx.deps, kept!, {
+      ...mail('Bank <angebot@kredit.example>', 'Kredit sofort', 'Kredit ohne Schufa.', [
+        'Message-ID: <loan@kredit.example>',
+        'Return-Path: <bounce@kredit.example>',
+      ]),
+      uid: 7782,
+    });
+    expect(await ok<MailThread>(send('GET', `/mail/threads/${loan}`))).toMatchObject({
+      spam: true,
+      spamBy: 'filter',
+      spamSymbols: ['DBL_SPAM', 'R_SPF_FAIL'],
+    });
+    expect(rspamdAsked[0]).toMatchObject({
+      url: 'http://rspamd.test:11333/checkv2',
+      headers: { From: 'bounce@kredit.example', Rcpt: kept!.address },
+    });
+    const club = await ingestMail(ctx.deps, kept!, {
+      ...mail('Verein <info@verein.example>', 'Sommerfest', 'Kommst du?', [
+        'Message-ID: <fest@verein.example>',
+      ]),
+      uid: 7783,
+    });
+    expect((await ok<MailThread>(send('GET', `/mail/threads/${club}`))).spam).toBe(false);
+    await ingestMail(ctx.deps, kept!, {
+      ...mail('Verein <info@verein.example>', 'AW: Sommerfest', 'Kredit für alle.', [
+        'Message-ID: <fest2@verein.example>',
+        'In-Reply-To: <fest@verein.example>',
+      ]),
+      uid: 7784,
+    });
+    expect(await ok<MailThread>(send('GET', `/mail/threads/${club}`))).toMatchObject({
+      spam: true,
+      spamBy: 'filter',
+    });
+    // „Kein Spam“: back, reasons gone, and the filter learns it as ham at its controller.
+    rspamdAsked.splice(0);
+    await ok(send('POST', `/mail/threads/${loan}/spam`, { spam: false }), 204);
+    await ctx.deps.background?.idle();
+    expect(await ok<MailThread>(send('GET', `/mail/threads/${loan}`))).toMatchObject({
+      spam: false,
+      spamBy: 'person',
+      spamSymbols: null,
+    });
+    const learned = rspamdAsked.filter((one) => one.url.includes(':11334'));
+    expect(learned.map((one) => [one.url, one.headers.Password])).toEqual([
+      ['http://rspamd.test:11334/learnham', 'rspamd-passwort'],
+    ]);
+    expect(learned[0]?.body).toContain('Kredit ohne Schufa.');
+    rspamd.mockRestore();
+    ctx.deps.config.rspamdUrl = null;
+    ctx.deps.config.rspamdPassword = null;
     // Writing and answering share an hour's budget per person: a loop is stopped (refused tries count).
     let tries = 0;
     let lastSend = 0;
@@ -2382,13 +2645,13 @@ describe('Sender – the workspace’s messages', () => {
     ).rejects.toThrow('keine öffentliche');
     await expect(
       mailHostAddress('imap.x.de', 'SMTP', async () => [
-        { address: '203.0.113.9' },
+        { address: '212.227.15.9' },
         { address: '10.0.0.2' },
       ]),
     ).rejects.toThrow('SMTP');
     expect(
-      await mailHostAddress('imap.x.de', 'IMAP', async () => [{ address: '203.0.113.9' }]),
-    ).toBe('203.0.113.9');
+      await mailHostAddress('imap.x.de', 'IMAP', async () => [{ address: '212.227.15.9' }]),
+    ).toBe('212.227.15.9');
     expect(
       mailErrorText(new Error('* OK Dovecot ready on db-intern.local 10.0.0.5'), 'IMAP'),
     ).not.toContain('10.0.0.5');
@@ -2655,6 +2918,26 @@ describe('Sender – the workspace’s messages', () => {
     ]);
     expect(mailLinks({ html: null, text: 'Bericht: https://acme.com/r/5. Danke' })).toEqual([
       { label: 'acme.com', url: 'https://acme.com/r/5' },
+    ]);
+    // A newsletter's way out, beside it: the link whose words say so before one whose address
+    // does, else such an address in its text; none in a mail that is no newsletter.
+    expect(
+      [
+        {
+          html: '<a href="https://news.example/l?u=1">Datenschutz</a> <a href="https://news.example/unsubscribe?u=1">x</a> <a href="https://news.example/p?u=1"><span>Newsletter abbestellen</span></a>',
+          text: '',
+        },
+        { html: '<a href="https://news.example/unsubscribe?u=2&amp;t=3">hier</a>', text: '' },
+        { html: null, text: 'Hier abmelden: https://news.example/x?u=4. Danke' },
+        { html: null, text: 'Bericht: https://acme.com/r/5. Danke' },
+        { html: '<a href="mailto:off@news.example">Abmelden</a>', text: '' },
+      ].map(unsubscribeLink),
+    ).toEqual([
+      'https://news.example/p?u=1',
+      'https://news.example/unsubscribe?u=2&t=3',
+      'https://news.example/x?u=4',
+      null,
+      null,
     ]);
     // Unconfirmed (no signature checked): only links to the sender's own site, none passing an
     // address on; denied: none; confirmed: all.

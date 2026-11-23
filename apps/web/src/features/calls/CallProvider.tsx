@@ -1,4 +1,5 @@
 import {
+  Component,
   createContext,
   use,
   useCallback,
@@ -7,6 +8,7 @@ import {
   useRef,
   useState,
   useSyncExternalStore,
+  type ErrorInfo,
   type ReactNode,
 } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
@@ -134,6 +136,16 @@ export function CallProvider({
     }
   }, [incoming, snap.me]);
 
+  // The call's own parts broke: hung up and said – never a call going on unseen.
+  const crashed = useCallback(
+    (callId: string | null) => {
+      if (!callId) return;
+      void client.leave();
+      notify('Der Anruf wurde wegen eines Fehlers beendet.', 'danger');
+    },
+    [client, notify],
+  );
+
   const ui = useMemo<CallsUi>(
     () => ({
       snap,
@@ -150,22 +162,57 @@ export function CallProvider({
   return (
     <Context value={ui}>
       {children}
-      {(incoming.length > 0 || active) && (
-        <div className="pointer-events-none fixed right-4 bottom-18 z-(--z-popover) flex w-[min(360px,calc(100vw-32px))] flex-col gap-2">
-          {incoming.map((call) => (
-            <IncomingCall key={call.id} call={call} />
-          ))}
-          {active && !expanded && active.id !== hosted && <CallDock call={active} />}
-        </div>
-      )}
-      {active && expanded && (
-        <div className="fixed inset-3 z-(--z-popover) flex sm:inset-6">
-          <CallDock call={active} />
-        </div>
-      )}
+      <CallGuard callId={active?.id ?? null} onCrash={crashed}>
+        {(incoming.length > 0 || active) && (
+          <div className="pointer-events-none fixed right-4 bottom-18 z-(--z-popover) flex w-[min(360px,calc(100vw-32px))] flex-col gap-2">
+            {incoming.map((call) => (
+              <IncomingCall key={call.id} call={call} />
+            ))}
+            {active && !expanded && active.id !== hosted && <CallDock call={active} />}
+          </div>
+        )}
+        {active && expanded && (
+          <div className="fixed inset-3 z-(--z-popover) flex sm:inset-6">
+            <CallDock call={active} />
+          </div>
+        )}
+      </CallGuard>
       <Toast toast={toast} />
     </Context>
   );
+}
+
+/**
+ * Catches what breaks in the dock or the ringing card: the page goes on, the call is hung up
+ * (`onCrash`). The next call shows again.
+ */
+class CallGuard extends Component<
+  { callId: string | null; onCrash: (callId: string | null) => void; children: ReactNode },
+  { broken: boolean; callId: string | null }
+> {
+  override state = { broken: false, callId: this.props.callId };
+
+  /** Broken stays broken for its call; another call (or none) is shown again. */
+  static getDerivedStateFromProps(
+    props: { callId: string | null },
+    state: { broken: boolean; callId: string | null },
+  ) {
+    if (props.callId === state.callId) return null;
+    return { broken: false, callId: props.callId };
+  }
+
+  static getDerivedStateFromError() {
+    return { broken: true };
+  }
+
+  override componentDidCatch(error: Error, info: ErrorInfo) {
+    console.error('Calls: the call broke', error, info.componentStack);
+    this.props.onCrash(this.props.callId);
+  }
+
+  override render() {
+    return this.state.broken ? null : this.props.children;
+  }
 }
 
 /** The calls of the provider around (inside it only). */

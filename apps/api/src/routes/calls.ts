@@ -10,6 +10,7 @@ import {
   callMediaSchema,
   callPeerIdSchema,
   callPeerSchema,
+  callPersonInviteSchema,
   callSignalSchema,
   callHushSchema,
   callTranscriptSchema,
@@ -116,6 +117,11 @@ export function callRoutes(deps: AppDeps, calls: CallHub) {
         const input = await readJson(c, callAgentInviteSchema);
         me(c);
         return c.json(await calls.bringAgent(deps, c.var.viewer, c.req.param('callId'), input));
+      })
+      // A member of the workspace rung into the call from inside it.
+      .post('/calls/:callId/invite', viewer, async (c) => {
+        const input = await readJson(c, callPersonInviteSchema);
+        return c.json(await calls.invite(deps, me(c), c.req.param('callId'), input));
       })
       .post('/calls/:callId/agent/leave', viewer, async (c) => {
         const { peerId } = await readJson(c, callPeerSchema);

@@ -7,6 +7,7 @@ import {
   useOpenCloudAgentChat,
   useStopCloudAgent,
 } from '@/lib/api';
+import { chatMatches, useMarkedMatches, useShowHit } from '@/lib/chat-search';
 import { draftKeys } from '@/lib/drafts';
 import { routes } from '@/lib/routes';
 import { ChatAnswer, ChatMessage } from '@/features/viewer';
@@ -14,9 +15,11 @@ import { Avatar, cn, Icon } from '@/ui';
 import { useCloud } from '../hooks/useCloud';
 import { choicesIn, withoutChoices } from '../lib/choices';
 import { plainNamed, type Named } from '../lib/named';
+import { messageWords } from '../lib/message-words';
 import { AgentAvatar } from './AgentAvatar';
 import { AgentComposer } from './AgentComposer';
 import { AgentChoices, AgentWatching } from './AgentWatching';
+import { useShownCall } from './CallPanel';
 import { CallEntry } from './CallRecord';
 import { WithNamed } from './Named';
 
@@ -68,6 +71,7 @@ export function AgentChat({
   inline = false,
   autoFocus,
   onSend,
+  search,
 }: {
   agent: CloudAgentDetail;
   chat: CloudAgentChat | null;
@@ -78,8 +82,11 @@ export function AgentChat({
   autoFocus?: boolean;
   /** Writes to the open chat in place of the plain message (beside a mail: which one). */
   onSend?: (text: string, chatId: string) => Promise<boolean>;
+  /** The chat's search: only the messages it finds, marked (`lib/chat-search.ts`). */
+  search?: { query: string; clear: () => void };
 }) {
   const ui = useCloud();
+  const shownCall = useShownCall();
   const message = useMessageCloudAgent(ui.workspace.id, agent.id);
   const openChat = useOpenCloudAgentChat(ui.workspace.id, agent.id);
   const stop = useStopCloudAgent(ui.workspace.id, agent.id);
@@ -90,8 +97,28 @@ export function AgentChat({
   // at its end – opened, the column stays put.
   const pinned = useRef(!inline);
   const shown = useRef(false);
+  // A scroll bar that takes room (a mouse, macOS' „always show“) stands out to the right in the
+  // gap beside, so the messages end flush with the field under them – not a bar's width further in.
+  useEffect(() => {
+    const list = listRef.current;
+    if (inline || !list) return;
+    const fit = () => {
+      const bar = list.offsetWidth - list.clientWidth;
+      list.style.marginRight = bar > 0 ? `-${bar}px` : '';
+    };
+    const watch = new ResizeObserver(fit);
+    watch.observe(list);
+    return () => watch.disconnect();
+  }, [inline]);
   const messages = chat?.messages ?? [];
   const last = messages.at(-1);
+  const query = search?.query.trim() ?? '';
+  const searching = query !== '';
+  useMarkedMatches(listRef, query);
+  const showHit = useShowHit(listRef, searching, () => search?.clear());
+  const shownMessages = searching
+    ? messages.filter((each) => chatMatches(messageWords(each), query))
+    : messages;
   const openNamed = useOpenNamed();
   // What it noticed where it watches stands in its first chat, where it then works on it.
   const watching = chat?.id === agent.id ? agent.watching : [];
@@ -157,20 +184,25 @@ export function AgentChat({
             'roll-away-list -mt-5 min-h-0 flex-1 overflow-y-auto overscroll-contain pt-12 pb-3',
         )}
       >
+        {searching && shownMessages.length === 0 && (
+          <li className="m-auto text-body text-fg-muted">Nichts gefunden.</li>
+        )}
         {!chat && (
           <li className="m-auto max-w-[420px] text-center text-body text-fg-muted">
             Ein weiterer Chat in diesem Agenten: an derselben Sache, mit demselben Schreibtisch.
             Alle hier sehen ihn sofort, und die Chats wissen voneinander.
           </li>
         )}
-        {messages.map((each) => (
-          <li key={each.id} className="flex flex-col">
+        {shownMessages.map((each) => (
+          <li
+            key={each.id}
+            data-message={each.id}
+            onClick={showHit(each.id)}
+            className={cn('flex flex-col', searching && 'cursor-pointer')}
+          >
             {each.call ? (
               // A call with it: one entry that opens the call's page.
-              <CallEntry
-                call={each.call}
-                to={routes.cloudAgentCall(ui.workspace.id, agent.id, each.call.id)}
-              />
+              <CallEntry call={each.call} to={shownCall.href(each.call.id)} />
             ) : each.role === 'user' ? (
               <ChatMessage
                 text={each.text}
@@ -223,10 +255,12 @@ export function AgentChat({
                 }
               />
             )}
-            {each === last && <AgentChoices choices={choices} onPick={(text) => void send(text)} />}
+            {each === last && !searching && (
+              <AgentChoices choices={choices} onPick={(text) => void send(text)} />
+            )}
           </li>
         ))}
-        {watching.length > 0 && <AgentWatching agent={agent} />}
+        {watching.length > 0 && !searching && <AgentWatching agent={agent} />}
       </ol>
       {chat && <Typing chat={chat} />}
       {canWrite ? (

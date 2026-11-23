@@ -266,7 +266,12 @@ export async function listPins(deps: CloudDeps, ctx: CloudCtx): Promise<CloudPin
   const visible = new Set(seen.rows.map((row) => row.id));
   return nodes
     .filter((node) => visible.has(node.id))
-    .map((node) => ({ id: node.id, name: node.name, color: node.color as CloudPin['color'] }));
+    .map((node) => {
+      // Without a colour of its own a folder takes its area's – not the workspace's own area's.
+      const area = node.areaId ? ctx.areas.get(node.areaId)?.row : undefined;
+      const color = node.color ?? (area && !area.root ? area.color : null);
+      return { id: node.id, name: node.name, color: color as CloudPin['color'] };
+    });
 }
 
 async function sharesOf(db: Executor, ids: string[], now: Date) {

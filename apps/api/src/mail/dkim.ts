@@ -186,6 +186,17 @@ export const alignedWith = (address: string, domain: string) => {
   return !!own && (own === domain || own.endsWith(`.${domain}`));
 };
 
+/** A mail's header fields from the top down, names in lower case, values unfolded. */
+export function headerFields(raw: Uint8Array): { name: string; value: string }[] {
+  return split(raw).fields.map((field) => ({
+    name: field.name,
+    value: valueOf(field)
+      .replace(/\r\n/g, '')
+      .replace(/[ \t]+/g, ' ')
+      .trim(),
+  }));
+}
+
 /** The topmost field of a name, unfolded – where a receiving server writes its own on top. */
 export function topField(raw: Uint8Array, name: string): string {
   const field = split(raw).fields.find((one) => one.name === name.toLowerCase());

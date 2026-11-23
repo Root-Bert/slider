@@ -26,14 +26,16 @@ import {
   type MenuAction,
 } from '@/ui';
 import { useMailListLook, type MailSpacing } from '../../hooks/useMailListLook';
+import { useMailRuleActions } from '../../hooks/useMailRuleActions';
 import { usePinAction } from '../../hooks/usePinAction';
 import { ROW_MENU_CLASS, useRowMenu } from '../../hooks/useRowMenu';
 import { useSender } from '../../hooks/useSender';
-import { mailGroupName, mailName } from '../../lib/mail';
+import { mailGroupName, mailName, spamActions, spamMarkOf } from '../../lib/mail';
 import { pinnedFirst } from '../../lib/pins';
 import { PinnedMark } from '../PinnedMark';
 import { Unread } from '../SenderSidebar';
 import { MailAvatar } from './MailAvatar';
+import { SpamMark } from './SpamMark';
 import type { MailViewState } from '../../hooks/useMailView';
 
 /**
@@ -95,6 +97,7 @@ export function MailInbox({ view }: { view: MailViewState }) {
   const unreadAgain = useUnreadMailThread(ui.workspace.id);
   const remove = useDeleteMailThread(ui.workspace.id);
   const pinAction = usePinAction(ui.workspace.id, ui.notify);
+  const ruleActions = useMailRuleActions(ui.workspace.id, ui.notify);
   const [deleting, setDeleting] = useState<MailThreadSummary | null>(null);
   const fail = (error: Error) => ui.notify(error.message, 'danger');
   // „Ungelesen“: a mail read while the filter is on (opened, stepped past) stays in the list
@@ -206,31 +209,14 @@ export function MailInbox({ view }: { view: MailViewState }) {
                   icon: 'markEmailUnread',
                   onSelect: () => unreadAgain.mutate(thread.id, { onError: fail }),
                 },
-            thread.spam
-              ? {
-                  label: 'Kein Spam',
-                  icon: 'mail',
-                  onSelect: () =>
-                    spam.mutate(
-                      { threadId: thread.id, spam: false },
-                      {
-                        onSuccess: () => ui.notify('Zurück im Posteingang'),
-                        onError: fail,
-                      },
-                    ),
-                }
-              : {
-                  label: 'Als Spam markieren',
-                  icon: 'report',
-                  onSelect: () =>
-                    spam.mutate(
-                      { threadId: thread.id, spam: true },
-                      {
-                        onSuccess: () => ui.notify('Als Spam markiert'),
-                        onError: fail,
-                      },
-                    ),
-                },
+            ...spamActions(thread, (isSpam, toast) =>
+              spam.mutate(
+                { threadId: thread.id, spam: isSpam },
+                { onSuccess: () => ui.notify(toast), onError: fail },
+              ),
+            ),
+            // A rule for its sender – a group's only from the open mail, where its sender shows.
+            ...(group ? [] : ruleActions(thread.id, thread.ruleSender, thread.spam)),
             {
               label: 'Löschen',
               icon: 'delete',
@@ -281,7 +267,14 @@ export function MailInbox({ view }: { view: MailViewState }) {
                   {name}
                 </RowLink>
               }
-              badge={thread.pinnedAt ? <PinnedMark /> : undefined}
+              badge={
+                thread.pinnedAt || spamMarkOf(thread) ? (
+                  <>
+                    {thread.pinnedAt && <PinnedMark />}
+                    <SpamMark thread={thread} />
+                  </>
+                ) : undefined
+              }
               subtitle={
                 look.preview === 0 ? (
                   group ? undefined : (

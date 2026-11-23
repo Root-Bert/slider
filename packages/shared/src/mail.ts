@@ -29,6 +29,8 @@ export interface MailAccount {
   name: string;
   /** What its person called it („Arbeit“) – `null`: its default name (`mailboxLabels`). */
   label: string | null;
+  /** What stands under every mail it sends (`withSignature`) – `null`: none. */
+  signature: string | null;
   imapHost: string;
   imapPort: number;
   imapSecure: boolean;
@@ -252,6 +254,15 @@ export interface MailSync {
 }
 
 /** A mail conversation in the side bar, beside the chats. */
+/**
+ * Who a rule set from a conversation is about (`addMailRule`): the sender of its latest mail that
+ * came in, and the firm's domain a rule may take – `null` for a mail provider's or one's own.
+ */
+export interface MailRuleSender {
+  address: string;
+  domain: string | null;
+}
+
 export interface MailThreadSummary {
   id: string;
   accountId: string;
@@ -264,10 +275,25 @@ export interface MailThreadSummary {
   snippet: string;
   unread: number;
   spam: boolean;
+  /** Who said spam (or, with `spam` false and `ai`, that the provider's spam was none). */
+  spamBy: MailSpamBy | null;
+  /** Why the instance's filter moved it (`spamBy` filter): Rspamd's strongest symbols. */
+  spamSymbols?: string[] | null;
+  /** `null`: nobody wrote in (only one's own mails) – no rule from here. */
+  ruleSender?: MailRuleSender | null;
   updatedAt: string;
   /** When its person pinned it („Anpinnen“, `senderPinSchema`): atop its list, the latest first. */
   pinnedAt?: string | null;
 }
+
+/**
+ * Who put a conversation where it is: `server` – the provider's spam folder; `filter` – the
+ * instance's spam filter; `ai` – the AI (spam, or out of the provider's spam back to the inbox);
+ * `rule` – its person's rule for the sender (`MailRule`); `person` – its person by hand. `null`: no
+ * one, it lies where it arrived.
+ */
+export const MAIL_SPAM_BY = ['server', 'filter', 'ai', 'rule', 'person'] as const;
+export type MailSpamBy = (typeof MAIL_SPAM_BY)[number];
 
 export const MAIL_VERDICTS = ['ok', 'spam', 'phishing'] as const;
 export type MailVerdict = (typeof MAIL_VERDICTS)[number];
@@ -341,6 +367,9 @@ export interface MailThread {
   /** Everyone on it but the mailbox itself, colleagues with their `userId`. */
   people: MailPerson[];
   spam: boolean;
+  spamBy: MailSpamBy | null;
+  spamSymbols?: string[] | null;
+  ruleSender?: MailRuleSender | null;
   messages: MailMessage[];
   context: MailContext | null;
   contextState: MailContextState;
@@ -405,6 +434,11 @@ export interface MailInsights {
   parties: MailParty[];
   documents: MailContextDocument[];
   filing: MailContextFiling[];
+  /**
+   * Where the latest mail from outside is unsubscribed from – a newsletter's own link to it, so it
+   * need not be looked for in the mail. `null`: none, or spam / a mail the AI warned of.
+   */
+  unsubscribe: string | null;
 }
 
 /**
@@ -415,6 +449,21 @@ export const mailThreadKind = (people: readonly MailPerson[]): 'group' | 'mail' 
   people.length > 0 && people.every((person) => person.userId) ? 'group' : 'mail';
 
 export const MAX_MAIL_TEXT = 100_000;
+export const MAX_MAIL_SIGNATURE = 2000;
+
+/**
+ * A mail's words as they go out: its mailbox's signature under them after a blank line – added
+ * on sending, so what is typed (and kept as a draft) never holds it.
+ */
+export function withSignature(text: string, signature: string | null | undefined): string {
+  return signature ? `${text.trimEnd()}\n\n${signature}` : text;
+}
+
+/** The words as typed again – a mail taken back from the outbox goes into the form without it. */
+export function withoutSignature(text: string, signature: string | null | undefined): string {
+  const tail = signature ? `\n\n${signature}` : '';
+  return tail && text.endsWith(tail) ? text.slice(0, -tail.length) : text;
+}
 
 const host = z
   .string()
@@ -439,6 +488,8 @@ const mailAccountFields = {
   aiReads: z.boolean().optional(),
   /** Its own name; empty: its default. Absent: unchanged. */
   label: mailboxLabelSchema.optional(),
+  /** What stands under every mail it sends; empty: none. Absent: unchanged. */
+  signature: z.string().trim().max(MAX_MAIL_SIGNATURE).optional(),
 };
 
 export const mailAccountInputSchema = z.object({
@@ -516,6 +567,49 @@ export const mailFileSchema = z.object({
 });
 
 export const mailSpamSchema = z.object({ spam: z.boolean() });
+
+const SECOND_LEVEL = new Set(['co', 'com', 'org', 'net', 'ac', 'gov', 'edu', 'or', 'ne', 'go']);
+
+/** The domain a firm goes by: `mail.acme.com` → `acme.com`, `shop.acme.co.uk` → `acme.co.uk`. */
+export function orgDomain(domain: string): string {
+  const labels = domain.toLowerCase().replace(/\.$/, '').split('.').filter(Boolean);
+  if (labels.length <= 2) return labels.join('.');
+  const top = labels.at(-1) ?? '';
+  const take = top.length === 2 && SECOND_LEVEL.has(labels.at(-2) ?? '') ? 3 : 2;
+  return labels.slice(-take).join('.');
+}
+
+/**
+ * One's own rule for a sender, in all one's mailboxes of a workspace: `block` – its mails go to
+ * spam; `trust` – they never do, where its domain vouched for it (`MailAuth` `pass`), else a
+ * forged sender would get through. `address` – that one address; `domain` – everyone at the firm
+ * (never a mail provider's domain, where anyone has an address). The address rule wins.
+ */
+export const MAIL_RULE_KINDS = ['block', 'trust'] as const;
+export type MailRuleKind = (typeof MAIL_RULE_KINDS)[number];
+export const MAIL_RULE_MATCHES = ['address', 'domain'] as const;
+export type MailRuleMatch = (typeof MAIL_RULE_MATCHES)[number];
+
+export interface MailRule {
+  id: string;
+  kind: MailRuleKind;
+  match: MailRuleMatch;
+  /** The address or the domain, lower case. */
+  value: string;
+  createdAt: string;
+}
+
+/** `POST /mail/threads/:id/rule`: for the sender of its latest mail that came in. */
+export const mailRuleSchema = z.object({
+  kind: z.enum(MAIL_RULE_KINDS),
+  match: z.enum(MAIL_RULE_MATCHES),
+});
+
+/** What a new rule did: the rule, and how many conversations it moved. */
+export interface MailRuleAdded {
+  rule: MailRule;
+  moved: number;
+}
 
 /** A colleague's mail in a chat: its subject, so one sees it came as a mail. */
 export interface SenderMessageMail {

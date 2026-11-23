@@ -381,7 +381,8 @@ export function CloudPage({
               </nav>
             )
           )}
-          <div className="flex min-w-0 items-center gap-3">
+          {/* As high as a button (`Hochladen`): the actions beside never push the title down. */}
+          <div className="flex min-h-9 min-w-0 items-center gap-3">
             {/* Below lg: the side bar's places, as at the start of Sender's heads. */}
             <MenuButton />
             {lead}

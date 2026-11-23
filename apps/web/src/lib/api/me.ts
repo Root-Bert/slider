@@ -17,6 +17,18 @@ export const useMe = () =>
     refetchOnWindowFocus: 'always',
   });
 
+/**
+ * The viewer's own colour (Einstellungen), from what `/me` already brought – never asks itself,
+ * so it is safe anywhere; `undefined` until `/me` is in.
+ */
+export const useOwnColor = () =>
+  useQuery({
+    queryKey: queryKeys.me,
+    queryFn: () => api.get<MeResponse>('/me'),
+    enabled: false,
+    select: (me) => me.viewer.author.color,
+  }).data;
+
 /** Picks the viewer's colour; their comments are recoloured, so everything deck-related reloads. */
 export function useUpdateMe() {
   const queryClient = useQueryClient();

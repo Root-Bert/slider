@@ -1,3 +1,4 @@
+import { useState } from 'react';
 import { Link } from 'react-router';
 import type { CloudArea } from '@slider/shared';
 import { formatFileSize, formatRelativeTime, pluralize } from '@/lib/format';
@@ -11,6 +12,7 @@ import {
   Icon,
   Menu,
   SegmentedControl,
+  TextField,
   type MenuAction,
 } from '@/ui';
 import { AreaMark } from './components/AreaMark';
@@ -214,6 +216,21 @@ export function Component() {
     VIEWS.map((each) => each.value),
     'folders',
   );
+  // Typed where it stands, in the bar beside the views: lights up the net's people.
+  const [query, setQuery] = useState('');
+  const words = query.trim().toLowerCase();
+  const found =
+    words === ''
+      ? 0
+      : new Set(
+          areas.flatMap((area) =>
+            area.members
+              .filter((member) =>
+                `${member.name} ${member.title ?? ''}`.toLowerCase().includes(words),
+              )
+              .map((member) => member.id),
+          ),
+        ).size;
   return (
     <CloudPage
       docTitle={root ? `${root.name} | Bereiche` : 'Bereiche'}
@@ -255,17 +272,42 @@ export function Component() {
             />
           ) : (
             <>
-              <GlassPanel className="self-start p-1">
-                <SegmentedControl
-                  label="Ansicht"
-                  segments={VIEWS}
-                  value={view}
-                  onChange={setView}
-                />
-              </GlassPanel>
+              <div className="flex flex-wrap items-center gap-3">
+                <GlassPanel className="p-1">
+                  <SegmentedControl
+                    label="Ansicht"
+                    segments={VIEWS}
+                    value={view}
+                    onChange={setView}
+                  />
+                </GlassPanel>
+                {view === 'people' && (
+                  <div className="ml-auto flex items-center gap-3">
+                    {words !== '' && (
+                      <span className="text-xs text-fg-muted" role="status">
+                        {found === 0 ? 'Niemand gefunden' : pluralize(found, 'Person', 'Personen')}
+                      </span>
+                    )}
+                    <div className="w-56">
+                      <TextField
+                        aria-label="Person suchen"
+                        placeholder="Person suchen"
+                        icon="search"
+                        autoComplete="off"
+                        value={query}
+                        onChange={(event) => setQuery(event.target.value)}
+                      />
+                    </div>
+                  </div>
+                )}
+              </div>
               {/* People: a net to move and zoom in – an area can have hundreds of them. */}
               {view === 'people' && (
-                <PeopleGraph areas={areas} actionsFor={(area) => areaActions(ui, area, areas)} />
+                <PeopleGraph
+                  areas={areas}
+                  query={query}
+                  actionsFor={(area) => areaActions(ui, area, areas)}
+                />
               )}
               {/* Wider than the page it scrolls sideways; `w-max` keeps the tree in one piece. */}
               <div className={cn('-mx-3 overflow-x-auto px-3 pb-4', view === 'people' && 'hidden')}>

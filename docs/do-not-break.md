@@ -286,7 +286,7 @@ Parity script (from `apps/web`): `bun --tsconfig-override=tsconfig.app.json scri
 ## Calls
 
 - **A call from a conversation opens, never a black page** – `CallProvider` and everything it
-  shows (dock, ringing card, tiles, „Agent dazuholen“) stand around the router in `App.tsx`: no
+  shows (dock, ringing card, tiles, „Hinzufügen“) stand around the router in `App.tsx`: no
   router hook in there (`useSearchParams`, `useLocation`, `useActiveWorkspace`, `useAgentAvatars`
   – agent pictures by `useWorkspaceAgentAvatars`), or the first call unmounts the whole app.
   Check: web-dom `features/calls/CallProvider.test.tsx`; a call between two browsers

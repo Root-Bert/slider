@@ -6,6 +6,7 @@ import { useRef, useState } from 'react';
 import { useNavigate, useParams, useSearchParams } from 'react-router';
 import { isTagChat, MAX_CLOUD_AGENT_CHATS, type CloudAgentDetail } from '@slider/shared';
 import { useCloudAgent } from '@/lib/api';
+import { ViewSearch } from '@/features/workspaces';
 import { formatRelativeTime } from '@/lib/format';
 import { routes } from '@/lib/routes';
 import { AgentCallButton, CallBoxes, useAgentCall } from '@/features/calls';
@@ -61,7 +62,7 @@ function ChatTabs({
   const { value, canOpen } = chatShown(agent, picked);
   if (agent.chats.length <= 1 && !canOpen) return null;
   return (
-    <GlassPanel className="w-fit max-w-full overflow-x-auto p-1">
+    <GlassPanel className="w-fit max-w-full min-w-0 overflow-x-auto p-1">
       <SegmentedControl
         label="Chats"
         mode="tabs"
@@ -89,17 +90,19 @@ function Chats({
   agent,
   picked,
   onPick,
+  search,
 }: {
   agent: CloudAgentDetail;
   picked: string;
   onPick: (chatId: string) => void;
+  search: { query: string; clear: () => void };
 }) {
   const { shown, value } = chatShown(agent, picked);
   return (
     // Stacked over the cards (phone), the chat keeps most of the window and the cards follow
     // when the page scrolls – squeezed beside them, its first line lay in the list's fade.
     <div className="flex min-h-0 min-w-0 flex-1 flex-col gap-3 max-lg:h-[calc(100svh-20rem)] max-lg:flex-none">
-      <AgentChat key={value} agent={agent} chat={shown} onOpened={onPick} />
+      <AgentChat key={value} agent={agent} chat={shown} onOpened={onPick} search={search} />
     </div>
   );
 }
@@ -141,6 +144,10 @@ export function Component() {
   const [picked, setPicked] = useState({ agentId, asked, chatId: asked });
   const chatId = picked.agentId === agentId && picked.asked === asked ? picked.chatId : asked;
   const pick = (next: string) => setPicked({ agentId, asked, chatId: next });
+  // The chats' search, right of their tabs; another agent starts without one.
+  const [searched, setSearched] = useState({ agentId, query: '' });
+  const query = searched.agentId === agentId ? searched.query : '';
+  const search = { query, clear: () => setSearched({ agentId, query: '' }) };
   const agent = found.data;
   // In a call with it: the call and its orders are the first cards beside the chat.
   const call = useAgentCall(agent?.id);
@@ -167,7 +174,20 @@ export function Component() {
         { label: area?.name ?? 'Agenten', to: back },
         { label: agent?.title ?? 'Agent' },
       ]}
-      toolbar={agent ? <ChatTabs agent={agent} picked={chatId} onPick={pick} /> : null}
+      toolbar={
+        agent ? (
+          // On a phone the search on a line of its own, under the tabs.
+          <div className="flex items-center gap-3 max-sm:flex-wrap">
+            <ChatTabs agent={agent} picked={chatId} onPick={pick} />
+            <ViewSearch
+              label="Chat durchsuchen"
+              value={query}
+              onChange={(next) => setSearched({ agentId, query: next })}
+              className="ml-auto w-64 max-sm:w-full"
+            />
+          </div>
+        ) : null
+      }
       nodes={[]}
       fill={!stacked}
       actions={
@@ -205,7 +225,7 @@ export function Component() {
           />
         ) : (
           <div className="flex min-h-0 flex-1 flex-col gap-5 lg:flex-row lg:gap-0">
-            <Chats agent={agent} picked={chatId} onPick={pick} />
+            <Chats agent={agent} picked={chatId} onPick={pick} search={search} />
             {/* Between chat and cards a handle: pulled, the cards take that width; double-click
                 back to the default. Only side by side – stacked there is nothing to share. */}
             {aside.handle}
@@ -228,6 +248,8 @@ export function Component() {
             {deleting && (
               <DeleteAgentDialog
                 agent={agent}
+                workspaceId={ui.workspace.id}
+                notify={ui.notify}
                 onClose={() => setDeleting(false)}
                 onDeleted={() => void navigate(back)}
               />

@@ -12,10 +12,19 @@ export function useAgentCall(agentId: string | undefined): CallState | null {
   return call && agentId && !call.channelId && call.agent?.id === agentId ? call : null;
 }
 
+/** This conversation's call, while one is in it – `null` otherwise. */
+export function useChannelCall(channelId: string): CallState | null {
+  const calls = useCallsOrNull();
+  const active = calls?.snap.active;
+  const call = active ? calls.snap.calls.get(active.callId) : undefined;
+  return call && call.channelId === channelId ? call : null;
+}
+
 /**
- * On the called agent's page the call is a card at the top of the cards beside its chat – the
- * dock's call and orders, each a card (the orders only when there are some); the corner's dock
- * stands back meanwhile. Elsewhere, and for any other call, the dock shows as always.
+ * On the called agent's page, and in a conversation beside its messages, the call is a card at
+ * the top of the column beside the chat – the dock's call and orders, each a card (the orders only
+ * when there are some); the corner's dock stands back meanwhile. Elsewhere, and for any other
+ * call, the dock shows as always.
  */
 export function CallBoxes({ call, className }: { call: CallState; className?: string }) {
   const calls = useCallsOrNull();

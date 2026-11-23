@@ -1088,6 +1088,12 @@
   }
 }
 
+/* What a chat's search found, marked in its messages (`lib/chat-search.ts`) – as a hit under a
+   presentation's card (`SearchHit`), a little stronger to be found in long answers. */
+::highlight(chat-search) {
+  background-color: color-mix(in srgb, var(--color-sage) 40%, transparent);
+}
+
 @layer base {
   :root {
     color-scheme: dark;

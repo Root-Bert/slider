@@ -9,6 +9,7 @@ import {
   useMessageCloudAgent,
   useStopCloudAgent,
 } from '@/lib/api';
+import { chatMatches, useMarkedMatches, useShowHit } from '@/lib/chat-search';
 import { draftKeys } from '@/lib/drafts';
 import { routes } from '@/lib/routes';
 import {
@@ -19,12 +20,14 @@ import {
   CallEntry,
   useAgentAside,
   choicesIn,
+  messageWords,
   plainNamed,
   withoutChoices,
   WithNamed,
 } from '@/features/cloud';
-import { AgentCallButton } from '@/features/calls';
+import { AgentCallButton, CallBoxes, useAgentCall } from '@/features/calls';
 import { ChatAnswer, ChatMessage } from '@/features/viewer';
+import { ViewSearch } from '@/features/workspaces';
 import { Avatar, ButtonLink, cn, EmptyState, Icon, Select, useMediaQuery } from '@/ui';
 import { TypingLine } from './components/TypingLine';
 import { MenuButton } from './components/MenuButton';
@@ -52,18 +55,27 @@ export function Component() {
   // The cards stand beside the chat from xl on (below they are hidden): only there a handle.
   const asideRef = useRef<HTMLDivElement>(null);
   const aside = useAgentAside(useMediaQuery('(min-width: 1280px)'), 360, asideRef);
+  // One's call with it: a card at the top of the cards beside the chat, as in Cloud.
+  const call = useAgentCall(agentId);
   const chat: CloudAgentChat | undefined =
     agent?.chats.find((each) => each.id === picked) ?? agent?.chats[0];
   const listRef = useRef<HTMLOListElement>(null);
   const pinned = useRef(true);
   const messages = chat?.messages ?? [];
   const last = messages.at(-1);
+  // The chat's search, beside its name; another agent starts without one.
+  const [search, setSearch] = useState('');
+  const wanted = search.trim();
+  const searching = wanted !== '';
+  useMarkedMatches(listRef, wanted);
+  const showHit = useShowHit(listRef, searching, () => setSearch(''));
 
   // Another agent: its first chat, or the one asked for.
   const [shown, setShown] = useState(`${agentId}:${asked}`);
   if (shown !== `${agentId}:${asked}`) {
     setShown(`${agentId}:${asked}`);
     setPicked(asked);
+    setSearch('');
   }
   useEffect(() => {
     pinned.current = true;
@@ -110,6 +122,9 @@ export function Component() {
       },
     );
   };
+  const shownMessages = searching
+    ? messages.filter((each) => chatMatches(messageWords(each), wanted))
+    : messages;
   const copied = (ok: boolean) =>
     ui.notify(ok ? 'Kopiert' : 'Nicht kopiert', ok ? 'neutral' : 'danger');
 
@@ -127,10 +142,17 @@ export function Component() {
 
   return (
     <section aria-label={agent.title} className="flex min-h-0 flex-1 flex-col gap-3">
-      <header className={PAGE_HEADER}>
+      <header className={cn(PAGE_HEADER, 'max-sm:flex-wrap')}>
         <MenuButton />
         <AgentAvatar id={agent.id} size={32} />
         <h1 className={cn(PAGE_TITLE, 'flex-1')}>{agent.title}</h1>
+        <ViewSearch
+          label="Chat durchsuchen"
+          value={search}
+          onChange={setSearch}
+          // On a phone on a line of its own, under the name.
+          className="w-64 max-sm:order-last max-sm:w-full"
+        />
         {chatPicker('max-w-48 max-sm:hidden')}
         <AgentCallButton agent={agent} />
         <ButtonLink
@@ -158,8 +180,16 @@ export function Component() {
             }}
             className="roll-away-list flex min-h-0 flex-1 flex-col gap-4 overflow-y-auto overscroll-contain py-3 pr-1 select-text [&>li:first-child]:mt-auto"
           >
-            {messages.map((each) => (
-              <li key={each.id} className="flex flex-col">
+            {searching && shownMessages.length === 0 && (
+              <li className="m-auto text-body text-fg-muted">Nichts gefunden.</li>
+            )}
+            {shownMessages.map((each) => (
+              <li
+                key={each.id}
+                data-message={each.id}
+                onClick={showHit(each.id)}
+                className={cn('flex flex-col', searching && 'cursor-pointer')}
+              >
                 {each.call ? (
                   // A call with it: one entry that opens the call's page, as in Cloud.
                   <CallEntry
@@ -211,7 +241,7 @@ export function Component() {
                     onCopied={copied}
                   />
                 )}
-                {each === last && (
+                {each === last && !searching && (
                   <AgentChoices choices={choices} onPick={(text) => void send(text)} />
                 )}
               </li>
@@ -254,9 +284,15 @@ export function Component() {
         <div
           ref={asideRef}
           style={aside.style}
-          className="flex min-h-0 w-[360px] shrink-0 flex-col max-xl:hidden"
+          className={cn(
+            'flex min-h-0 w-[360px] shrink-0 flex-col gap-5 max-xl:hidden',
+            call && aside.handle && 'overflow-y-auto overscroll-contain',
+          )}
         >
-          <AgentDesk agent={agent} workspaceId={workspaceId} notify={ui.notify} />
+          {call && aside.handle && <CallBoxes call={call} className="flex flex-col gap-5" />}
+          <div className={cn('flex flex-1 flex-col', !(call && aside.handle) && 'min-h-0')}>
+            <AgentDesk agent={agent} workspaceId={workspaceId} notify={ui.notify} />
+          </div>
         </div>
       </div>
     </section>

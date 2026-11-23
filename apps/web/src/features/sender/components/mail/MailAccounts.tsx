@@ -1,8 +1,9 @@
-import { useEffect, useEffectEvent, useRef, useState, type FormEvent } from 'react';
+import { useEffect, useEffectEvent, useId, useRef, useState, type FormEvent } from 'react';
 import { Navigate, useLocation, useNavigate, useSearchParams } from 'react-router';
 import {
   MAIL_CHECK_STEPS,
   MAIL_OAUTH_LABELS,
+  MAX_MAIL_SIGNATURE,
   MAX_MAILBOX_LABEL,
   mailboxDefaultLabel,
   mailboxLabels,
@@ -37,6 +38,7 @@ import { useOnPageRestore } from '@/lib/page-restore';
 import { routes } from '@/lib/routes';
 import { canCreateDecks } from '@/features/workspaces';
 import {
+  AutosizeTextarea,
   Badge,
   Button,
   ButtonLink,
@@ -61,6 +63,7 @@ import { useSender } from '../../hooks/useSender';
 import { ADD_MAILBOX_HASH } from '../../hooks/useMailView';
 import { MailboxHelper } from './MailboxHelper';
 import { MailboxNameInput } from './MailboxNameInput';
+import { MailRules } from './MailRules';
 
 interface FormError {
   text: string;
@@ -82,6 +85,8 @@ interface Draft {
   name: string;
   /** Its own name; empty: its default. */
   label: string;
+  /** Under every mail it sends; empty: none. */
+  signature: string;
   username: string;
   imapHost: string;
   imapPort: string;
@@ -97,6 +102,7 @@ const EMPTY: Draft = {
   password: '',
   name: '',
   label: '',
+  signature: '',
   username: '',
   imapHost: '',
   imapPort: '993',
@@ -112,6 +118,7 @@ const draftOf = (account: MailAccount): Draft => ({
   password: '',
   name: account.name === account.address ? '' : account.name,
   label: account.label ?? '',
+  signature: account.signature ?? '',
   username: account.username,
   imapHost: account.imapHost,
   imapPort: String(account.imapPort),
@@ -426,6 +433,7 @@ function AccountForm({
       address: draft.address.trim(),
       name: draft.name.trim(),
       label: draft.label.trim(),
+      ...(account ? { signature: draft.signature.trim() } : {}),
       username: (manual && draft.username.trim()) || draft.address.trim(),
       password: draft.password,
       ...servers,
@@ -560,6 +568,9 @@ function AccountForm({
           address={draft.address}
           signIn={account?.signIn}
         />
+        {account && (
+          <SignatureField value={draft.signature} onChange={(text) => set('signature', text)} />
+        )}
         {noPassword && !signInVia && error?.text !== noPassword && (
           <Notice
             tone="warning"
@@ -688,6 +699,33 @@ function MailboxLabelField({
   );
 }
 
+/**
+ * What stands under every mail the mailbox sends – plain text, as many lines as it has; added on
+ * sending (`withSignature`), so the mail being written shows it under its words.
+ */
+function SignatureField({ value, onChange }: { value: string; onChange: (text: string) => void }) {
+  const id = useId();
+  return (
+    <div className="flex flex-col gap-1.5">
+      <label htmlFor={id} className="text-xs text-fg-subtle">
+        Signatur
+      </label>
+      <div className="glass focus-field rounded-control px-3 py-2.5 transition-shadow">
+        <AutosizeTextarea
+          id={id}
+          rows={2}
+          maxHeight={240}
+          maxLength={MAX_MAIL_SIGNATURE}
+          placeholder={'Viele Grüße\nName, Firma, Telefon'}
+          value={value}
+          onChange={(event) => onChange(event.target.value)}
+          className="text-sm text-fg"
+        />
+      </div>
+    </div>
+  );
+}
+
 /** The AI reading along – the same switch and words for every mailbox. */
 function AiReads({ on, onChange }: { on: boolean; onChange: (on: boolean) => void }) {
   return (
@@ -721,13 +759,20 @@ function SignedInForm({
   const via = account.signIn as MailOAuthProvider;
   const [name, setName] = useState(account.name === account.address ? '' : account.name);
   const [label, setLabel] = useState(account.label ?? '');
+  const [signature, setSignature] = useState(account.signature ?? '');
   const [aiReads, setAiReads] = useState(account.aiReads);
   const [error, setError] = useState<FormError | null>(returned?.error ?? null);
   const submit = (event: FormEvent) => {
     event.preventDefault();
     setError(null);
     update.mutate(
-      { id: account.id, name: name.trim(), label: label.trim(), aiReads },
+      {
+        id: account.id,
+        name: name.trim(),
+        label: label.trim(),
+        signature: signature.trim(),
+        aiReads,
+      },
       {
         onSuccess: () => {
           ui.notify('Postfach gespeichert');
@@ -768,6 +813,7 @@ function SignedInForm({
           address={account.address}
           signIn={account.signIn}
         />
+        <SignatureField value={signature} onChange={setSignature} />
       </div>
       <div className="grid items-start gap-x-6 gap-y-4 @xl:grid-cols-2 @4xl:grid-cols-3">
         <AiReads on={aiReads} onChange={setAiReads} />
@@ -1168,6 +1214,7 @@ export function MailAccounts() {
           ))}
         </RowList>
       )}
+      {list.length > 0 && <MailRules />}
       {menu && (
         <ContextMenu
           label={`Aktionen für ${menu.account.address}`}

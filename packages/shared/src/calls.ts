@@ -203,10 +203,16 @@ export const callLeaveSchema = z.object({ peerId: peerIdSchema });
 /** Calling a Cloud agent, leaving, asking for the live writing's token: the tab. */
 export const callPeerSchema = callLeaveSchema;
 
-/** Bringing a Cloud agent into a conversation's call. */
+/** Bringing a Cloud agent into a conversation's call – `null`: a new one, made for the call. */
 export const callAgentInviteSchema = z.object({
   peerId: peerIdSchema,
-  agentId: z.string().min(1),
+  agentId: z.string().min(1).nullable(),
+});
+
+/** Ringing a member of the workspace into a conversation's call (a guest of the call). */
+export const callPersonInviteSchema = z.object({
+  peerId: peerIdSchema,
+  userId: z.string().min(1),
 });
 
 /** Agreeing to proposed work in a call (its ✓), or dropping it (✕). */

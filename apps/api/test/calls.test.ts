@@ -300,6 +300,63 @@ describe('Calls – in a conversation, heard on every page', () => {
       { cookie: anna.cookie },
     );
     expect(voice.status).toBe(404);
+    // „Neuer Agent“ also only with live writing – and then none is left over.
+    const agentsBefore = (await ctx.deps.db.select().from(cloudAgents)).length;
+    const fresh = await send(
+      'POST',
+      `/calls/${meeting.call.id}/agent`,
+      { peerId: 'anna-tab-0001', agentId: null },
+      anna.cookie,
+    );
+    expect(fresh.status).toBe(409);
+    expect((await ctx.deps.db.select().from(cloudAgents)).length).toBe(agentsBefore);
+    // A member rung in from the call (Carl does not see the conversation): a guest – he hears of
+    // it, joins it, and is out of it again when he hangs up; nobody outside the workspace.
+    const rungIn = await send(
+      'POST',
+      `/calls/${meeting.call.id}/invite`,
+      { peerId: 'anna-tab-0001', userId: carl.user.id },
+      anna.cookie,
+    );
+    expect(rungIn.status, await rungIn.clone().text()).toBe(200);
+    const carlsCall = await vi.waitFor(() => {
+      const event = carls.heard.findLast((each) => each.type === 'call');
+      expect(event).toBeTruthy();
+      return event as Extract<CallEvent, { type: 'call' }>;
+    });
+    expect(carlsCall.call.ringing).toContain(carl.user.id);
+    expect(carlsCall.call.people.map((person) => person.name)).toContain('Carl Ott');
+    expect(
+      (
+        await send(
+          'POST',
+          `/calls/${meeting.call.id}/invite`,
+          { peerId: 'anna-tab-0001', userId: crypto.randomUUID() },
+          anna.cookie,
+        )
+      ).status,
+    ).toBe(404);
+    const guestIn = await send(
+      'POST',
+      `/sender/channels/${channel.id}/call`,
+      { peerId: 'carl-tab-0001' },
+      carl.cookie,
+    );
+    expect(guestIn.status, await guestIn.clone().text()).toBe(200);
+    expect(((await guestIn.json()) as CallJoined).call.peers.map((peer) => peer.peerId)).toEqual([
+      'anna-tab-0001',
+      'carl-tab-0001',
+    ]);
+    expect(
+      (
+        await send(
+          'POST',
+          `/calls/${meeting.call.id}/leave`,
+          { peerId: 'carl-tab-0001' },
+          carl.cookie,
+        )
+      ).status,
+    ).toBe(204);
     // Talking over the agent: only from a tab in the call; without an agent nothing to stop.
     expect(
       (

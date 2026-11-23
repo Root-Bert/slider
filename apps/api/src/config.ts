@@ -167,6 +167,12 @@ export interface Config {
    */
   rspamdUrl?: string | null;
   /**
+   * `RSPAMD_PASSWORD`: its controller's password – with it Rspamd learns from what people decide
+   * (`mail-filter`); `RSPAMD_CONTROLLER_URL` where that controller is, else `RSPAMD_URL` on 11334.
+   */
+  rspamdPassword?: string | null;
+  rspamdControllerUrl?: string | null;
+  /**
    * Speech to text on the server itself (deploy/stt); `null` (or absent) until SPEECH_URL is set.
    * Taken over once as a self-hosted key of the instance (`integration-keys`).
    */
@@ -417,6 +423,8 @@ const envSchema = z.object({
   REMBG_URL: z.url().optional(),
   REMBG_MODEL: z.string().min(1).default('isnet-general-use'),
   RSPAMD_URL: z.url().optional(),
+  RSPAMD_PASSWORD: z.string().min(12).optional(),
+  RSPAMD_CONTROLLER_URL: z.url().optional(),
   SPEECH_URL: z.url().optional(),
   SPEECH_MODEL: z.string().min(1).default('whisper-large-v3-turbo'),
   AI_ALLOW_INTERNAL_URLS: booleanEnv.optional(),
@@ -705,6 +713,8 @@ export function loadConfig(
     bflApiKey: parsed.BFL_API_KEY ?? null,
     rembg: parsed.REMBG_URL ? { url: parsed.REMBG_URL, model: parsed.REMBG_MODEL } : null,
     rspamdUrl: parsed.RSPAMD_URL ?? null,
+    rspamdPassword: parsed.RSPAMD_PASSWORD ?? null,
+    rspamdControllerUrl: parsed.RSPAMD_CONTROLLER_URL ?? null,
     speech: parsed.SPEECH_URL ? { url: parsed.SPEECH_URL, model: parsed.SPEECH_MODEL } : null,
     aiAllowInternalUrls: parsed.AI_ALLOW_INTERNAL_URLS ?? false,
     calls: {

@@ -107,6 +107,8 @@ export interface SenderAgent {
   updatedAt: string;
   /** When the caller pinned it, as a conversation's `pinnedAt`. */
   pinnedAt?: string | null;
+  /** The caller may delete it (its owner, an admin) – as `CloudAgentSummary.canDelete`. */
+  canDelete?: boolean;
 }
 
 /** Everything the side bar shows. */

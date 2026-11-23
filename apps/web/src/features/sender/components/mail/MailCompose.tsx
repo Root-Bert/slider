@@ -38,7 +38,7 @@ import { useSender } from '../../hooks/useSender';
 import { NEW_MAIL } from '../../lib/mail';
 import { addressesIn, MAIL_ADDRESS, whenItGoes } from '../../lib/mail-address';
 import { takeHandedFiles } from '../../lib/mail-handoff';
-import { PAGE_HEADER, PAGE_TITLE } from '../../lib/title';
+import { MAIL_SUBJECT, PAGE_HEADER } from '../../lib/title';
 import { MenuButton } from '../MenuButton';
 import { AddressField } from './AddressField';
 import { MailUploads } from './MailUploads';
@@ -374,7 +374,7 @@ export function MailCompose() {
         <Icon name="edit" size={18} />
       </span>
       <div className="flex min-w-0 flex-1 flex-col">
-        <h1 className={PAGE_TITLE}>{subject.trim() || 'Neue Mail'}</h1>
+        <h1 className={MAIL_SUBJECT}>{subject.trim() || 'Neue Mail'}</h1>
       </div>
       {pane && (
         <IconButton
@@ -568,7 +568,13 @@ export function MailCompose() {
             </div>
           </div>
         )}
-        <div className="flex min-h-0 flex-1 flex-col overflow-y-auto px-4 py-3">
+        <div
+          className="flex min-h-0 flex-1 cursor-text flex-col overflow-y-auto px-4 py-3"
+          // The words' field ends where they do (the signature under them): below, it takes the caret.
+          onClick={(event) => {
+            if (event.target === event.currentTarget) textRef.current?.focus();
+          }}
+        >
           <AutosizeTextarea
             ref={textRef}
             aria-label="Text"
@@ -588,8 +594,17 @@ export function MailCompose() {
               event.preventDefault();
               files.add(pasted);
             }}
-            className="min-h-40 w-full flex-1 resize-none bg-transparent text-body leading-[1.5] text-fg outline-none placeholder:text-fg-subtle"
+            className="min-h-40 w-full resize-none bg-transparent text-body leading-[1.5] text-fg outline-none placeholder:text-fg-subtle"
           />
+          {from?.signature && (
+            // Added on sending (`withSignature`) – shown where it will stand, not typed into.
+            <p
+              aria-label="Signatur"
+              className="pt-3 text-body leading-[1.5] whitespace-pre-wrap text-fg-subtle select-none"
+            >
+              {from.signature}
+            </p>
+          )}
         </div>
         <footer className="flex shrink-0 items-center justify-end gap-3 border-t border-hairline px-4 py-2.5">
           <input

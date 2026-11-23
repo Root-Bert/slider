@@ -1,5 +1,5 @@
 import { createHash, createHmac, timingSafeEqual } from 'node:crypto';
-import { and, desc, eq, inArray, isNotNull, lt, lte, ne, sql, type SQL } from 'drizzle-orm';
+import { and, desc, eq, inArray, isNotNull, isNull, lt, lte, ne, sql, type SQL } from 'drizzle-orm';
 import { simpleParser, type AddressObject, type ParsedMail } from 'mailparser';
 import {
   API_PREFIX,
@@ -8,6 +8,8 @@ import {
   MAX_MAIL_ATTACHED_BYTES,
   MAX_MAIL_UPLOAD_BYTES,
   searchFold,
+  withoutSignature,
+  withSignature,
 } from '@slider/shared';
 import type {
   LinkedMailAccount,
@@ -19,6 +21,7 @@ import type {
   MailPerson,
   MailSync,
   MailThread,
+  MailRuleSender,
   MailThreadSummary,
   MailUpload,
 } from '@slider/shared';
@@ -61,6 +64,9 @@ import {
 import { dropAccountCalendars, syncMailCalendars } from './calendar/mail-calendars';
 import { cloudContext } from './cloud/context';
 import { requireRole } from './workspaces/roles';
+import { filterCheck, filterLearn } from './mail-filter';
+import { ruleDomain } from './mail-domains';
+import { senderRule } from './mail-rules';
 import { postFromMail, senderLive } from './sender';
 import { deleteBlobs, storageBlobs } from './blob-deletions';
 import {
@@ -100,6 +106,7 @@ export function accountDto(row: MailAccountRow): MailAccount {
     address: row.address,
     name: row.name,
     label: row.label || null,
+    signature: row.signature || null,
     imapHost: row.imapHost,
     imapPort: row.imapPort,
     imapSecure: row.imapSecure,
@@ -202,7 +209,7 @@ export async function addMailAccount(
   input: MailAccountInput,
 ): Promise<MailAccount> {
   await cloudContext(deps.db, workspaceId, userId);
-  const { label, ...rest } = input;
+  const { label, signature, ...rest } = input;
   const login = { ...rest, name: input.name || input.address };
   await checked(deps, login);
   const now = deps.clock.now();
@@ -227,6 +234,7 @@ export async function addMailAccount(
         .set({
           ...login,
           ...(label ? { label } : {}),
+          ...(signature ? { signature } : {}),
           calendarOnly: false,
           state: 'ok',
           error: null,
@@ -242,6 +250,7 @@ export async function addMailAccount(
           userId,
           ...login,
           label: label || null,
+          signature: signature || null,
           state: 'ok',
           createdAt: now,
           updatedAt: now,
@@ -261,14 +270,17 @@ export async function updateMailAccount(
   deps: AppDeps,
   userId: string,
   accountId: string,
-  { label, ...patch }: Partial<MailAccountInput>,
+  { label, signature, ...patch }: Partial<MailAccountInput>,
 ): Promise<MailAccount> {
   // A calendar alone („Kalender › Konten“) changes its own name only.
   const row = await ownAccount(deps, userId, accountId, {
     calendar: Object.values(patch).every((value) => value === undefined),
   });
   // Its own name: trimmed by the schema; empty is its default again.
-  const named = label !== undefined ? { label: label || null } : {};
+  const named = {
+    ...(label !== undefined ? { label: label || null } : {}),
+    ...(signature !== undefined ? { signature: signature || null } : {}),
+  };
   if (row.auth !== 'password') {
     // Signed in through the provider: address, servers and sign-in are its – only the name and
     // whether the AI reads along change here (ports and TLS fill in by default: not looked at).
@@ -851,7 +863,7 @@ export async function syncAllMail(deps: AppDeps): Promise<void> {
 export const tellMailbox = (row: Pick<MailAccountRow, 'workspaceId' | 'userId'>) => tell(row, null);
 
 /** Whoever has the mailbox sees the change at once (their mail list is fetched anew). */
-function tell(row: Pick<MailAccountRow, 'workspaceId' | 'userId'>, threadId: string | null) {
+export function tell(row: Pick<MailAccountRow, 'workspaceId' | 'userId'>, threadId: string | null) {
   if (!senderLive.open(row.workspaceId)) return;
   senderLive.publish(row.workspaceId, new Set([row.userId]), { type: 'mail', threadId });
 }
@@ -936,30 +948,6 @@ export function freshPart(text: string): string {
 /** The subject without „Re:“, „AW:“, „Fwd:“ in front – what a conversation is called. */
 export function bareSubject(subject: string): string {
   return subject.replace(/^(\s*(re|aw|wg|fwd?|antw)\s*(\[\d+\])?\s*:\s*)+/i, '').trim();
-}
-
-/** Rspamd's word on a mail, where one is set up: `true` – spam. */
-async function rspamdSays(deps: AppDeps, raw: Uint8Array, from: string): Promise<boolean> {
-  const url = deps.config.rspamdUrl;
-  if (!url) return false;
-  try {
-    const response = await fetch(new URL('/checkv2', url), {
-      method: 'POST',
-      body: raw,
-      headers: { From: from },
-      signal: AbortSignal.timeout(10_000),
-    });
-    if (!response.ok) return false;
-    const verdict = (await response.json()) as { action?: string };
-    return (
-      verdict.action === 'reject' ||
-      verdict.action === 'add header' ||
-      verdict.action === 'rewrite subject'
-    );
-  } catch (error) {
-    deps.log.warn('Mail: Rspamd did not answer', { error });
-    return false;
-  }
 }
 
 /** The workspace's people with these addresses (lower case) – address → their id. */
@@ -1167,9 +1155,22 @@ export async function ingestMail(
     outgoing ? [] : await dkimDomains(mail.raw, deps.mailDns),
     !outgoing && providerVouches(topResults, account.imapHost, from.address),
   );
-  const spam =
-    mail.folder === 'spam' ||
-    (mail.folder === 'inbox' && !outgoing && (await rspamdSays(deps, mail.raw, from.address)));
+  // Where it goes: one's own rule for its sender first (`mail-rules`; trust only where its domain
+  // vouched), else spam as the provider's folder or the instance's filter says (`spamBy`).
+  const rule = arrives && !outgoing ? await senderRule(deps, account, from.address, auth) : null;
+  const filter =
+    !rule && mail.folder === 'inbox' && !outgoing
+      ? await filterCheck(deps, mail.raw, { from: from.address, rcpt: account.address })
+      : null;
+  const spamBy = rule
+    ? ('rule' as const)
+    : mail.folder === 'spam'
+      ? ('server' as const)
+      : filter?.spam
+        ? ('filter' as const)
+        : null;
+  const spam = rule ? rule === 'block' : spamBy !== null;
+  const spamSymbols = spamBy === 'filter' ? (filter?.symbols ?? null) : null;
   const references = [
     ...(Array.isArray(parsed.references)
       ? parsed.references
@@ -1258,6 +1259,28 @@ export async function ingestMail(
         .update(mailThreads)
         .set({ lastAt: sql`greatest(${mailThreads.lastAt}, ${sentAt.toISOString()}::timestamptz)` })
         .where(eq(mailThreads.id, threadId));
+      // A rule moves the conversation its sender writes into – not one its person placed by hand.
+      if (rule)
+        await deps.db
+          .update(mailThreads)
+          .set({ spam, spamBy: 'rule' })
+          .where(
+            and(eq(mailThreads.id, threadId), sql`${mailThreads.spamBy} is distinct from 'person'`),
+          );
+      // A reply the filter calls spam, in a conversation its person never answered and nobody
+      // placed: out of the way too – where they wrote back, it stays.
+      else if (spamBy === 'filter')
+        await deps.db
+          .update(mailThreads)
+          .set({ spam: true, spamBy: 'filter', spamSymbols })
+          .where(
+            and(
+              eq(mailThreads.id, threadId),
+              eq(mailThreads.spam, false),
+              isNull(mailThreads.spamBy),
+              sql`not exists (select 1 from ${mailMessages} where ${mailMessages.threadId} = ${threadId} and ${mailMessages.outgoing})`,
+            ),
+          );
     } else {
       threadId = crypto.randomUUID();
       await deps.db.insert(mailThreads).values({
@@ -1265,6 +1288,8 @@ export async function ingestMail(
         accountId: account.id,
         subject: bareSubject(subject) || '(ohne Betreff)',
         spam,
+        spamBy,
+        spamSymbols,
         lastAt: sentAt,
         // What one sent oneself is read, and what was in another folder before.
         readAt: outgoing || !arrives ? deps.clock.now() : null,
@@ -1313,6 +1338,21 @@ function messageDto(row: MailMessageRow): MailMessage {
 }
 
 /** The other side of a mail: who sent it, or – sent from here – whom it went to. */
+/** Who a rule from a conversation is about (`addMailRule`): its latest incoming mail's sender. */
+function ruleSenderOf(
+  rows: readonly Pick<MailMessageRow, 'from' | 'outgoing' | 'sentAt'>[],
+  own: ReadonlySet<string>,
+): MailRuleSender | null {
+  let latest: (typeof rows)[number] | null = null;
+  for (const row of rows)
+    if (!row.outgoing && (!latest || latest.sentAt < row.sentAt)) latest = row;
+  const address = latest?.from.address.trim().toLowerCase() ?? '';
+  if (!address || own.has(address)) return null;
+  const domain = ruleDomain(address);
+  const ownDomain = [...own].some((one) => ruleDomain(one) === domain);
+  return { address, domain: ownDomain ? null : domain };
+}
+
 const otherSide = (row: Pick<MailMessageRow, 'outgoing' | 'from' | 'to'>): MailPerson =>
   row.outgoing ? (row.to[0] ?? row.from) : row.from;
 
@@ -1511,9 +1551,18 @@ export async function listMailThreads(
       to: mailMessages.to,
       cc: mailMessages.cc,
       auth: mailMessages.auth,
+      outgoing: mailMessages.outgoing,
+      sentAt: mailMessages.sentAt,
     })
     .from(mailMessages)
     .where(inArray(mailMessages.threadId, ids));
+  const mailsOf = new Map<string, typeof everyone>();
+  for (const row of everyone) {
+    if (!row.threadId) continue;
+    const mails = mailsOf.get(row.threadId);
+    if (mails) mails.push(row);
+    else mailsOf.set(row.threadId, [row]);
+  }
   const own = await deps.db
     .select({ address: mailAccounts.address })
     .from(mailAccounts)
@@ -1529,6 +1578,7 @@ export async function listMailThreads(
     { workspaceId, userId, own: new Set(own.map((row) => row.address.toLowerCase())) },
     everyone,
   );
+  const ownAddresses = new Set(own.map((row) => row.address.trim().toLowerCase()));
   return threads.flatMap(({ thread }) => {
     const last = byThread.get(thread.id);
     if (!last) return [];
@@ -1545,6 +1595,9 @@ export async function listMailThreads(
           (freshPart(last.text) || last.text).replace(/\s+/g, ' ').slice(0, SNIPPET),
         unread: unread.get(thread.id) ?? 0,
         spam: thread.spam,
+        spamBy: thread.spamBy,
+        spamSymbols: thread.spamSymbols ?? null,
+        ruleSender: ruleSenderOf(mailsOf.get(thread.id) ?? [], ownAddresses),
         updatedAt: thread.lastAt.toISOString(),
       },
     ];
@@ -1593,6 +1646,9 @@ function threadDto(
     subject: thread.subject,
     people,
     spam: thread.spam,
+    spamBy: thread.spamBy,
+    spamSymbols: thread.spamSymbols ?? null,
+    ruleSender: ruleSenderOf(rows, new Set([account.address.trim().toLowerCase()])),
     messages: rows.map(messageDto),
     context: thread.context ? withDefaults(thread.context) : null,
     contextState: thread.contextState,
@@ -1661,11 +1717,16 @@ async function markThreadSeen(deps: AppDeps, account: MailAccountRow, threadId: 
   if (marked.some((one) => one.uid !== null)) later(deps, () => pushSeen(deps, account.id));
 }
 
-/** Spam, or not after all – it moves out of the way (or back). */
+/** Spam, or not after all – it moves out of the way (or back); the AI no longer moves it. */
 export async function markMailSpam(deps: AppDeps, userId: string, threadId: string, spam: boolean) {
   const { thread, account } = await ownThread(deps, userId, threadId);
-  await deps.db.update(mailThreads).set({ spam }).where(eq(mailThreads.id, thread.id));
+  await deps.db
+    .update(mailThreads)
+    .set({ spam, spamBy: 'person', spamSymbols: null })
+    .where(eq(mailThreads.id, thread.id));
   tell(account, thread.id);
+  // What its person decided teaches the instance's filter (in the background).
+  filterLearn(deps, await threadMessages(deps, thread.id), spam);
 }
 
 /** Deletes a mail conversation here (on the server it stays). */
@@ -1729,7 +1790,7 @@ async function queueMail(
       cc: mail.cc,
       bcc: mail.bcc,
       subject: mail.subject,
-      text: mail.text,
+      text: withSignature(mail.text, account.signature),
       attachments: mail.attachments,
       attachmentBytes: mail.attachments.reduce((sum, one) => sum + one.size, 0),
       auth: 'pass',
@@ -1890,7 +1951,7 @@ export async function takeBackMail(
   if (gone) await deps.db.delete(mailThreads).where(eq(mailThreads.id, thread.id));
   tell(account, gone ? null : thread.id);
   return {
-    text: taken.text,
+    text: withoutSignature(taken.text, account.signature),
     subject: taken.subject,
     to: taken.to.map((one) => one.address),
     cc: taken.cc.map((one) => one.address),

@@ -13,9 +13,10 @@ export const callRecordKeys = {
   one: (callId: string) => ['call-records', callId] as const,
 };
 
-export function useCallRecord(callId: string) {
+export function useCallRecord(callId: string, enabled = true) {
   return useQuery({
     queryKey: callRecordKeys.one(callId),
+    enabled,
     queryFn: () => api.get<CallRecord>(`/calls/${callId}/record`),
     refetchInterval: (query) => (query.state.data?.notesState === 'pending' ? WRITING_MS : false),
   });

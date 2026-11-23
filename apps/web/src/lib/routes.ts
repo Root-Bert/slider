@@ -79,9 +79,13 @@ export const routes = {
     `/w/${workspaceId}/dateien/bibliothek/vorlagen/${masterId}`,
   /** Cloud – the workspace's files; its start is „Zuletzt“. */
   cloud: (workspaceId: string) => `/w/${workspaceId}/dateien`,
-  /** One's own files („Meine Dateien“). */
-  cloudOwn: (workspaceId: string) => `/w/${workspaceId}/dateien/meine`,
-  /** Everything the person reaches, in one list. */
+  /**
+   * „Dateien“: tabs as the title, as „Agenten“ and „Aufgaben“ – all one reaches, one's own, the
+   * workspace's, each area's (`?von=`).
+   */
+  cloudFiles: (workspaceId: string) => `/w/${workspaceId}/dateien/meine`,
+  /** One's own files („Meine Dateien“): that tab of „Dateien“. */
+  cloudOwn: (workspaceId: string) => `/w/${workspaceId}/dateien/meine?von=meine`,
   /** An area's top. */
   cloudArea: (workspaceId: string, areaId: string) => `/w/${workspaceId}/dateien/bereich/${areaId}`,
   /** An area's agents: the view beside its files. */
@@ -197,6 +201,8 @@ export const CLOUD_TODO_PARAM = 'aufgabe';
 export const CLOUD_DAY_PARAM = 'tag';
 export const CLOUD_VIEW_PARAM = 'ansicht';
 export const CLOUD_EVENT_PARAM = 'termin';
+/** `?anruf=<id>` on any page of Cloud: a call over in the side panel beside it (`CallPanel`). */
+export const CLOUD_CALL_PARAM = 'anruf';
 
 /** The current location as a `returnTo` value. */
 export const currentPath = () =>

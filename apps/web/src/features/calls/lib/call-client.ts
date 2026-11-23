@@ -125,8 +125,9 @@ export class CallClient {
   /** Signed in as `userId` (or out: `null`): the stream follows. */
   signedIn(userId: string | null) {
     if (userId === this.snap.me) return;
+    // Hung up, not only dropped here: the server would keep this tab in the call otherwise.
+    this.goingAway();
     this.closeStream();
-    if (this.snap.active) this.teardown();
     this.set({ me: userId, calls: new Map() });
     if (userId) this.openStream();
   }
@@ -138,7 +139,12 @@ export class CallClient {
     );
     this.source = stream;
     stream.addEventListener('call', (message) => {
-      this.onEvent(JSON.parse((message as MessageEvent<string>).data) as CallEvent);
+      // One event that breaks must not stop the stream – the calls after it still come.
+      try {
+        this.onEvent(JSON.parse((message as MessageEvent<string>).data) as CallEvent);
+      } catch (error) {
+        console.error('Calls: an event could not be handled', error);
+      }
     });
     stream.addEventListener('error', () => {
       if (stream.readyState !== EventSource.CLOSED || this.source !== stream) return;
@@ -158,6 +164,7 @@ export class CallClient {
         this.iceServers = event.iceServers;
         const calls = new Map(event.calls.map((call) => [call.id, call]));
         this.set({ calls });
+        for (const call of calls.values()) this.leaveIfLeftBehind(call);
         const active = this.snap.active;
         // The server forgot the call (it restarted): this tab is no longer in it.
         if (active && !calls.get(active.callId)?.peers.some((p) => p.peerId === this.snap.peerId)) {
@@ -171,6 +178,7 @@ export class CallClient {
         const calls = new Map(this.snap.calls);
         calls.set(event.call.id, event.call);
         this.set({ calls });
+        this.leaveIfLeftBehind(event.call);
         const active = this.snap.active;
         if (active?.callId !== event.call.id) break;
         const here = new Set(event.call.peers.map((peer) => peer.peerId));
@@ -331,10 +339,13 @@ export class CallClient {
     }
   }
 
-  /** Brings a Cloud agent into this conversation's call – it answers when spoken to. */
-  async bringAgent(agentId: string) {
+  /**
+   * Brings a Cloud agent into this conversation's call – it answers when spoken to; `null`: a new
+   * one, made for the call. True once it is in.
+   */
+  async bringAgent(agentId: string | null): Promise<boolean> {
     const active = this.snap.active;
-    if (!active || active.agentId) return;
+    if (!active || active.agentId) return false;
     try {
       const call = await api.post<CallState>(`/calls/${active.callId}/agent`, {
         peerId: this.snap.peerId,
@@ -344,12 +355,46 @@ export class CallClient {
       calls.set(call.id, call);
       this.set({ calls });
       this.hear();
+      return true;
     } catch (error) {
       this.tell(
         error instanceof ApiError ? error.message : 'Der Agent ließ sich nicht dazuholen.',
         'danger',
       );
+      return false;
     }
+  }
+
+  /** Rings a member of the workspace into this conversation's call. */
+  async invite(userId: string) {
+    const active = this.snap.active;
+    if (!active || active.agentId) return;
+    try {
+      const call = await api.post<CallState>(`/calls/${active.callId}/invite`, {
+        peerId: this.snap.peerId,
+        userId,
+      });
+      const calls = new Map(this.snap.calls);
+      calls.set(call.id, call);
+      this.set({ calls });
+    } catch (error) {
+      this.tell(
+        error instanceof ApiError ? error.message : 'Die Person ließ sich nicht dazuholen.',
+        'danger',
+      );
+    }
+  }
+
+  /**
+   * The server still has this tab in a call this tab is not in (its call was dropped here – an
+   * error, a page part loaded anew – without hanging up): it hangs up there too, so no call goes
+   * on with nobody in it.
+   */
+  private leaveIfLeftBehind(call: CallState) {
+    if (!call.peers.some((peer) => peer.peerId === this.snap.peerId)) return;
+    if (this.snap.active?.callId === call.id || this.snap.joining || this.leaving === call.id)
+      return;
+    void api.post(`/calls/${call.id}/leave`, { peerId: this.snap.peerId }).catch(() => {});
   }
 
   /** Sends proposed work off (✓) or drops it (✕) – at once here, the server agrees. */

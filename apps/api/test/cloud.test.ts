@@ -336,6 +336,11 @@ describe('Cloud – the workspace’s files', () => {
     expect((await pin(deep.node.id, true)).status).toBe(400);
     expect(((await (await pin(offers.id, false)).json()) as CloudNode).pinned).toBe(false);
     expect(await pins()).toEqual([]);
+    // In an area a folder without a colour of its own wears the area's.
+    const shelf = await folder('Regal', { areaId: (await area('Lager')).id });
+    await pin(shelf.id, true);
+    expect((await pins()).map((each) => each.color)).toEqual(['cyan']);
+    await pin(shelf.id, false);
     // A folder's card peeks only at files lying directly in it.
     expect(top.nodes[0]).toMatchObject({ kind: 'folder', fileCount: 1, sizeBytes: 6, peek: [] });
     const inside = await list({ folder: deep.node.parentId ?? '' });

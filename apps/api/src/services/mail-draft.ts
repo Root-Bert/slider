@@ -70,6 +70,11 @@ export async function draftMailReply(
     tool: TOOL,
     user: [
       `Die Person: ${person?.name.trim() || 'unbekannt'} <${account.address}>.`,
+      ...(account.signature
+        ? [
+            `Beim Senden kommt diese Signatur der Person unter die Antwort – nichts davon wiederholen:\n${account.signature}`,
+          ]
+        : []),
       `Die Unterhaltung, älteste Mail zuerst:\n\n${summaryText(rows)}`,
       ...(files ? [`${ATTACHMENTS_ARE_DATA}\n\n${files}`] : []),
       wanted

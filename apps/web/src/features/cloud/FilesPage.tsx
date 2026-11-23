@@ -1,5 +1,5 @@
 import { useQueries } from '@tanstack/react-query';
-import { useState } from 'react';
+import { useState, type ReactNode } from 'react';
 import { Link, useParams } from 'react-router';
 import { cloudAccessAtLeast, searchFold, type CloudArea, type CloudNode } from '@slider/shared';
 import { cloudListQuery, useCloudList, type CloudPlace } from '@/lib/api';
@@ -15,10 +15,12 @@ import { Empty, LoadFailed } from './components/Empty';
 import { FileBrowser, FileBrowserSkeleton } from './components/FileBrowser';
 import { FileIcon } from './components/FileIcon';
 import { ListToolbar } from './components/ListToolbar';
-import { useCloud, type CloudTarget } from './hooks/useCloud';
+import { ScopeTabs } from './components/ScopeTabs';
+import { OWN_FILES, useCloud, type CloudTarget } from './hooks/useCloud';
 import { areaTrail, areasUnder, canHaveAreasUnder, isWorkspaceOwn } from './lib/areas';
 import { useStoredChoice } from './hooks/useStoredChoice';
 import { CLOUD_SORTS, CLOUD_VIEWS, filterNodes, sortNodes, type TypeFilter } from './lib/kinds';
+import { ALL_SCOPE, OWN_SCOPE, scopeTabs, useScope, WORKSPACE_SCOPE } from './lib/scopes';
 
 /**
  * A place and what lies in it: one's own files, an area, or a folder in either – as rows, as
@@ -28,14 +30,62 @@ import { CLOUD_SORTS, CLOUD_VIEWS, filterNodes, sortNodes, type TypeFilter } fro
 /** A place of its own each: the filter picked in one does not follow into the next. */
 export function Component() {
   const { areaId, folderId } = useParams();
-  return <Place key={`${areaId ?? ''}:${folderId ?? ''}`} />;
+  return areaId || folderId ? (
+    <Place key={`${areaId ?? ''}:${folderId ?? ''}`} areaId={areaId} folderId={folderId} />
+  ) : (
+    <Overview />
+  );
 }
 
-function Place() {
-  const { areaId, folderId } = useParams();
+/**
+ * „Dateien“: tabs as the title, as „Agenten“ and „Aufgaben“ – all one reaches (each with where it
+ * lies), one's own, the workspace's, then each area's: what lies at its top.
+ */
+function Overview() {
+  const ui = useCloud();
+  const areas = ui.home?.areas ?? [];
+  const { tabs, current } = scopeTabs(areas, useScope(), {
+    own: 'Nur du siehst sie',
+    workspace: 'Alle im Workspace sehen sie',
+  });
+  const root = areas.find((area) => isWorkspaceOwn(area));
+  // The workspace's own not known (yet): all of it, never one's own under its name.
+  const scope = current === WORKSPACE_SCOPE && !root ? ALL_SCOPE : current;
+  const areaId =
+    scope === WORKSPACE_SCOPE
+      ? root?.id
+      : scope === ALL_SCOPE || scope === OWN_SCOPE
+        ? undefined
+        : scope;
+  return (
+    <Place
+      key={scope}
+      areaId={areaId}
+      all={scope === ALL_SCOPE}
+      tabs={<ScopeTabs tabs={tabs} current={current} />}
+    />
+  );
+}
+
+function Place({
+  areaId,
+  folderId,
+  all: across = false,
+  tabs,
+}: {
+  areaId?: string;
+  folderId?: string;
+  /** Everything one reaches, each with where it lies („Alle“ of „Dateien“). */
+  all?: boolean;
+  /** On „Dateien“: its tabs stand as the title, an area's own things (people, menu) stay on its page. */
+  tabs?: ReactNode;
+}) {
   const ui = useCloud();
   const { workspace } = ui;
-  const place: CloudPlace = { scope: 'folder', folder: folderId, area: areaId };
+  const overview = Boolean(tabs);
+  const place: CloudPlace = across
+    ? { scope: 'all' }
+    : { scope: 'folder', folder: folderId, area: areaId };
   const listing = useCloudList(workspace.id, place);
   const [filter, setFilter] = useState<TypeFilter>('all');
   // The page's own field: only what lies here with it in its name.
@@ -56,7 +106,8 @@ function Place() {
   // While its files load, an area's top says it from the area: „Hochladen“ stands at once and the
   // head does not shift when they come.
   const editable = cloudAccessAtLeast(data?.access ?? (area && !data ? area.access : null), 'edit');
-  const atAreaTop = Boolean(area) && !folder;
+  // On „Dateien“ an area's tab is its files alone: its views, people and menu stand on its page.
+  const atAreaTop = Boolean(area) && !folder && !overview;
 
   // Not loaded (yet, or the server is away): an area's page is still called by its name, a
   // folder's by none – never „Meine Dateien“, which it is not.
@@ -70,8 +121,12 @@ function Place() {
         : data?.sharedBy
           ? 'Geteilt'
           : 'Meine Dateien');
-  const target: CloudTarget | null =
-    (data || area) && editable
+  const target: CloudTarget | null = across
+    ? // All of it: what comes in goes to one's own, as „Neu“ from here.
+      ui.home?.ownFiles !== false
+      ? OWN_FILES
+      : null
+    : (data || area) && editable
       ? folder
         ? { parentId: folder.id, name: folder.name }
         : area
@@ -81,7 +136,10 @@ function Place() {
 
   const under = atAreaTop && area ? areasUnder(areas, area) : [];
   const crumbs: Crumb[] = [];
-  if (data) {
+  if (overview) {
+    // „Dateien“ itself, as „Agenten“: the workspace's name over it.
+    crumbs.push({ label: workspace.name }, { label: 'Dateien' });
+  } else if (data) {
     if (data.sharedBy) {
       crumbs.push({ label: 'Geteilt', to: routes.cloudShared(workspace.id) });
     } else if (area) {
@@ -102,8 +160,6 @@ function Place() {
   } else if (atAreaTop && area) {
     // Its files still on their way: the path stands already, as it will.
     crumbs.push(...areaTrail(workspace.id, areas, area).slice(0, -1), { label: name });
-  } else if (!areaId && !folderId) {
-    crumbs.push({ label: workspace.name }, { label: name });
   }
 
   const all = data?.nodes ?? [];
@@ -194,9 +250,11 @@ function Place() {
 
   return (
     <CloudPage
-      docTitle={name}
+      docTitle={overview ? 'Dateien' : name}
       title={
-        atAreaTop && area ? (
+        tabs ? (
+          tabs
+        ) : atAreaTop && area ? (
           // An area's views: its files, its agents and its chat beside them.
           <AreaViews area={area} current="files" />
         ) : listing.isPending && !name ? (
@@ -240,7 +298,7 @@ function Place() {
         <ListToolbar
           search={
             <ViewSearch
-              label={`${name || 'Ordner'} durchsuchen`}
+              label={`${across ? 'Dateien' : name || 'Ordner'} durchsuchen`}
               value={query}
               onChange={setQuery}
             />
@@ -315,10 +373,11 @@ function Place() {
           ) : (
             <FileBrowser
               nodes={visible}
-              mode="folder"
+              // All of it: where each lies beside it, as „Geteilt“.
+              mode={across ? 'across' : 'folder'}
               view={view}
               selection={selection}
-              folderCards={filter === 'all' && view === 'tiles'}
+              folderCards={!across && filter === 'all' && view === 'tiles'}
             />
           )}
         </>

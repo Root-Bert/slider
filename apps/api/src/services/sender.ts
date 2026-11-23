@@ -616,6 +616,7 @@ export async function senderHome(
     unread: agentUnreads.get(agent.id) ?? othersUnread.get(agent.id) ?? 0,
     updatedAt: agent.updatedAt,
     pinnedAt: agentPins.get(agent.id) ?? null,
+    canDelete: agent.canDelete,
   }));
 
   return {

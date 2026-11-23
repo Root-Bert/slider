@@ -15,12 +15,12 @@ import { NamedIcon } from './Named';
  * AI wrote after it: summary, decisions, to-dos, open questions, and what it was about, linked.
  */
 
-/** The call in the agent's chat: one entry that opens its page. */
+/** The call in a chat: one entry, as wide as the chat, that opens it (in Cloud beside the chat). */
 export function CallEntry({ call, to }: { call: CallBrief; to: string }) {
   return (
     <Link
       to={to}
-      className="glass group flex max-w-[460px] flex-col gap-2 rounded-panel p-3 transition-colors hover:bg-glass-hover focus-visible:ring-2 focus-visible:ring-focus focus-visible:outline-none"
+      className="glass group flex w-full flex-col gap-2 rounded-panel p-3 transition-colors hover:bg-glass-hover focus-visible:ring-2 focus-visible:ring-focus focus-visible:outline-none"
     >
       <span className="flex items-center gap-3">
         <IconTile size={36}>
@@ -242,6 +242,32 @@ export function CallMeta({ record }: { record: CallRecord }) {
         · {callMinutes(record)} · {record.people.map((each) => each.name).join(', ')}
       </span>
     </span>
+  );
+}
+
+/** In the side panel beside the page (`CallPanel`): the notes first, the talk under them. */
+export function CallRecordStack({
+  record,
+  workspaceId,
+  agentHref,
+}: {
+  record: CallRecord;
+  workspaceId: string;
+  agentHref: (agentId: string) => string;
+}) {
+  return (
+    <div className="flex flex-col gap-5">
+      <div role="complementary" aria-label="Notizen" className="flex flex-col gap-5">
+        <Notes record={record} workspaceId={workspaceId} agentHref={agentHref} />
+      </div>
+      <section aria-label="Gesprächsverlauf">
+        {record.lines.length > 0 ? (
+          <Transcript record={record} agentId={record.agentId} />
+        ) : (
+          <p className="text-body text-fg-muted">In diesem Anruf wurde nichts gesagt.</p>
+        )}
+      </section>
+    </div>
   );
 }
 

@@ -9,11 +9,16 @@ import type {
   MailOAuthStart,
   MailPerson,
   MailPrepared,
+  MailRule,
+  MailRuleAdded,
+  MailRuleKind,
+  MailRuleMatch,
   MailSync,
   MailThread,
   MailThreadSummary,
   MailUpload,
 } from '@slider/shared';
+import { withSignature } from '@slider/shared';
 import {
   keepPreviousData,
   useMutation,
@@ -50,6 +55,8 @@ export const mailKeys = {
   addresses: (workspaceId: string) => ['sender', workspaceId, 'mail', 'addresses'] as const,
   /** What an agent got ready for „Neues Postfach“ (`prepare_mailbox`). */
   prepared: (workspaceId: string) => ['sender', workspaceId, 'mail', 'prepared'] as const,
+  /** One's own rules for senders (blocked, trusted). */
+  rules: (workspaceId: string) => ['sender', workspaceId, 'mail', 'rules'] as const,
 };
 
 /** What the live stream says changed: the list, and the conversation named (all when none). */
@@ -318,10 +325,10 @@ export function useMailSpam(workspaceId: string) {
       api.post<void>(`/mail/threads/${threadId}/spam`, { spam }),
     onMutate: ({ threadId, spam }) => {
       updateLists(queryClient, workspaceId, (list) =>
-        list.map((each) => (each.id === threadId ? { ...each, spam } : each)),
+        list.map((each) => (each.id === threadId ? { ...each, spam, spamBy: 'person' } : each)),
       );
       queryClient.setQueryData<MailThread>(mailKeys.thread(workspaceId, threadId), (thread) =>
-        thread ? { ...thread, spam } : thread,
+        thread ? { ...thread, spam, spamBy: 'person' } : thread,
       );
     },
     onSettled: () => queryClient.invalidateQueries({ queryKey: mailKeys.all(workspaceId) }),
@@ -372,7 +379,13 @@ const withUploadIds = <T extends { uploads?: MailUpload[] }>({ uploads, ...rest 
 const peopleOf = (addresses: string[] | undefined) =>
   (addresses ?? []).map((address) => ({ address: address.toLowerCase(), name: '' }));
 
-export function useReplyMail(workspaceId: string, threadId: string, me: MailMessage['from']) {
+export function useReplyMail(
+  workspaceId: string,
+  threadId: string,
+  me: MailMessage['from'],
+  /** The mailbox's, under the words as the server puts it (`withSignature`). */
+  signature?: string | null,
+) {
   const queryClient = useQueryClient();
   const key = mailKeys.thread(workspaceId, threadId);
   return useMutation({
@@ -393,7 +406,7 @@ export function useReplyMail(workspaceId: string, threadId: string, me: MailMess
                   cc: peopleOf(cc),
                   ...(bcc?.length ? { bcc: peopleOf(bcc) } : {}),
                   subject: '',
-                  text,
+                  text: withSignature(text, signature),
                   sentAt: new Date().toISOString(),
                   outgoing: true,
                   auth: 'pass',
@@ -591,6 +604,46 @@ export function useFileMailAttachment(workspaceId: string, threadId: string) {
     },
     onError: (_error, _input, context) => {
       if (context?.before) queryClient.setQueryData(key, context.before);
+    },
+    onSettled: () => queryClient.invalidateQueries({ queryKey: mailKeys.all(workspaceId) }),
+  });
+}
+
+export const useMailRules = (workspaceId: string) =>
+  useQuery({
+    queryKey: mailKeys.rules(workspaceId),
+    queryFn: () => api.get<MailRule[]>(`/workspaces/${workspaceId}/mail/rules`),
+  });
+
+/**
+ * A rule for the sender of a conversation's latest mail: the server places its conversations
+ * (blocked to spam, trusted out of it), the lists follow.
+ */
+export function useAddMailRule(workspaceId: string) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({
+      threadId,
+      kind,
+      match,
+    }: {
+      threadId: string;
+      kind: MailRuleKind;
+      match: MailRuleMatch;
+    }) => api.post<MailRuleAdded>(`/mail/threads/${threadId}/rule`, { kind, match }),
+    onSettled: () => queryClient.invalidateQueries({ queryKey: mailKeys.all(workspaceId) }),
+  });
+}
+
+/** A rule gone at once: its sender's mails stay where they lie, their mark goes. */
+export function useDeleteMailRule(workspaceId: string) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (ruleId: string) => api.delete(`/mail/rules/${ruleId}`),
+    onMutate: (ruleId) => {
+      queryClient.setQueryData<MailRule[]>(mailKeys.rules(workspaceId), (rules) =>
+        rules?.filter((one) => one.id !== ruleId),
+      );
     },
     onSettled: () => queryClient.invalidateQueries({ queryKey: mailKeys.all(workspaceId) }),
   });

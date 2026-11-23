@@ -137,8 +137,9 @@ export function AgentComposer({
             if (event.target.value.trim()) onTyping?.();
           }}
           onKeyDown={(event) => {
-            // The page's keys (⌫, ⌘A) are not meant while one writes – ⌘F (search) is.
-            if (!(isModKey(event) && event.key.toLowerCase() === 'f')) event.stopPropagation();
+            // The page's keys (⌫, ⌘A) are not meant while one writes – ⌘F and ⌘K (the searches) are.
+            if (!(isModKey(event) && 'fk'.includes(event.key.toLowerCase())))
+              event.stopPropagation();
             if (event.key === 'Escape' && onEscape) {
               event.preventDefault();
               onEscape();

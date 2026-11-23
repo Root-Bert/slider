@@ -1,4 +1,5 @@
 import {
+  Fragment,
   useEffect,
   useLayoutEffect,
   useRef,
@@ -15,7 +16,7 @@ import { Button, type ButtonSize } from './Button';
 import { cn } from './cn';
 import type { IconName } from './Icon';
 import { IconButton, type IconButtonSize, type IconButtonVariant } from './IconButton';
-import { MenuItem } from './MenuItem';
+import { MenuDivider, MenuItem } from './MenuItem';
 import { anchoredMenuPosition } from './menu-position';
 import { PopoverPanel } from './Popover';
 import { useDismiss } from './hooks/useDismiss';
@@ -32,6 +33,8 @@ export interface MenuAction {
   /** Greyed out and skipped by the arrow keys, with `title` as the reason. */
   disabled?: boolean;
   title?: string;
+  /** A line above it: the start of another group (a call's agents, then its people). */
+  divider?: boolean;
 }
 
 /** A `position` utility without variant (`absolute`, `fixed`, `sticky`) among the classes. */
@@ -61,6 +64,8 @@ interface MenuProps {
   triggerTextSize?: ButtonSize;
   /** The text trigger shows a spinner and can't be opened, e.g. while an upload runs. */
   triggerLoading?: boolean;
+  /** The first item is marked on open by a click too – the one meant most often (↵ picks it). */
+  pickFirst?: boolean;
 }
 
 /**
@@ -79,6 +84,7 @@ export function Menu({
   triggerShape,
   triggerTextSize = 'sm',
   triggerLoading,
+  pickFirst = false,
 }: MenuProps) {
   // Only a keyboard-opened menu puts focus on its first item; a click shouldn't pre-select one.
   const [openedByKeyboard, setOpenedByKeyboard] = useState(false);
@@ -140,7 +146,8 @@ export function Menu({
             label={label}
             actions={actions}
             onClose={close}
-            focusFirst={openedByKeyboard}
+            focusFirst={openedByKeyboard || pickFirst}
+            marked={pickFirst}
             // Focus goes back to the trigger first, so a dialog opened by the action restores it on close.
             returnFocusTo={triggerRef}
           />
@@ -171,11 +178,14 @@ function AnchoredMenu({
   children: ReactNode;
 }) {
   const ref = useRef<HTMLDivElement>(null);
-  // Hidden until measured, so it never flashes at the top left corner.
+  // Unseen until measured, so it never flashes at the top left corner – transparent, not
+  // `visibility: hidden`: the list focuses its first item before it is placed, and a hidden
+  // element takes no focus.
   const [position, setPosition] = useState<CSSProperties>({
     left: 0,
     top: 0,
-    visibility: 'hidden',
+    opacity: 0,
+    pointerEvents: 'none',
   });
 
   useLayoutEffect(() => {
@@ -302,6 +312,8 @@ interface MenuListProps {
   returnFocusTo?: RefObject<HTMLElement | null>;
   /** Focus the first item (keyboard) or only the menu itself (pointer), so ↑/↓ still work. */
   focusFirst?: boolean;
+  /** The focused item is tinted for the pointer too (`pickFirst`): ↵ picks what is marked. */
+  marked?: boolean;
 }
 
 /** The open menu: ↑/↓/Home/End move between the enabled items, Tab closes. */
@@ -312,6 +324,7 @@ function MenuList({
   onClose,
   returnFocusTo,
   focusFirst = true,
+  marked = false,
 }: MenuListProps) {
   const menuRef = useRef<HTMLElement>(null);
   const itemRefs = useRef<(HTMLButtonElement | null)[]>([]);
@@ -369,28 +382,31 @@ function MenuList({
       className="min-w-48 outline-none"
     >
       {actions.map((action, index) => (
-        <MenuItem
-          key={action.key ?? action.label}
-          ref={(element: HTMLButtonElement | null) => {
-            itemRefs.current[index] = element;
-          }}
-          role="menuitem"
-          tabIndex={-1}
-          inset={4}
-          icon={action.icon}
-          tone={action.tone}
-          disabled={action.disabled}
-          // Keeps its `title` (the reason) and stays a menuitem; the arrow keys skip it.
-          focusableWhenDisabled
-          title={action.title}
-          onClick={() => select(action)}
-          // The pointer moves the focus along, so hover and keyboard never mark two items.
-          onMouseEnter={(event: MouseEvent<HTMLButtonElement>) => {
-            if (!action.disabled) event.currentTarget.focus({ preventScroll: true });
-          }}
-        >
-          {action.label}
-        </MenuItem>
+        <Fragment key={action.key ?? action.label}>
+          {action.divider && <MenuDivider />}
+          <MenuItem
+            ref={(element: HTMLButtonElement | null) => {
+              itemRefs.current[index] = element;
+            }}
+            role="menuitem"
+            tabIndex={-1}
+            inset={4}
+            icon={action.icon}
+            tone={action.tone}
+            className={marked ? 'focus:bg-hover' : undefined}
+            disabled={action.disabled}
+            // Keeps its `title` (the reason) and stays a menuitem; the arrow keys skip it.
+            focusableWhenDisabled
+            title={action.title}
+            onClick={() => select(action)}
+            // The pointer moves the focus along, so hover and keyboard never mark two items.
+            onMouseEnter={(event: MouseEvent<HTMLButtonElement>) => {
+              if (!action.disabled) event.currentTarget.focus({ preventScroll: true });
+            }}
+          >
+            {action.label}
+          </MenuItem>
+        </Fragment>
       ))}
     </PopoverPanel>
   );

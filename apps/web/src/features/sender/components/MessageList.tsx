@@ -5,7 +5,9 @@ import {
   type AccountAuthor,
   type SenderMessage,
 } from '@slider/shared';
+import { accentColor } from '@/lib/accent';
 import { isPending } from '@/lib/api';
+import { chatMatches, useMarkedMatches, useShowHit } from '@/lib/chat-search';
 import { AgentAvatar, CallEntry } from '@/features/cloud';
 import {
   AutosizeTextarea,
@@ -180,6 +182,7 @@ export function MessageList({
   readOnly = false,
   below,
   callHref,
+  search,
 }: {
   conversationId: string;
   messages: SenderMessage[];
@@ -200,6 +203,8 @@ export function MessageList({
   below?: (message: SenderMessage) => ReactNode;
   /** Where a call in the conversation opens (its entry, `message.call`). */
   callHref?: (callId: string) => string;
+  /** The chat's search: only the messages it finds, marked (`lib/chat-search.ts`). */
+  search?: { query: string; clear: () => void };
 }) {
   const listRef = useRef<HTMLDivElement>(null);
   const newRef = useRef<HTMLDivElement>(null);
@@ -208,6 +213,10 @@ export function MessageList({
   // Before older ones come in at the top: how tall it was, so the view stays where it is.
   const heightBefore = useRef<number | null>(null);
   const opened = useRef<string | null>(null);
+  const query = search?.query.trim() ?? '';
+  const searching = query !== '';
+  useMarkedMatches(listRef, query);
+  const showHit = useShowHit(listRef, searching, () => search?.clear());
 
   const firstNew = messages.find(
     (each) =>
@@ -257,8 +266,13 @@ export function MessageList({
   const rows: ReactNode[] = [];
   let previous: SenderMessage | undefined;
   for (const message of messages) {
+    if (
+      searching &&
+      (message.deleted || !chatMatches(`${message.mail?.subject ?? ''}\n${message.text}`, query))
+    )
+      continue;
     const newDay = !previous || dayKey(previous.createdAt) !== dayKey(message.createdAt);
-    const isFirstNew = message === firstNew;
+    const isFirstNew = !searching && message === firstNew;
     const head =
       newDay ||
       isFirstNew ||
@@ -297,21 +311,27 @@ export function MessageList({
             aria-label="Neu"
             className="flex items-center gap-2 py-1"
           >
-            <span className="h-px flex-1 bg-logo" />
-            <span className="text-micro font-semibold text-logo">Neu</span>
+            <span className="h-px flex-1" style={{ backgroundColor: accentColor(me.color) }} />
+            <span className="text-micro font-semibold" style={{ color: accentColor(me.color) }}>
+              Neu
+            </span>
           </div>
         )}
         <article
           aria-label={`${name}, ${timeOf(message.createdAt)}`}
+          data-message={message.id}
+          onClick={showHit(message.id)}
           className={cn(
             'group/message relative flex max-w-full min-w-0 flex-col gap-1',
-            editing === message.id
+            // Editing, or a call over: as wide as the conversation.
+            editing === message.id || (message.call && !message.deleted)
               ? 'self-stretch'
               : own
                 ? 'ml-12 items-end self-end sm:ml-24'
                 : 'mr-12 items-start self-start sm:mr-24',
             head ? 'mt-4' : 'mt-1',
             isPending(message) && 'opacity-60',
+            searching && 'cursor-pointer',
           )}
         >
           {head &&
@@ -332,9 +352,9 @@ export function MessageList({
             title={head ? undefined : stampOf(message.createdAt)}
             className={cn(
               'min-w-0',
-              editing === message.id
+              editing === message.id || message.call
                 ? 'w-full'
-                : own && !message.call && 'rounded-panel bg-surface-2 px-3 py-2',
+                : own && 'rounded-panel bg-surface-2 px-3 py-2',
             )}
           >
             {/* It came as a mail: its subject, so one knows (a colleague's mail in the chat). */}
@@ -397,9 +417,16 @@ export function MessageList({
         className="flex min-h-0 flex-1 flex-col overflow-y-auto overscroll-contain pb-3"
       >
         <div className="flex-1" />
-        {!older.more && intro}
-        {older.loading && <p className="py-3 text-center text-xs text-fg-subtle">Ältere laden …</p>}
+        {!older.more && !searching && intro}
+        {older.loading && (
+          <p className="py-3 text-center text-xs text-fg-subtle">
+            {searching ? 'Ältere Nachrichten werden durchsucht …' : 'Ältere laden …'}
+          </p>
+        )}
         {rows}
+        {searching && rows.length === 0 && !older.more && (
+          <p className="m-auto py-3 text-body text-fg-muted">Nichts gefunden.</p>
+        )}
       </div>
       {away && (
         <Button

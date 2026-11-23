@@ -36,6 +36,8 @@ The default e2e sets `LIBREOFFICE_PATH: '/nonexistent/soffice'`, so the editor n
   dir, a longer timeout; run a scratch spec; delete both after.
 - `POST /api/decks/blank` gives an editable ODP (new element ids match `^sl[a-z0-9-]{4,60}$`);
   enter edit mode via `getByRole('radio', { name: 'Bearbeiten' })`.
-- Screenshots: `E2E_SHOTS=1 E2E_SHOTS_DIR=<dir>`.
+- Screenshots: `E2E_SHOTS=1 E2E_SHOTS_DIR=<dir>`. Headless Playwright hides scroll bars
+  (`--hide-scrollbars`): to see/measure one that takes room, a scratch config with
+  `launchOptions: { ignoreDefaultArgs: ['--hide-scrollbars'] }`.
 - Measure editor speed with `waitForFunction(..., { polling: 'raf' })`, not `locator.waitFor`
   (polls every 500 ms).

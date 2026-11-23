@@ -1,8 +1,10 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useRef, useState, type ReactNode } from 'react';
+import { useMatch, useNavigate } from 'react-router';
 import {
   CLOUD_AGENT_TITLE_MAX,
   cloudAgentTitleSchema,
   type CloudAgentSummary,
+  type SenderAgent,
 } from '@slider/shared';
 import { useDeleteCloudAgent, useRenameCloudAgent } from '@/lib/api';
 import { cn, ConfirmDialog, ContextMenu, Menu, type MenuAction } from '@/ui';
@@ -12,19 +14,25 @@ import { useAgentShare } from './AgentShare';
 /** Whether an agent has a menu at all: its owner names and shares it, they or an admin delete it. */
 export const hasAgentActions = (agent: CloudAgentSummary) => agent.mine || agent.canDelete;
 
-/** „Agent löschen?“ – asked the same on its page and in a list. */
+/**
+ * „Agent löschen?“ – asked the same on its page, in a list and on its chat in a side bar (Cloud's
+ * and Sender's, hence no `useCloud` here).
+ */
 export function DeleteAgentDialog({
   agent,
+  workspaceId,
+  notify,
   onClose,
   onDeleted,
 }: {
   agent: Pick<CloudAgentSummary, 'id'>;
+  workspaceId: string;
+  notify: (message: string, tone?: 'danger') => void;
   onClose: () => void;
   /** It is gone from the lists already: the page leaves here. */
   onDeleted?: () => void;
 }) {
-  const ui = useCloud();
-  const remove = useDeleteCloudAgent(ui.workspace.id);
+  const remove = useDeleteCloudAgent(workspaceId);
   return (
     <ConfirmDialog
       onClose={onClose}
@@ -37,13 +45,51 @@ export function DeleteAgentDialog({
         // Its tile is gone at once, and this dialog with it: the promise still says how it went
         // (`mutate`'s own callbacks are dropped once their component is gone).
         remove.mutateAsync(agent.id).then(
-          () => ui.notify('Agent gelöscht'),
-          (error: Error) => ui.notify(error.message, 'danger'),
+          () => notify('Agent gelöscht'),
+          (error: Error) => notify(error.message, 'danger'),
         );
         onDeleted?.();
       }}
     />
   );
+}
+
+/**
+ * „Löschen“ in an agent's chat menu in a side bar (Cloud's and Sender's), for who may: the same
+ * question as on its page; its chat open, the page goes to `homePath`.
+ */
+export function useDeleteAgentAction({
+  agent,
+  to,
+  homePath,
+  workspaceId,
+  notify,
+}: {
+  agent: Pick<SenderAgent, 'id' | 'canDelete'> | null;
+  /** Its chat's path – open, it is left once it is gone. */
+  to: string;
+  homePath: string;
+  workspaceId: string;
+  notify: (message: string, tone?: 'danger') => void;
+}): { actions: MenuAction[]; dialog: ReactNode } {
+  const [deleting, setDeleting] = useState(false);
+  const open = useMatch({ path: to, end: false }) !== null;
+  const navigate = useNavigate();
+  if (!agent?.canDelete) return { actions: [], dialog: null };
+  return {
+    actions: [
+      { label: 'Löschen', icon: 'delete', tone: 'danger', onSelect: () => setDeleting(true) },
+    ],
+    dialog: deleting && (
+      <DeleteAgentDialog
+        agent={agent}
+        workspaceId={workspaceId}
+        notify={notify}
+        onClose={() => setDeleting(false)}
+        onDeleted={open ? () => void navigate(homePath, { replace: true }) : undefined}
+      />
+    ),
+  };
 }
 
 /**
@@ -132,6 +178,7 @@ export function AgentActions({
   /** „Umbenennen“: the tile or row turns its title into a field. */
   onRename: () => void;
 }) {
+  const ui = useCloud();
   const [deleting, setDeleting] = useState(false);
   const share = useAgentShare(agent);
   const actions: MenuAction[] = [
@@ -158,7 +205,14 @@ export function AgentActions({
       {contextAt && (
         <ContextMenu label={label} actions={actions} at={contextAt} onClose={onContextClose} />
       )}
-      {deleting && <DeleteAgentDialog agent={agent} onClose={() => setDeleting(false)} />}
+      {deleting && (
+        <DeleteAgentDialog
+          agent={agent}
+          workspaceId={ui.workspace.id}
+          notify={ui.notify}
+          onClose={() => setDeleting(false)}
+        />
+      )}
     </>
   );
 }

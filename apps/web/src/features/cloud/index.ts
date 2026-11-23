@@ -21,7 +21,9 @@ export {
 } from './lib/computer';
 /** Parts Sender's agent conversations share with Cloud's agent page. */
 export { AgentAvatar } from './components/AgentAvatar';
+export { useDeleteAgentAction } from './components/AgentActions';
 export { AgentChat } from './components/AgentChat';
+export { messageWords } from './lib/message-words';
 export { CallEntry, CallMeta, CallRecordView } from './components/CallRecord';
 export { AgentComposer } from './components/AgentComposer';
 export { AsideAgent, AsideBullets, AsidePart } from './components/AsidePart';
