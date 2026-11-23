@@ -1,5 +1,5 @@
 import { createHash, createHmac, timingSafeEqual } from 'node:crypto';
-import { and, desc, eq, inArray, isNotNull, lt, lte, sql } from 'drizzle-orm';
+import { and, desc, eq, inArray, isNotNull, lt, lte, ne, sql, type SQL } from 'drizzle-orm';
 import { simpleParser, type AddressObject, type ParsedMail } from 'mailparser';
 import {
   API_PREFIX,
@@ -7,6 +7,7 @@ import {
   mailFolderList,
   MAX_MAIL_ATTACHED_BYTES,
   MAX_MAIL_UPLOAD_BYTES,
+  searchFold,
 } from '@slider/shared';
 import type {
   LinkedMailAccount,
@@ -602,8 +603,91 @@ export async function syncMailAccount(deps: AppDeps, accountId: string): Promise
       if (arrived.has(threadId)) afterMail?.(deps, threadId);
     }
     for (const threadId of flagged) if (!touched.has(threadId)) tell(row, threadId);
+    later(deps, () => recheckAuth(deps, accountId));
   } finally {
     working.delete(accountId);
+  }
+}
+
+/** Mailboxes whose mails kept before were looked at again since this server started. */
+const rechecked = new Set<string>();
+/** Of a mailbox, at most its latest this many mails not vouched for (`recheckAuth`). */
+const RECHECK_AT_MOST = 2000;
+
+/**
+ * Mails kept before the provider's word counted as it does now (`PROVIDER_RESULTS`): once per
+ * mailbox each time the server starts, their `Authentication-Results` and `Message-ID` asked
+ * again from the server – only those two fields – and a mail its provider vouches for
+ * (`providerVouches`) is `pass` now, its firm's logo shown. Never the other way: what passed
+ * stays. A mail at that UID with another `Message-ID` (the folder numbered anew) is left alone.
+ */
+export async function recheckAuth(deps: AppDeps, accountId: string): Promise<void> {
+  const servers = mailServersOf(deps);
+  if (!servers.headers || rechecked.has(accountId)) return;
+  rechecked.add(accountId);
+  try {
+    const [row] = await deps.db.select().from(mailAccounts).where(eq(mailAccounts.id, accountId));
+    if (!row || row.state !== 'ok' || row.calendarOnly || !providerOf(row.imapHost)) return;
+    const kept = await deps.db
+      .select({
+        id: mailMessages.id,
+        threadId: mailMessages.threadId,
+        folder: mailMessages.folder,
+        uid: mailMessages.uid,
+        messageId: mailMessages.messageId,
+        from: mailMessages.from,
+      })
+      .from(mailMessages)
+      .where(
+        and(
+          eq(mailMessages.accountId, accountId),
+          ne(mailMessages.auth, 'pass'),
+          eq(mailMessages.outgoing, false),
+          isNotNull(mailMessages.uid),
+        ),
+      )
+      .orderBy(desc(mailMessages.sentAt))
+      .limit(RECHECK_AT_MOST);
+    const pathOf = new Map(row.folders.map((one) => [one.key, one.path]));
+    if (!pathOf.has('inbox')) pathOf.set('inbox', 'INBOX');
+    const wanted = kept.flatMap((one) => {
+      const path = pathOf.get(one.folder);
+      return path && one.uid !== null ? [{ ...one, path, uid: one.uid }] : [];
+    });
+    // Nothing kept yet (just added): looked at again once there is.
+    if (wanted.length === 0) return void rechecked.delete(accountId);
+    const found = await servers.headers(
+      await loginFor(deps, row),
+      wanted.map(({ path, uid }) => ({ path, uid })),
+      ['message-id', 'authentication-results'],
+    );
+    const headerOf = new Map(found.map((one) => [`${one.path}\n${one.uid}`, one.header]));
+    const vouched = wanted.filter((one) => {
+      const header = headerOf.get(`${one.path}\n${one.uid}`);
+      return (
+        !!header &&
+        topField(header, 'message-id') === one.messageId &&
+        providerVouches(topField(header, 'authentication-results'), row.imapHost, one.from.address)
+      );
+    });
+    if (vouched.length === 0) return;
+    await deps.db
+      .update(mailMessages)
+      .set({ auth: 'pass' })
+      .where(
+        inArray(
+          mailMessages.id,
+          vouched.map((one) => one.id),
+        ),
+      );
+    tell(row, null);
+    for (const threadId of new Set(vouched.map((one) => one.threadId)))
+      if (threadId) tell(row, threadId);
+  } catch (error) {
+    // The server away, the sign-in ended: tried again after the next round.
+    rechecked.delete(accountId);
+    if (!(error instanceof MailSignInNeeded))
+      deps.log.warn('Mail: older mails could not be checked again', { accountId, error });
   }
 }
 
@@ -785,19 +869,22 @@ function people(value: AddressObject | AddressObject[] | undefined): MailPerson[
  * takes in: read through their own IMAP, that header is theirs, whatever a sender wrote below
  * it. Their customers' mails often carry no signature of the sender's own domain (Google signs
  * with gappssmtp.com, Microsoft with onmicrosoft.com) or Exchange rewrites them so it breaks.
- * Microsoft names no server (authserv-id) in it.
+ * Microsoft names its server as `mx.microsoft.com` (Outlook.com, with a version: `… 1;`) or none.
  */
 const PROVIDER_RESULTS: readonly { hosts: readonly string[]; servers: RegExp }[] = [
   { hosts: ['imap.gmail.com', 'imap.googlemail.com'], servers: /^mx\.google\.com$/ },
   {
     hosts: ['outlook.office365.com', 'outlook.office.com', 'imap-mail.outlook.com'],
-    servers: /^$|(^|\.)(outlook|office365)\.com$/,
+    servers: /^$|^mx\.microsoft\.com$|(^|\.)(outlook|office365)\.com$/,
   },
 ];
 
+const providerOf = (imapHost: string) =>
+  PROVIDER_RESULTS.find((one) => one.hosts.includes(imapHost.toLowerCase()));
+
 /** Whether the mailbox's provider says in its topmost header: DMARC passed for the From domain. */
 export function providerVouches(topResults: string, imapHost: string, fromAddress: string) {
-  const provider = PROVIDER_RESULTS.find((one) => one.hosts.includes(imapHost.toLowerCase()));
+  const provider = providerOf(imapHost);
   if (!provider || !fromAddress) return false;
   const text = topResults.toLowerCase();
   const head = (text.split(';')[0] ?? '').trim();
@@ -1235,13 +1322,127 @@ const arrivedHere = sql`(${mailMessages.folder} in ('inbox', 'spam') or ${mailMe
 export interface MailThreadFilter {
   accountId?: string | undefined;
   folder?: string | undefined;
+  /** Words each to be in its subject or among its people's names and addresses – in any folder. */
+  query?: string | undefined;
+  /** The words may stand in what its mails say too (the newest mails' – Post's own search). */
+  inText?: boolean | undefined;
+}
+
+/** As many conversations as a list shows at once – the newest. */
+const LISTED = 200;
+
+/** Mails whose text a search reads at most, the newest first (20 000 of 3 KB: about a second). */
+const TEXT_SEARCH_MAILS = 20_000;
+/** Read in parts of this many: held in memory one part at a time. */
+const TEXT_SEARCH_PART = 500;
+/** How long one search reads texts; older mails wait for a narrower search. */
+const TEXT_SEARCH_MS = 3000;
+const EXCERPT_BEFORE = 40;
+
+/** Where the words stand in a text: a line around the first, for the list's preview. */
+function excerptOf(text: string, words: string[]) {
+  const flat = text.replace(/\s+/g, ' ').trim();
+  // Folded letter by letter, each folded place knowing its letter's: folding may change the
+  // length (`ﬁ` → `fi`, `İ` → `i̇`), and the excerpt is cut from the text as written.
+  let key = '';
+  const from: number[] = [];
+  let place = 0;
+  for (const letter of flat) {
+    const folded = searchFold(letter);
+    for (let i = 0; i < folded.length; i++) from.push(place);
+    key += folded;
+    place += letter.length;
+  }
+  const keyHit = words.map((word) => key.indexOf(word)).find((found) => found >= 0);
+  const hit = keyHit === undefined ? 0 : (from[keyHit] ?? 0);
+  const at = Math.max(0, hit - EXCERPT_BEFORE);
+  return (at > 0 ? '… ' : '') + flat.slice(at, at + SNIPPET).trim();
+}
+
+/**
+ * The conversations of `mine` whose subject or people hold every word, newest first – read
+ * through all of them, not only the newest. `inText`: what the mails say counts too (the newest
+ * `TEXT_SEARCH_MAILS`, within `TEXT_SEARCH_MS`), and a conversation found by it shows where. All
+ * is sealed in the database, so it is compared here – as Cloud's search in what files say.
+ */
+async function threadsHolding(
+  deps: AppDeps,
+  mine: SQL | undefined,
+  words: string[],
+  inText: boolean,
+) {
+  const threads = await deps.db
+    .select({ id: mailThreads.id, subject: mailThreads.subject })
+    .from(mailThreads)
+    .innerJoin(mailAccounts, eq(mailAccounts.id, mailThreads.accountId))
+    .where(mine)
+    .orderBy(desc(mailThreads.lastAt));
+  const hay = new Map(threads.map((thread) => [thread.id, [thread.subject]]));
+  const people = await deps.db
+    .select({
+      threadId: mailMessages.threadId,
+      from: mailMessages.from,
+      to: mailMessages.to,
+      cc: mailMessages.cc,
+    })
+    .from(mailMessages)
+    .innerJoin(mailAccounts, eq(mailAccounts.id, mailMessages.accountId))
+    .where(and(mine, isNotNull(mailMessages.threadId)));
+  for (const row of people)
+    hay
+      .get(row.threadId ?? '')
+      ?.push(...[row.from, ...row.to, ...row.cc].map((each) => `${each.name} ${each.address}`));
+  const keys = new Map(
+    threads.map((thread) => [thread.id, searchFold(hay.get(thread.id)!.join(' '))]),
+  );
+  const holds = (key: string) => words.every((word) => key.includes(word));
+  const excerpts = new Map<string, string>();
+  if (inText) {
+    // Words the subject and people do not hold, looked for in what the mails say.
+    const said = new Map<string, string>();
+    const until = Date.now() + TEXT_SEARCH_MS;
+    for (let part = 0; part < TEXT_SEARCH_MAILS && Date.now() < until; part += TEXT_SEARCH_PART) {
+      const rows = await deps.db
+        .select({ threadId: mailMessages.threadId, text: mailMessages.text })
+        .from(mailMessages)
+        .innerJoin(mailAccounts, eq(mailAccounts.id, mailMessages.accountId))
+        .where(and(mine, isNotNull(mailMessages.threadId)))
+        .orderBy(desc(mailMessages.sentAt), mailMessages.id)
+        .limit(TEXT_SEARCH_PART)
+        .offset(part);
+      for (const row of rows) {
+        const id = row.threadId ?? '';
+        const key = keys.get(id);
+        if (key === undefined || holds(key)) continue;
+        const text = searchFold(row.text);
+        const known = `${said.get(id) ?? ''} ${text}`;
+        said.set(id, known);
+        if (!excerpts.has(id) && words.some((word) => !key.includes(word) && text.includes(word)))
+          excerpts.set(
+            id,
+            excerptOf(
+              row.text,
+              words.filter((word) => !key.includes(word)),
+            ),
+          );
+        if (holds(`${key} ${known}`)) keys.set(id, `${key} ${known}`);
+      }
+      if (rows.length < TEXT_SEARCH_PART) break;
+    }
+  }
+  const found = threads
+    .filter((thread) => holds(keys.get(thread.id) ?? ''))
+    .slice(0, LISTED)
+    .map((thread) => thread.id);
+  return { found, excerpts };
 }
 
 /**
  * A person's mail conversations in a workspace, newest first. Without a folder: the side bar's –
  * what came in to the inbox or the spam folder, or was written here, and spam. A folder: the
  * conversations with a mail in it (not spam) – `inbox` those of the side bar but spam, `spam`
- * every one marked spam (by the server's folder, the AI or its person).
+ * every one marked spam (by the server's folder, the AI or its person). A query: those that hold it,
+ * wherever they lie (`threadsHolding`) – found by their text, its preview is where it says so.
  */
 export async function listMailThreads(
   deps: AppDeps,
@@ -1250,6 +1451,18 @@ export async function listMailThreads(
   filter: MailThreadFilter = {},
 ): Promise<MailThreadSummary[]> {
   await cloudContext(deps.db, workspaceId, userId);
+  const mine = and(
+    eq(mailAccounts.workspaceId, workspaceId),
+    eq(mailAccounts.userId, userId),
+    filter.accountId ? eq(mailAccounts.id, filter.accountId) : undefined,
+  );
+  const words = searchFold(filter.query ?? '')
+    .split(/\s+/)
+    .filter(Boolean);
+  const searched =
+    words.length > 0 ? await threadsHolding(deps, mine, words, filter.inText ?? false) : null;
+  const found = searched?.found ?? null;
+  if (found?.length === 0) return [];
   const has = (condition: ReturnType<typeof sql>) =>
     sql`exists (select 1 from ${mailMessages} where ${mailMessages.threadId} = ${mailThreads.id} and ${condition})`;
   const { folder } = filter;
@@ -1265,16 +1478,9 @@ export async function listMailThreads(
     .select({ thread: mailThreads })
     .from(mailThreads)
     .innerJoin(mailAccounts, eq(mailAccounts.id, mailThreads.accountId))
-    .where(
-      and(
-        eq(mailAccounts.workspaceId, workspaceId),
-        eq(mailAccounts.userId, userId),
-        filter.accountId ? eq(mailAccounts.id, filter.accountId) : undefined,
-        inFolder,
-      ),
-    )
+    .where(and(mine, found ? inArray(mailThreads.id, found) : inFolder))
     .orderBy(desc(mailThreads.lastAt))
-    .limit(200);
+    .limit(LISTED);
   if (threads.length === 0) return [];
   const ids = threads.map((row) => row.thread.id);
   const latest = await deps.db
@@ -1332,7 +1538,10 @@ export async function listMailThreads(
         subject: thread.subject,
         person: otherSide(last),
         people: peopleOf.get(thread.id) ?? [],
-        snippet: (freshPart(last.text) || last.text).replace(/\s+/g, ' ').slice(0, SNIPPET),
+        // Found by what a mail says: where it says so.
+        snippet:
+          searched?.excerpts.get(thread.id) ??
+          (freshPart(last.text) || last.text).replace(/\s+/g, ' ').slice(0, SNIPPET),
         unread: unread.get(thread.id) ?? 0,
         spam: thread.spam,
         updatedAt: thread.lastAt.toISOString(),

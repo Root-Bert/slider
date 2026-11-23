@@ -46,4 +46,5 @@ if [[ -n $(docker compose ps -q caddy) ]]; then
 fi
 
 docker image prune -f >/dev/null
+docker builder prune -f --filter until=24h >/dev/null # build cache, as in deploy.sh
 echo "✓ website live"

@@ -5,6 +5,7 @@ import { useCloudSearch } from '@/lib/api';
 import { formatRelativeTime } from '@/lib/format';
 import { isModKey } from '@/lib/keyboard';
 import { routes } from '@/lib/routes';
+import { useMailHits } from '@/features/sender';
 import { cn, Icon, Kbd, ReturnKey, useDebounced, type IconName } from '@/ui';
 import { useCloud } from '../hooks/useCloud';
 import { askCrumbSearch, CRUMB_SEARCH } from '../lib/crumb-search';
@@ -46,24 +47,22 @@ const whereOf = (node: CloudNode) =>
     .join(' › ');
 
 /**
- * ⌘F: one field for everything – files and folders by name wherever one may look, the areas,
- * and the few things to do from anywhere. ↑ ↓ pick, ↵ opens, Esc closes.
+ * ⌘F: one field for everything – files and folders by name wherever one may look, the areas, the
+ * mails, and the few things to do from anywhere. ↑ ↓ pick, ↵ opens, Esc closes.
  */
 export function SearchPalette() {
   const dialog = useRef<HTMLDialogElement>(null);
   const [open, setOpen] = useState(false);
 
   const show = useEffectEvent(() => {
-    // A field that stands there: typing goes into it, nothing opens over the page – the page's
-    // own (Gelöscht) before the bar's; the bar folded: one in the page's path (`CrumbSearch`);
-    // a panel (narrow) or a page of no list: the palette.
-    const fields = [
-      ...document.querySelectorAll<HTMLInputElement>(`[${SEARCH_FIELD}] input`),
-    ].filter((each) => each.checkVisibility());
-    const field =
-      fields.find(
-        (each) => each.closest(`[${SEARCH_FIELD}]`)?.getAttribute(SEARCH_FIELD) !== 'bar',
-      ) ?? fields[0];
+    // The side bar's field – the whole app's search, never a page's own (that is ⌘K's,
+    // `ViewSearch`): typed where it stands, nothing opens over the page; the bar folded: the one in
+    // the page's path (`CrumbSearch`); a panel (narrow) or no bar: the palette.
+    const field = [
+      ...document.querySelectorAll<HTMLInputElement>(
+        `[${SEARCH_FIELD}="bar"] input, [${SEARCH_FIELD}="page"] input`,
+      ),
+    ].find((each) => each.checkVisibility());
     if (field) {
       field.focus();
       field.select();
@@ -112,7 +111,7 @@ export function SearchPalette() {
   );
 }
 
-/** Marks the search field that stands in a page, for ⌘F to find it. */
+/** Marks the side bar's search field (`bar`) and its stand-in in the page's path (`page`), for ⌘F. */
 const SEARCH_FIELD = 'data-cloud-search';
 
 /** The search itself: the field, what it finds and the few things to do. In the ⌘F panel. */
@@ -126,6 +125,7 @@ function SearchPanel({ onClose }: { onClose: () => void }) {
   const settled = useDebounced(query, 150);
   // Small, as the bar: what is called so. What the files say is the page's (`SearchResults`).
   const search = useCloudSearch(ui.workspace.id, settled.trim());
+  const mails = useMailHits(ui.workspace.id, settled.trim());
 
   const close = () => {
     setQuery('');
@@ -170,6 +170,29 @@ function SearchPanel({ onClose }: { onClose: () => void }) {
         subtitle: area.description || undefined,
         run: go(() => void navigate(routes.cloudArea(ui.workspace.id, area.id))),
       })),
+    // Subject, names, addresses – every mailbox and folder; one opens in Post.
+    ...(words ? mails.threads : []).map((thread): Entry => ({
+      key: thread.id,
+      group: 'Mails',
+      leading: (
+        <span className="flex size-8 items-center justify-center rounded-chip bg-surface-2 text-fg-muted">
+          <Icon name="mail" size={18} />
+        </span>
+      ),
+      title: (
+        <Marked
+          text={thread.subject || thread.person.name.trim() || thread.person.address}
+          query={query}
+        />
+      ),
+      subtitle: [
+        thread.person.name.trim() || thread.person.address,
+        formatRelativeTime(thread.updatedAt),
+      ]
+        .filter(Boolean)
+        .join(' | '),
+      run: go(() => void navigate(routes.cloudMailThread(ui.workspace.id, thread.id))),
+    })),
     ...[
       command('upload', 'uploadFile', 'Dateien hochladen', () => ui.pickAndUpload(ui.place)),
       command('folder', 'createNewFolder', 'Neuer Ordner', () => ui.newFolder(ui.place)),
@@ -200,7 +223,7 @@ function SearchPanel({ onClose }: { onClose: () => void }) {
   }, [picked]);
 
   let lastGroup = '';
-  const searching = Boolean(words) && (settled !== query || search.isFetching);
+  const searching = Boolean(words) && (settled !== query || search.isFetching || mails.settling);
   return (
     <div className="flex max-h-[min(560px,70vh)] flex-col">
       <label className="flex h-14 shrink-0 items-center gap-3 border-b border-hairline px-5">
@@ -224,10 +247,10 @@ function SearchPanel({ onClose }: { onClose: () => void }) {
               entries[picked]?.run();
             }
           }}
-          aria-label="Dateien, Ordner und Bereiche durchsuchen"
+          aria-label="Dateien, Ordner, Bereiche und Mails durchsuchen"
           aria-controls={listId}
           aria-activedescendant={entries[picked] ? `${listId}-${picked}` : undefined}
-          placeholder="Dateien, Ordner und Bereiche durchsuchen"
+          placeholder="Dateien, Ordner, Bereiche und Mails durchsuchen"
           autoComplete="off"
           spellCheck={false}
           className="min-w-0 flex-1 bg-transparent text-base text-fg outline-none placeholder:text-fg-subtle"
@@ -281,9 +304,9 @@ function SearchPanel({ onClose }: { onClose: () => void }) {
             </div>
           );
         })}
-        {words && !searching && search.data?.nodes.length === 0 && (
+        {words && !searching && search.data?.nodes.length === 0 && mails.threads.length === 0 && (
           <p className="px-2.5 py-3 text-body text-fg-subtle">
-            Keine Datei und kein Ordner heißt so.
+            Keine Datei, kein Ordner und keine Mail heißt so.
           </p>
         )}
         {search.data?.more && words && (

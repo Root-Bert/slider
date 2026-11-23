@@ -23,12 +23,12 @@ test('the search finds slide text and opens the review at that slide (BER-175), 
   await expect(card.locator('mark')).toHaveText('nach Region');
   await shot(page, 'search-content');
 
-  // The library searches the same way: ⌘F, names by default, the button adds the contents –
+  // The library searches the same way: ⌘K (the page's own field), names by default, the button adds the contents –
   // here the Office font a Slider font stands in for.
   await page.getByRole('link', { name: 'Bibliothek' }).click();
   await page.getByRole('radio', { name: /^Schriften/ }).click();
   const library = page.getByRole('searchbox', { name: 'Bibliothek durchsuchen' });
-  await page.keyboard.press('ControlOrMeta+f');
+  await page.keyboard.press('ControlOrMeta+k');
   await expect(library).toBeFocused();
   await library.fill('calibri');
   await expect(page.getByText('Carlito')).toHaveCount(0);
@@ -48,7 +48,9 @@ test('the search finds slide text and opens the review at that slide (BER-175), 
   // Cloud's side bar keeps every letter typed fast – the address follows after (it lagged, and
   // „Bericht“ became „t“); „Zurück“ ends the search.
   await page.goto('/');
-  const bar = page.getByRole('searchbox', { name: 'Dateien, Bereiche, Chats und Personen suchen' });
+  const bar = page.getByRole('searchbox', {
+    name: 'Dateien, Bereiche, Chats, Personen und Mails suchen',
+  });
   await bar.click();
   await page.keyboard.type('Bericht', { delay: 0 });
   await expect(bar).toHaveValue('Bericht');

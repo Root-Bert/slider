@@ -6,6 +6,7 @@ import {
   prefetchMailThread,
   useDeleteMailThread,
   useMailFolder,
+  useMailSearch,
   useMailSpam,
   useReadMailThread,
   useUnreadMailThread,
@@ -21,6 +22,7 @@ import {
   ListRow,
   Menu,
   RowList,
+  useDebounced,
   type MenuAction,
 } from '@/ui';
 import { useMailListLook, type MailSpacing } from '../../hooks/useMailListLook';
@@ -79,6 +81,15 @@ export function MailInbox({ view }: { view: MailViewState }) {
   const queryClient = useQueryClient();
   const { account, folder } = view;
   const threads = useMailFolder(ui.workspace.id, account?.id ?? '', folder);
+  // Searched (the toolbar's field): what the words find in this mailbox, whatever its folder –
+  // in what the mails say too.
+  const query = useDebounced(view.query.trim(), 150);
+  const found = useMailSearch(ui.workspace.id, query, {
+    accountId: account?.id ?? '',
+    inText: true,
+    enabled: !!account,
+  });
+  const listed = query ? found.data : threads.data;
   const spam = useMailSpam(ui.workspace.id);
   const read = useReadMailThread(ui.workspace.id);
   const unreadAgain = useUnreadMailThread(ui.workspace.id);
@@ -88,9 +99,9 @@ export function MailInbox({ view }: { view: MailViewState }) {
   const fail = (error: Error) => ui.notify(error.message, 'danger');
   // „Ungelesen“: a mail read while the filter is on (opened, stepped past) stays in the list
   // until the filter, folder or mailbox changes – rows don't jump away under the pointer.
-  const filterKey = `${account?.id ?? ''}|${folder}|${view.unread}`;
+  const filterKey = `${account?.id ?? ''}|${folder}|${view.unread}|${query}`;
   const unreadNow = view.unread
-    ? (threads.data ?? []).filter((each) => each.unread > 0).map((each) => each.id)
+    ? (listed ?? []).filter((each) => each.unread > 0).map((each) => each.id)
     : [];
   const [kept, setKept] = useState({ key: filterKey, ids: new Set(unreadNow) });
   if (kept.key !== filterKey) setKept({ key: filterKey, ids: new Set(unreadNow) });
@@ -112,17 +123,20 @@ export function MailInbox({ view }: { view: MailViewState }) {
       </div>
     );
   }
-  if (!threads.data) return null;
+  if (!listed) return null;
   const isSpam = folder === 'spam';
   const folderName = view.folders.find((each) => each.key === folder)?.name ?? 'Posteingang';
   // Marked spam or not, it moves at once (the server's list follows). In the Posteingang, one with
   // colleagues only on it stands among the chats, as a group.
   const shown = pinnedFirst(
-    threads.data.filter(
+    listed.filter(
       (each) =>
-        (isSpam
-          ? each.spam
-          : !each.spam && (folder !== 'inbox' || mailThreadKind(each.people) === 'mail')) &&
+        // Found: wherever it lies, spam too.
+        (query
+          ? true
+          : isSpam
+            ? each.spam
+            : !each.spam && (folder !== 'inbox' || mailThreadKind(each.people) === 'mail')) &&
         (!view.unread || each.unread > 0 || kept.ids.has(each.id)),
     ),
   );
@@ -130,15 +144,25 @@ export function MailInbox({ view }: { view: MailViewState }) {
     return (
       <div className="m-auto py-16">
         <EmptyState
-          title={view.unread ? 'Alles gelesen' : isSpam ? 'Kein Spam' : 'Keine Mails'}
+          title={
+            query
+              ? 'Nichts gefunden'
+              : view.unread
+                ? 'Alles gelesen'
+                : isSpam
+                  ? 'Kein Spam'
+                  : 'Keine Mails'
+          }
           message={
-            view.unread
-              ? `In „${folderName}“ ist keine Mail ungelesen.`
-              : isSpam
-                ? 'Was nach Spam oder Phishing aussieht, legt die KI hierher.'
-                : folder === 'inbox'
-                  ? 'Neue Mails kommen jede Minute.'
-                  : `In „${folderName}“ liegt keine Mail.`
+            query
+              ? `Keine${view.unread ? ' ungelesene' : ''} Mail in „${view.labels.get(account.id) ?? account.address}“ sagt „${query}“ – weder im Betreff noch im Text, bei keinem Namen und keiner Adresse.`
+              : view.unread
+                ? `In „${folderName}“ ist keine Mail ungelesen.`
+                : isSpam
+                  ? 'Was nach Spam oder Phishing aussieht, legt die KI hierher.'
+                  : folder === 'inbox'
+                    ? 'Neue Mails kommen jede Minute.'
+                    : `In „${folderName}“ liegt keine Mail.`
           }
         />
       </div>
@@ -155,7 +179,7 @@ export function MailInbox({ view }: { view: MailViewState }) {
   return (
     <>
       {/* `data-mail-list`: its rows flip on a switch of mailbox (`styles/index.css`). */}
-      <RowList variant="hover" aria-label={folderName} data-mail-list>
+      <RowList variant="hover" aria-label={query ? 'Treffer' : folderName} data-mail-list>
         {shown.map((thread) => {
           const group = mailThreadKind(thread.people) === 'group';
           const unread = thread.unread > 0;

@@ -56,4 +56,7 @@ if [[ $status != healthy ]]; then
 fi
 
 docker image prune -f >/dev/null
+# Each release builds on the server and leaves its layers in the build cache, which nothing else
+# drops (46 GB on a 75 GB disk). Cache used in the last day stays, so the next build stays quick.
+docker builder prune -f --filter until=24h >/dev/null
 echo "✓ live"

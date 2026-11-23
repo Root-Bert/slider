@@ -482,7 +482,6 @@ export function Component() {
       docTitle="Verbindungen"
       title="Verbindungen"
       crumbs={[{ label: ui.workspace.name }, { label: 'Verbindungen' }]}
-      subtitle="Dienste, in denen deine Agenten für dich arbeiten. Jede Verbindung gehört dir allein."
       nodes={[]}
     >
       {() => (

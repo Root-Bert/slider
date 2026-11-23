@@ -1166,6 +1166,10 @@
 :root[data-transition='workspace-view']::view-transition-new(root) {
   animation: 240ms var(--ease-symmetric) both;
   animation-name: view-fade-out;
+  /* The browser adds old and new (plus-lighter) only through its own animation, which ours
+     replaces: without this, what is the same on both sides (crumbs, the field, the search)
+     dimmed to 75 % mid-switch – it flickered. Measured by screencast, 2026-11-23. */
+  mix-blend-mode: plus-lighter;
 }
 :root[data-transition='workspace-view']::view-transition-new(root) {
   animation-name: view-fade-in;
@@ -1213,6 +1217,7 @@
 ::view-transition-group(workspace-view-material),
 ::view-transition-group(workspace-view-agents),
 ::view-transition-group(workspace-view-todos),
+::view-transition-group(workspace-view-areas),
 ::view-transition-group(.view-title) {
   animation-duration: 420ms;
   animation-timing-function: var(--ease-emphasized);
@@ -1225,6 +1230,8 @@
 ::view-transition-new(workspace-view-agents),
 ::view-transition-old(workspace-view-todos),
 ::view-transition-new(workspace-view-todos),
+::view-transition-old(workspace-view-areas),
+::view-transition-new(workspace-view-areas),
 ::view-transition-old(.view-title),
 ::view-transition-new(.view-title) {
   height: 100%;

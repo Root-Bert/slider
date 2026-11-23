@@ -4,6 +4,12 @@ import type { CallIceServer, CallSignal } from '@slider/shared';
 export type Slot = 'audio' | 'camera' | 'screen';
 export const SLOTS: readonly Slot[] = ['audio', 'camera', 'screen'];
 
+/** A picture shown through the server's own player (LiveKit's track): it sends only what is seen. */
+export interface VideoAttach {
+  attach(element: HTMLMediaElement): unknown;
+  detach(element: HTMLMediaElement): unknown;
+}
+
 /** What comes from another tab, slot by slot. */
 export interface RemoteMedia {
   audio: MediaStream | null;
@@ -11,6 +17,22 @@ export interface RemoteMedia {
   screen: MediaStream | null;
   /** `connected` once sound and pictures flow; before and after a break something else. */
   state: RTCPeerConnectionState;
+  /**
+   * Where the server forwards (`Sfu`): camera and screen are shown by attaching their track – the
+   * server then sends a picture only while it is on screen, and as large as it is (adaptive stream).
+   */
+  attach?: Partial<Record<'camera' | 'screen', VideoAttach>>;
+}
+
+/** How a call's sound and pictures travel: to each other tab (`Mesh`) or through the server (`Sfu`). */
+export interface Transport {
+  /** What this tab sends in a slot (`null`: nothing, e.g. the camera off). */
+  setTrack(slot: Slot, track: MediaStreamTrack | null): void;
+  /** What arrives from each other tab right now. */
+  media(): Map<string, RemoteMedia>;
+  /** A tab left the call. */
+  drop(peerId: string): void;
+  close(): void;
 }
 
 interface Remote {
@@ -30,7 +52,7 @@ interface Remote {
  * (`replaceTrack`), nothing is negotiated again. Who joins later offers to who was there; the
  * other side only answers, so two offers never cross.
  */
-export class Mesh {
+export class Mesh implements Transport {
   private readonly remotes = new Map<string, Remote>();
   private readonly local: Record<Slot, MediaStreamTrack | null> = {
     audio: null,

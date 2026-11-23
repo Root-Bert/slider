@@ -1,25 +1,37 @@
 import { useEffect, useRef } from 'react';
 import type { AccountAuthor, CallAgent } from '@slider/shared';
-import { useAgentAvatars } from '@/features/workspaces';
+import { useWorkspaceAgentAvatars } from '@/features/workspaces';
 import { Avatar, cn, Icon, IconButton } from '@/ui';
+import type { VideoAttach } from '../lib/mesh';
 
-/** A stream shown in a `<video>` – silent: voices play in their own `<audio>` (`CallAudio`). */
+/**
+ * A stream shown in a `<video>` – silent: voices play in their own `<audio>` (`CallAudio`).
+ * Through the server (`attach`) the track goes onto the element itself: the server then sends the
+ * picture only while it is shown, and as large as it is shown.
+ */
 export function StreamVideo({
   stream,
+  attach,
   mirrored = false,
   fit = 'cover',
 }: {
   stream: MediaStream;
+  attach?: VideoAttach;
   mirrored?: boolean;
   fit?: 'cover' | 'contain';
 }) {
   const ref = useRef<HTMLVideoElement>(null);
   useEffect(() => {
     const video = ref.current;
-    if (!video || video.srcObject === stream) return;
+    if (!video) return;
+    if (attach) {
+      attach.attach(video);
+      return () => void attach.detach(video);
+    }
+    if (video.srcObject === stream) return;
     video.srcObject = stream;
     void video.play().catch(() => {});
-  }, [stream]);
+  }, [stream, attach]);
   return (
     <video
       ref={ref}
@@ -55,6 +67,7 @@ export function CallTile({
   author,
   label,
   stream,
+  attach,
   mirrored,
   mic,
   speaking,
@@ -66,6 +79,8 @@ export function CallTile({
   /** As shown under it (`Du` for oneself). */
   label: string;
   stream: MediaStream | null;
+  /** Through the server: the camera's track, shown by attaching it (`StreamVideo`). */
+  attach?: VideoAttach;
   mirrored?: boolean;
   mic: boolean;
   speaking: boolean;
@@ -82,7 +97,7 @@ export function CallTile({
       )}
     >
       {stream ? (
-        <StreamVideo stream={stream} mirrored={mirrored} />
+        <StreamVideo stream={stream} attach={attach} mirrored={mirrored} />
       ) : (
         <div className="absolute inset-0 grid place-items-center">
           <Avatar author={author} size={big ? 64 : 32} nativeTitle={false} />
@@ -122,7 +137,7 @@ export function AgentTile({
   big?: boolean;
   className?: string;
 }) {
-  const avatarOf = useAgentAvatars(workspaceId);
+  const avatarOf = useWorkspaceAgentAvatars(workspaceId);
   const state = saying
     ? 'Spricht'
     : agent.state === 'thinking'

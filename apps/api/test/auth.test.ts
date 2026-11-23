@@ -258,6 +258,8 @@ describe('sessions', () => {
       (method === 'GET' && route === '/api/legal') ||
       // Cloud: what a link shows – read only, to whoever holds its token (`cloud.test.ts`).
       (method === 'GET' && route.startsWith('/api/cloud/public/:token')) ||
+      // LiveKit's webhook: signed with the key pair it shares with the server (`calls.test.ts`).
+      (method === 'POST' && route === '/api/calls/livekit') ||
       (method === 'POST' &&
         /^\/api\/live\/:key(?:\/leave|\/text\/:elementId(?:\/leave)?)?$/.test(route));
     const privateRoutes = new Map(

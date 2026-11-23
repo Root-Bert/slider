@@ -26,6 +26,7 @@ import { carriesNodes, NODES_DRAG } from '../lib/drag';
 import { BarFolded, CRUMB_SEARCH, useCrumbSearch } from '../lib/crumb-search';
 import { CrumbSearchField } from './CrumbSearch';
 import { DROP_FAILED, droppedFiles } from '../lib/upload';
+import { GIVE_WAY_TO_PANEL } from '../lib/panel';
 import { tabTitle } from '../lib/tab-title';
 import type { CloudItems } from './FileBrowser';
 
@@ -341,7 +342,10 @@ export function CloudPage({
       <title>{tabTitle(docTitle, ui.workspace.name, appName)}</title>
       <header
         {...(folded ? { [CRUMB_SEARCH]: '' } : {})}
-        className="flex shrink-0 flex-wrap items-end justify-between gap-x-6 gap-y-3"
+        className={cn(
+          'flex shrink-0 flex-wrap items-end justify-between gap-x-6 gap-y-3',
+          GIVE_WAY_TO_PANEL,
+        )}
       >
         <div className="flex min-w-0 flex-col gap-1">
           {typing ? (
@@ -398,7 +402,9 @@ export function CloudPage({
         {/* Pushed to the right also where a long title wraps them onto a line of their own. */}
         {actions && <div className="ml-auto flex shrink-0 items-center gap-2">{actions}</div>}
       </header>
-      {toolbar && <div className="shrink-0">{selectionBar ?? toolbar}</div>}
+      {toolbar && (
+        <div className={cn('shrink-0', GIVE_WAY_TO_PANEL)}>{selectionBar ?? toolbar}</div>
+      )}
       <div
         ref={scrollRef}
         // Room around, so a focus ring, a card that grows or a floating field's shadow (the

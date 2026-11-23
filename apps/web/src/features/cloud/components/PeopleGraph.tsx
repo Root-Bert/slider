@@ -200,16 +200,16 @@ export function PeopleGraph({
     <div
       className={cn(
         // As tall as the page has room: the net scrolls and zooms in itself, the page stays put.
-        full
-          ? 'fixed inset-0 z-(--z-panel) bg-canvas'
-          : 'glass relative min-h-[320px] flex-1 rounded-panel',
+        // Free on the page's ground as „Ordner“'s tree, no box around it (the user, 2026-11-23:
+        // „Order ist so frei und personen mit box. Personen sollen auch frei sein.“).
+        full ? 'fixed inset-0 z-(--z-panel) bg-canvas' : 'relative min-h-[320px] flex-1',
       )}
     >
       <div
         ref={frame}
         role="group"
         aria-label="Wer arbeitet wo"
-        className="absolute inset-0 cursor-grab touch-none overflow-hidden rounded-panel select-none active:cursor-grabbing"
+        className="absolute inset-0 cursor-grab touch-none overflow-hidden select-none active:cursor-grabbing"
         onPointerDown={onPointerDown}
         // Dragging moves the graph: the page's selection box stays out of it.
         onMouseDown={(event) => event.stopPropagation()}

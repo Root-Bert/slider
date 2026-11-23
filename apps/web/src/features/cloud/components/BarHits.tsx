@@ -6,8 +6,10 @@ import {
   ConversationHitRows,
   HIT,
   hitClass,
+  MailHitRows,
   searchConversations,
   stepHits,
+  useMailHits,
   useSenderOrNull,
 } from '@/features/sender';
 import { Icon, useDebounced } from '@/ui';
@@ -19,7 +21,8 @@ const Line = () => <div role="separator" className="mx-2 my-2 shrink-0 border-t 
 
 /**
  * What the bar's field finds, in place of the bar's list: what is called so – files and folders,
- * the areas, then the chats and people (Sender's – a person without a chat starts one). What the
+ * the areas, then the chats and people (Sender's – a person without a chat starts one), then the
+ * mails (subject, names, addresses – one opens in Post). What the
  * files say is the page's (`SearchResults`). ↑↓ step, ↵ opens; a click is as a click in the list.
  */
 export function BarHits({ query, onPicked }: { query: string; onPicked: () => void }) {
@@ -28,6 +31,7 @@ export function BarHits({ query, onPicked }: { query: string; onPicked: () => vo
   const navigate = useNavigate();
   const settled = useDebounced(query, 150);
   const search = useCloudSearch(ui.workspace.id, settled.trim());
+  const mails = useMailHits(ui.workspace.id, sender ? settled.trim() : '');
   const words = query.trim().toLocaleLowerCase('de');
   const nodes = search.data?.nodes ?? [];
   const areas = (ui.home?.areas ?? []).filter((area) =>
@@ -42,7 +46,7 @@ export function BarHits({ query, onPicked }: { query: string; onPicked: () => vo
     onPicked();
     run();
   };
-  const settling = settled !== query || search.isFetching;
+  const settling = settled !== query || search.isFetching || mails.settling;
   const groups: ReactNode[] = [
     nodes.length > 0 &&
       nodes.map((node) => (
@@ -79,6 +83,9 @@ export function BarHits({ query, onPicked }: { query: string; onPicked: () => vo
     chats.length > 0 && (
       <ConversationHitRows key="chats" query={query} onPicked={onPicked} hideAreaChats={shown} />
     ),
+    mails.threads.length > 0 && (
+      <MailHitRows key="mails" threads={mails.threads} onPicked={onPicked} />
+    ),
   ].filter(Boolean);
   return (
     <div className="flex min-h-0 flex-1 flex-col gap-0.5 overflow-y-auto pb-6">
@@ -92,7 +99,7 @@ export function BarHits({ query, onPicked }: { query: string; onPicked: () => vo
       </div>
       {groups.length === 0 && !settling && (
         <p className="px-2.5 py-1 text-xs leading-4.5 text-fg-subtle">
-          Nichts heißt so – keine Datei, kein Chat, niemand.
+          Nichts heißt so – keine Datei, kein Chat, keine Mail, niemand.
         </p>
       )}
       {search.data?.more && (

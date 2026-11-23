@@ -18,6 +18,16 @@ import { LIBREOFFICE_TIMEOUT_MS } from './import/libreoffice';
 import { PDF_TIMEOUT_MS } from './import/pdf-jobs';
 import { DEFAULT_PLAN_LIMITS, UNLIMITED_PLAN, type PlanLimits } from './services/plans';
 
+/** A LiveKit server for calls (`services/call-sfu.ts`). */
+export interface SfuConfig {
+  /** What the browsers connect to, `wss://…`. */
+  url: string;
+  /** Where the server asks LiveKit's room API (close a room, send someone out), `http(s)://…`. */
+  apiUrl: string;
+  apiKey: string;
+  apiSecret: string;
+}
+
 export interface Config {
   env: 'development' | 'production' | 'test';
   port: number;
@@ -87,9 +97,12 @@ export interface Config {
    * each other only directly (same network) – across the internet a TURN server is needed.
    * `CALL_TURN_SECRET`: coturn's `static-auth-secret` (`use-auth-secret`) – then each one who
    * joins a call gets their own TURN password for a few hours, instead of the list's static one.
+   * `sfu`: a LiveKit server that forwards the calls' sound and pictures (`LIVEKIT_URL`, or
+   * `wss://<CALL_DOMAIN>` for the one in deploy/docker-compose.yml) – then a call holds up to
+   * `MAX_SFU_CALL_PEERS` and the mesh above is not used. `null`: the mesh, up to 8 people.
    * Absent in tests that don't care.
    */
-  calls?: { iceServers: CallIceServer[]; turnSecret?: string | null };
+  calls?: { iceServers: CallIceServer[]; turnSecret?: string | null; sfu?: SfuConfig | null };
   /**
    * Whether this instance limits its users at all: the hosted demo does (plans, one own
    * workspace per account, storage), a self-hosted instance doesn't. See
@@ -409,6 +422,28 @@ const envSchema = z.object({
   AI_ALLOW_INTERNAL_URLS: booleanEnv.optional(),
   CALL_ICE_SERVERS: z.string().optional(),
   CALL_TURN_SECRET: z.string().min(16).optional(),
+  // LiveKit for calls of many (`sfuFrom`): its address for the browsers, or the call domain of
+  // deploy/docker-compose.yml; its room API; its key pair (else generated into the data volume).
+  LIVEKIT_URL: z
+    .url()
+    .regex(/^wss?:\/\//, 'LIVEKIT_URL beginnt mit wss:// (oder ws:// lokal).')
+    .optional(),
+  LIVEKIT_API_URL: z
+    .url()
+    .regex(/^https?:\/\//, 'LIVEKIT_API_URL beginnt mit https:// oder http://.')
+    .optional(),
+  LIVEKIT_API_KEY: z
+    .string()
+    .regex(/^[\w-]{3,64}$/, 'LIVEKIT_API_KEY: Buchstaben, Ziffern, - und _.')
+    .optional(),
+  LIVEKIT_API_SECRET: z
+    .string()
+    .min(32, 'LIVEKIT_API_SECRET muss mindestens 32 Zeichen lang sein.')
+    .optional(),
+  CALL_DOMAIN: z
+    .string()
+    .regex(/^[a-z0-9.-]+$/i, 'CALL_DOMAIN ist ein Hostname, z. B. call.firma.de.')
+    .optional(),
 });
 
 /** Env value → limit: unset keeps the default, `0` means unlimited (`null`). */
@@ -675,6 +710,7 @@ export function loadConfig(
     calls: {
       iceServers: parseIceServers(parsed.CALL_ICE_SERVERS),
       turnSecret: parsed.CALL_TURN_SECRET ?? null,
+      sfu: sfuFrom(parsed, dataDir, warn),
     },
   };
 }
@@ -720,6 +756,66 @@ function loadOrCreateSecret(dataDir: string): string {
   writeFileSync(file, `${secret}\n`, { mode: 0o600, flag: 'wx' });
   chmodSync(file, 0o600);
   return secret;
+}
+
+/** The key pair of `livekit-server --dev` – for a LiveKit on this computer only. */
+const LIVEKIT_DEV_KEYS = { apiKey: 'devkey', apiSecret: 'secret' };
+/** Where the generated LiveKit key pair lives; deploy/docker-compose.yml hands it to LiveKit. */
+const LIVEKIT_KEY_FILE = path.join('livekit', 'keys.yaml');
+
+/**
+ * The LiveKit server of the calls, if there is one: `LIVEKIT_URL`, else `wss://<CALL_DOMAIN>`
+ * (deploy/docker-compose.yml's own, its room API then at `http://livekit:7880` on the Compose
+ * network). Its key pair comes from `LIVEKIT_API_KEY`/`LIVEKIT_API_SECRET` (required with
+ * `LIVEKIT_URL` in production), else – for the bundled one in production – it is generated on the first start into `<dataDir>/livekit/keys.yaml`, the file LiveKit reads
+ * (`--key-file`), so nobody has to make one.
+ */
+function sfuFrom(
+  parsed: z.infer<typeof envSchema>,
+  dataDir: string,
+  warn: (msg: string) => void,
+): SfuConfig | null {
+  const url =
+    parsed.LIVEKIT_URL ?? (parsed.CALL_DOMAIN ? `wss://${parsed.CALL_DOMAIN}` : undefined);
+  if (!url) return null;
+  if (!parsed.LIVEKIT_API_KEY !== !parsed.LIVEKIT_API_SECRET)
+    throw new Error('LIVEKIT_API_KEY und LIVEKIT_API_SECRET gehören zusammen – beide oder keins.');
+  let keys = { apiKey: parsed.LIVEKIT_API_KEY ?? '', apiSecret: parsed.LIVEKIT_API_SECRET ?? '' };
+  if (!keys.apiKey) {
+    // A LiveKit of one's own elsewhere (LIVEKIT_URL) never reads the generated file.
+    if (parsed.NODE_ENV === 'production' && parsed.LIVEKIT_URL)
+      throw new Error('LIVEKIT_URL braucht LIVEKIT_API_KEY und LIVEKIT_API_SECRET dieses LiveKit.');
+    if (parsed.NODE_ENV === 'production') keys = loadOrCreateLivekitKeys(dataDir);
+    else {
+      warn('LIVEKIT_API_KEY is not set – using the key pair of `livekit-server --dev`.');
+      keys = LIVEKIT_DEV_KEYS;
+    }
+  }
+  const apiUrl =
+    parsed.LIVEKIT_API_URL ??
+    (parsed.LIVEKIT_URL ? parsed.LIVEKIT_URL.replace(/^ws/, 'http') : 'http://livekit:7880');
+  return { url: url.replace(/\/+$/, ''), apiUrl: apiUrl.replace(/\/+$/, ''), ...keys };
+}
+
+/**
+ * LiveKit's key pair, made once and kept in the data volume like the secret: a YAML line
+ * `<key>: <secret>` – the format of LiveKit's `--key-file`, which refuses a file others may read.
+ */
+function loadOrCreateLivekitKeys(dataDir: string): { apiKey: string; apiSecret: string } {
+  const file = path.join(dataDir, LIVEKIT_KEY_FILE);
+  if (existsSync(file)) {
+    const line = /^([\w-]+):\s*(\S{32,})\s*$/m.exec(readFileSync(file, 'utf8'));
+    if (line?.[1] && line[2]) return { apiKey: line[1], apiSecret: line[2] };
+    throw new Error(`${file} holds no usable LiveKit key pair (\`<key>: <secret>\`).`);
+  }
+  mkdirSync(path.dirname(file), { recursive: true, mode: 0o700 });
+  const keys = {
+    apiKey: `slider${randomBytes(6).toString('hex')}`,
+    apiSecret: randomBytes(36).toString('base64url'),
+  };
+  writeFileSync(file, `${keys.apiKey}: ${keys.apiSecret}\n`, { mode: 0o600, flag: 'wx' });
+  chmodSync(file, 0o600);
+  return keys;
 }
 
 export const dataPaths = (config: Pick<Config, 'dataDir'>) => ({

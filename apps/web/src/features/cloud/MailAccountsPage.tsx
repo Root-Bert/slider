@@ -15,7 +15,6 @@ export function Component() {
         { label: 'Post', to: routes.cloudMail(ui.workspace.id) },
         { label: 'Postfächer' },
       ]}
-      subtitle="Jeder Mail-Server geht: Gmail, Outlook, iCloud oder ein eigener per IMAP und SMTP."
       actions={<NewMailboxButton />}
       nodes={[]}
     >

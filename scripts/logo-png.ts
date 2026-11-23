@@ -2,12 +2,12 @@
  * Renders every SVG in brand/logo/'s layout folders (scripts/logo-files.py writes them) to a PNG
  * next to it, with a transparent background: wide layouts 4000 px wide, the mark and the stacked
  * logo 2048 px wide. The web app's icons come from the original 1024 px Icon Composer export
- * at `brand/logo/icon/slider-app-icon.png`: manifest `any` (192, 512), Apple touch (180) and the
- * desktop app's icon (`desktop/icon.png`, 1024). This export already has rounded corners; it must
- * not be declared `maskable`. It fills its whole square, so the icons a Mac shows as they are
- * (the installed web app's, the desktop app's) get the margin of Apple's icon grid – the shape
- * 824 of 1024 px, centred – or they sit larger than every other icon in the Dock. The Apple touch
- * icon stays edge to edge: iOS draws its own shape around it.
+ * at `brand/logo/icon/slider-app-icon.png`: manifest `any` (192, 512) and the desktop app's icon
+ * (`desktop/icon.png`, 1024). This export already has rounded corners; it fills its whole square,
+ * so the icons a Mac shows as they are (the installed web app's, the desktop app's) get the margin
+ * of Apple's icon grid – the shape 824 of 1024 px, centred – or they sit larger than every other
+ * icon in the Dock. The Apple touch icon and the `maskable` one (edge to edge, iOS and Chrome cut
+ * their own shape) are written by `app-icons.ts`, as every app's.
  * Run from the repository root:
  *
  *   bun scripts/logo-png.ts
@@ -45,7 +45,6 @@ const MAC_SHAPE = 824 / 1024;
 const icons: [path: string, size: number, shape: number][] = [
   [`${PUBLIC}/icon-192.png`, 192, MAC_SHAPE],
   [`${PUBLIC}/icon-512.png`, 512, MAC_SHAPE],
-  [`${PUBLIC}/apple-touch-icon.png`, 180, 1],
   ['desktop/icon.png', 1024, MAC_SHAPE],
 ];
 for (const [path, size, shape] of icons) {

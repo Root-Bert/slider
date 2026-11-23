@@ -10,6 +10,9 @@
 		trusted_proxies static {$TRUSTED_PROXIES}
 		client_ip_headers CF-Connecting-IP X-Forwarded-For
 	}
+	# The calls' site below answers call.localhost while CALL_DOMAIN is unset (Caddy's own CA):
+	# nothing to install into the container's trust store for that.
+	skip_install_trust
 }
 
 # Automatic HTTPS (Let's Encrypt) for the Slider domain. DNS A/AAAA records must point at this
@@ -41,6 +44,15 @@
 		# Slider reads the right-most X-Forwarded-For entry (TRUST_PROXY=1): hand it the visitor.
 		header_up X-Forwarded-For {client_ip}
 	}
+}
+
+# Calls with many people (COMPOSE_PROFILES=call, CALL_DOMAIN in .env): LiveKit's signalling
+# (wss) – the media goes to the server's own ports (docker-compose.yml). Its DNS record must be
+# DNS-only (no proxy): the browsers reach LiveKit's ports at the same address, and the
+# certificate got here is LiveKit's for TURN over TLS too (deploy/livekit/start.sh). Without
+# CALL_DOMAIN the site is call.localhost, which no browser reaches from outside.
+{$CALL_DOMAIN:call.localhost} {
+	reverse_proxy livekit:7880
 }
 
 # Further sites on this server: put their *.caddy files into sites/.

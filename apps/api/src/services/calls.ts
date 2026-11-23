@@ -2,6 +2,7 @@ import { createHmac, randomUUID } from 'node:crypto';
 import {
   CALL_RING_MS,
   MAX_CALL_PEERS,
+  MAX_SFU_CALL_PEERS,
   type AccountAuthor,
   type CallEndReason,
   type CallEvent,
@@ -33,6 +34,7 @@ import type { KeptCall } from './call-records';
 import { createCloudAgent, getCloudAgent, messageCloudAgent, noteCallTurn } from './cloud-agents';
 import { workspaceAiConnection, workspaceLiveConnection } from './integration-keys';
 import { audienceOf, conversationForCall } from './sender';
+import type { CallSfu, SfuEvent } from './call-sfu';
 
 /** A tab whose stream broke is kept this long in its call – a short gap is no hanging up. */
 const GONE_AFTER_MS = 12_000;
@@ -137,6 +139,12 @@ export interface CallHubOptions {
   keep?: (call: KeptCall) => void;
   /** coturn's `static-auth-secret`: TURN passwords per person and a few hours (`iceFor`). */
   turnSecret?: string | null;
+  /**
+   * LiveKit, where the server forwards sound and pictures: each tab of a conversation's call gets
+   * a ticket into the call's room, a tab out of the call is sent out of it, an ended call's room is
+   * closed. `null`: the browsers send to each other (mesh, `MAX_CALL_PEERS`).
+   */
+  sfu?: CallSfu | null;
   /** The time in ms (the app's clock). */
   now?: () => number;
 }
@@ -147,6 +155,9 @@ const AUDIENCE_FRESH_MS = 5_000;
 const REFUSE_AGAIN_MS = 60_000;
 /** How long a person's right to write to the call's agent is trusted, like who sees the call. */
 const MAY_ASK_MS = AUDIENCE_FRESH_MS;
+
+/** A tab LiveKit says left its room is looked for again after this before it leaves the call. */
+const SFU_LEFT_CHECK_MS = 5_000;
 
 /** How long a TURN password made from `turnSecret` holds – a long call's whole length. */
 const TURN_CREDENTIAL_S = 12 * 60 * 60;
@@ -159,6 +170,8 @@ interface Tab {
 
 interface Call {
   id: string;
+  /** LiveKit forwards its sound and pictures (it answered when the call began); else mesh. */
+  viaSfu: boolean;
   /** Its conversation, or `agent:<agent>:<person>` for a call with an agent. */
   place: string;
   workspaceId: string;
@@ -252,6 +265,11 @@ export class CallHub {
     hearAudiences(this);
   }
 
+  /** LiveKit, where it forwards the calls' media (its webhook comes in through the routes). */
+  get sfu(): CallSfu | null {
+    return this.options.sfu ?? null;
+  }
+
   // ── Streams ──────────────────────────────────────────────────────────────
 
   /** A tab opened its stream: it hears every call its person sees. */
@@ -329,10 +347,12 @@ export class CallHub {
     this.ownTab(me.id, input.peerId);
     this.leaveOthers(me.id, input.peerId, channelId);
     const now = deps.clock.now();
+    const sfuUp = !call && this.options.sfu ? await this.options.sfu.ready() : false;
     call = this.calls.get(this.byChannel.get(channelId) ?? '');
     if (!call) {
       call = {
         id: randomUUID(),
+        viaSfu: sfuUp,
         place: channelId,
         workspaceId: place.row.workspaceId,
         channelId,
@@ -386,7 +406,7 @@ export class CallHub {
       call.people = place.people;
       call.title = place.title;
     }
-    return this.enter(call, me, input, now);
+    return this.withTicket(call, me, input.peerId, this.enter(call, me, input, now));
   }
 
   /**
@@ -411,6 +431,8 @@ export class CallHub {
     if (!call) {
       call = {
         id: randomUUID(),
+        // Nobody there to see or hear but the agent, whose voice comes from the server (`say`).
+        viaSfu: false,
         place,
         workspaceId: row.workspaceId,
         channelId: '',
@@ -730,8 +752,9 @@ export class CallHub {
     now: Date,
   ): CallJoined {
     const before = call.peers.get(input.peerId);
-    if (!before && call.peers.size >= MAX_CALL_PEERS)
-      throw badRequest(`In einem Anruf sind höchstens ${MAX_CALL_PEERS} Personen.`);
+    const most = call.viaSfu ? MAX_SFU_CALL_PEERS : MAX_CALL_PEERS;
+    if (!before && call.peers.size >= most)
+      throw badRequest(`In einem Anruf sind höchstens ${most} Personen.`);
     const connectTo = [...call.peers.keys()].filter((id) => id !== input.peerId);
     call.joined.set(me.id, me);
     call.peers.set(input.peerId, {
@@ -745,7 +768,60 @@ export class CallHub {
     });
     this.stopRinging(call, me.id);
     this.changed(call);
-    return { call: stateOf(call), connectTo, iceServers: this.iceFor(me.id, now) };
+    return { call: stateOf(call), connectTo, iceServers: this.iceFor(me.id, now), sfu: null };
+  }
+
+  /**
+   * Where LiveKit forwards the call's media (`viaSfu`), the tab that just came in gets its ticket
+   * into the call's room. Without one it is not in the call either – nobody sees a tile that
+   * never connects.
+   */
+  private async withTicket(
+    call: Call,
+    me: AccountAuthor,
+    peerId: string,
+    joined: CallJoined,
+  ): Promise<CallJoined> {
+    const sfu = this.options.sfu;
+    if (!sfu || !call.viaSfu) return joined;
+    try {
+      const token = await sfu.ticket(call.id, peerId, me.name, me.id);
+      // Nobody to connect to: the server forwards.
+      return { ...joined, connectTo: [], sfu: { url: sfu.url, token } };
+    } catch (error) {
+      this.leave(call.id, me.id, peerId);
+      throw error;
+    }
+  }
+
+  /**
+   * What LiveKit says of a call's room (its webhook, signature checked): a tab in the room that is
+   * not in the call (a ticket kept after leaving, a room of a call that is over) is sent out; a
+   * tab that left the room and is not back a moment later leaves the call – before its stream's
+   * heartbeat would notice (a closed laptop, a killed browser).
+   */
+  sfuEvent(event: SfuEvent): void {
+    const sfu = this.options.sfu;
+    if (!sfu || !event.room) return;
+    const call = this.calls.get(event.room);
+    if (event.event === 'participant_joined' && event.identity) {
+      if (!call) return sfu.close(event.room);
+      if (!call.peers.has(event.identity)) sfu.sendOut(call.id, event.identity);
+      return;
+    }
+    if (event.event !== 'participant_left' || !event.identity || !call) return;
+    const peerId = event.identity;
+    // A tab that reconnects anew comes back under the same name – the old one leaves after it.
+    later(() => {
+      const peer = this.calls.get(call.id)?.peers.get(peerId);
+      if (!peer) return;
+      void sfu
+        .connected(call.id, peerId)
+        .then((back) => {
+          if (!back) this.leave(call.id, peer.userId, peerId);
+        })
+        .catch(() => {});
+    }, SFU_LEFT_CHECK_MS);
   }
 
   /**
@@ -1254,6 +1330,7 @@ export class CallHub {
     const peer = call.peers.get(peerId);
     if (!peer || peer.userId !== userId) return;
     call.peers.delete(peerId);
+    if (call.viaSfu) this.options.sfu?.sendOut(call.id, peerId);
     if (call.peers.size === 0) return this.end(call, 'empty');
     if (call.kind === 'direct' && call.ringing.size === 0 && call.peers.size < 2)
       return this.end(call, 'empty');
@@ -1341,6 +1418,7 @@ export class CallHub {
     call.ringing.clear();
     this.calls.delete(call.id);
     if (this.byChannel.get(call.place) === call.id) this.byChannel.delete(call.place);
+    if (call.viaSfu) this.options.sfu?.close(call.id);
     this.publish(call, { type: 'ended', callId: call.id, channelId: call.channelId, reason });
     const endedAt = new Date();
     if (call.record.length > 0 && this.options.keep) {

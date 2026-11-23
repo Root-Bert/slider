@@ -22,6 +22,7 @@ const VIEWS = [
 /** An area's second view in Cloud, its agents (`AreaViews`) – written out in full for Tailwind. */
 const AGENTS_NAME = '[view-transition-name:workspace-view-agents]';
 const TODOS_NAME = '[view-transition-name:workspace-view-todos]';
+const AREAS_NAME = '[view-transition-name:workspace-view-areas]';
 
 /** Cloud's two: its start and the same library, beside the files – its agents are in its side bar. */
 const CLOUD_VIEWS = [
@@ -75,13 +76,14 @@ export interface ViewTitle {
 }
 /**
  * The names the labels morph under (`styles/index.css`): the first view's, the second's (an
- * area's „Chat“ takes the library's), an area's to-dos, and the agents'.
+ * area's „Chat“ takes the library's), an area's to-dos, the agents', and the workspace's areas.
  */
 export const VIEW_NAMES = {
   first: VIEWS[0].name,
   second: VIEWS[1].name,
   agents: AGENTS_NAME,
   todos: TODOS_NAME,
+  areas: AREAS_NAME,
 } as const;
 
 /**

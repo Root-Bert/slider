@@ -13,7 +13,7 @@ export { ViewSearch } from './components/ViewSearch';
 export { ViewTitles, VIEW_NAMES, WorkspaceViews } from './components/WorkspaceViews';
 export { startViewSwitch, useViewSwitchTop, VIEW_LINK_CLASS } from './components/viewSwitch';
 export { useActiveWorkspace, useStartWorkspace, useWorkspace } from './hooks/useWorkspace';
-export { useAgentAvatars } from './hooks/useAgentAvatars';
+export { useAgentAvatars, useWorkspaceAgentAvatars } from './hooks/useAgentAvatars';
 export { pickWorkspace, readLastWorkspaceId, rememberWorkspace } from './lib/last-workspace';
 export {
   deckLimitMessage,

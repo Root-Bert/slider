@@ -17,6 +17,7 @@ export {
   hitClass,
   stepHits,
 } from './components/ConversationSearch';
+export { MailHitRows, useMailHits } from './components/mail/MailHits';
 export { searchConversations } from './lib/search';
 export { SenderProvider, useSenderOrNull, type ChannelPlace } from './hooks/useSender';
 export { isNewKind, type NewKind } from './lib/new';

@@ -9,3 +9,9 @@ slider.example.com {
 		header_up X-Forwarded-For {client_ip}
 	}
 }
+
+# Calls with many people (COMPOSE_PROFILES=call, CALL_DOMAIN in Slider's .env): LiveKit's
+# signalling. DNS-only record (no proxy) – the media goes to the server's own ports.
+call.example.com {
+	reverse_proxy livekit:7880
+}

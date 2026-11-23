@@ -2,7 +2,8 @@ import { useState } from 'react';
 import { CLOUD_TRASH_DAYS, searchFold } from '@slider/shared';
 import { TrashedDecks } from '@/features/reviews';
 import { useTrashedDecks } from '@/lib/api';
-import { Button, TextField } from '@/ui';
+import { ViewSearch } from '@/features/workspaces';
+import { Button } from '@/ui';
 import { AcrossPage } from './components/AcrossPage';
 import { useCloud } from './hooks/useCloud';
 
@@ -19,27 +20,8 @@ export function Component() {
       scope="trash"
       mode="trash"
       title="Gelöscht"
-      subtitle={`Gelöschtes bleibt ${CLOUD_TRASH_DAYS} Tage hier und lässt sich so lange wiederherstellen.`}
       query={query}
-      lead={
-        // In the page, where ⌘F types (`SearchPalette`): nothing opens over it.
-        <search data-cloud-search className="block w-88 max-w-full max-sm:w-full">
-          <TextField
-            type="search"
-            icon="search"
-            aria-label="Gelöschtes durchsuchen"
-            placeholder="Gelöschtes durchsuchen…"
-            value={query}
-            onChange={(event) => setQuery(event.target.value)}
-            onKeyDown={(event) => {
-              if (event.key === 'Escape' && query !== '') {
-                event.preventDefault();
-                setQuery('');
-              }
-            }}
-          />
-        </search>
-      }
+      search={<ViewSearch label="Gelöschtes durchsuchen" value={query} onChange={setQuery} />}
       actions={(nodes) =>
         nodes.length > 0 && (
           <Button variant="ghost" icon="deleteForever" onClick={ui.emptyTrash}>

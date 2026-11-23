@@ -168,6 +168,7 @@ export function Component() {
       docTitle="Zuletzt"
       // Beside it the library, as in Slider: one click across.
       title={<WorkspaceViews workspaceId={workspace.id} current="reviews" app="cloud" />}
+      crumbs={[{ label: workspace.name }, { label: 'Zuletzt' }]}
       nodes={nodes}
       target={target}
       fill

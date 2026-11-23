@@ -38,7 +38,8 @@ const DIRECTIVES: [string, ...string[]][] = [
   ],
   ['media-src', "'self'", 'blob:'],
   // Mistral's realtime stream: the words shown live while speaking to the AI (`live` key) – the
-  // browser connects itself, with a token the server got for it.
+  // browser connects itself, with a token the server got for it. LiveKit's address joins it where
+  // the calls go through it (`cspHeaders`).
   ['connect-src', "'self'", 'wss://api.mistral.ai'],
   ['worker-src', "'self'"],
   ['frame-src', "'none'"],
@@ -51,7 +52,26 @@ const DIRECTIVES: [string, ...string[]][] = [
   ['report-to', REPORT_GROUP],
 ];
 
-export const CONTENT_SECURITY_POLICY = DIRECTIVES.map((d) => d.join(' ')).join('; ');
+/**
+ * The policy, with more origins the page connects to: LiveKit's for calls (`wss://` for its
+ * signalling, `https://` for the check it makes when that fails).
+ */
+export function contentSecurityPolicy(connect: readonly string[] = []): string {
+  return DIRECTIVES.map((d) => (d[0] === 'connect-src' ? [...d, ...connect] : d).join(' ')).join(
+    '; ',
+  );
+}
+
+export const CONTENT_SECURITY_POLICY = contentSecurityPolicy();
+
+/** The origins a LiveKit address (`wss://call.firma.de`) needs in `connect-src`. */
+export function sfuOrigins(url: string | null | undefined): string[] {
+  if (!url) return [];
+  const { host, protocol } = new URL(url);
+  return protocol === 'ws:'
+    ? [`ws://${host}`, `http://${host}`]
+    : [`wss://${host}`, `https://${host}`];
+}
 
 /** Headers for an HTML document of the web app. */
 /**
@@ -60,16 +80,17 @@ export const CONTENT_SECURITY_POLICY = DIRECTIVES.map((d) => d.join(' ')).join('
  */
 const ALWAYS_ENFORCED = "frame-ancestors 'self'; object-src 'none'; base-uri 'self'";
 
-export function cspHeaders(): Record<string, string> {
+export function cspHeaders(connect: readonly string[] = []): Record<string, string> {
+  const policy = connect.length > 0 ? contentSecurityPolicy(connect) : CONTENT_SECURITY_POLICY;
   if (ENFORCE_CSP) {
     return {
-      'Content-Security-Policy': CONTENT_SECURITY_POLICY,
+      'Content-Security-Policy': policy,
       'Reporting-Endpoints': `${REPORT_GROUP}="${CSP_REPORT_PATH}"`,
     };
   }
   return {
     'Content-Security-Policy': ALWAYS_ENFORCED,
-    'Content-Security-Policy-Report-Only': CONTENT_SECURITY_POLICY,
+    'Content-Security-Policy-Report-Only': policy,
     'Reporting-Endpoints': `${REPORT_GROUP}="${CSP_REPORT_PATH}"`,
   };
 }

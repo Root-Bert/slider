@@ -14,23 +14,24 @@ import { ListToolbar } from './ListToolbar';
 export function AcrossPage({
   scope,
   title,
-  subtitle,
   mode = 'across',
   empty,
   actions,
   lead,
+  search,
   above,
   filled = false,
   query = '',
 }: {
   scope: CloudScope;
   title: string;
-  subtitle?: string;
   mode?: BrowserMode;
   empty: { icon: IconName; title: string; message: string };
   actions?: (nodes: readonly CloudNode[]) => ReactNode;
   /** First in the toolbar, e.g. the tabs of „Geteilt“. */
   lead?: ReactNode;
+  /** The page's search field (`ViewSearch`), right in the toolbar. */
+  search?: ReactNode;
   /** Between toolbar and list. */
   above?: (nodes: readonly CloudNode[], view: CloudView) => ReactNode;
   /** Something else fills the page (`above`): no „nothing here“ under it. */
@@ -50,10 +51,9 @@ export function AcrossPage({
       title={title}
       // A page of the workspace's, as Entwürfe and Mail: its name over it.
       crumbs={[{ label: ui.workspace.name }, { label: title }]}
-      subtitle={subtitle}
       nodes={nodes}
       actions={actions?.(all)}
-      toolbar={<ListToolbar lead={lead} view={view} onViewChange={setView} />}
+      toolbar={<ListToolbar lead={lead} search={search} view={view} onViewChange={setView} />}
     >
       {(selection) => (
         <>

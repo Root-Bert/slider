@@ -11,21 +11,27 @@ import {
 
 /** The row's gap (`gap-x-4`). */
 const GAP = 16;
+/** The search's width (`ViewSearch`, 352px) and how narrow it gets before the row wraps. */
+const SEARCH = 352;
+const SEARCH_MIN = 200;
 
 const SORT_OPTIONS = CLOUD_SORTS.map((value) => ({ value, label: SORT_LABELS[value] }));
 
 /**
- * Over a list: what kind of files, in which order, as rows or tiles; `lead` stands first.
+ * Over a list: what kind of files, in which order, as rows or tiles; `lead` stands first, the
+ * page's search (`ViewSearch`) right before the sort – as Post's and the presentations'.
  * The parts are Slider's (`ViewToolbar` over the presentations): the filter in a glass pill with
  * icons, the same sort select, tiles and list as two icon buttons – and columns where the list
  * is a place with folders to step into.
  *
- * One row as long as it fits: too narrow, the filter drops its labels (icons stay) before
- * anything wraps – as `ViewToolbar` does, measured on an invisible copy with labels so the
- * choice never flips back and forth.
+ * One row as long as it fits: too narrow, the filter drops its labels (icons stay), then the
+ * search narrows (352 → 200px), only then anything wraps – as `ViewToolbar` does, measured on
+ * invisible copies of the filter and on the search's own width so the choice never flips back
+ * and forth.
  */
 export function ListToolbar({
   lead,
+  search,
   filter,
   onFilterChange,
   count,
@@ -36,6 +42,8 @@ export function ListToolbar({
   columns = false,
 }: {
   lead?: ReactNode;
+  /** The page's own search field, on the right. */
+  search?: ReactNode;
   filter?: TypeFilter;
   onFilterChange?: (filter: TypeFilter) => void;
   /** How many files lie here, the folders' included: stands on „Alle“. */
@@ -52,7 +60,12 @@ export function ListToolbar({
   const leadRef = useRef<HTMLDivElement>(null);
   const rightRef = useRef<HTMLDivElement>(null);
   const measureRef = useRef<HTMLDivElement>(null);
-  const [iconOnly, setIconOnly] = useState(false);
+  const iconsRef = useRef<HTMLDivElement>(null);
+  const searchRef = useRef<HTMLDivElement>(null);
+  const [{ iconOnly, searchWidth }, setFit] = useState<{
+    iconOnly: boolean;
+    searchWidth?: number | undefined;
+  }>({ iconOnly: false });
   const hasFilter = filter !== undefined && onFilterChange !== undefined;
   const segments =
     count === undefined
@@ -65,17 +78,35 @@ export function ListToolbar({
     const measure = measureRef.current;
     if (!root || !right || !measure) return;
     const fit = () => {
+      const available = root.getBoundingClientRect().width;
       const leadWidth = leadRef.current?.getBoundingClientRect().width ?? 0;
-      const needed =
-        (leadWidth > 0 ? leadWidth + GAP : 0) +
-        measure.getBoundingClientRect().width +
-        GAP +
-        right.getBoundingClientRect().width;
-      setIconOnly(needed > root.getBoundingClientRect().width);
+      // The right side with the search at its own width, however narrow it is now.
+      const searchNow = searchRef.current?.getBoundingClientRect().width;
+      const rightWidth =
+        right.getBoundingClientRect().width + (searchNow === undefined ? 0 : SEARCH - searchNow);
+      const needed = (filter: number) =>
+        (leadWidth > 0 ? leadWidth + GAP : 0) + (filter > 0 ? filter + GAP : 0) + rightWidth;
+      const labels = needed(measure.getBoundingClientRect().width);
+      const icons = needed(iconsRef.current?.getBoundingClientRect().width ?? 0);
+      const over = icons - available;
+      const next =
+        labels <= available
+          ? { iconOnly: false }
+          : {
+              iconOnly: true,
+              searchWidth:
+                searchNow !== undefined && over > 0 && over <= SEARCH - SEARCH_MIN
+                  ? Math.floor(SEARCH - over)
+                  : undefined,
+            };
+      setFit((now) =>
+        now.iconOnly === next.iconOnly && now.searchWidth === next.searchWidth ? now : next,
+      );
     };
     fit();
     const observer = new ResizeObserver(fit);
-    for (const part of [root, right, measure, leadRef.current]) if (part) observer.observe(part);
+    for (const part of [root, right, measure, iconsRef.current, leadRef.current])
+      if (part) observer.observe(part);
     return () => observer.disconnect();
   }, [hasFilter]);
 
@@ -105,17 +136,38 @@ export function ListToolbar({
             className="pointer-events-none invisible absolute top-0 left-0 flex h-0 w-max overflow-hidden"
           >
             <GlassPanel className="p-1">
+              <SegmentedControl label="" segments={segments} value={filter} onChange={() => {}} />
+            </GlassPanel>
+          </div>
+          {/* And with its icons only. */}
+          <div
+            ref={iconsRef}
+            aria-hidden
+            inert
+            className="pointer-events-none invisible absolute top-0 left-0 flex h-0 w-max overflow-hidden"
+          >
+            <GlassPanel className="p-1">
               <SegmentedControl
                 label=""
                 segments={segments}
                 value={filter}
                 onChange={() => {}}
+                iconOnly
               />
             </GlassPanel>
           </div>
         </>
       )}
-      <div ref={rightRef} className="ml-auto flex items-center gap-2">
+      <div ref={rightRef} className="ml-auto flex min-w-0 items-center gap-2">
+        {search && (
+          <div
+            ref={searchRef}
+            className="min-w-0"
+            style={searchWidth === undefined ? undefined : { width: searchWidth }}
+          >
+            {search}
+          </div>
+        )}
         {sort && onSortChange && (
           <Select
             aria-label="Sortieren nach"

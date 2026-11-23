@@ -33,9 +33,9 @@ export function Component() {
       docTitle={area ? `${area.name} | Chat` : 'Chat'}
       title={area ? <AreaViews area={area} current="chat" /> : ' '}
       lead={area ? <AreaMark area={area} size="lg" /> : null}
-      // The workspace's own: a tab of it, no crumbs above (as its files and „Bereiche“).
+      // The workspace's own: its name alone (as its files and „Bereiche“) – a path on every page.
       crumbs={
-        area && !area.root
+        area
           ? [...areaTrail(workspace.id, areas ?? [], area).slice(0, -1), { label: area.name }]
           : undefined
       }

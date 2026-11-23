@@ -121,6 +121,7 @@ export function Component() {
     <CloudPage
       docTitle="Übersicht"
       title="Übersicht"
+      crumbs={[{ label: workspace.name }, { label: 'Übersicht' }]}
       subtitle={`${workspace.name} | ${pluralize(workspace.memberCount, 'Person', 'Personen')}`}
       nodes={[]}
     >

@@ -402,6 +402,12 @@ Unsplash can revoke the key; production approval needs screenshots of credits.
 
 ## Cloud – the workspace's files (`services/cloud/`, `features/cloud/`)
 
+- View transitions (`startViewSwitch`, `styles/index.css`): an own `animation` on
+  `::view-transition-old/new` drops the browser's `plus-lighter` (it rides on the browser's own
+  animation) – two pictures crossfading at once then dim what is the same in both to 75 % mid-way:
+  crumbs, fields, search flickered on every tab switch (Aufgaben, Agenten, Post, areas). Any rule
+  that fades old and new at the same time sets `mix-blend-mode: plus-lighter`. Checked by a CDP
+  screencast measuring a region's brightness per frame (constant = no flicker).
 - The name (the user, 2026-11-17): the files app is „Cloud“ everywhere – app, API, desktop, docs.
   „Office“ is the family's name over all the apps – on the website (`apps/site`, `/office/`) and,
   since 2026-11-22 (the user), in the app wherever the software, the instance or the account is
@@ -509,10 +515,13 @@ Unsplash can revoke the key; production approval needs screenshots of credits.
   is its owner's). `seesAgent`/`agentFor`: owner always, a shared one by who sees its area (in
   none: the workspace) – 404 to everyone else, admins too. `deleteArea` sets its agents'
   `shared` false first (the FK only nulls `area_id`; left `shared` they would be the
-  workspace's). One list from the server (`CloudAgentSummary.areaId`), split in the pages, each
-  with the same line – whose (`SegmentedControl`), the order field, tiles or rows: „Agenten“
-  shows „Meine“ (all one's own, those in an area named by its dot and name – `showArea` on
-  `AgentList`) and „Workspace“; an area's are its second view beside its files under the same
+  workspace's). One list from the server (`CloudAgentSummary.areaId`), split in the pages.
+  „Agenten“ and „Aufgaben“ (their own section atop the side bar) are overviews whose title is
+  tabs, as Post's mailboxes (`ScopeTabs`, `lib/scopes.ts`, `?von=`): „Alle“, „Meine“ (agents:
+  all one's own, in an area named by its dot – `showArea`; to-dos: those in no area),
+  „Workspace“ (agents shared in no area; to-dos of the workspace's own area) and every other
+  area; the root area's „Agenten“ tab opens „Workspace“. Under the title the order field,
+  search, tiles or rows; an area's are its second view beside its files under the same
   title – „TestBereich Agenten“, as Slider's „Präsentationen Bibliothek“ (`AreaViews` →
   `ViewTitles` from `WorkspaceViews`, the same morph; `/dateien/bereich/:id/agenten`,
   `AreaAgentsPage` with `AreaAgents`: „Meine“ and „Bereich“; not for the workspace's own or folders).
@@ -803,7 +812,8 @@ Unsplash can revoke the key; production approval needs screenshots of credits.
   it. The page „Bereiche“ (its top tile is this area) is this area's third tab, where the others
   have „Agenten“: „<Workspace>  Chat  Bereiche“ (`AreaViews`; the user, 2026-11-19). Every
   area's crumbs start at the workspace, never at „Bereiche“ (`areaTrail` in `lib/areas.ts`); the
-  workspace's own pages have none.
+  workspace's own tabs carry its name alone, „Zuletzt“ and „Übersicht“ „<Workspace> › <page>“ –
+  every Cloud page has a path (the user, 2026-11-23).
 - Cloud's pages do not scroll the window: `CloudPage` is as high as the window leaves, header
   and tabs stay, the content scrolls in its own box (the selection box's `scroller`). `fill`
   (the start page) gives the content that height, so its list and „Aktivität“ scroll each in
@@ -840,7 +850,11 @@ Unsplash can revoke the key; production approval needs screenshots of credits.
   in all three (white edge 4, colour ring 4 – measure a new one against Slider's layer). The
   three app icons share one size (the user's call
   2026-11-18): the comment box 58 % of the tile, the guide's mark at 93 % about the middle;
-  Slider's through its Icon Composer source (`brand/logo/README.md`). After new pictures bump
+  Slider's through its Icon Composer source (`brand/logo/README.md`). The Apple touch icon
+  (`APP_FILES.tile`, `apple-touch-icon.png`, `<app>-touch-icon.png`) and the manifest's
+  `maskable` (`[<app>-]icon-maskable-512.png`) stand edge to edge on the tile's colours –
+  iOS, Safari's „Zum Dock hinzufügen“ and Chrome cut their own shape; the 824-of-1024 picture
+  there stood as an icon inside their icon (2026-11-23). After new pictures bump
   `?v=` (manifests, `lib/apps.ts`, `index.html`) and delete `desktop/node_modules/.<app>-dev`.
 - One look: pages share the side padding `md:px-8`; Cloud's details panel wears `glass-floating`
   at the width of Slider's `SidePanel`; colours are mixed in `ui/ColorMixer` (no native dialog).
@@ -1376,9 +1390,17 @@ hidden while pending and when nothing is unread. Slider's own start is „Präse
   call 2026-11-19). The bar folded, its search moves into that path row (`CrumbSearch`,
   `lib/crumb-search.ts`: `BarFolded` from `CloudLayout`, ⌘F/the magnifier `askCrumbSearch`): one
   types after „Suche nach:“ in the page, and the search page's path is the field again. An area found as such hides its own
-  chat from the chat hits; ⌘F (`SearchPalette`) goes to a visible
-  page field first (Gelöscht), else the bar's (`data-cloud-search="bar"`), else the
-  path row (bar folded), else the palette (narrow). Chat order (`lib/search.ts`): named conversations, people
+  chat from the chat hits. Keys (the user's call 2026-11-23): ⌘F is always the side bar's search,
+  the whole app's – Cloud's `SearchPalette`: the bar's field (`data-cloud-search="bar"`), else the
+  path row (bar folded), else the palette (narrow); Sender's `BarSearchField shortcut`. A page's
+  own field is one component, `ViewSearch`, on ⌘K (its `Kbd` says so), always on the right in the
+  page's own row (the user's call): Präsentationen, Bibliothek, PDFs, Dokumente (`ViewToolbar`),
+  Meine Dateien/areas/folders, Geteilt, Gelöscht (`ListToolbar search`, narrows 352 → 200px
+  before wrapping), Post, Agenten and Aufgaben (beside the view toggle). Not on Zuletzt (the
+  bar is its search), Bereiche (tree/net), short lists (Verbindungen, Postfächer, Entwürfe). Mails are in every search: bar, ⌘F palette and `SearchResults` – the bar
+  and palette by subject, names, addresses; the page and Post's field (`?in=all`) by what the
+  mails say too (sealed, so read per search: the newest 20 000 within 3 s, ~1 s for 20 000 of 3 KB;
+  the hit's preview is where it says so). Chat order (`lib/search.ts`): named conversations, people
   without a chat (click = `useOpenSenderDirect`, straight in), groups found only by a member.
   ↑↓ step across all `[data-bar-hit]`. „Neu“: „Neuer Kanal“ · „Neue Gruppe“, no „Direktnachricht“.
 - Looking at it: scratch API + Vite on own ports (see Writer), seed people/areas through the
@@ -1805,7 +1827,9 @@ hidden while pending and when nothing is unread. Slider's own start is „Präse
 - From everywhere: `CallProvider` sits in `App.tsx` around the router (not in a route), so it
   rings and the call goes on on every page of every app (d/, t/, r/ too) while one navigates in
   the page. It reads `/me` only from the cache (`skipToken`) – it never asks itself and never
-  sends a signed-out page to the login; popups (`window.opener`) skip it. The incoming card and
+  sends a signed-out page to the login; popups (`window.opener`) skip it. Outside the router, so no
+  router hook in its tree (`useAgentAvatars` → `useSearchParams` blanked the app on every call in
+  1.6.8–1.6.9; agent pictures there by `useWorkspaceAgentAvatars`). The incoming card and
   the dock stand bottom right, 72 px up (Sender's composer stays free); „Vergrößern“ fills the
   window, a shared screen shows large first. Ring and ringback are made by WebAudio
   (`lib/sounds.ts`), a system notification when the window has no focus and may.
@@ -1815,11 +1839,44 @@ hidden while pending and when nothing is unread. Slider's own start is „Präse
   and the cards column scrolls as a whole (the desk then as long as it is). On a phone those two
   cards go above the chat. „Vergrößern“ still opens the window-wide dock (the card then plays no
   audio – the dock does).
-- Media: WebRTC mesh (`lib/mesh.ts`), one `RTCPeerConnection` per other tab, at most 8 people
-  (`MAX_CALL_PEERS`; a bigger meeting would need an SFU). Each connection has three fixed
-  transceivers – audio, camera, screen – so turning one on or off is only `replaceTrack`, never
-  a new offer. Only the newcomer offers (to the server's `connectTo`); the offerer restarts ICE
-  on `failed`. Who speaks: an `AnalyserNode` per voice (`lib/levels.ts`), the tile rings green.
+- Media, two transports behind one `Transport` (`lib/mesh.ts`; `CallClient` picks by
+  `CallJoined.sfu`, the UI is the same): **LiveKit** (`lib/sfu.ts`, the user's decision
+  2026-11-22) when the server has one (`CALL_DOMAIN` or `LIVEKIT_URL`, `config.calls.sfu`), up to
+  50 (`MAX_SFU_CALL_PEERS`); else the **mesh** (`lib/mesh.ts`), unchanged, at most 8
+  (`MAX_CALL_PEERS`). Mesh: one `RTCPeerConnection` per other tab, three fixed transceivers –
+  audio, camera, screen – so turning one on or off is only `replaceTrack`, never a new offer;
+  only the newcomer offers (to the server's `connectTo`); the offerer restarts ICE on `failed`.
+  LiveKit: `livekit-client` loads only when a call starts; room per call (name = call id),
+  identity = the tab's `peerId`; simulcast (camera h180/h360/900 kbps, screen h360fps15/2.5 Mbps),
+  `adaptiveStream` + `dynacast` – so a remote video must go through `track.attach(el)`
+  (`RemoteMedia.attach` → `StreamVideo`), a bare `srcObject` would get no layer. Who is in the
+  call stays with the hub's stream; LiveKit's own disconnect only counts when it is not hung up /
+  sent out / room deleted / duplicate identity (then toast „Die Verbindung zum Anruf ist
+  abgerissen.“); those four count too when the stream has not closed the call 4 s later
+  (`SAID_WAIT_MS` – a stray send-out after a quick rejoin left a tab hearing nobody). A failed
+  first connect is `start`'s rejection („…ließ sich nicht aufbauen.“), not a lost call. Who speaks: an `AnalyserNode` per voice (`lib/levels.ts`) on both, the tile rings
+  green. The agent's voice (`lib/speaker.ts`) plays only in the tab that called it – not a
+  LiveKit participant.
+- LiveKit on the server (`services/call-sfu.ts`): `CallHub` hands a ticket with `CallJoined`
+  (AccessToken, 10 min – LiveKit refreshes it while connected – room-only grant, publish
+  mic/camera/screen, no data, no metadata) only where `join` let the tab in: same checks, same
+  cap; a ticket that fails takes the tab out again. Per call (`Call.viaSfu`): a call that starts
+  asks `sfu.ready()` (ListRooms, 2 s, an answer believed 30 s) – LiveKit away (profile off,
+  container down) and the whole call goes mesh with its cap of 8; agent calls never use it. `leave` → `removeParticipant`, the end → `deleteRoom` (404s ignored, 5 s timeout). Webhook
+  `POST /api/calls/livekit` (public, signed with the key pair, `WebhookReceiver`): a
+  `participant_joined` the hub does not know is sent out (leaked ticket), `participant_left` →
+  after 5 s, if LiveKit says it is still not there, the hub lets it leave (backup to the 12 s
+  ping). Key pair: `LIVEKIT_API_KEY`/`_SECRET` (both, secret ≥ 32; required with `LIVEKIT_URL`
+  in production – a LiveKit elsewhere never reads the made file), else made once in
+  `DATA_DIR/livekit/keys.yaml` (`slider<hex>: <secret>`, 0600) with `CALL_DOMAIN` (production),
+  else dev's `devkey`/`secret` with a warning. API address: `LIVEKIT_API_URL`, else LIVEKIT_URL's
+  http(s), else `http://livekit:7880`. CSP: `sfuOrigins` puts its wss + https origin into the
+  page's `connect-src`. Deploy: compose profile `call`, `deploy/livekit/start.sh` (keys from
+  Slider's volume, TURN/TLS with Caddy's certificate – restart at once when it first appears, a renewed one only 2–4 h UTC: LiveKit's SIGTERM drains, taking no new rooms until every call in it ends), docs/self-hosting.md.
+- Many people (`CallDock`): small view with more than 4 tiles = the speaker (`useSpokeAt`, last
+  spoke wins, the agent too) + a chip „{n} im Anruf“ that enlarges; large = a grid up to 4 × 4,
+  first page self + those who spoke last (kept in join order), the rest paged („Vorherige /
+  Nächste Seite“, „x / y“).
 - Signalling: a stream per tab (`GET /api/calls/live?peer=<id>`, the id is new per page load)
   says the calls one sees (`hello`, `call`, `ended`) and the signals for this tab alone;
   `POST /calls/:id/signal` relays offer/answer/candidates only between tabs of that call (from
@@ -1830,7 +1887,7 @@ hidden while pending and when nothing is unread. Slider's own start is „Präse
   loaded anew hangs up itself on `pagehide` (`keepalive` request). Vite's dev proxy does not
   close the API's stream when the browser goes: in dev only `pagehide` and the ping catch it, a
   hard-killed browser (Playwright's `browser.close()`) leaves its tab in the call until then.
-- Networks: `CALL_ICE_SERVERS` (JSON list of `RTCIceServer`, `stun:`/`turn:` URLs, checked at
+- Networks (mesh only; LiveKit brings its own TURN): `CALL_ICE_SERVERS` (JSON list of `RTCIceServer`, `stun:`/`turn:` URLs, checked at
   start). Default none: calls work on the same network and localhost only; across NATs a TURN
   server (coturn) is needed. The stream's `hello` (every open page) carries only the `stun:`
   entries; TURN credentials come only with `CallJoined`. With `CALL_TURN_SECRET` (coturn
@@ -1849,6 +1906,17 @@ hidden while pending and when nothing is unread. Slider's own start is „Präse
   `camera`, `microphone` gives each browser a moving test picture; `--auto-select-desktop-capture-source=Entire screen`
   answers screen sharing. Two browser contexts (the second with a seeded session cookie) call
   each other; check `video.videoWidth` > 0 on both sides.
+- Looking at it through LiveKit: `brew install livekit livekit-cli`, `livekit-server --dev`
+  (ws://localhost:7880, devkey/secret) and the scratch API with `LIVEKIT_URL=ws://localhost:7880`
+  (the webhook needs a config file with `webhook: {api_key: devkey, urls: [http://localhost:<api
+  port>/api/calls/livekit]}` and `--config`). Rooms: `lk room list` / `lk room participants list
+  <call id>` (`--url ws://localhost:7880 --api-key devkey --api-secret secret`). Many people
+  without many Chromes: join each extra person through the API (open its `live` stream, `POST
+  /calls/:id/join` – more users via the email code flow against a small SMTP sink, `SMTP_URL` /
+  `MAIL_FROM` on the scratch API), then `lk room join --identity <its peerId> --publish-demo <call
+  id>` publishes a moving picture as that tab. Measured 2026-11-22: 2 Chromium + 10 `lk`
+  publishers, all 12 videos played in the large grid for 30 s+, a foreign identity was sent out by
+  the webhook, hanging up closed the room. Without `LIVEKIT_URL` the same check runs the mesh.
 - Agents in calls (the user's call 2026-11-19): every tab writes down only its own person –
   `lib/listener.ts` takes the call's mic track to 16 kHz into `LiveTranscript` (Mistral realtime,
   token from `POST /calls/:id/live`) and posts each turn to `POST /calls/:id/transcript`. Loaded

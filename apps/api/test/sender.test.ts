@@ -120,6 +120,8 @@ let listed: MailFolderEntry[] | undefined;
 /** Read or unread meanwhile on the server – told on the next read; what was set read there. */
 const flagChanges: SeenFlag[] = [];
 const marked: SeenMark[] = [];
+/** The header fields the server gives when asked again, by UID (any folder). */
+const serverHeaders = new Map<number, string>();
 const servers: MailServers = {
   check: async (login) => {
     seen.push(login);
@@ -142,6 +144,11 @@ const servers: MailServers = {
     marked.push(...marks);
     return [...marks];
   },
+  headers: async (_login, wanted) =>
+    wanted.flatMap((one) => {
+      const header = serverHeaders.get(one.uid);
+      return header ? [{ ...one, header: new TextEncoder().encode(header) }] : [];
+    }),
   send: async (_login, mail) => {
     if (refuseSend) {
       const reason = refuseSend;
@@ -1502,6 +1509,30 @@ describe('Sender – the workspace’s messages', () => {
         await ok<MailThreadSummary[]>(send('GET', `/workspaces/${ctx.workspaceId}/mail/threads`))
       ).map((t) => t.subject),
     ).toEqual(['Angebot Messestand', 'Gefälscht?']);
+    // Searched: in any folder, every word, without accents – the side bar's list does not hold it.
+    const found = async (q: string) =>
+      (
+        await ok<MailThreadSummary[]>(
+          send('GET', `/workspaces/${ctx.workspaceId}/mail/threads?q=${encodeURIComponent(q)}`),
+        )
+      ).map((t) => t.subject);
+    expect(await found('RAHMEN')).toEqual(['Rahmenvertrag']);
+    expect(await found('gefalscht')).toEqual(['Gefälscht?']);
+    expect(await found('rahmen gefälscht')).toEqual([]);
+    // What the mails say only with `in=all` (Post's own search), its preview where it says so.
+    expect(await found('besprochen')).toEqual([]);
+    const saying = (q: string) =>
+      ok<MailThreadSummary[]>(
+        send(
+          'GET',
+          `/workspaces/${ctx.workspaceId}/mail/threads?in=all&q=${encodeURIComponent(q)}`,
+        ),
+      );
+    expect((await saying('BESPROCHEN')).map((t) => [t.subject, t.snippet])).toEqual([
+      ['Rahmenvertrag', 'Wie besprochen.'],
+    ]);
+    expect((await saying('rahmen besprochen')).map((t) => t.subject)).toEqual(['Rahmenvertrag']);
+    expect((await saying('rahmen abgelegt')).map((t) => t.subject)).toEqual([]);
     expect((await page(withMia.id)).messages.at(-1)?.text).toBe('Hast du den Stand gebucht?');
     expect(
       (await ok<SenderUnread>(send('GET', `/workspaces/${ctx.workspaceId}/sender/unread`))).items
@@ -2335,6 +2366,14 @@ describe('Sender – the workspace’s messages', () => {
         'x@a.de',
       ),
     ).toBe(true);
+    // Outlook.com names its server, with a version, and folds the header.
+    expect(
+      providerVouches(
+        'mx.microsoft.com 1; spf=pass (sender IP is\r\n 192.30.252.204) smtp.mailfrom=github.com; dkim=pass (signature was verified)\r\n header.d=github.com;dmarc=pass action=none\r\n header.from=github.com;compauth=pass reason=100',
+        'outlook.office365.com',
+        'noreply@github.com',
+      ),
+    ).toBe(true);
     // A mailbox's server only at a public address – that very one is connected to; what a server
     // says stays with it.
     await expect(mailHostAddress('127.0.0.1', 'IMAP')).rejects.toThrow('keine öffentliche Adresse');
@@ -2785,7 +2824,39 @@ describe('Sender – the workspace’s messages', () => {
     ).toMatchObject({ name: 'R. H.', aiReads: false, signIn: 'microsoft' });
     // Run out: a new access token for the refresh token, the next refresh token kept.
     const { syncMailAccount: syncNow } = await import('../src/services/mail');
+    // Kept without a word of the provider's (as before it counted): after the round its
+    // `Authentication-Results` asked again, only that – vouched for now; a mail at that UID with
+    // another `Message-ID` changes nothing.
+    inbox.push(
+      {
+        ...mail('GitHub <noreply@github.com>', 'Receipt', 'Thanks.', [
+          'Message-ID: <gh1@github.com>',
+        ]),
+        uid: 701,
+      },
+      {
+        ...mail('GitHub <noreply@github.com>', 'Receipt', 'Thanks.', [
+          'Message-ID: <gh2@github.com>',
+        ]),
+        uid: 702,
+      },
+    );
+    const outlookSays =
+      'Authentication-Results: mx.microsoft.com 1; dkim=pass header.d=github.com;dmarc=pass action=none\r\n header.from=github.com\r\n\r\n';
+    serverHeaders.set(701, `Message-ID: <gh1@github.com>\r\n${outlookSays}`);
+    serverHeaders.set(702, `Message-ID: <other@github.com>\r\n${outlookSays}`);
     await syncNow(ctx.deps, added.account.id);
+    await ctx.deps.background?.idle();
+    expect(
+      Object.fromEntries(
+        (
+          await ctx.deps.db
+            .select({ messageId: mailMessages.messageId, auth: mailMessages.auth })
+            .from(mailMessages)
+            .where(inArray(mailMessages.messageId, ['<gh1@github.com>', '<gh2@github.com>']))
+        ).map((one) => [one.messageId, one.auth]),
+      ),
+    ).toEqual({ '<gh1@github.com>': 'pass', '<gh2@github.com>': 'none' });
     expect(seen.at(-1)?.accessToken).toBe('ms-access-1');
     clock.advance(2 * 60 * 60_000);
     tokenAnswer = () =>

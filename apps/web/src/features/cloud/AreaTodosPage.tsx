@@ -1,6 +1,6 @@
 import { Navigate, useParams } from 'react-router';
 import { routes } from '@/lib/routes';
-import { AreaDot } from './components/AreaDot';
+import { AreaMark } from './components/AreaMark';
 import { AreaViews } from './components/AreaViews';
 import { CloudPage } from './components/CloudPage';
 import { TodoList } from './components/todos/TodoList';
@@ -21,7 +21,7 @@ export function Component() {
       // The area's name first: the Cloud app names the tab by it, and this is the area's tab still.
       docTitle={area ? `${area.name} | Aufgaben` : 'Aufgaben'}
       title={area ? <AreaViews area={area} current="todos" /> : ' '}
-      lead={area ? <AreaDot color={area.color} size="lg" /> : null}
+      lead={area ? <AreaMark area={area} size="lg" /> : null}
       crumbs={
         area
           ? [...areaTrail(workspace.id, areas ?? [], area).slice(0, -1), { label: area.name }]

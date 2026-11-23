@@ -10,7 +10,6 @@ export function Component() {
       docTitle="Entwürfe"
       title="Entwürfe"
       crumbs={[{ label: ui.workspace.name }, { label: 'Entwürfe' }]}
-      subtitle="Was du in einem Chat, an einen Agenten oder als Mail geschrieben und nicht abgeschickt hast."
       nodes={[]}
     >
       {() => <DraftList />}

@@ -41,7 +41,7 @@ export function CrumbSearchField() {
         onBlur={(event) => {
           if (!event.currentTarget.value) askCrumbSearch(false);
         }}
-        aria-label="Dateien, Bereiche, Chats und Personen suchen"
+        aria-label="Dateien, Bereiche, Chats, Personen und Mails suchen"
         placeholder="Name oder was in einer Datei steht"
         autoComplete="off"
         spellCheck={false}

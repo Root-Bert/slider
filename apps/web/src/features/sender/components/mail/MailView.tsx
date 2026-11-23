@@ -20,6 +20,7 @@ import {
   startViewSwitch,
   useViewSwitchTop,
   VIEW_LINK_CLASS,
+  ViewSearch,
 } from '@/features/workspaces';
 import {
   Button,
@@ -242,17 +243,23 @@ export function MailFolderPicker({ view }: { view: MailViewState }) {
 }
 
 /**
- * The row under the mailboxes: the folders, „Neue Mail“ – and wide, at its end, the switch for the
- * AI beside the open mail (where the mail is the page, it is in the mail's head).
+ * The row under the mailboxes: the folders, „Neue Mail“, on the right the search (⌘K; Esc in it
+ * keeps the open mail) – and wide, at its
+ * end, the switch for the AI beside the open mail (where the mail is the page, it is in the mail's
+ * head).
  */
 export function MailToolbar({ view }: { view: MailViewState }) {
   return (
     <div className="flex min-w-0 shrink-0 items-center gap-2">
       <MailFolderPicker view={view} />
       <NewMailButton className="shrink-0" />
-      {view.wide && (
-        <MailAsideButton className="ml-auto" disabled={!isMailThreadOpen(view.threadId)} />
-      )}
+      <ViewSearch
+        label="Mails durchsuchen"
+        value={view.query}
+        onChange={view.setQuery}
+        className="ml-auto min-w-36 shrink"
+      />
+      {view.wide && <MailAsideButton disabled={!isMailThreadOpen(view.threadId)} />}
     </div>
   );
 }

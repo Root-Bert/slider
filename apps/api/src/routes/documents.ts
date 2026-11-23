@@ -135,7 +135,8 @@ export function documentsRoutes(deps: AppDeps, live = new DocumentLive()) {
       )
       .post('/documents', viewer, async (c) => {
         const input = await readJson(c, createWriterDocumentInputSchema);
-        return c.json<WriterDocument>(await createDocument(deps, user(c), input), 201);
+        const place = { parentId: input.parentId, areaId: input.areaId };
+        return c.json<WriterDocument>(await createDocument(deps, user(c), input, place), 201);
       })
       // A file made into a document: its bytes are the body, its name is in the address.
       .post('/workspaces/:id/documents/import', viewer, async (c) => {

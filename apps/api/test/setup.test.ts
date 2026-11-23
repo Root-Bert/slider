@@ -1,3 +1,4 @@
+import { readFileSync, statSync } from 'node:fs';
 import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
@@ -343,6 +344,51 @@ describe('server start', () => {
         loadConfig({ ...env, SLIDER_URL: url, OIDC_CLIENT_SECRET: 'x' }, () => {}).limited,
       ).toBe(true);
     }
+    // Calls for many: LiveKit at CALL_DOMAIN, its key pair made once in the data volume (the
+    // file LiveKit reads – it refuses one others may read); LIVEKIT_* override it; half a pair
+    // does not boot; without either the browsers send to each other.
+    const lkData = await mkdtemp(path.join(tmpdir(), 'slider-livekit-'));
+    const hosted = {
+      ...env,
+      OIDC_CLIENT_SECRET: 'x',
+      NODE_ENV: 'production',
+      SLIDER_URL: 'https://slider.firma.de',
+      DATA_DIR: lkData,
+    };
+    expect(loadConfig(hosted, () => {}).calls?.sfu ?? null).toBeNull();
+    const made = loadConfig({ ...hosted, CALL_DOMAIN: 'call.firma.de' }, () => {}).calls?.sfu;
+    expect(made).toMatchObject({ url: 'wss://call.firma.de', apiUrl: 'http://livekit:7880' });
+    const keyFile = path.join(lkData, 'livekit', 'keys.yaml');
+    expect(statSync(keyFile).mode & 0o077).toBe(0);
+    expect(readFileSync(keyFile, 'utf8')).toBe(`${made?.apiKey}: ${made?.apiSecret}\n`);
+    expect(made?.apiSecret.length).toBeGreaterThanOrEqual(32);
+    expect(loadConfig({ ...hosted, CALL_DOMAIN: 'call.firma.de' }, () => {}).calls?.sfu).toEqual(
+      made,
+    );
+    const own = { LIVEKIT_API_KEY: 'own-key', LIVEKIT_API_SECRET: 'z'.repeat(32) };
+    expect(
+      loadConfig(
+        { ...hosted, ...own, LIVEKIT_URL: 'wss://lk.firma.de/', CALL_DOMAIN: 'call.firma.de' },
+        () => {},
+      ).calls?.sfu,
+    ).toEqual({
+      url: 'wss://lk.firma.de',
+      apiUrl: 'https://lk.firma.de',
+      apiKey: 'own-key',
+      apiSecret: 'z'.repeat(32),
+    });
+    expect(() =>
+      loadConfig({ ...hosted, CALL_DOMAIN: 'call.firma.de', LIVEKIT_API_KEY: 'own-key' }, () => {}),
+    ).toThrow(/LIVEKIT_API_SECRET/);
+    expect(() => loadConfig({ ...hosted, LIVEKIT_URL: 'https://lk.firma.de' }, () => {})).toThrow(
+      /LIVEKIT_URL/,
+    );
+    // A LiveKit elsewhere never reads the made file: it needs its own pair.
+    expect(() => loadConfig({ ...hosted, LIVEKIT_URL: 'wss://lk.firma.de' }, () => {})).toThrow(
+      /LIVEKIT_API_KEY und LIVEKIT_API_SECRET/,
+    );
+    await rm(lkData, { recursive: true, force: true });
+
     // The release shown in the settings: from the tag, without its `v`; none from a checkout.
     expect(desktop.version).toBeNull();
     expect(loadConfig({ ...desktopEnv, SLIDER_VERSION: 'v1.6.3' }, () => {}).version).toBe('1.6.3');
@@ -567,7 +613,12 @@ describe('claiming the instance with the setup token', () => {
   it(`rate-limits wrong tokens: after ${MAX_TOKEN_FAILURES}, even the right one waits – the right one alone never locks out`, async () => {
     // Counted per address – IPv6 by its /64, so rotating within one's own prefix doesn't help.
     expect(
-      ['::ffff:1.2.3.4', '2001:db8:1:2:aaaa::1', '2001:0db8:0001:0002:ffff:1:2:3', '2001:db8:1:3::1'].map(addressBucket),
+      [
+        '::ffff:1.2.3.4',
+        '2001:db8:1:2:aaaa::1',
+        '2001:0db8:0001:0002:ffff:1:2:3',
+        '2001:db8:1:3::1',
+      ].map(addressBucket),
     ).toEqual(['1.2.3.4', '2001:db8:1:2::/64', '2001:db8:1:2::/64', '2001:db8:1:3::/64']);
     for (let i = 0; i < MAX_TOKEN_FAILURES + 5; i++) {
       expect((await status(withToken())).body.authorized).toBe(true);

@@ -33,6 +33,7 @@
     "lexical": "0.52.0",
     "libphonenumber-js": "1.13.15",
     "linkifyjs": "4.4.0",
+    "livekit-client": "2.23.0",
     "mediabunny": "1.61.6",
     "onnxruntime-web": "1.30.0",
     "pdfjs-dist": "6.4.299",

@@ -623,6 +623,9 @@ export const createWriterDocumentInputSchema = z.object({
   workspaceId: z.string(),
   title: z.string().trim().min(1).max(200).optional(),
   template: writerTemplateSchema.optional(),
+  /** Made from inside a folder or an area (Cloud's „Neu“): it goes there, else „Meine Dateien“. */
+  parentId: z.string().min(1).optional(),
+  areaId: z.string().min(1).optional(),
 });
 export type CreateWriterDocumentInput = z.infer<typeof createWriterDocumentInputSchema>;
 

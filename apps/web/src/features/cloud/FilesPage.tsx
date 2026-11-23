@@ -1,10 +1,11 @@
 import { useQueries } from '@tanstack/react-query';
 import { useState } from 'react';
 import { Link, useParams } from 'react-router';
-import { cloudAccessAtLeast, type CloudArea, type CloudNode } from '@slider/shared';
+import { cloudAccessAtLeast, searchFold, type CloudArea, type CloudNode } from '@slider/shared';
 import { cloudListQuery, useCloudList, type CloudPlace } from '@/lib/api';
 import { pluralize } from '@/lib/format';
 import { routes } from '@/lib/routes';
+import { ViewSearch } from '@/features/workspaces';
 import { AvatarStack, Button, Icon, Menu, type MenuAction } from '@/ui';
 import { AreaViews } from './components/AreaViews';
 import { AreaMark } from './components/AreaMark';
@@ -37,6 +38,9 @@ function Place() {
   const place: CloudPlace = { scope: 'folder', folder: folderId, area: areaId };
   const listing = useCloudList(workspace.id, place);
   const [filter, setFilter] = useState<TypeFilter>('all');
+  // The page's own field: only what lies here with it in its name.
+  const [query, setQuery] = useState('');
+  const needle = searchFold(query.trim());
   const [sort, setSort] = useStoredChoice('slider.cloud.sort', CLOUD_SORTS, 'name');
   const [view, setView] = useStoredChoice('slider.cloud.view', CLOUD_VIEWS, 'list');
 
@@ -82,7 +86,7 @@ function Place() {
       crumbs.push({ label: 'Geteilt', to: routes.cloudShared(workspace.id) });
     } else if (area) {
       // The workspace first, never „Bereiche“ (one of its tabs); the area itself where a folder
-      // of it is open.
+      // of it is open. The workspace's own at its top: its name alone, as on every page.
       const trail = areaTrail(workspace.id, areas, area);
       crumbs.push(...(folder ? trail : trail.slice(0, -1)));
     } else if (folder) {
@@ -94,17 +98,17 @@ function Place() {
     for (const each of data.path.slice(0, -1)) {
       crumbs.push({ label: each.name, to: routes.cloudFolder(workspace.id, each.id) });
     }
-    if (crumbs.length > 0) crumbs.push({ label: name });
+    crumbs.push({ label: name });
   } else if (atAreaTop && area) {
     // Its files still on their way: the path stands already, as it will.
-    const above = areaTrail(workspace.id, areas, area).slice(0, -1);
-    if (above.length > 0) crumbs.push(...above, { label: name });
+    crumbs.push(...areaTrail(workspace.id, areas, area).slice(0, -1), { label: name });
   } else if (!areaId && !folderId) {
     crumbs.push({ label: workspace.name }, { label: name });
   }
 
   const all = data?.nodes ?? [];
-  const shown = sortNodes(filterNodes(all, filter), sort);
+  const named = needle ? all.filter((node) => searchFold(node.name).includes(needle)) : all;
+  const shown = sortNodes(filterNodes(named, filter), sort);
   // Filtered by kind, folders step aside: the chips ask for files.
   const visible = filter === 'all' ? shown : shown.filter((node) => node.kind === 'file');
 
@@ -124,7 +128,7 @@ function Place() {
       cloudListQuery(workspace.id, { scope: 'folder', folder: id, area: areaId }),
     ),
   });
-  const columns: BrowserColumn[] = [{ id: 'top', nodes: inColumns(all) }];
+  const columns: BrowserColumn[] = [{ id: 'top', nodes: inColumns(named) }];
   for (const [depth, id] of (asColumns ? trail : []).entries()) {
     // Gone from the column before (moved, deleted, filtered away): the columns end there.
     if (!columns[depth]?.nodes?.some((node) => node.id === id)) break;
@@ -234,6 +238,13 @@ function Place() {
       }
       toolbar={
         <ListToolbar
+          search={
+            <ViewSearch
+              label={`${name || 'Ordner'} durchsuchen`}
+              value={query}
+              onChange={setQuery}
+            />
+          }
           filter={filter}
           onFilterChange={setFilter}
           count={all.length > 0 ? fileCount : undefined}
@@ -277,6 +288,12 @@ function Place() {
                   </div>
                 )
               }
+            />
+          ) : needle && named.length === 0 ? (
+            <Empty
+              icon="search"
+              title={`Keine Treffer für „${query.trim()}“`}
+              message="Gesucht wird in den Namen von dem, was hier liegt – überall sucht die Suche links."
             />
           ) : asColumns ? (
             <ColumnBrowser

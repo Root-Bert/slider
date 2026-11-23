@@ -282,3 +282,18 @@ Parity script (from `apps/web`): `bun --tsconfig-override=tsconfig.app.json scri
   (`field:<name>`), sent through the viewer's outbox (`viewer/marks.ts`), live to everyone on the
   PDF; a field sized „fit to the box“ gets the same size on screen and in the file. Check: api
   `pdfs.test.ts`, e2e `14-reader.spec.ts`.
+
+## Calls
+
+- **A call from a conversation opens, never a black page** – `CallProvider` and everything it
+  shows (dock, ringing card, tiles, „Agent dazuholen“) stand around the router in `App.tsx`: no
+  router hook in there (`useSearchParams`, `useLocation`, `useActiveWorkspace`, `useAgentAvatars`
+  – agent pictures by `useWorkspaceAgentAvatars`), or the first call unmounts the whole app.
+  Check: web-dom `features/calls/CallProvider.test.tsx`; a call between two browsers
+  (docs/agent-notes.md, Calls).
+- **Through LiveKit only who the hub let in, and out when the hub says so** – tickets only with
+  `CallJoined` (room = call id, identity = tab, 10 min), leaving sends the tab out of the room,
+  the end deletes it, a stranger in the room is sent out by the signed webhook; without LiveKit
+  the mesh stays exactly as it was (8 people). Remote video through `track.attach` (adaptive
+  stream). Check: api `calls.test.ts`, web-dom `features/calls/CallProvider.test.tsx`; a call
+  between two browsers with and without `LIVEKIT_URL` (docs/agent-notes.md, Calls).

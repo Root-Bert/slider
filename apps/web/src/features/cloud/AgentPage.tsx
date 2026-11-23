@@ -1,6 +1,6 @@
 import { AgentAvatar } from './components/AgentAvatar';
 import { AgentAuto } from './components/AgentAuto';
-import { AgentTitleInput, DeleteAgentDialog } from './components/AgentActions';
+import { DeleteAgentDialog } from './components/AgentActions';
 import { AgentShare } from './components/AgentShare';
 import { useRef, useState } from 'react';
 import { useNavigate, useParams, useSearchParams } from 'react-router';
@@ -131,7 +131,6 @@ export function Component() {
   const navigate = useNavigate();
   const found = useCloudAgent(ui.workspace.id, agentId);
   const [deleting, setDeleting] = useState(false);
-  const [renaming, setRenaming] = useState(false);
   // Below the wide layout the cards stand under the chat and the page scrolls as one.
   const stacked = useMediaQuery('(max-width: 1023px)');
   const asideRef = useRef<HTMLDivElement>(null);
@@ -153,15 +152,7 @@ export function Component() {
   return (
     <CloudPage
       docTitle={agent?.title ?? 'Agent'}
-      title={
-        agent && renaming ? (
-          <AgentTitleInput agent={agent} onDone={() => setRenaming(false)} />
-        ) : found.isPending ? (
-          ' '
-        ) : (
-          (agent?.title ?? 'Agent')
-        )
-      }
+      title={found.isPending ? ' ' : (agent?.title ?? 'Agent')}
       lead={
         agent ? (
           <AgentAvatar id={agent.id} size={40} />
@@ -189,15 +180,6 @@ export function Component() {
             </span>
             <Here agent={agent} />
             <AgentCallButton agent={agent} />
-            {agent.mine && (
-              <IconButton
-                icon="edit"
-                label="Umbenennen"
-                variant="subtle"
-                size="sm"
-                onClick={() => setRenaming(true)}
-              />
-            )}
             <AgentShare agent={agent} />
             {agent.canDelete && (
               // As small and quiet as „Anrufen“ beside it.

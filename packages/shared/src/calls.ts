@@ -6,7 +6,9 @@ import type { SenderChannelKind } from './sender';
  * Calls: talking, seeing each other and showing one's screen in a conversation of Sender – a
  * direct one, a group or an area's channel (a meeting). The browsers send their sound and
  * pictures to each other (WebRTC, each to each); the server only says who is in a call and
- * passes on what the browsers tell each other to find a way (`signal`). A call follows its
+ * passes on what the browsers tell each other to find a way (`signal`). Where the server has a
+ * LiveKit SFU (`CallJoined.sfu`), each browser sends to it instead and it forwards – the server
+ * still says who is in which call; LiveKit carries only sound and pictures. A call follows its
  * person through the whole app: it rings and goes on in every page, whichever app is open.
  *
  * Agents take part by ear: each tab writes down what its own person says (live, in the browser)
@@ -15,8 +17,17 @@ import type { SenderChannelKind } from './sender';
  * (`notes`, the workspace may turn it off): after the call it sends notes and tasks there.
  */
 
-/** People in one call at most – each sends to each, so more would ask too much of a line. */
+/**
+ * People in one call at most where the browsers send to each other (mesh): each sends to each, so
+ * more would ask too much of a line.
+ */
 export const MAX_CALL_PEERS = 8;
+/**
+ * People in one call at most where the server forwards sound and pictures (LiveKit, `CallJoined.sfu`):
+ * each browser sends once, and receives only the tiles it shows (simulcast, adaptive stream) – the
+ * room a 4-core server with LiveKit on two cores carries beside the rest.
+ */
+export const MAX_SFU_CALL_PEERS = 50;
 /** How long a call rings at someone who neither answers nor declines. */
 export const CALL_RING_MS = 45_000;
 
@@ -158,12 +169,25 @@ export type CallEvent =
   /** Someone talked over the agent: every tab stops reading out its answer. */
   | { type: 'hush'; callId: string };
 
+/**
+ * Where the server forwards the media (a LiveKit SFU): the room's address and this tab's ticket –
+ * the room is the call, the tab its participant (`identity` = `peerId`).
+ */
+export interface CallSfu {
+  /** `wss://…` of LiveKit. */
+  url: string;
+  /** Access token for this call's room only; short-lived (LiveKit renews it while connected). */
+  token: string;
+}
+
 /** The answer to starting or joining: the call, and whom the new tab connects to itself. */
 export interface CallJoined {
   call: CallState;
-  /** The tabs that were there before – the newcomer offers to each. */
+  /** The tabs that were there before – the newcomer offers to each (mesh only). */
   connectTo: string[];
   iceServers: CallIceServer[];
+  /** Set where the server forwards the media: the tab joins this room instead of the mesh. */
+  sfu: CallSfu | null;
 }
 
 const peerIdSchema = z.string().regex(/^[\w-]{8,64}$/, 'Ungültige Tab-Kennung.');

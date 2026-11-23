@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { Link } from 'react-router';
-import type { CloudAgentSummary } from '@slider/shared';
+import { searchFold, type CloudAgentSummary } from '@slider/shared';
 import { formatRelativeTime } from '@/lib/format';
 import { routes } from '@/lib/routes';
 import { useDeckContextMenu } from '@/features/reviews';
@@ -18,6 +18,21 @@ import { DeskSheet } from './DeskPicture';
  * Agents as a list – on „Agenten“ (one's own, the workspace's) and in an area (its own): the
  * same tiles and rows everywhere, shown as picked once for all of them.
  */
+
+/** The agents a page's search finds: every word in its order, what it said last or whose it is. */
+export function agentsSaying(agents: readonly CloudAgentSummary[], query: string) {
+  const words = searchFold(query.trim()).split(/\s+/).filter(Boolean);
+  if (words.length === 0) return agents;
+  return agents.filter((agent) => {
+    const hay = searchFold(`${agent.title} ${agent.summary ?? ''} ${agent.owner.name}`);
+    return words.every((word) => hay.includes(word));
+  });
+}
+
+/** What a page's search says when no agent has it. */
+export function agentsNone(query: string) {
+  return `Keine Treffer für „${query.trim()}“ – gesucht wird im Auftrag, in der letzten Antwort und nach wem.`;
+}
 
 /** A card's height, the same for all – and for those not loaded yet. */
 const CARD_HEIGHT = 'h-[148px]';

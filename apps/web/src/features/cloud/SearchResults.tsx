@@ -4,7 +4,7 @@ import type { AccountAuthor, SenderAgent, SenderChannel } from '@slider/shared';
 import { useCloudSearch, useMembers, useOpenSenderDirect } from '@/lib/api';
 import { formatRelativeTime } from '@/lib/format';
 import { routes } from '@/lib/routes';
-import { searchConversations, useSenderOrNull } from '@/features/sender';
+import { searchConversations, useMailHits, useSenderOrNull } from '@/features/sender';
 import { Avatar, cn, Icon, Select, useDebounced } from '@/ui';
 import { AgentAvatar } from './components/AgentAvatar';
 import { AreaMark } from './components/AreaMark';
@@ -50,7 +50,7 @@ function Lines({ title, note }: { title: string; note?: string }) {
 /**
  * What the side bar's search finds, in detail, in the page's place while one searches: the
  * files as a list (picked, opened, moved as anywhere) – what is called so, then what says so –,
- * the areas, the chats and people. „Ort“ and „Von“ narrow the files; the bar shows names only,
+ * the areas, the mails, the chats and people. „Ort“ and „Von“ narrow the files; the bar shows names only,
  * short. What was searched for stands where the path stands; going to a hit ends the search.
  */
 export function SearchResults() {
@@ -92,7 +92,13 @@ export function SearchResults() {
   const chats = (
     !narrowed && sender ? searchConversations(sender.home, sender.me.id, query) : []
   ).filter((chat) => !('kind' in chat && chat.kind === 'area' && shown.has(chat.areaId ?? '')));
-  const settling = settled !== query || search.isFetching;
+  // Subject, names, addresses and what they say – every mailbox and folder; „Ort“ and „Von“ are
+  // the files'.
+  const mails = useMailHits(ui.workspace.id, narrowed ? '' : settled.trim(), {
+    max: Infinity,
+    inText: true,
+  });
+  const settling = settled !== query || search.isFetching || mails.settling;
   const go = (to: string) => {
     setQuery('');
     void navigate(to);
@@ -125,7 +131,12 @@ export function SearchResults() {
     const area = areaOf(chat.areaId);
     return area ? <AreaMark area={area} size="lg" /> : <Icon name="chatBubble" size={20} />;
   };
-  const nothing = !settling && nodes.length === 0 && areas.length === 0 && chats.length === 0;
+  const nothing =
+    !settling &&
+    nodes.length === 0 &&
+    areas.length === 0 &&
+    chats.length === 0 &&
+    mails.threads.length === 0;
   return (
     <CloudPage
       docTitle="Suche"
@@ -195,6 +206,31 @@ export function SearchResults() {
               </div>
             </Section>
           )}
+          {mails.threads.length > 0 && (
+            <Section title="Mails" count={mails.threads.length}>
+              <div className="flex flex-col">
+                {mails.threads.map((thread) => {
+                  const name = thread.person.name.trim() || thread.person.address;
+                  return (
+                    <button
+                      key={thread.id}
+                      type="button"
+                      onClick={() => go(routes.cloudMailThread(ui.workspace.id, thread.id))}
+                      className={rowClass}
+                    >
+                      <span className="flex size-8 shrink-0 items-center justify-center text-fg-muted">
+                        <Icon name="mail" size={20} />
+                      </span>
+                      <Lines
+                        title={thread.subject || name}
+                        note={`${name} | ${formatRelativeTime(thread.updatedAt)} | ${thread.snippet}`}
+                      />
+                    </button>
+                  );
+                })}
+              </div>
+            </Section>
+          )}
           {chats.length > 0 && sender && (
             <Section title="Chats und Personen" count={chats.length}>
               <div className="flex flex-col">
@@ -244,7 +280,7 @@ export function SearchResults() {
                 ? 'Die Dateien werden noch gelesen.'
                 : narrowed
                   ? 'Hier heißt nichts so, und in keiner Datei steht das.'
-                  : 'Nichts heißt so, und in keiner Datei steht das – keine Datei, kein Bereich, kein Chat, niemand.'}
+                  : 'Nichts heißt so, und in keiner Datei steht das – keine Datei, kein Bereich, keine Mail, kein Chat, niemand.'}
             </p>
           )}
         </div>

@@ -27,6 +27,7 @@ export { AgentComposer } from './components/AgentComposer';
 export { AsideAgent, AsideBullets, AsidePart } from './components/AsidePart';
 export { AgentDesk } from './components/AgentDesk';
 export { useAgentAside, useKeptWidth } from './components/AgentAside';
+export { GIVE_WAY_TO_PANEL } from './lib/panel';
 export { AgentList, AgentListSkeleton } from './components/AgentList';
 export { CloudProvider } from './hooks/useCloud';
 export { Empty, LoadFailed } from './components/Empty';

@@ -1,5 +1,6 @@
 import type Anthropic from '@anthropic-ai/sdk';
-import { createHmac } from 'node:crypto';
+import { createHash, createHmac } from 'node:crypto';
+import { AccessToken, TokenVerifier } from 'livekit-server-sdk';
 import { eq } from 'drizzle-orm';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
@@ -22,6 +23,7 @@ import {
   workspaceMembers,
 } from '../src/db/schema';
 import { anonymiseCalls, callsOf } from '../src/services/call-records';
+import { contentSecurityPolicy, sfuOrigins } from '../src/http/csp';
 import { CallHub, ordersIn, propose, replyTo, speakable, speechCut } from '../src/services/calls';
 import { notesOrder } from '../src/services/call-notes';
 import { voiceSystem } from '../src/services/call-voice';
@@ -915,5 +917,145 @@ describe('Calls – in a conversation, heard on every page', () => {
       .from(senderMessages)
       .where(eq(senderMessages.callId, group.call.id));
     expect(named?.text).not.toContain('Vera');
+
+    // Through LiveKit (the server forwards sound and pictures): each tab gets a ticket into its
+    // call's room only, as itself; leaving sends the tab out of the room, the end closes it; its
+    // webhook counts only when signed – a tab in the room that is not in the call is sent out.
+    await ctx.cleanup();
+    const lkKey = 'slidertest';
+    const lkSecret = 'x'.repeat(40);
+    const asked: { method: string; body: Record<string, unknown> }[] = [];
+    let lkDown = false;
+    const realFetch = globalThis.fetch;
+    const lkFetch = vi.spyOn(globalThis, 'fetch').mockImplementation(async (input, init) => {
+      const url = String(input instanceof Request ? input.url : input);
+      if (!url.startsWith('http://livekit.test/')) return realFetch(input, init);
+      const method = url.split('/').at(-1)!;
+      // Asked when a call starts: whether LiveKit answers (else the call goes browser to browser).
+      if (method === 'ListRooms') {
+        return lkDown ? new Response('down', { status: 502 }) : Response.json({ rooms: [] });
+      }
+      asked.push({ method, body: JSON.parse(String(init?.body ?? '{}')) });
+      return Response.json({});
+    });
+    ctx = await createTestContext({
+      config: {
+        calls: {
+          iceServers: [],
+          sfu: {
+            url: 'wss://call.firma.de',
+            apiUrl: 'http://livekit.test',
+            apiKey: lkKey,
+            apiSecret: lkSecret,
+          },
+        },
+      },
+    });
+    const ada = await member('Ada Lind', 'member');
+    const bo = await member('Bo Kranz', 'member');
+    const lkPair = (await (
+      await send(
+        'POST',
+        `/workspaces/${ctx.workspaceId}/sender/direct`,
+        { userId: bo.user.id },
+        ada.cookie,
+      )
+    ).json()) as SenderChannel;
+    await tab('ada-tab-0001', ada.cookie);
+    await tab('bo-tab-0001', bo.cookie);
+    const adaIn = (await (
+      await send(
+        'POST',
+        `/sender/channels/${lkPair.id}/call`,
+        { peerId: 'ada-tab-0001', video: true },
+        ada.cookie,
+      )
+    ).json()) as CallJoined;
+    expect(adaIn.sfu?.url).toBe('wss://call.firma.de');
+    // The page may connect there (the policy's `connect-src`, report-only and enforced alike).
+    expect(contentSecurityPolicy(sfuOrigins(adaIn.sfu?.url))).toContain(
+      "connect-src 'self' wss://api.mistral.ai wss://call.firma.de https://call.firma.de;",
+    );
+    const claims = await new TokenVerifier(lkKey, lkSecret).verify(adaIn.sfu!.token);
+    expect(claims).toMatchObject({
+      sub: 'ada-tab-0001',
+      name: 'Ada Lind',
+      video: {
+        roomJoin: true,
+        room: adaIn.call.id,
+        canPublish: true,
+        canSubscribe: true,
+        canPublishData: false,
+      },
+    });
+    expect(claims.video?.roomAdmin ?? false).toBe(false);
+    expect(claims.exp! - claims.nbf!).toBeLessThanOrEqual(10 * 60);
+    await expect(
+      new TokenVerifier(lkKey, 'y'.repeat(40)).verify(adaIn.sfu!.token),
+    ).rejects.toThrow();
+    const boIn = (await (
+      await send('POST', `/sender/channels/${lkPair.id}/call`, { peerId: 'bo-tab-0001' }, bo.cookie)
+    ).json()) as CallJoined;
+    // Nobody to connect to: the server forwards.
+    expect(boIn.connectTo).toEqual([]);
+    expect(boIn.sfu).not.toBeNull();
+    const hook = async (event: object, secret = lkSecret) => {
+      const body = JSON.stringify(event);
+      const token = new AccessToken(lkKey, secret);
+      token.sha256 = createHash('sha256').update(body).digest('base64');
+      return ctx.request('/api/calls/livekit', {
+        method: 'POST',
+        body,
+        headers: { Authorization: await token.toJwt(), 'Content-Type': 'application/webhook+json' },
+      });
+    };
+    const stranger = {
+      event: 'participant_joined',
+      room: { name: adaIn.call.id },
+      participant: { identity: 'kept-ticket-0001' },
+    };
+    expect((await hook(stranger, 'y'.repeat(40))).status).toBe(401);
+    expect(asked).toEqual([]);
+    expect((await hook(stranger)).status).toBe(204);
+    expect((await hook({ ...stranger, participant: { identity: 'bo-tab-0001' } })).status).toBe(
+      204,
+    );
+    await vi.waitFor(() =>
+      expect(asked).toEqual([
+        {
+          method: 'RemoveParticipant',
+          body: expect.objectContaining({ room: adaIn.call.id, identity: 'kept-ticket-0001' }),
+        },
+      ]),
+    );
+    // Bo hangs up: out of the room; a direct call with one left ends, its room is closed.
+    await send('POST', `/calls/${adaIn.call.id}/leave`, { peerId: 'bo-tab-0001' }, bo.cookie);
+    await vi.waitFor(() =>
+      expect(asked.slice(1)).toEqual([
+        {
+          method: 'RemoveParticipant',
+          body: expect.objectContaining({ room: adaIn.call.id, identity: 'bo-tab-0001' }),
+        },
+        { method: 'DeleteRoom', body: expect.objectContaining({ room: adaIn.call.id }) },
+      ]),
+    );
+    // LiveKit gone (the profile off, the container down): a new call goes browser to browser.
+    lkDown = true;
+    const now = Date.now();
+    const clock = vi.spyOn(Date, 'now').mockReturnValue(now + 31_000);
+    const meshIn = (await (
+      await send(
+        'POST',
+        `/sender/channels/${lkPair.id}/call`,
+        { peerId: 'ada-tab-0001', video: false },
+        ada.cookie,
+      )
+    ).json()) as CallJoined;
+    clock.mockRestore();
+    expect(meshIn.sfu).toBeNull();
+    await send('POST', `/calls/${meshIn.call.id}/leave`, { peerId: 'ada-tab-0001' }, ada.cookie);
+    // No room for it: nothing to send out or close.
+    expect(asked).toHaveLength(3);
+    lkFetch.mockRestore();
   });
 });

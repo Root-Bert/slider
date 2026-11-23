@@ -1,6 +1,6 @@
-import { useEffect, useState } from 'react';
+import { type ReactNode, useEffect, useMemo, useState } from 'react';
 import { bringsIntoCall, type CallState } from '@slider/shared';
-import { useAgentAvatars } from '@/features/workspaces';
+import { useWorkspaceAgentAvatars } from '@/features/workspaces';
 import { useCloudAgents } from '@/lib/api';
 import { Avatar, Button, cn, Icon, IconButton, Menu, TextLink } from '@/ui';
 import { useCalls } from '../CallProvider';
@@ -19,6 +19,73 @@ function useNow(): number {
   return now;
 }
 
+/** Most tiles shown at once when large: 4 × 4, the rest on further pages. */
+const PAGE = 16;
+/** Small, up to this many tiles side by side; more and it shows who speaks and how many are there. */
+const SMALL_MOST = 4;
+
+/**
+ * In which turn each one in the call last spoke (tab id, `agent` for the agent; higher is later) –
+ * who comes first. Counted while rendering, when the voices that speak change.
+ */
+function useSpokeAt(speaking: ReadonlySet<string>): ReadonlyMap<string, number> {
+  const [seen, setSeen] = useState(speaking);
+  const [spoke, setSpoke] = useState<{ turn: number; at: ReadonlyMap<string, number> }>(() => ({
+    turn: 0,
+    at: new Map(),
+  }));
+  if (seen !== speaking) {
+    setSeen(speaking);
+    if (speaking.size > 0) {
+      const turn = spoke.turn + 1;
+      const at = new Map(spoke.at);
+      for (const id of speaking) at.set(id, turn);
+      setSpoke({ turn, at });
+    }
+  }
+  return spoke.at;
+}
+
+interface Entry {
+  key: string;
+  render: (className: string) => ReactNode;
+}
+
+/**
+ * Large with more than a page: the first page has oneself and those who spoke last (in the order
+ * they joined, so nobody jumps around while two talk), the others follow page by page – in an
+ * order held while one looks at a later page (`heldSpoke`).
+ */
+function pagesOf(entries: Entry[], me: string, spoke: ReadonlyMap<string, number>): Entry[][] {
+  if (entries.length <= PAGE) return [entries];
+  const order = new Map(entries.map((entry, index) => [entry.key, index]));
+  const recent = entries
+    .filter((entry) => entry.key !== me)
+    .sort(
+      (a, b) =>
+        (spoke.get(b.key) ?? 0) - (spoke.get(a.key) ?? 0) || order.get(a.key)! - order.get(b.key)!,
+    );
+  const firstKeys = new Set(
+    [...(order.has(me) ? [me] : []), ...recent.map((entry) => entry.key)].slice(0, PAGE),
+  );
+  const rest = entries.filter((entry) => !firstKeys.has(entry.key));
+  const pages = [entries.filter((entry) => firstKeys.has(entry.key))];
+  for (let i = 0; i < rest.length; i += PAGE) pages.push(rest.slice(i, i + PAGE));
+  return pages;
+}
+
+/** Who to show small when many are there: who spoke last but oneself, else the first who came. */
+function speakerOf(entries: Entry[], me: string, spoke: ReadonlyMap<string, number>): Entry {
+  const others = entries.filter((entry) => entry.key !== me);
+  return (
+    others.reduce<Entry | null>(
+      (best, entry) =>
+        !best || (spoke.get(entry.key) ?? 0) > (spoke.get(best.key) ?? 0) ? entry : best,
+      null,
+    ) ?? entries[0]!
+  );
+}
+
 /**
  * The call one is in, over every page: small in the corner (who is there, the buttons), or – one
  * click – as large as the window, a shared screen first. Its title opens the conversation (or the
@@ -26,6 +93,8 @@ function useNow(): number {
  * proposed for other agents waits below the tiles for a yes, what was sent shows how far it got.
  * On the called agent's own page it is a card there instead (`box`, `CallBoxes`): the same call,
  * its orders a card of their own below it; „Vergrößern“ grows it over the window as everywhere.
+ * Many people: small it shows who speaks and how many are there, large up to 4 × 4 at once –
+ * who spoke last on the first page, the others on further pages.
  */
 export function CallDock({ call, place = 'dock' }: { call: CallState; place?: 'dock' | 'box' }) {
   const { snap, client, open, openAgent, expanded: grown, setExpanded } = useCalls();
@@ -33,6 +102,19 @@ export function CallDock({ call, place = 'dock' }: { call: CallState; place?: 'd
   // The card stays in its column; grown, the window-wide dock shows the call (and plays it).
   const expanded = grown && !box;
   const now = useNow();
+  const voices = useMemo(
+    () => (snap.saying ? new Set([...snap.speaking, 'agent']) : snap.speaking),
+    [snap.speaking, snap.saying],
+  );
+  const spoke = useSpokeAt(voices);
+  const [page, setPage] = useState(0);
+  // Away from the first page the order holds still: who speaks does not pull a tile off the page
+  // one is looking at.
+  const [heldSpoke, setHeldSpoke] = useState<ReadonlyMap<string, number> | null>(null);
+  const turnTo = (next: number) => {
+    setPage(next);
+    setHeldSpoke(next === 0 ? null : (heldSpoke ?? spoke));
+  };
   const me = snap.peerId;
   const self = call.peers.find((peer) => peer.peerId === me);
   const others = call.peers.filter((peer) => peer.peerId !== me);
@@ -45,61 +127,104 @@ export function CallDock({ call, place = 'dock' }: { call: CallState; place?: 'd
 
   // Who shows a screen: theirs comes first and large.
   const sharer = snap.local.screen
-    ? { peerId: me, stream: snap.own.screen, name: 'Dein Bildschirm' }
+    ? { peerId: me, stream: snap.own.screen, attach: undefined, name: 'Dein Bildschirm' }
     : others
         .filter((peer) => peer.screen)
-        .map((peer) => ({
-          peerId: peer.peerId,
-          stream: snap.remote.get(peer.peerId)?.screen ?? null,
-          name: `Bildschirm von ${peer.author.name.split(' ')[0]}`,
-        }))[0];
+        .map((peer) => {
+          const media = snap.remote.get(peer.peerId);
+          return {
+            peerId: peer.peerId,
+            stream: media?.screen ?? null,
+            attach: media?.attach?.screen,
+            name: `Bildschirm von ${peer.author.name.split(' ')[0]}`,
+          };
+        })[0];
 
-  const tiles = [
+  const entries: Entry[] = [
     ...(self
       ? [
-          <CallTile
-            key={me}
-            author={self.author}
-            label="Du"
-            stream={snap.local.camera ? snap.own.camera : null}
-            mirrored
-            mic={snap.local.mic}
-            speaking={snap.speaking.has(me)}
-            big={expanded}
-            className={tileClass(expanded, !!sharer)}
-          />,
+          {
+            key: me,
+            render: (className: string) => (
+              <CallTile
+                key={me}
+                author={self.author}
+                label="Du"
+                stream={snap.local.camera ? snap.own.camera : null}
+                mirrored
+                mic={snap.local.mic}
+                speaking={snap.speaking.has(me)}
+                big={expanded}
+                className={className}
+              />
+            ),
+          },
         ]
       : []),
-    ...others.map((peer) => {
-      const media = snap.remote.get(peer.peerId);
-      return (
-        <CallTile
-          key={peer.peerId}
-          author={peer.author}
-          label={peer.author.name}
-          stream={peer.camera ? (media?.camera ?? null) : null}
-          mic={peer.mic}
-          speaking={snap.speaking.has(peer.peerId)}
-          connecting={!media || (media.state !== 'connected' && media.state !== 'closed')}
-          big={expanded}
-          className={tileClass(expanded, !!sharer)}
-        />
-      );
-    }),
+    ...others.map((peer) => ({
+      key: peer.peerId,
+      render: (className: string) => {
+        const media = snap.remote.get(peer.peerId);
+        return (
+          <CallTile
+            key={peer.peerId}
+            author={peer.author}
+            label={peer.author.name}
+            stream={peer.camera ? (media?.camera ?? null) : null}
+            attach={peer.camera ? media?.attach?.camera : undefined}
+            mic={peer.mic}
+            speaking={snap.speaking.has(peer.peerId)}
+            connecting={!media || (media.state !== 'connected' && media.state !== 'closed')}
+            big={expanded}
+            className={className}
+          />
+        );
+      },
+    })),
     ...(call.agent
       ? [
-          <AgentTile
-            key="agent"
-            agent={call.agent}
-            workspaceId={call.workspaceId}
-            saying={snap.saying}
-            onSendAway={call.agent.invitedBy ? () => client.sendAgentAway() : undefined}
-            big={expanded}
-            className={tileClass(expanded, false)}
-          />,
+          {
+            key: 'agent',
+            render: () => (
+              <AgentTile
+                key="agent"
+                agent={call.agent!}
+                workspaceId={call.workspaceId}
+                saying={snap.saying}
+                onSendAway={call.agent?.invitedBy ? () => client.sendAgentAway() : undefined}
+                big={expanded}
+                className={tileClass(expanded, false)}
+              />
+            ),
+          },
         ]
       : []),
   ];
+  // Small with many: who speaks, and how many are there (a click shows everyone).
+  const many = !expanded && entries.length > SMALL_MOST;
+  const pages = expanded ? pagesOf(entries, me, heldSpoke ?? spoke) : [entries];
+  const at = Math.min(page, pages.length - 1);
+  // Back to one page (people left, the dock small): the next pages start at the first, live.
+  if (pages.length === 1 && (page !== 0 || heldSpoke)) {
+    setPage(0);
+    setHeldSpoke(null);
+  }
+  const shown = many ? [speakerOf(entries, me, spoke)] : pages[at]!;
+  const tiles = shown.map((entry) => entry.render(tileClass(expanded, !!sharer)));
+  const count = (className: string) => (
+    <button
+      type="button"
+      onClick={() => setExpanded(true)}
+      title="Alle zeigen"
+      className={cn(
+        'glass-dark flex items-center gap-1 rounded-badge px-1.5 py-0.5 text-caption text-fg',
+        className,
+      )}
+    >
+      <Icon name="groups" size={12} />
+      {entries.length} im Anruf
+    </button>
+  );
 
   return (
     <section
@@ -169,7 +294,9 @@ export function CallDock({ call, place = 'dock' }: { call: CallState; place?: 'd
               expanded ? 'min-h-0 flex-1' : 'aspect-video',
             )}
           >
-            {sharer.stream && <StreamVideo stream={sharer.stream} fit="contain" />}
+            {sharer.stream && (
+              <StreamVideo stream={sharer.stream} attach={sharer.attach} fit="contain" />
+            )}
             <span className="glass-dark absolute bottom-1 left-1 rounded-badge px-1.5 py-0.5 text-caption text-fg">
               {sharer.name}
             </span>
@@ -181,6 +308,7 @@ export function CallDock({ call, place = 'dock' }: { call: CallState; place?: 'd
             )}
           >
             {tiles}
+            {many && count('shrink-0 self-center whitespace-nowrap')}
           </div>
         </div>
       ) : rung.length > 0 ? (
@@ -192,6 +320,11 @@ export function CallDock({ call, place = 'dock' }: { call: CallState; place?: 'd
           </div>
           <p className="animate-pulse text-xs text-fg-muted">Klingelt …</p>
         </div>
+      ) : many ? (
+        <div className="relative">
+          {tiles}
+          {count('absolute top-1 left-1')}
+        </div>
       ) : (
         <div
           className={cn(
@@ -201,6 +334,28 @@ export function CallDock({ call, place = 'dock' }: { call: CallState; place?: 'd
           )}
         >
           {tiles}
+        </div>
+      )}
+
+      {pages.length > 1 && (
+        <div className="flex items-center justify-center gap-1">
+          <IconButton
+            size="sm"
+            icon="chevronLeft"
+            label="Vorherige Seite"
+            disabled={at === 0}
+            onClick={() => turnTo(at - 1)}
+          />
+          <span role="status" className="px-1 text-xs text-fg-subtle tabular-nums">
+            {at + 1} / {pages.length}
+          </span>
+          <IconButton
+            size="sm"
+            icon="chevronRight"
+            label="Nächste Seite"
+            disabled={at === pages.length - 1}
+            onClick={() => turnTo(at + 1)}
+          />
         </div>
       )}
 
@@ -280,7 +435,7 @@ function BringAgent({
   onPick: (agentId: string) => void;
 }) {
   const agents = useCloudAgents(workspaceId);
-  const avatarOf = useAgentAvatars(workspaceId);
+  const avatarOf = useWorkspaceAgentAvatars(workspaceId);
   const mine = (agents.data ?? [])
     .filter((agent) => agent.canWrite && bringsIntoCall(agent, areaId))
     .slice(0, 10);
@@ -331,5 +486,6 @@ function gridOf(count: number, expanded: boolean): string {
   if (!expanded) return 'grid-cols-2';
   if (count <= 2) return 'grid-cols-1 md:grid-cols-2';
   if (count <= 4) return 'grid-cols-2';
-  return 'grid-cols-2 md:grid-cols-3';
+  if (count <= 9) return 'grid-cols-2 md:grid-cols-3';
+  return 'grid-cols-2 md:grid-cols-3 lg:grid-cols-4';
 }

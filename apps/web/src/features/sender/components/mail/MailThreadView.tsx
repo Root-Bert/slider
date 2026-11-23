@@ -5,6 +5,7 @@ import {
   useMemo,
   useRef,
   useState,
+  type CSSProperties,
   type ReactNode,
 } from 'react';
 import { useLocation, useNavigate } from 'react-router';
@@ -49,7 +50,7 @@ import {
   Toggle,
   type MenuAction,
 } from '@/ui';
-import { useAgentAside } from '@/features/cloud';
+import { GIVE_WAY_TO_PANEL, useAgentAside } from '@/features/cloud';
 import { useMailListLook } from '../../hooks/useMailListLook';
 import { useMailUploads } from '../../hooks/useMailUploads';
 import { usePinAction } from '../../hooks/usePinAction';
@@ -584,6 +585,15 @@ export function MailThreadView({ threadId }: { threadId: string }) {
     even: true,
   });
   const covers = asideOpen && !beside;
+  // A panel of Cloud's (`data-cloud-panel`, 400 + 12 from the edge) lies over the column beside
+  // (`data-page-aside`, `CloudLayout`): the mail gives way as far as it reaches past column and
+  // handle (32), plus the 12px every page keeps beside a panel.
+  const asideRoom =
+    asideOpen && beside
+      ? ({
+          '--aside-room': `${(typeof aside.style?.width === 'number' ? aside.style.width : ASIDE_WIDTH) + 32}px`,
+        } as CSSProperties)
+      : undefined;
 
   // Esc closes it, back to the list – beside the list and where it is the page; the AI over it first.
   const closeHref = `${ui.mailPath}${search}`;
@@ -927,7 +937,8 @@ export function MailThreadView({ threadId }: { threadId: string }) {
       }}
       className="@container flex min-h-0 flex-1 flex-col gap-3"
     >
-      <header className={PAGE_HEADER}>
+      {/* Over the column too: under a panel lying over it it gives way all the way. */}
+      <header className={cn(PAGE_HEADER, GIVE_WAY_TO_PANEL)}>
         <MenuButton />
         {/* The subject alone over mails: who wrote stands once, at each mail (`MailCards`). */}
         {group && (
@@ -971,9 +982,12 @@ export function MailThreadView({ threadId }: { threadId: string }) {
       <div ref={bodyRef} className={cn('relative flex min-h-0 flex-1', !aside.handle && 'gap-5')}>
         <div
           inert={covers}
+          style={asideRoom}
           className={cn(
-            'relative flex min-h-0 min-w-0 flex-1 flex-col gap-3',
+            'relative flex min-h-0 min-w-0 flex-1 flex-col gap-3 transition-[margin] duration-300 ease-out',
             covers && 'invisible',
+            asideRoom &&
+              '[body:has([data-cloud-panel])_&]:mr-[max(0px,calc(400px_-_var(--aside-room)))]',
           )}
         >
           {dropping && (
@@ -1061,6 +1075,7 @@ export function MailThreadView({ threadId }: { threadId: string }) {
             {aside.handle}
             <div
               ref={asideRef}
+              data-page-aside={beside || undefined}
               style={aside.style}
               className={cn(
                 'flex min-h-0 flex-col',

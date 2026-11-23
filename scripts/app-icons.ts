@@ -11,7 +11,9 @@
  *
  * From the pictures come the desktop apps' icons and the web apps' (192, 512) – all with the
  * margin of Apple's icon grid (the shape 824 of 1024), or one sits larger than the others in the
- * Dock. Slider's own are written by `logo-png.ts --app-only` after this.
+ * Dock. Slider's own are written by `logo-png.ts --app-only` after this. The Apple touch icon and
+ * the manifest's `maskable` (every app's, Slider's too) stand edge to edge instead: iOS, Safari and
+ * Chrome cut their own shape out of them.
  *
  * Needs Xcode (Icon Composer). Run from the repository root: `bun scripts/app-icons.ts [App]`
  * (one app only, by its name), then
@@ -310,6 +312,14 @@ const shot = async (path: string, width: number, height: number, body: string) =
 
 /** Apple's macOS icon grid: the shape is 824 of the 1024 px canvas. */
 const MAC_SHAPE = 824 / 1024;
+/** The web icons a platform puts its own shape on: Apple touch (180) and `maskable` (512). */
+const edgeToEdge = (app: string): [path: string, size: number][] => {
+  const prefix = app === 'Slider' ? '' : `${app.toLowerCase()}-`;
+  return [
+    [`apps/web/public/${app === 'Slider' ? 'apple-' : prefix}touch-icon.png`, 180],
+    [`apps/web/public/${prefix}icon-maskable-512.png`, 512],
+  ];
+};
 for (const icon of icons.filter((each) => !only || each.app === only)) {
   const document = `${DIR}/${icon.app}.icon`;
   mkdirSync(`${document}/Assets`, { recursive: true });
@@ -380,6 +390,18 @@ for (const icon of icons.filter((each) => !only || each.app === only)) {
       `<div style="display:grid;place-items:center;height:${size}px"><img src="${src}" width="${drawn}" height="${drawn}" style="display:block"></div>`,
     );
     console.info(`wrote ${path} (${size} × ${size}, shape ${drawn} px)`);
+  }
+  // Edge to edge on the tile's colours, no transparent corners: the Apple touch icon (iOS, Safari's
+  // „Zum Dock hinzufügen“) and the manifest's `maskable` (Chrome) – they cut their own shape out
+  // of it. The picture with its margin there stood as an icon inside their icon.
+  for (const [path, size] of edgeToEdge(icon.app)) {
+    await shot(
+      path,
+      size,
+      size,
+      `<div style="width:${size}px;height:${size}px;background:${icon.background}"><img src="${src}" width="${size}" height="${size}" style="display:block"></div>`,
+    );
+    console.info(`wrote ${path} (${size} × ${size}, edge to edge)`);
   }
 }
 await browser.close();

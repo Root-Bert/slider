@@ -6,9 +6,10 @@ import { isModKey } from '@/lib/keyboard';
 import { isApplePlatform } from '@/lib/platform';
 import { AgentAvatar, AreaDot } from '@/features/cloud';
 import { WorkspaceMark } from '@/features/workspaces';
-import { Avatar, cn, Icon, Kbd, TextField } from '@/ui';
+import { Avatar, cn, Icon, Kbd, TextField, useDebounced } from '@/ui';
 import { useSender } from '../hooks/useSender';
 import { searchConversations } from '../lib/search';
+import { MailHitRows, useMailHits } from './mail/MailHits';
 
 /** A hit in a side bar's search – ↑↓ step through them all, files and chats alike. */
 export const HIT = 'data-bar-hit';
@@ -41,8 +42,8 @@ export function stepHits(event: KeyboardEvent<HTMLElement>) {
 /**
  * A side bar's search field: found while one types, in the bar where its list stood (nothing
  * opens over the page). Enter takes the first hit, ↓ steps into them, Esc empties the field.
- * `shortcut`: ⌘F types here (Sender; Cloud's ⌘F is `SearchPalette`'s, which finds the field by
- * `marked`).
+ * `shortcut`: ⌘F types here, always – a page's own field is ⌘K's (`ViewSearch`) (Sender; Cloud's
+ * ⌘F is `SearchPalette`'s, which finds the field by `marked`).
  */
 export function BarSearchField({
   query,
@@ -171,16 +172,23 @@ export function ConversationHitRows({
   );
 }
 
-/** Sender's hits: the conversations and people, in place of the bar's list. */
+/** Sender's hits: the conversations and people, then the mails, in place of the bar's list. */
 export function ConversationHits({ query, onPicked }: { query: string; onPicked: () => void }) {
   const ui = useSender();
-  const none = searchConversations(ui.home, ui.me.id, query).length === 0;
+  const settled = useDebounced(query.trim(), 150);
+  const mails = useMailHits(ui.workspace.id, settled);
+  const chats = searchConversations(ui.home, ui.me.id, query).length > 0;
+  const none = !chats && mails.threads.length === 0 && settled === query.trim() && !mails.settling;
   return (
     <div role="list" aria-label="Treffer" className="flex flex-col gap-0.5" onKeyDown={stepHits}>
       <ConversationHitRows query={query} onPicked={onPicked} />
+      {chats && mails.threads.length > 0 && (
+        <div role="separator" className="mx-2 my-2 shrink-0 border-t border-hairline" />
+      )}
+      <MailHitRows threads={mails.threads} onPicked={onPicked} />
       {none && (
         <p className="px-2.5 py-1 text-xs leading-4.5 text-fg-subtle">
-          Kein Chat und niemand heißt so.
+          Kein Chat, keine Mail und niemand heißt so.
         </p>
       )}
     </div>

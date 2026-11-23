@@ -22,6 +22,7 @@ import {
 } from '@/ui';
 import { CloudPage } from './components/CloudPage';
 import { CalendarAside } from './components/calendar/CalendarAside';
+import { GIVE_WAY_TO_PANEL } from './lib/panel';
 import { useCalendarOAuthOutcome } from './components/calendar/CalendarAccounts';
 import { useHiddenCalendars } from './components/calendar/CalendarList';
 import {
@@ -95,14 +96,15 @@ export function Component() {
   // Narrow, the column lies over the days: opened from its switch each time, not remembered.
   const [narrowOpen, setNarrowOpen] = useState(false);
   const setShown = wide ? setAsideOpen : setNarrowOpen;
-  // An event, a to-do or a file open beside: the column steps aside for it (one thing beside at a
-  // time), and comes back as it closes.
+  // A panel open beside (an event, a to-do, a file, the AI's chat): wide, the column stays and the
+  // panel slides in over it (`data-page-aside`, `CloudLayout`); narrow, the column gives way to an
+  // event, to-do or file (one thing over the days at a time) and comes back as it closes.
   const besidePanel = [CLOUD_EVENT_PARAM, CLOUD_TODO_PARAM, CLOUD_FILE_PARAM].some((key) =>
     params.has(key),
   );
-  const shown = (wide ? asideOpen : narrowOpen) && !besidePanel;
+  const shown = wide ? asideOpen : narrowOpen && !besidePanel;
   const toggleAside = () => {
-    if (!besidePanel) return setShown(!shown);
+    if (wide || !besidePanel) return setShown(!shown);
     setShown(true);
     setParams(
       (current) => {
@@ -179,7 +181,7 @@ export function Component() {
     >
       {() => (
         <div className="flex min-h-0 flex-1 flex-col gap-4">
-          <div className="flex flex-wrap items-center gap-x-2 gap-y-3">
+          <div className={`flex flex-wrap items-center gap-x-2 gap-y-3 ${GIVE_WAY_TO_PANEL}`}>
             {/* As on Cloud's other pages: the views and „Neuer Termin“ on the left; on the right the title, stepping through and the calendars' switch. */}
             <div className="flex flex-wrap items-center gap-2">
               <GlassPanel className="shrink-0 p-1">
@@ -246,7 +248,14 @@ export function Component() {
           </div>
           {/* Under the head, as „KI zur Mail“ under the folders: the days, the AI's column beside. */}
           <div className="relative flex min-h-0 flex-1 gap-6">
-            <div className="flex min-w-0 flex-1 flex-col">
+            {/* A panel over the column (400 + 12 from the edge) reaches 44px past it (24 page edge
+                + 320 column + 24 gap): the days give way that far and 12px more – the room every
+                page keeps beside a panel – as it slides in. */}
+            <div
+              className={`flex min-w-0 flex-1 flex-col transition-[margin] duration-300 ease-out ${
+                wide && shown ? '[body:has([data-cloud-panel])_&]:mr-14' : ''
+              }`}
+            >
               {!calendars.data || !events.data ? (
                 <LoadingState padding="lg" />
               ) : (
@@ -261,6 +270,7 @@ export function Component() {
             </div>
             {shown && (
               <aside
+                data-page-aside={wide || undefined}
                 className={
                   wide
                     ? 'flex min-h-0 w-[320px] shrink-0 flex-col'

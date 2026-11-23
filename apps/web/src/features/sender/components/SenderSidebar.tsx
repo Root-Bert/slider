@@ -220,7 +220,7 @@ export function SenderSidebar({ className }: { className?: string }) {
         <BarSearchField
           query={query}
           onQuery={setQuery}
-          label="Chats und Personen suchen"
+          label="Chats, Personen und Mails suchen"
           shortcut
         />
       </div>

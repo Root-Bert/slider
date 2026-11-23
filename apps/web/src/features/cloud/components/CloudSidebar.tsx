@@ -17,7 +17,7 @@ import {
   type MailThreadSummary,
   type SenderChannel,
 } from '@slider/shared';
-import { useMailThreads, usePinCloudNode, useTodos } from '@/lib/api';
+import { useCreateDocument, useMailThreads, usePinCloudNode, useTodos } from '@/lib/api';
 import { routes } from '@/lib/routes';
 import { BarHandle } from '@/shell/BarHandle';
 import { BarStartLink } from '@/shell/BarStartLink';
@@ -57,6 +57,7 @@ import {
 } from '@/ui';
 import { OWN_FILES, useCloud, type CloudTarget } from '../hooks/useCloud';
 import { areaTree, canHaveAreasUnder, isWorkspaceOwn } from '../lib/areas';
+import { useShownEvent } from './calendar/EventPanel';
 import { DROP_FAILED, droppedFiles } from '../lib/upload';
 import { areaColor } from './AreaDot';
 import { AgentAvatar } from './AgentAvatar';
@@ -497,6 +498,8 @@ function NewMenu({ start }: { start: ReactNode }) {
   const ui = useCloud();
   const sender = useSenderOrNull();
   const navigate = useNavigate();
+  const createDocument = useCreateDocument(ui.workspace.id);
+  const event = useShownEvent();
   const { open, setOpen, close, wrapperRef, panelId, triggerProps } = usePopover({
     hasPopup: 'menu',
   });
@@ -505,6 +508,18 @@ function NewMenu({ start }: { start: ReactNode }) {
     action();
   };
   const folded = use(Folded);
+  const { workspace, place } = ui;
+  const makes = canCreateDecks(workspace.role);
+  // An area open (not a folder in it): its own Aufgaben and Agenten; else the overviews.
+  const area = place.areaId ? ui.home?.areas.find((each) => each.id === place.areaId) : undefined;
+  const newDocument = () =>
+    createDocument.mutate(
+      { template: 'plain', parentId: place.parentId, areaId: place.areaId },
+      {
+        onSuccess: (document) => void navigate(routes.document(document.id)),
+        onError: (error) => ui.notify(error.message, 'danger'),
+      },
+    );
   return (
     <div
       ref={wrapperRef}
@@ -548,18 +563,60 @@ function NewMenu({ start }: { start: ReactNode }) {
             Neuer Ordner
           </MenuItem>
           <p className="px-2.5 pt-1 pb-1 text-caption text-fg-subtle">Nach „{ui.place.name}“</p>
-          {(canCreateDecks(ui.workspace.role) || ui.home?.canCreateAreas) && <MenuDivider />}
-          {canCreateDecks(ui.workspace.role) && (
+          {(makes || ui.home?.canCreateAreas) && <MenuDivider />}
+          {makes && (
             <MenuItem
               icon="slideshow"
-              onClick={run(() => void navigate(routes.newReview(ui.workspace.id, ui.place)))}
+              onClick={run(() => void navigate(routes.newReview(workspace.id, place)))}
             >
               Neue Präsentation
+            </MenuItem>
+          )}
+          {makes && (
+            <MenuItem icon="article" onClick={run(newDocument)}>
+              Neues Dokument
             </MenuItem>
           )}
           {ui.home?.canCreateAreas && (
             <MenuItem icon="workspaces" onClick={run(() => ui.newArea())}>
               Neuer Bereich
+            </MenuItem>
+          )}
+          {/* What is to be done and when: each typed where it stands – the field of Aufgaben or
+            Agenten (the area's, an area open), the event beside the page. */}
+          <MenuDivider />
+          <MenuItem
+            icon="checklist"
+            onClick={run(
+              () =>
+                void navigate(
+                  area
+                    ? routes.cloudAreaTodos(workspace.id, area.id)
+                    : routes.cloudTodos(workspace.id),
+                ),
+            )}
+          >
+            Neue Aufgabe
+          </MenuItem>
+          <MenuItem
+            icon="event"
+            onClick={run(() => event.create({ day: new Date().toLocaleDateString('sv-SE') }))}
+          >
+            Neuer Termin
+          </MenuItem>
+          {makes && (
+            <MenuItem
+              icon="autoAwesome"
+              onClick={run(
+                () =>
+                  void navigate(
+                    area && !isWorkspaceOwn(area)
+                      ? routes.cloudAreaAgents(workspace.id, area.id)
+                      : routes.cloudAgents(workspace.id),
+                  ),
+              )}
+            >
+              Neuer Agent
             </MenuItem>
           )}
           {sender && (
@@ -676,7 +733,7 @@ export function CloudSidebar({
             <BarSearchField
               query={query}
               onQuery={setQuery}
-              label="Dateien, Bereiche, Chats und Personen suchen"
+              label="Dateien, Bereiche, Chats, Personen und Mails suchen"
               marked={{ 'data-cloud-search': 'bar' }}
             />
           )}
@@ -692,9 +749,6 @@ export function CloudSidebar({
               className="scrollbar-none flex shrink-0 flex-col gap-0.5 overflow-x-hidden overflow-y-auto"
               style={sizes.places === null ? undefined : { height: sizes.places }}
             >
-              <NavRow to={routes.cloudAgents(workspace.id)} icon="autoAwesome">
-                Agenten
-              </NavRow>
               <NavRow to={routes.cloudConnections(workspace.id)} icon="link">
                 Verbindungen
               </NavRow>
@@ -734,10 +788,6 @@ export function CloudSidebar({
                   Post
                 </NavRow>
               )}
-              {/* One's own to-dos and the areas' – the overview; each area has its own tab. */}
-              <NavRow to={routes.cloudTodos(workspace.id)} icon="checklist" count={myTodos}>
-                Aufgaben
-              </NavRow>
               {home?.ownFiles !== false && (
                 <NavRow
                   to={routes.cloudTrash(workspace.id)}
@@ -752,6 +802,18 @@ export function CloudSidebar({
                   Gelöscht
                 </NavRow>
               )}
+              {/* Agents and to-dos, a section of their own under the places, set apart by a line:
+                each an overview of one's own, the workspace's and every area's. */}
+              {/* The same line as the handles' (`BarHandle`), only not dragged. */}
+              <div role="separator" className="mx-2 flex h-4 shrink-0 items-center">
+                <div className="h-px w-full bg-hairline-strong" />
+              </div>
+              <NavRow to={routes.cloudAgents(workspace.id)} icon="autoAwesome">
+                Agenten
+              </NavRow>
+              <NavRow to={routes.cloudTodos(workspace.id)} icon="checklist" count={myTodos}>
+                Aufgaben
+              </NavRow>
               {home && home.pins.length > 0 && (
                 <>
                   <p

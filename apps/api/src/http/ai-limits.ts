@@ -20,6 +20,8 @@ function createWindows(deps: AppDeps) {
     searches: perMinute(SEARCHES_PER_MINUTE),
     // Cloud's search reads every name of the workspace: a budget of its own beside the decks'.
     fileSearches: perMinute(120),
+    // Post's search opens every subject and address of the person's mail: as often as Cloud's.
+    mailSearches: perMinute(120),
     // A PDF or slide picture is drawn by LibreOffice, which only draws a few files at once.
     pdfs: perMinute(5),
     // Everything a KI-App asks over MCP, whatever the tool.

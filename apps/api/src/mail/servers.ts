@@ -62,6 +62,17 @@ export interface SeenMark {
   seen: boolean;
 }
 
+/** A mail asked for again by UID in the folder at `path` (`MailServers.headers`). */
+export interface HeaderWanted {
+  path: string;
+  uid: number;
+}
+
+/** The header fields asked for of one mail – only those, followed by an empty line. */
+export interface FetchedHeader extends HeaderWanted {
+  header: Uint8Array;
+}
+
 export interface OutgoingMail {
   /** Its `Message-ID` as kept here – the copy in „Gesendet“ is known by it. */
   messageId?: string;
@@ -96,6 +107,15 @@ export interface MailServers {
   send(login: MailLogin, mail: OutgoingMail): Promise<{ messageId: string }>;
   /** Sets mails read or unread on the server (`\Seen`); returns those set. */
   mark?(login: MailLogin, marks: readonly SeenMark[]): Promise<SeenMark[]>;
+  /**
+   * Only the named header fields of mails read before – nothing marked read; a UID no longer
+   * there or a folder gone is left out.
+   */
+  headers?(
+    login: MailLogin,
+    wanted: readonly HeaderWanted[],
+    fields: readonly string[],
+  ): Promise<FetchedHeader[]>;
 }
 
 /** On a folder's first read: this many of its latest mails. */
@@ -114,6 +134,8 @@ const ROUND_MS = 3 * 60 * 1000;
  * before is asked again each round – what changed since (CONDSTORE), else of the latest few.
  */
 const WATCHED = new Set(['inbox', 'spam']);
+/** Mails whose header fields one FETCH asks for (`headers`). */
+const HEADERS_PER_FETCH = 400;
 /** Without CONDSTORE: the read state of this many latest mails, each round. */
 export const FLAGS_WINDOW = 300;
 
@@ -704,6 +726,44 @@ export const realMailServers: MailServers = {
         }
       }
       return done;
+    } finally {
+      await client.logout().catch(() => client.close());
+    }
+  },
+
+  async headers(login, wanted, fields) {
+    const client = await imap(login);
+    try {
+      await client.connect();
+    } catch (error) {
+      throw new Error(mailErrorText(error, 'IMAP', login), { cause: error });
+    }
+    const found: FetchedHeader[] = [];
+    try {
+      for (const path of new Set(wanted.map((one) => one.path))) {
+        const uids = wanted.filter((one) => one.path === path).map((one) => one.uid);
+        let lock: Awaited<ReturnType<ImapFlow['getMailboxLock']>>;
+        try {
+          // Opened to read (EXAMINE): nothing marked read.
+          lock = await client.getMailboxLock(path, { readOnly: true });
+        } catch {
+          continue;
+        }
+        try {
+          // In parts: a server takes a command line only so long.
+          for (let at = 0; at < uids.length; at += HEADERS_PER_FETCH)
+            for await (const message of client.fetch(
+              uids.slice(at, at + HEADERS_PER_FETCH).join(','),
+              { uid: true, headers: [...fields] },
+              { uid: true },
+            ))
+              if (message.headers)
+                found.push({ path, uid: message.uid, header: new Uint8Array(message.headers) });
+        } finally {
+          lock.release();
+        }
+      }
+      return found;
     } finally {
       await client.logout().catch(() => client.close());
     }

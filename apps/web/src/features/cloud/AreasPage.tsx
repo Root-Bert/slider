@@ -217,8 +217,9 @@ export function Component() {
   return (
     <CloudPage
       docTitle={root ? `${root.name} | Bereiche` : 'Bereiche'}
-      // A tab of the workspace's own area, beside its files and its chat: no crumbs above.
+      // A tab of the workspace's own area, beside its files and its chat: its name above, as there.
       title={root ? <AreaViews area={root} current="areas" /> : 'Bereiche'}
+      crumbs={root ? [{ label: root.name }] : undefined}
       lead={root ? <AreaMark area={root} size="lg" /> : null}
       nodes={[]}
       // The net takes the room the page has and moves in itself; the tree scrolls with the page.

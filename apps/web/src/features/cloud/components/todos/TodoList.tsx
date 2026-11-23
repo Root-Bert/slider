@@ -1,5 +1,6 @@
 import {
   isOpenTodo,
+  searchFold,
   TODO_PRIORITIES,
   TODO_PRIORITY_LABELS,
   TODO_STATUS_LABELS,
@@ -23,12 +24,12 @@ import {
 } from '@/lib/api';
 import { isTextTarget } from '@/lib/dom';
 import { CLOUD_EVENT_PARAM, CLOUD_FILE_PARAM, CLOUD_TODO_PARAM, routes } from '@/lib/routes';
-import { WorkspaceMark } from '@/features/workspaces';
+import { ViewSearch } from '@/features/workspaces';
 import {
   AutosizeTextarea,
   Avatar,
+  Button,
   ConfirmDialog,
-  GlassPanel,
   Icon,
   IconButton,
   LoadingState,
@@ -37,15 +38,23 @@ import {
   MenuHeading,
   MenuItem,
   PopoverPanel,
-  SegmentedControl,
   SidePanel,
   TextField,
   TextLink,
   cn,
+  useMediaQuery,
   usePopover,
 } from '@/ui';
 import { useCloud } from '../../hooks/useCloud';
 import { useStoredChoice } from '../../hooks/useStoredChoice';
+import {
+  ALL_SCOPE,
+  OWN_SCOPE,
+  scopeTabs,
+  useAssignedOnly,
+  useScope,
+  WORKSPACE_SCOPE,
+} from '../../lib/scopes';
 import { AgentAvatar } from '../AgentAvatar';
 import { AgentViewToggle, GRID } from '../AgentList';
 import { AreaDot } from '../AreaDot';
@@ -62,24 +71,43 @@ export function TodoList({ area }: { area: CloudArea | null }) {
   const workspaceId = ui.workspace.id;
   const todos = useTodos(workspaceId, area?.id ?? null);
   const shown = useShownTodo();
-  const me = useMe().data?.viewer.author;
   const [view, setView] = useStoredChoice('slider.cloud.todos-view', TODO_VIEWS, 'list');
-  // None picked: all of them. A click on the one picked lets go of it – as on „Agenten“.
-  const [picked, setScope] = useStoredChoice(
-    'slider.cloud.todos-scope',
-    ['all', ...SCOPES] as const,
-    'all',
-  );
+  // The overview's open tab (the page's title); in an area all are the area's.
+  const { tabs, current } = useTodoScope();
+  const [assignedOnly] = useAssignedOnly();
+  const areas = ui.home?.areas ?? [];
+  const scope = area || current === ALL_SCOPE ? null : current;
+  // Where a new one goes: the area open – in the overview the tab's, one's own on „Alle“.
+  const target =
+    area ??
+    (scope === WORKSPACE_SCOPE
+      ? (areas.find((each) => each.root) ?? null)
+      : scope && scope !== OWN_SCOPE
+        ? (areas.find((each) => each.id === scope) ?? null)
+        : null);
+  // The page's own field (⌘K): only those with every word in them.
+  const [query, setQuery] = useState('');
   if (!todos.data) return <LoadingState padding="lg" />;
   const all = todos.data;
-  const groups: Record<Scope, Todo[]> = {
-    own: all.filter((todo) => todo.areaId === null),
-    workspace: all.filter((todo) => todo.areaId !== null),
-  };
-  // In an area all are the area's: nothing to pick between.
-  const scope = !area && picked !== 'all' ? picked : null;
-  const list = scope ? groups[scope] : all;
-  const canAdd = !area || area.access === 'edit' || area.access === 'manage';
+  // A tab whose place is not known (yet): nothing of it – never one's own under its name.
+  const lost = !!scope && scope !== OWN_SCOPE && !target;
+  const placed = !scope
+    ? all
+    : lost
+      ? []
+      : all.filter((todo) => todo.areaId === (target?.id ?? null));
+  // „Mir zugeteilt“ (the page's title row): only those given to oneself.
+  const mineOnly = !area && assignedOnly;
+  const scoped = mineOnly ? placed.filter((todo) => todo.assignee?.id === ui.userId) : placed;
+  const list = todosSaying(scoped, query);
+  const canAdd = !lost && (!target || target.access === 'edit' || target.access === 'manage');
+  const tab = tabs.find((each) => each.key === scope);
+  const none =
+    mineOnly && (placed.length > 0 || !scope)
+      ? 'Dir ist hier keine Aufgabe zugeteilt.'
+      : scope === OWN_SCOPE
+        ? 'Du hast noch keine eigene Aufgabe.'
+        : `In „${scope === WORKSPACE_SCOPE ? (target?.name ?? 'Workspace') : (tab?.label ?? '')}“ steht noch keine Aufgabe.`;
   const tiles = view === 'tiles';
   const rows = (each: readonly Todo[]) =>
     each.map((todo) =>
@@ -101,54 +129,37 @@ export function TodoList({ area }: { area: CloudArea | null }) {
     );
   return (
     <div className="flex w-full flex-col gap-6 pb-16">
-      {/* The new one's field, whose and tiles or rows: one line, as on „Agenten“. */}
+      {/* The new one's field, the search and tiles or rows: one line, as on „Agenten“. */}
       {(canAdd || all.length > 0) && (
         <div className="flex items-center gap-3">
-          <div className="min-w-0 flex-1">{canAdd && <NewTodo areaId={area?.id ?? null} />}</div>
-          {!area && all.length > 0 && (
-            <GlassPanel className="shrink-0 p-1">
-              <SegmentedControl
-                label="Wessen Aufgaben"
-                value={scope ?? 'all'}
-                onChange={(next) => setScope(next === scope ? 'all' : next)}
-                segments={SCOPES.map((each) => ({
-                  value: each,
-                  label: SCOPE_WORDS[each].label,
-                  ...(each === 'workspace'
-                    ? {
-                        lead: (
-                          <WorkspaceMark
-                            name={ui.workspace.name}
-                            logoUrl={ui.workspace.logoUrl}
-                            size={24}
-                            className="size-4.5!"
-                          />
-                        ),
-                      }
-                    : {
-                        ...(me
-                          ? { lead: <Avatar author={me} size={20} nativeTitle={false} /> }
-                          : { icon: 'person' as const }),
-                        iconOnly: true,
-                      }),
-                  count: groups[each].filter((todo) => isOpenTodo(todo.status)).length,
-                  title: `${SCOPE_WORDS[each].label} | ${SCOPE_WORDS[each].hint}`,
-                }))}
-              />
-            </GlassPanel>
+          <div className="min-w-48 flex-1">{canAdd && <NewTodo areaId={target?.id ?? null} />}</div>
+          {/* The search on the right, in the row – as Post's. */}
+          {all.length > 0 && (
+            <ViewSearch
+              label="Aufgaben durchsuchen"
+              value={query}
+              onChange={setQuery}
+              className="min-w-36 shrink"
+            />
           )}
           {all.length > 0 && <AgentViewToggle view={view} onChange={setView} />}
         </div>
       )}
-      {scope && list.length === 0 ? (
-        <p className="px-3 text-sm text-fg-muted">{SCOPE_WORDS[scope].none}</p>
+      {(scope || mineOnly) && scoped.length === 0 ? (
+        <p className="px-3 text-sm text-fg-muted">{none}</p>
+      ) : scoped.length > 0 && list.length === 0 ? (
+        <p className="px-3 text-sm text-fg-muted">
+          Keine Treffer für „{query.trim()}“ – gesucht wird im Titel, in der Beschreibung und nach
+          wem sie gegeben ist.
+        </p>
       ) : list.length === 0 ? (
         <p className="px-3 text-sm text-fg-muted">
           {area
             ? 'Noch keine Aufgaben in diesem Bereich.'
             : 'Noch keine Aufgaben – deine und die aus deinen Bereichen stehen hier.'}
         </p>
-      ) : area ? (
+      ) : area || scope ? (
+        // One place – an area or a tab of the overview: by status, as a project's plan.
         BY_STATUS.map((status) => {
           const here = list.filter((todo) => todo.status === status);
           if (here.length === 0) return null;
@@ -170,6 +181,18 @@ export function TodoList({ area }: { area: CloudArea | null }) {
       )}
     </div>
   );
+}
+
+/** The to-dos a page's search finds: every word in the title, the description or whose it is. */
+function todosSaying(todos: readonly Todo[], query: string) {
+  const words = searchFold(query.trim()).split(/\s+/).filter(Boolean);
+  if (words.length === 0) return todos;
+  return todos.filter((todo) => {
+    const hay = searchFold(
+      `${todo.title} ${todo.description} ${todo.assignee?.name ?? ''} ${todo.assigneeAgent?.title ?? ''}`,
+    );
+    return words.every((word) => hay.includes(word));
+  });
 }
 
 /**
@@ -263,17 +286,36 @@ export function TodoPanel() {
 
 /** Rows (Linear's) or tiles (as agents'): remembered in this browser. */
 const TODO_VIEWS = ['list', 'tiles'] as const;
-/** Whose to-dos the overview shows: one's own or the areas' – as „Agenten“ picks. */
-const SCOPES = ['own', 'workspace'] as const;
-type Scope = (typeof SCOPES)[number];
-const SCOPE_WORDS: Record<Scope, { label: string; hint: string; none: string }> = {
-  own: { label: 'Meine', hint: 'Nur du siehst sie', none: 'Du hast noch keine eigene Aufgabe.' },
-  workspace: {
-    label: 'Workspace',
-    hint: 'Aus den Bereichen, die du siehst',
-    none: 'In deinen Bereichen steht noch keine Aufgabe.',
-  },
-};
+/**
+ * „Mir zugeteilt“ on the right of „Aufgaben“'s title, as Post's „Ungelesen“: on, only those
+ * given to oneself show – on every tab.
+ */
+export function AssignedFilter() {
+  const narrow = useMediaQuery('(max-width: 639px)');
+  const [on, set] = useAssignedOnly();
+  return (
+    <Button
+      variant="ghost"
+      size="sm"
+      icon="person"
+      aria-pressed={on}
+      title={on ? 'Nur mir zugeteilte – alle zeigen' : 'Nur mir zugeteilte zeigen'}
+      className="aria-pressed:bg-selected aria-pressed:text-fg"
+      onClick={() => set(!on)}
+    >
+      <span className={cn(narrow && 'sr-only')}>Mir zugeteilt</span>
+    </Button>
+  );
+}
+
+/** The overview's tabs (`ScopeTabs`) and the open one – as „Agenten“'s. */
+export function useTodoScope() {
+  const ui = useCloud();
+  return scopeTabs(ui.home?.areas ?? [], useScope(), {
+    own: 'Nur du siehst sie',
+    workspace: 'Alle im Workspace sehen sie',
+  });
+}
 
 /** Linear's order of the groups: what is under way first, the finished last. */
 const BY_STATUS = ['in_progress', 'todo', 'backlog', 'done', 'canceled'] as const;
@@ -404,6 +446,8 @@ function NewTodo({ areaId }: { areaId: string | null }) {
       maxLength={300}
       placeholder={areaId ? 'Neue Aufgabe im Bereich' : 'Neue Aufgabe'}
       aria-label="Neue Aufgabe"
+      // Ready to type, as „Agenten“'s order field – also where „Neu › Neue Aufgabe“ leads.
+      autoFocus
     />
   );
 }

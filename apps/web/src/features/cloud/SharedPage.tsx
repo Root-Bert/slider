@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { ViewSearch } from '@/features/workspaces';
 import { GlassPanel, SegmentedControl } from '@/ui';
 import { AcrossPage } from './components/AcrossPage';
 
@@ -10,11 +11,14 @@ const TABS = [
 /** „Geteilt“: what others gave the caller – and what the caller gave others. */
 export function Component() {
   const [tab, setTab] = useState<(typeof TABS)[number]['value']>('shared');
+  const [query, setQuery] = useState('');
   return (
     <AcrossPage
       key={tab}
       scope={tab}
       title="Geteilt"
+      query={query}
+      search={<ViewSearch label="Geteiltes durchsuchen" value={query} onChange={setQuery} />}
       lead={
         <GlassPanel className="shrink-0 p-1">
           <SegmentedControl

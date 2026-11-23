@@ -171,10 +171,26 @@ export function mailRoutes(deps: AppDeps) {
       )
       .get('/workspaces/:workspaceId/mail/threads', viewer, async (c) => {
         const userId = me(c);
+        // `?q=`: those that hold the words, in any folder – Post's search and the side bar's.
+        const query = (c.req.query('q') ?? '').trim().slice(0, 200);
+        if (query) {
+          const searched = aiLimits(deps).mailSearches.hit(userId);
+          if (!searched.allowed) {
+            c.header('Retry-After', String(searched.retryAfterS));
+            throw new ApiError(
+              429,
+              'rate_limited',
+              'Zu viele Suchen auf einmal – gleich noch einmal.',
+            );
+          }
+        }
         const threads = await listMailThreads(deps, userId, c.req.param('workspaceId'), {
           // One mailbox's, one folder's (`?account=<id>&folder=<key>`); else the side bar's.
           accountId: c.req.query('account') || undefined,
           folder: c.req.query('folder') || undefined,
+          query,
+          // `&in=all`: what the mails say too, as Cloud's search in what files say.
+          inText: c.req.query('in') === 'all',
         });
         // Pinned ones (`sender-pins.ts`) stand atop the list – the client puts them there.
         const pins = await pinnedAtOf(

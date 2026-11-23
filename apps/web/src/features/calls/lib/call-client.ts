@@ -13,7 +13,8 @@ import { api, ApiError, apiRequest } from '@/lib/api-client';
 import { Levels } from './levels';
 import type { CallListener } from './listener';
 import { camera, MediaRefused, microphone, screen } from './media';
-import { Mesh, type RemoteMedia, type Slot } from './mesh';
+import { Mesh, type RemoteMedia, type Slot, type Transport } from './mesh';
+import { Sfu } from './sfu';
 import { chime } from './sounds';
 import { fetchVoice, hush, speak, wakeVoice } from './speaker';
 
@@ -82,7 +83,8 @@ export class CallClient {
   private source: EventSource | null = null;
   private timer = 0;
   private iceServers: CallIceServer[] = [];
-  private mesh: Mesh | null = null;
+  /** How sound and pictures travel: to each other tab, or through the server (`CallJoined.sfu`). */
+  private transport: Transport | null = null;
   private readonly tracks: Record<Slot, MediaStreamTrack | null> = {
     audio: null,
     camera: null,
@@ -180,7 +182,7 @@ export class CallClient {
         }
         for (const peer of before?.peers ?? []) {
           if (here.has(peer.peerId)) continue;
-          this.mesh?.drop(peer.peerId);
+          this.transport?.drop(peer.peerId);
           chime(false);
         }
         const came = event.call.peers.filter(
@@ -204,8 +206,8 @@ export class CallClient {
         break;
       }
       case 'signal':
-        if (this.snap.active?.callId === event.callId)
-          void this.mesh?.handle(event.from, event.signal);
+        if (this.snap.active?.callId === event.callId && this.transport instanceof Mesh)
+          void this.transport.handle(event.from, event.signal);
         break;
       case 'hush':
         // Someone talked over the agent (here or in another tab): its answer stops everywhere.
@@ -282,13 +284,19 @@ export class CallClient {
       this.iceServers = joined.iceServers;
       this.tracks.audio = mic;
       this.tracks.camera = cam;
-      this.mesh = new Mesh({
-        iceServers: this.iceServers,
-        send: (to, signal) => this.signal(to, signal),
-        onChange: () => this.onMesh(),
-      });
-      this.mesh.setTrack('audio', mic);
-      this.mesh.setTrack('camera', cam);
+      const sfu = joined.sfu
+        ? new Sfu({ onChange: () => this.onMedia(), onLost: () => this.lost(joined.call.id) })
+        : null;
+      const mesh = sfu
+        ? null
+        : new Mesh({
+            iceServers: this.iceServers,
+            send: (to, signal) => this.signal(to, signal),
+            onChange: () => this.onMedia(),
+          });
+      this.transport = sfu ?? mesh;
+      this.transport?.setTrack('audio', mic);
+      this.transport?.setTrack('camera', cam);
       const calls = new Map(this.snap.calls);
       calls.set(joined.call.id, joined.call);
       this.set({
@@ -303,7 +311,14 @@ export class CallClient {
         local: { mic: !!mic, camera: !!cam, screen: false },
         own: { camera: cam ? new MediaStream([cam]) : null, screen: null },
       });
-      for (const peerId of joined.connectTo) this.mesh.connect(peerId);
+      for (const peerId of mesh ? joined.connectTo : []) mesh?.connect(peerId);
+      if (sfu && joined.sfu) {
+        sfu.start(joined.sfu).catch(() => {
+          if (this.transport !== sfu) return;
+          this.tell('Die Verbindung zum Anruf ließ sich nicht aufbauen.', 'danger');
+          void this.leave();
+        });
+      }
       this.listen();
       this.hear();
     } catch (error) {
@@ -434,7 +449,7 @@ export class CallClient {
         .then((mic) => {
           if (!this.snap.active) return mic.stop();
           this.tracks.audio = mic;
-          this.mesh?.setTrack('audio', mic);
+          this.transport?.setTrack('audio', mic);
           this.media({ mic: true });
           this.listen();
           this.hear();
@@ -453,7 +468,7 @@ export class CallClient {
     if (this.snap.local.camera) {
       this.tracks.camera?.stop();
       this.tracks.camera = null;
-      this.mesh?.setTrack('camera', null);
+      this.transport?.setTrack('camera', null);
       this.set({ own: { ...this.snap.own, camera: null } });
       this.media({ camera: false });
       return;
@@ -462,7 +477,7 @@ export class CallClient {
       const track = await camera();
       if (!this.snap.active) return track.stop();
       this.tracks.camera = track;
-      this.mesh?.setTrack('camera', track);
+      this.transport?.setTrack('camera', track);
       this.set({ own: { ...this.snap.own, camera: new MediaStream([track]) } });
       this.media({ camera: true });
     } catch (error) {
@@ -481,7 +496,7 @@ export class CallClient {
       track.addEventListener('ended', () => {
         if (this.tracks.screen === track) this.stopScreen();
       });
-      this.mesh?.setTrack('screen', track);
+      this.transport?.setTrack('screen', track);
       this.set({ own: { ...this.snap.own, screen: new MediaStream([track]) } });
       this.media({ screen: true });
     } catch (error) {
@@ -492,7 +507,7 @@ export class CallClient {
   private stopScreen() {
     this.tracks.screen?.stop();
     this.tracks.screen = null;
-    this.mesh?.setTrack('screen', null);
+    this.transport?.setTrack('screen', null);
     this.set({ own: { ...this.snap.own, screen: null } });
     this.media({ screen: false });
   }
@@ -516,10 +531,17 @@ export class CallClient {
       .catch(() => {});
   }
 
-  private onMesh() {
-    if (!this.mesh) return;
-    this.set({ remote: this.mesh.media() });
+  private onMedia() {
+    if (!this.transport) return;
+    this.set({ remote: this.transport.media() });
     this.listen();
+  }
+
+  /** The way to the server's forwarding broke for good: out of the call, said once. */
+  private lost(callId: string) {
+    if (this.snap.active?.callId !== callId) return;
+    this.tell('Die Verbindung zum Anruf ist abgerissen.', 'danger');
+    void this.leave();
   }
 
   /** Whose voices to listen to for „speaks“. */
@@ -668,8 +690,8 @@ export class CallClient {
     this.listener = null;
     this.deafTold = false;
     hush();
-    this.mesh?.close();
-    this.mesh = null;
+    this.transport?.close();
+    this.transport = null;
     for (const slot of ['audio', 'camera', 'screen'] as const) {
       this.tracks[slot]?.stop();
       this.tracks[slot] = null;

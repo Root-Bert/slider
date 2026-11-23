@@ -1,4 +1,4 @@
-import { useSyncExternalStore } from 'react';
+import { useState, useSyncExternalStore } from 'react';
 import { useNavigate, useOutletContext, useParams, useSearchParams } from 'react-router';
 import { mailboxLabels, type MailAccount, type MailFolder } from '@slider/shared';
 import { useMailAccounts, useMailThreads } from '@/lib/api';
@@ -22,6 +22,12 @@ export interface MailViewState {
   folder: string;
   /** Only the unread ones – one switch for every mailbox and folder, remembered in this browser. */
   unread: boolean;
+  /**
+   * The page's search, as typed: while it holds words the list is what they find in the open
+   * mailbox, every folder. Kept while a mail opens and closes; gone with the page.
+   */
+  query: string;
+  setQuery: (query: string) => void;
   threadId: string | undefined;
   /** Wide enough for the list and an opened mail side by side. */
   wide: boolean;
@@ -64,6 +70,7 @@ export function useMailView(): MailViewState {
   const folders = account?.folders ?? [];
   const folder = folders.some((each) => each.key === asked.folder) ? asked.folder : 'inbox';
   const unread = useSyncExternalStore(unreadStore.subscribe, unreadStore.getSnapshot);
+  const [query, setQuery] = useState('');
   const searchOf = (accountId: string, key: string) =>
     mailViewSearch({ accountId, folder: key }, accounts?.[0]?.id === accountId);
   const search = account ? searchOf(account.id, folder) : '';
@@ -76,6 +83,8 @@ export function useMailView(): MailViewState {
     folders,
     folder,
     unread,
+    query,
+    setQuery,
     threadId,
     wide,
     listHref,

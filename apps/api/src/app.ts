@@ -7,7 +7,7 @@ import { secureHeaders } from 'hono/secure-headers';
 import { API_PREFIX, MCP_PATH } from '@slider/shared';
 import { InstanceGate } from './auth/instance-gate';
 import type { AppDeps } from './deps';
-import { CSP_REPORT_PATH } from './http/csp';
+import { CSP_REPORT_PATH, sfuOrigins } from './http/csp';
 import { errorHandler, notFoundHandler } from './http/errors';
 import { healthCheck, trustProxy } from './http/hosting';
 import { LiveHub } from './realtime/live-hub';
@@ -69,6 +69,7 @@ import { calendarRoutes } from './routes/calendars';
 import { draftsRoutes } from './routes/drafts';
 import { writeCallNotes } from './services/call-notes';
 import { CallHub } from './services/calls';
+import { livekitSfu } from './services/call-sfu';
 import { keepCall } from './services/call-records';
 import { runInBackground } from './background-work';
 import { cloudConnectionRoutes } from './routes/cloud-connections';
@@ -98,6 +99,8 @@ export function createApp(appDeps: AppDeps) {
         ),
       ),
     turnSecret: appDeps.config.calls?.turnSecret ?? null,
+    // LiveKit forwards the media where there is one; else the browsers send to each other.
+    sfu: appDeps.config.calls?.sfu ? livekitSfu(appDeps.config.calls.sfu, appDeps.log) : null,
     now: () => appDeps.clock.now().getTime(),
   });
   const deps: AppDeps = { ...appDeps, live, presence, liveTexts: texts, documentLive };
@@ -211,7 +214,15 @@ export function createApp(appDeps: AppDeps) {
 
   // Self-hosting: the built web app from the same origin as the API.
   const webDist = deps.config.hosting?.webDistDir;
-  if (webDist) app.use(serveWebApp(webDist, [API_PREFIX, '/files'], deps.log));
+  if (webDist)
+    app.use(
+      serveWebApp(
+        webDist,
+        [API_PREFIX, '/files'],
+        deps.log,
+        sfuOrigins(deps.config.calls?.sfu?.url),
+      ),
+    );
 
   app.onError(errorHandler(deps.log));
   app.notFound(notFoundHandler);

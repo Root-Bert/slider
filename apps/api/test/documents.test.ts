@@ -249,6 +249,18 @@ describe('Writer – text documents', () => {
       method: 'POST',
       json: { ids: [document.id], areaId: areas.find((area) => area.root)?.id },
     });
+    // Made from inside an area (Cloud's „Neu“), it lies there at once – everyone there reads it.
+    const inArea = await ctx.request('/api/documents', {
+      method: 'POST',
+      json: { workspaceId: ctx.workspaceId, areaId: areas.find((area) => area.root)?.id },
+    });
+    expect(inArea.status).toBe(201);
+    const placed = writerDocumentSchema.parse(await inArea.json());
+    expect(placed.place).not.toBe('Meine Dateien');
+    expect(
+      (await ctx.request(`/api/documents/${placed.id}`, { cookie: viewer.cookie })).status,
+    ).toBe(200);
+    await ctx.request('/api/cloud/nodes/trash', { method: 'POST', json: { ids: [placed.id] } });
     const seen = (await open(viewer.cookie)) as WriterOpened;
     expect(seen.document.permissions).toEqual({
       canEdit: false,
@@ -443,7 +455,7 @@ describe('Writer – text documents', () => {
     expect((await list()).sort()).toEqual(['Bericht', 'Brief']);
     await ctx.request('/api/cloud/nodes/trash', { method: 'POST', json: { ids: [letter.id] } });
     expect(await list()).toEqual(['Bericht']);
-    expect(await list('?scope=trash')).toEqual(['Brief']);
+    expect((await list('?scope=trash')).sort()).toEqual(['Brief', 'Neues Dokument']);
     const lost = await ctx.request(`/api/documents/${letter.id}`);
     expect(lost.status).toBe(404);
   });

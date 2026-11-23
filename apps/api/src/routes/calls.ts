@@ -37,6 +37,8 @@ const ACCESS_CHECK_MS = 60_000;
 const CALL_EVENT = 'call';
 /** A turn of at most ~30 s, 16 kHz mono 16 bit, as WAV. */
 const MAX_TURN_AUDIO_BYTES = 2 * 1024 * 1024 + 64 * 1024;
+/** LiveKit's webhooks are a few hundred bytes of JSON. */
+const MAX_SFU_EVENT_BYTES = 64 * 1024;
 
 /**
  * Calls (`services/calls.ts`): one stream per tab of a signed-in person, open on every page, and
@@ -75,6 +77,27 @@ export function callRoutes(deps: AppDeps, calls: CallHub) {
   };
   return (
     new Hono<ViewerEnv>()
+      /**
+       * LiveKit's webhook (where it forwards the media): no session – signed with the key pair it
+       * shares with this server (`Authorization`, a JWT over the body's hash). Anything else is 401.
+       */
+      .post(
+        '/calls/livekit',
+        bodyLimit({
+          maxSize: MAX_SFU_EVENT_BYTES,
+          onError: (c) => c.body(null, 413),
+        }),
+        async (c) => {
+          const sfu = calls.sfu;
+          if (!sfu) return c.body(null, 404);
+          const event = await sfu
+            .event(await c.req.text(), c.req.header('authorization'))
+            .catch(() => null);
+          if (!event) return c.body(null, 401);
+          calls.sfuEvent(event);
+          return c.body(null, 204);
+        },
+      )
       .post('/sender/channels/:channelId/call', viewer, async (c) => {
         const input = await readJson(c, callJoinSchema);
         return c.json(await calls.join(deps, me(c), c.req.param('channelId'), input));

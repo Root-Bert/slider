@@ -14,6 +14,12 @@ services:
     # "web": reachable for the shared Caddy as slider:8787; Postgres stays on the private network.
     networks: [default, web]
 
+  # Calls with many people (profile `call`): reachable for the shared Caddy as livekit:7880 (site
+  # in proxy/examples/slider.caddy). Its TURN runs over UDP only here – the certificate for TLS
+  # is in the shared Caddy's volume, not this project's.
+  livekit:
+    networks: [default, web]
+
 networks:
   web:
     name: web

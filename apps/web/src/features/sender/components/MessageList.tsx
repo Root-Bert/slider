@@ -30,12 +30,14 @@ const PINNED_PX = 48;
 const whoOf = (message: SenderMessage) =>
   message.agent ? `agent:${message.agent.id}` : (message.author?.id ?? 'gone');
 
-function Who({ message, size }: { message: SenderMessage; size: 32 }) {
-  if (message.agent) return <AgentAvatar id={message.agent.id} size={size} />;
+/** Above a block: who wrote it, as small as in an agent's chat (an agent's mark a little larger). */
+function Who({ message }: { message: SenderMessage }) {
+  if (message.agent)
+    return <AgentAvatar id={message.agent.id} size={22} className="rounded-mark" />;
   return (
     <Avatar
       author={message.author ?? { name: DELETED_ACCOUNT_NAME, type: 'deleted', color: 'deleted' }}
-      size={size}
+      size={20}
       nativeTitle={false}
     />
   );
@@ -100,14 +102,16 @@ function Editor({
   );
 }
 
-/** A message's tools, over its corner while the pointer is on it. */
+/** A message's tools, beside it on the free side while the pointer is on it (above it on a phone). */
 function Tools({
   message,
+  own,
   mine,
   onEdit,
   onDelete,
 }: {
   message: SenderMessage;
+  own: boolean;
   mine: boolean;
   onEdit: () => void;
   onDelete: () => void;
@@ -115,7 +119,15 @@ function Tools({
   const { state, copy } = useCopyToClipboard();
   const copied = state === 'copied';
   return (
-    <div className="glass-elevated absolute -top-4 right-3 z-(--z-raised) hidden items-center gap-0.5 rounded-control p-0.5 group-hover/message:flex group-focus-within/message:flex">
+    <div
+      className={cn(
+        'glass-elevated absolute bottom-0 z-(--z-raised) hidden items-center gap-0.5 rounded-control p-0.5 group-hover/message:flex group-focus-within/message:flex',
+        // A phone has no room beside a full row: above the message there.
+        own
+          ? 'right-0 bottom-full mb-1 sm:right-full sm:bottom-0 sm:mr-1.5 sm:mb-0'
+          : 'left-0 bottom-full mb-1 sm:left-full sm:bottom-0 sm:ml-1.5 sm:mb-0',
+      )}
+    >
       <IconButton
         icon={copied ? 'check' : 'contentCopy'}
         label={copied ? 'Kopiert' : 'Kopieren'}
@@ -254,8 +266,19 @@ export function MessageList({
       whoOf(previous) !== whoOf(message) ||
       previous.deleted ||
       new Date(message.createdAt).getTime() - new Date(previous.createdAt).getTime() > BLOCK_MS;
-    const mine = !readOnly && !message.agent && !message.call && message.author?.id === me.id;
+    // One's own on the right in a bubble, everyone else's on the left – as in an agent's chat.
+    const own = !message.agent && !message.call && message.author?.id === me.id;
+    const mine = !readOnly && own;
     const name = message.agent?.title ?? message.author?.name ?? DELETED_ACCOUNT_NAME;
+    const time = (
+      <time
+        dateTime={message.createdAt}
+        title={stampOf(message.createdAt)}
+        className="shrink-0 tabular-nums"
+      >
+        {timeOf(message.createdAt)}
+      </time>
+    );
     rows.push(
       <Fragment key={message.id}>
         {newDay && (
@@ -281,39 +304,39 @@ export function MessageList({
         <article
           aria-label={`${name}, ${timeOf(message.createdAt)}`}
           className={cn(
-            'group/message relative flex gap-3 rounded-chip px-3 transition-colors hover:bg-hover/40',
-            head ? 'mt-2 pt-1.5 pb-1' : 'py-0.5',
+            'group/message relative flex max-w-full min-w-0 flex-col gap-1',
+            editing === message.id
+              ? 'self-stretch'
+              : own
+                ? 'ml-12 items-end self-end sm:ml-24'
+                : 'mr-12 items-start self-start sm:mr-24',
+            head ? 'mt-4' : 'mt-1',
             isPending(message) && 'opacity-60',
-            editing === message.id && 'bg-hover/40',
           )}
         >
-          <div className="flex w-8 shrink-0 justify-center">
-            {head ? (
-              <Who message={message} size={32} />
-            ) : (
-              <time
-                dateTime={message.createdAt}
-                title={stampOf(message.createdAt)}
-                className="hidden pt-[3px] text-micro text-fg-subtle tabular-nums group-hover/message:block"
-              >
-                {timeOf(message.createdAt)}
-              </time>
-            )}
-          </div>
-          <div className="min-w-0 flex-1">
-            {head && (
-              <div className="flex items-baseline gap-2">
-                <span className="truncate text-sm font-semibold text-fg">{name}</span>
-                {message.agent && <Badge tone="info">Agent</Badge>}
-                <time
-                  dateTime={message.createdAt}
-                  title={stampOf(message.createdAt)}
-                  className="shrink-0 text-xs text-fg-subtle tabular-nums"
-                >
-                  {timeOf(message.createdAt)}
-                </time>
+          {head &&
+            (own ? (
+              <div className="flex min-h-6 items-center gap-1.5 text-xs text-fg-subtle">
+                {time}
+                <Who message={message} />
               </div>
+            ) : (
+              <div className="flex min-h-6 min-w-0 items-center gap-1.5 text-xs text-fg-subtle">
+                <Who message={message} />
+                <span className="truncate">{name}</span>
+                {message.agent && <Badge tone="info">Agent</Badge>}
+                {time}
+              </div>
+            ))}
+          <div
+            title={head ? undefined : stampOf(message.createdAt)}
+            className={cn(
+              'min-w-0',
+              editing === message.id
+                ? 'w-full'
+                : own && !message.call && 'rounded-panel bg-surface-2 px-3 py-2',
             )}
+          >
             {/* It came as a mail: its subject, so one knows (a colleague's mail in the chat). */}
             {message.mail && !message.deleted && (
               <p className="flex items-center gap-1.5 text-xs text-fg-muted">
@@ -331,14 +354,14 @@ export function MessageList({
                 }}
               />
             ) : message.deleted ? (
-              <p className="text-body text-fg-subtle italic">Nachricht gelöscht</p>
+              <p className="text-body leading-[1.45] text-fg-subtle italic">Nachricht gelöscht</p>
             ) : message.call && callHref ? (
               // A call here, over: one entry that opens its page.
-              <div className="pt-1 pb-0.5">
+              <div>
                 <CallEntry call={message.call} to={callHref(message.call.id)} />
               </div>
             ) : (
-              <p className="text-body leading-[1.5] break-words whitespace-pre-wrap text-fg select-text">
+              <p className="text-body leading-[1.45] break-words whitespace-pre-wrap text-fg select-text">
                 <MessageText text={message.text} people={people} me={me} />
                 {message.editedAt && (
                   <span className="ml-1 text-xs text-fg-subtle" title={stampOf(message.editedAt)}>
@@ -352,6 +375,7 @@ export function MessageList({
           {!message.deleted && !isPending(message) && editing !== message.id && (
             <Tools
               message={message}
+              own={own}
               mine={mine}
               onEdit={() => onEditing(message.id)}
               onDelete={() => onDelete(message)}

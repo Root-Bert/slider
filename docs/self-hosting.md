@@ -166,12 +166,53 @@ ohne API-Key, keine Aufnahme verlässt den Server. Starten mit
 `docker compose --profile stt up -d` (der erste Build lädt das Modell, ~1,6 GB) und in `.env`
 `SPEECH_URL=http://stt:8000/v1` setzen, dann `docker compose up -d slider`.
 
-Etwa 2 GB RAM (Limit 3 GB), bis zu 4 Kerne; ohne Grafikkarte dauert eine Aufnahme rund drei
-Viertel ihrer Länge. Der eigene Server gilt überall, wo kein Key für Sprache zu Text aktiv ist
+Etwa 2 GB RAM (Limit 3 GB), bis zu 2 Kerne (Anrufe und Folien behalten ihren Teil); ohne
+Grafikkarte dauert eine Aufnahme damit länger als mit 4 Kernen (dort rund drei Viertel ihrer
+Länge). Der eigene Server gilt überall, wo kein Key für Sprache zu Text aktiv ist
 („Integrationen“ zeigt „Auf diesem Server“); ein aktiver Key geht vor.
 
 Anderes Modell: `docker compose build --build-arg WHISPER_MODEL=large-v3 stt` (genauer,
 doppelt so langsam, ~4 GB RAM) und `SPEECH_MODEL=whisper-large-v3` in `.env`.
+
+## Anrufe mit vielen Personen (optional)
+
+Ohne Weiteres schicken sich die Browser in einem Anruf Ton und Bild gegenseitig zu, höchstens 8
+Personen. Mit [LiveKit](https://livekit.io) auf dem eigenen Server leitet der Server weiter: bis
+zu 50 Personen pro Anruf, jede schickt ihr Bild einmal und bekommt nur, was sie sieht. Nichts
+wird aufgezeichnet, kein Dritter ist beteiligt.
+
+1. **DNS:** ein A-Record (und AAAA, falls vorhanden) für einen eigenen Namen, z. B.
+   `call.firma.de`, auf den Server – bei Cloudflare **„Nur DNS“** (graue Wolke): Ton und Bild
+   laufen über eigene Ports, die Cloudflare nicht weiterleitet.
+2. **Ports** in der Firewall (auch der des Hosters) öffnen:
+
+   | Port    | Protokoll | Wofür                                             |
+   | ------- | --------- | ------------------------------------------------- |
+   | 443, 80 | TCP       | Verbindungsaufbau (wss) über Caddy, Zertifikat    |
+   | 7882    | UDP       | Ton und Bild (ein Port für alle)                  |
+   | 7881    | TCP       | Ton und Bild, wenn UDP gesperrt ist               |
+   | 3478    | UDP       | TURN, für Netze, die sonst nichts durchlassen     |
+   | 5349    | TCP       | TURN über TLS (Firmennetze, die nur TLS erlauben) |
+
+3. **`deploy/.env`:** `COMPOSE_PROFILES=call` (mit anderen Profilen per Komma, z. B.
+   `COMPOSE_PROFILES=stt,call`) und `CALL_DOMAIN=call.firma.de`, dann `docker compose up -d`.
+
+Beim ersten Start legt Slider das Schlüsselpaar für LiveKit im Daten-Volume an
+(`/data/livekit/keys.yaml`), LiveKit liest es von dort – nichts von Hand. Caddy holt das
+Zertifikat für `CALL_DOMAIN`; LiveKit nutzt es für TURN über TLS und startet neu, sobald es da
+ist (bis dahin läuft TURN nur über UDP). Ein erneuertes nimmt es nachts zwischen 2 und 4 Uhr
+UTC (`CERT_RESTART_FROM_HOUR`/`_TO_HOUR`): laufende Anrufe enden vorher in Ruhe, das alte
+Zertifikat gilt noch Wochen. Seine öffentliche Adresse findet LiveKit per STUN; stimmt sie nicht (`docker compose
+logs livekit` zeigt `nodeIP`), `LIVEKIT_NODE_IP=<öffentliche IPv4>` setzen.
+
+LiveKit ist auf 2 Kerne und 1 GB RAM begrenzt; es leitet nur weiter und rechnet nichts um. Ein
+Anruf mit 50 Personen braucht beim Server etwa 50 × 1–2 Mbit/s eingehend und ein Vielfaches
+davon ausgehend – die Kamerabilder kommen in drei Größen, jede Person bekommt nur die gezeigten
+in der gezeigten Größe. Ohne `CALL_DOMAIN` bleibt alles wie vorher (höchstens 8 Personen).
+Beides gehört zusammen: `CALL_DOMAIN` ohne Profil `call` gibt Tickets für einen Server, der
+nicht läuft. Mit dem gemeinsamen Caddy aus `deploy/proxy/` steht die Site in
+`examples/slider.caddy`; TURN läuft dann nur über UDP. Ein LiveKit anderswo:
+`LIVEKIT_URL=wss://…`, `LIVEKIT_API_KEY` und `LIVEKIT_API_SECRET` statt des Profils.
 
 ## Schlüssel sichern
 
@@ -227,6 +268,7 @@ cd deploy
 docker compose pull postgres caddy
 docker compose up -d --build      # Migrationen laufen beim Start
 docker image prune -f
+docker builder prune -f --filter until=24h   # Build-Cache, wächst sonst mit jedem Build
 ```
 
 Vorher ein Backup ziehen: Migrationen lassen sich nicht zurückdrehen.
@@ -356,6 +398,9 @@ gehen auch auf der Einrichtungsseite.
 | `REMBG_MODEL`                                                     | nein              | Modell von rembg, Standard `isnet-general-use`.                                                                   |
 | `SPEECH_URL`                                                      | nein              | Sprache zu Text auf dem eigenen Server: Adresse von deploy/stt, z. B. `http://stt:8000/v1`.                       |
 | `SPEECH_MODEL`                                                    | nein              | Modell von deploy/stt, Standard `whisper-large-v3-turbo`.                                                         |
+| `CALL_DOMAIN`                                                     | nein              | Anrufe mit bis zu 50 Personen über LiveKit (Profil `call`), siehe [oben](#anrufe-mit-vielen-personen-optional).   |
+| `LIVEKIT_NODE_IP`                                                 | nein (Compose)    | Öffentliche IPv4 für LiveKit, wenn STUN eine falsche findet.                                                      |
+| `LIVEKIT_URL`, `LIVEKIT_API_KEY`, `LIVEKIT_API_SECRET`            | nein              | Ein LiveKit anderswo statt des Profils (`wss://…`, Schlüsselpaar dann Pflicht); `LIVEKIT_API_URL` für seine API.  |
 | `IMPORT_WORKERS`                                                  | nein              | Gleichzeitige Importe, Standard 1 (je ~1 Kern, 1 GB RAM).                                                         |
 | `PLAN_FREE_MAX_MEMBERS`, `PLAN_FREE_MAX_DECKS`                    | nein              | Grenzen pro Workspace, Standard unbegrenzt.                                                                       |
 | `PLAN_FREE_MAX_STORAGE_BYTES`                                     | nein              | Speicher pro Workspace, Standard unbegrenzt (früher `MEDIA_QUOTA_BYTES`).                                         |

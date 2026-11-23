@@ -13,7 +13,8 @@ const logos = new Map<string, 'shown' | 'none'>();
  * address, with their firm's logo over it (BIMI or the site's icon, looked up by Slider's server
  * by the domain alone – `services/mail-logos.ts`) where their domain vouched for the mail
  * (`vouched`) and is no mail provider's. The glyph stands at once; the logo only once it has
- * loaded – no wait, no shift.
+ * loaded – no wait, no shift – and then alone, filling the circle: one round picture, as Gmail's
+ * and Outlook's, no glyph's ring around it.
  */
 export function MailAvatar({
   person,
@@ -28,11 +29,37 @@ export function MailAvatar({
 }) {
   const ui = useSender();
   const author = mailAuthor(person, ui.home?.people ?? []);
+  const domain = emailDomain(person.address);
+  const firm = vouched && domain.includes('.') && !FREEMAIL_DOMAINS.has(domain) ? domain : null;
+  // Kept per firm (`key`): another sender in the same row starts from that firm's own state.
+  const [logo, setLogo] = useState(() => (firm ? (logos.get(firm) ?? 'loading') : 'none'));
+  const [logoOf, setLogoOf] = useState(firm);
+  if (logoOf !== firm) {
+    setLogoOf(firm);
+    setLogo(firm ? (logos.get(firm) ?? 'loading') : 'none');
+  }
   if (person.userId && author.id === person.userId) {
     return <Avatar author={author} size={size} nativeTitle={nativeTitle} />;
   }
-  const domain = emailDomain(person.address);
-  const firm = vouched && domain.includes('.') && !FREEMAIL_DOMAINS.has(domain) ? domain : null;
+  const src = firm
+    ? `${API_PREFIX}/workspaces/${ui.workspace.id}/mail/logos/${encodeURIComponent(firm)}`
+    : null;
+  if (src && logo === 'shown')
+    return (
+      <span
+        className="relative inline-flex shrink-0"
+        style={{ width: size, height: size }}
+        title={nativeTitle === false ? undefined : author.name}
+      >
+        <img
+          src={src}
+          alt=""
+          decoding="async"
+          draggable={false}
+          className="size-full rounded-full bg-white object-cover"
+        />
+      </span>
+    );
   return (
     <Avatar
       author={author}
@@ -40,38 +67,25 @@ export function MailAvatar({
       nativeTitle={nativeTitle}
       picture={generatedGlyph(person.address)}
     >
-      {firm && logos.get(firm) !== 'none' && (
-        <FirmLogo
-          key={firm}
-          src={`${API_PREFIX}/workspaces/${ui.workspace.id}/mail/logos/${encodeURIComponent(firm)}`}
-          firm={firm}
-          inset={size >= 32 ? 2 : 1.5}
+      {src && logo === 'loading' && (
+        // Loaded unseen over the glyph; then the logo stands alone (above).
+        <img
+          src={src}
+          alt=""
+          loading="lazy"
+          decoding="async"
+          draggable={false}
+          onLoad={() => {
+            logos.set(firm!, 'shown');
+            setLogo('shown');
+          }}
+          onError={() => {
+            logos.set(firm!, 'none');
+            setLogo('none');
+          }}
+          className="absolute inset-0 size-full opacity-0"
         />
       )}
     </Avatar>
-  );
-}
-
-function FirmLogo({ src, firm, inset }: { src: string; firm: string; inset: number }) {
-  const [state, setState] = useState(logos.get(firm) ?? 'loading');
-  if (state === 'none') return null;
-  return (
-    <img
-      src={src}
-      alt=""
-      loading="lazy"
-      decoding="async"
-      draggable={false}
-      onLoad={() => {
-        logos.set(firm, 'shown');
-        setState('shown');
-      }}
-      onError={() => {
-        logos.set(firm, 'none');
-        setState('none');
-      }}
-      className="absolute rounded-full object-cover transition-opacity duration-200"
-      style={{ inset, opacity: state === 'shown' ? 1 : 0 }}
-    />
   );
 }

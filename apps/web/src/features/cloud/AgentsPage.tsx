@@ -1,38 +1,27 @@
+import { useState } from 'react';
 import { useNavigate } from 'react-router';
-import type { CloudAgentSummary } from '@slider/shared';
-import { useCloudAgents, useMe, useOrderCloudAgent } from '@/lib/api';
+import { useCloudAgents, useOrderCloudAgent } from '@/lib/api';
 import { draftKeys } from '@/lib/drafts';
 import { routes } from '@/lib/routes';
-import { canCreateDecks, WorkspaceMark } from '@/features/workspaces';
-import { Avatar, GlassPanel, SegmentedControl } from '@/ui';
+import { canCreateDecks, ViewSearch } from '@/features/workspaces';
 import { AgentComposer } from './components/AgentComposer';
 import {
   AgentList,
   AgentListSkeleton,
+  agentsNone,
+  agentsSaying,
   AgentViewToggle,
   useAgentView,
 } from './components/AgentList';
 import { CloudPage } from './components/CloudPage';
 import { Empty, LoadFailed } from './components/Empty';
+import { ScopeTabs } from './components/ScopeTabs';
 import { useCloud } from './hooks/useCloud';
-import { useStoredChoice } from './hooks/useStoredChoice';
-
-/** Whose agents the page shows: one's own or the workspace's. */
-const SCOPES = ['own', 'workspace'] as const;
-type Scope = (typeof SCOPES)[number];
-const SCOPE_WORDS: Record<Scope, { label: string; hint: string; none: string }> = {
-  own: { label: 'Meine', hint: 'Nur du siehst sie', none: 'Du hast noch keinen eigenen Agenten.' },
-  workspace: {
-    label: 'Workspace',
-    hint: 'Alle im Workspace lesen mit',
-    none: 'Dem Workspace ist noch kein Agent gegeben.',
-  },
-};
+import { ALL_SCOPE, OWN_SCOPE, scopeTabs, useScope, WORKSPACE_SCOPE } from './lib/scopes';
 
 /**
  * „Agenten“: orders to the AI that it works on in the server, across as many files as it takes.
- * One's own or the workspace's, picked beside the order's field; an area's agents stand in that
- * area.
+ * Tabs as the title, as Post's mailboxes: all, one's own, the workspace's, then each area's.
  * A new one starts with what is to be done, as one's own.
  */
 export function Component() {
@@ -40,28 +29,38 @@ export function Component() {
   const navigate = useNavigate();
   const agents = useCloudAgents(ui.workspace.id);
   const order = useOrderCloudAgent(ui.workspace.id);
-  // One's own are all here, those standing in an area named by it. What an area's people share
-  // stands in that area (`AreaAgents`), not here.
-  const list = (agents.data ?? []).filter((agent) => !(agent.shared && agent.areaId));
-  const own = list.filter((agent) => !agent.shared);
-  const workspace = list.filter((agent) => agent.shared);
-  const me = useMe().data?.viewer.author;
+  const list = agents.data ?? [];
+  const areas = ui.home?.areas ?? [];
+  const { tabs, current } = scopeTabs(areas, useScope(), {
+    own: 'Nur du siehst sie',
+    workspace: 'Alle im Workspace lesen mit',
+  });
+  // One's own wherever they stand; the workspace's are given to it and stand in no area.
+  const shown =
+    current === ALL_SCOPE
+      ? list
+      : current === OWN_SCOPE
+        ? list.filter((agent) => !agent.shared)
+        : current === WORKSPACE_SCOPE
+          ? list.filter((agent) => agent.shared && !agent.areaId)
+          : list.filter((agent) => agent.areaId === current);
+  const tab = tabs.find((each) => each.key === current);
+  const none =
+    current === OWN_SCOPE
+      ? 'Du hast noch keinen eigenen Agenten.'
+      : current === WORKSPACE_SCOPE
+        ? 'Dem Workspace ist noch kein Agent gegeben.'
+        : `In „${tab?.label ?? ''}“ steht noch kein Agent.`;
   const [view, setView] = useAgentView();
-  // None picked: all of them. A click on the one picked lets go of it.
-  const [picked, setScope] = useStoredChoice(
-    'slider.cloud.agents-scope',
-    ['all', ...SCOPES] as const,
-    'all',
-  );
-  const groups: Record<Scope, CloudAgentSummary[]> = { own, workspace };
-  const scope = picked !== 'all' ? picked : null;
-  const shown = scope ? groups[scope] : list;
+  // The page's own field (⌘K): only those with every word in them.
+  const [query, setQuery] = useState('');
+  const found = agentsSaying(shown, query);
   // Who looks or comments reads what agents did; giving one work is for members and admins (as the server says).
   const orders = canCreateDecks(ui.workspace.role);
   return (
     <CloudPage
       docTitle="Agenten"
-      title="Agenten"
+      title={<ScopeTabs tabs={tabs} current={current} />}
       crumbs={[{ label: ui.workspace.name }, { label: 'Agenten' }]}
       nodes={[]}
     >
@@ -74,7 +73,7 @@ export function Component() {
             // The order's field and how the agents below are shown: one line.
             <div className="flex items-center gap-3">
               {orders && (
-                <div className="min-w-0 flex-1">
+                <div className="min-w-48 flex-1">
                   <AgentComposer
                     top
                     placeholder="Was soll erledigt werden?"
@@ -99,39 +98,14 @@ export function Component() {
                   />
                 </div>
               )}
+              {/* The search on the right, in the row – as Post's. */}
               {list.length > 0 && (
-                <GlassPanel className="shrink-0 p-1">
-                  <SegmentedControl
-                    label="Wessen Agenten"
-                    value={scope ?? 'all'}
-                    onChange={(next) => setScope(next === scope ? 'all' : next)}
-                    segments={SCOPES.map((each) => ({
-                      value: each,
-                      label: SCOPE_WORDS[each].label,
-                      // One's own by a person, the workspace's by its mark.
-                      ...(each === 'workspace'
-                        ? {
-                            lead: (
-                              <WorkspaceMark
-                                name={ui.workspace.name}
-                                logoUrl={ui.workspace.logoUrl}
-                                size={24}
-                                className="size-4.5!"
-                              />
-                            ),
-                          }
-                        : {
-                            // Oneself, by one's own picture – a person's symbol until it is there.
-                            ...(me
-                              ? { lead: <Avatar author={me} size={20} nativeTitle={false} /> }
-                              : { icon: 'person' as const }),
-                            iconOnly: true,
-                          }),
-                      count: groups[each].length,
-                      title: `${SCOPE_WORDS[each].label} | ${SCOPE_WORDS[each].hint}`,
-                    }))}
-                  />
-                </GlassPanel>
+                <ViewSearch
+                  label="Agenten durchsuchen"
+                  value={query}
+                  onChange={setQuery}
+                  className="min-w-36 shrink"
+                />
               )}
               {list.length > 0 && <AgentViewToggle view={view} onChange={setView} />}
             </div>
@@ -151,20 +125,22 @@ export function Component() {
               }
             />
           ) : (
-            // All of them, or the ones picked beside the order's field.
+            // The open tab's.
             <section
-              aria-label={scope ? SCOPE_WORDS[scope].label : 'Alle Agenten'}
+              aria-label={current === ALL_SCOPE ? 'Alle Agenten' : (tab?.label ?? 'Agenten')}
               className="flex flex-col gap-3"
             >
-              {scope && shown.length === 0 ? (
-                <p className="text-body text-fg-muted">{SCOPE_WORDS[scope].none}</p>
+              {shown.length === 0 ? (
+                <p className="text-body text-fg-muted">{none}</p>
+              ) : found.length === 0 ? (
+                <p className="text-body text-fg-muted">{agentsNone(query)}</p>
               ) : (
                 <AgentList
-                  label={scope ? SCOPE_WORDS[scope].label : 'Agenten'}
-                  agents={shown}
+                  label={tab?.label ?? 'Agenten'}
+                  agents={found}
                   view={view}
-                  // One's own may stand in an area: which, is said on each.
-                  showArea
+                  // Any may stand in an area: which, is said on each.
+                  showArea={current === ALL_SCOPE || current === OWN_SCOPE}
                 />
               )}
             </section>

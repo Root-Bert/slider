@@ -14,7 +14,13 @@ import type {
   MailThreadSummary,
   MailUpload,
 } from '@slider/shared';
-import { useMutation, useQuery, useQueryClient, type QueryClient } from '@tanstack/react-query';
+import {
+  keepPreviousData,
+  useMutation,
+  useQuery,
+  useQueryClient,
+  type QueryClient,
+} from '@tanstack/react-query';
 import { api, apiRequest, uploadWithProgress } from '../api-client';
 
 /*
@@ -32,6 +38,9 @@ export const mailKeys = {
   /** One mailbox's folder – under `threads`, so whatever tells the list tells these too. */
   folder: (workspaceId: string, accountId: string, folder: string) =>
     ['sender', workspaceId, 'mail', 'threads', accountId, folder] as const,
+  /** What a search finds (in one mailbox, or all) – under `threads`, told as the list is. */
+  search: (workspaceId: string, query: string, accountId: string, inText: boolean) =>
+    ['sender', workspaceId, 'mail', 'threads', 'search', accountId, inText, query] as const,
   thread: (workspaceId: string, threadId: string) =>
     ['sender', workspaceId, 'mail', 'thread', threadId] as const,
   /** The AI panel beside it – under its conversation: what tells that (a new mail) tells this. */
@@ -74,6 +83,26 @@ export const useMailThreads = (workspaceId: string) =>
     queryKey: mailKeys.threads(workspaceId),
     queryFn: () => api.get<MailThreadSummary[]>(`/workspaces/${workspaceId}/mail/threads`),
     refetchInterval: THREADS_MS,
+  });
+
+/**
+ * The conversations that hold every word – in any folder, of one mailbox or all (`accountId`):
+ * subject, names and addresses, with `inText` what the mails say too (as Cloud's „in what files
+ * say“); the newest 200. Nothing asked while the query is empty.
+ */
+export const useMailSearch = (
+  workspaceId: string,
+  query: string,
+  { accountId = '', inText = false, enabled = true } = {},
+) =>
+  useQuery({
+    queryKey: mailKeys.search(workspaceId, query, accountId, inText),
+    queryFn: () =>
+      api.get<MailThreadSummary[]>(
+        `/workspaces/${workspaceId}/mail/threads?q=${encodeURIComponent(query)}${accountId ? `&account=${encodeURIComponent(accountId)}` : ''}${inText ? '&in=all' : ''}`,
+      ),
+    enabled: enabled && query !== '',
+    placeholderData: keepPreviousData,
   });
 
 /** What lies in one folder of one mailbox (a conversation shows where one of its mails lies). */

@@ -174,27 +174,27 @@ const APP_FILES: Record<AppId, { manifest: string; tab: string; tile: string }> 
   slider: {
     manifest: '/manifest.webmanifest',
     tab: '/favicon.svg?v=8',
-    tile: '/apple-touch-icon.png?v=12',
+    tile: '/apple-touch-icon.png?v=13',
   },
   cloud: {
     manifest: '/cloud.webmanifest',
     tab: '/cloud-favicon.svg',
-    tile: '/cloud-icon-192.png?v=5',
+    tile: '/cloud-touch-icon.png?v=1',
   },
   writer: {
     manifest: '/writer.webmanifest',
     tab: '/writer-favicon.svg',
-    tile: '/writer-icon-192.png?v=4',
+    tile: '/writer-touch-icon.png?v=1',
   },
   reader: {
     manifest: '/reader.webmanifest',
     tab: '/reader-favicon.svg',
-    tile: '/reader-icon-192.png?v=4',
+    tile: '/reader-touch-icon.png?v=1',
   },
   sender: {
     manifest: '/sender.webmanifest',
     tab: '/sender-favicon.svg',
-    tile: '/sender-icon-192.png?v=2',
+    tile: '/sender-touch-icon.png?v=1',
   },
 };
 

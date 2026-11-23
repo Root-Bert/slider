@@ -1,10 +1,13 @@
 import { useEffect, useEffectEvent } from 'react';
 import { isModKey } from '@/lib/keyboard';
 
-/** ⌘F (macOS) / Ctrl F (elsewhere) – search, everywhere in the apps (the user's call). */
-export function useSearchShortcut(onTrigger: () => void, enabled = true) {
+/**
+ * A search's key, everywhere in the apps (the user's call): ⌘F (macOS) / Ctrl F the side bar's –
+ * the whole app's –, ⌘K / Ctrl K the page's own field.
+ */
+export function useSearchShortcut(onTrigger: () => void, enabled = true, key: 'f' | 'k' = 'f') {
   const handleKeyDown = useEffectEvent((event: KeyboardEvent) => {
-    if (event.key.toLowerCase() !== 'f' || !isModKey(event) || event.altKey) return;
+    if (event.key.toLowerCase() !== key || !isModKey(event) || event.altKey) return;
     event.preventDefault();
     onTrigger();
   });

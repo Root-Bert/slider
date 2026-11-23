@@ -70,11 +70,49 @@ services:
     build: ./stt
     image: slider-stt:local
     restart: unless-stopped
-    # Not published: only Slider reaches it. Capped so slides and imports keep their share.
+    # Not published: only Slider reaches it. Capped so slides, imports and calls keep their share.
     expose:
       - '8000'
-    cpus: 4
+    cpus: 2
     mem_limit: 3g
+
+  # Optional: calls with many people (up to 50) – LiveKit forwards sound and pictures instead of
+  # every browser sending to every other (8 at most). Starts with COMPOSE_PROFILES=call and
+  # CALL_DOMAIN=call.example.com in .env: a DNS-only A record for it at this server, and the
+  # ports below open (docs/self-hosting.md, „Anrufe mit vielen Personen“). Its key pair is the one
+  # Slider makes in its data volume; its signalling goes through Caddy (CALL_DOMAIN's site).
+  livekit:
+    profiles: [call]
+    image: livekit/livekit-server:v1.13.11
+    restart: unless-stopped
+    # Writes LiveKit's config (keys, TURN with Caddy's certificate, webhook) and starts it.
+    entrypoint: ['/bin/sh', '/start.sh']
+    environment:
+      CALL_DOMAIN: ${CALL_DOMAIN:-}
+      # Only if the address LiveKit finds by STUN is not the server's public one.
+      NODE_IP: ${LIVEKIT_NODE_IP:-}
+    ports:
+      - '7881:7881' # ICE over TCP, when UDP is blocked
+      - '7882:7882/udp' # ICE over UDP: all media through this one port
+      - '3478:3478/udp' # TURN over UDP
+      - '5349:5349' # TURN over TLS (CALL_DOMAIN's certificate)
+    volumes:
+      - ./livekit/start.sh:/start.sh:ro
+      # Only the key pair's folder of Slider's volume (keys.yaml, made by Slider at its start).
+      - type: volume
+        source: slider-data
+        target: /keys
+        read_only: true
+        volume:
+          subpath: livekit
+      # The certificate Caddy gets and renews for CALL_DOMAIN, for TURN over TLS.
+      - caddy-data:/caddy:ro
+    depends_on:
+      slider:
+        condition: service_healthy
+    # Forwarding only (no transcoding): two cores carry a few calls of up to 50.
+    cpus: 2
+    mem_limit: 1g
 
   caddy:
     image: caddy:2
@@ -84,6 +122,9 @@ services:
       # Former addresses: browsers go on to SLIDER_DOMAIN, apps are answered (Caddyfile).
       SLIDER_OLD_DOMAINS: ${SLIDER_OLD_DOMAINS:-}
       TRUSTED_PROXIES: ${TRUSTED_PROXIES:-}
+      # Calls with many people (profile `call`): LiveKit's signalling, and its certificate.
+      # Unset, a name nobody reaches from outside (Caddy needs a name for the site).
+      CALL_DOMAIN: ${CALL_DOMAIN:-call.localhost}
     ports:
       - '80:80'
       - '443:443'

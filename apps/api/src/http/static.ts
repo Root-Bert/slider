@@ -17,7 +17,13 @@ const NO_CACHE = 'no-cache';
  * deployment. GET/HEAD only; `/api` and `/files` stay with the API. Unknown paths without a file
  * extension get `index.html` (client-side routes like `/d/:deck`); unknown files are 404.
  */
-export function serveWebApp(distDir: string, excludedPrefixes: readonly string[], log: Logger) {
+export function serveWebApp(
+  distDir: string,
+  excludedPrefixes: readonly string[],
+  log: Logger,
+  /** More origins the page connects to (LiveKit's for calls), for its `connect-src`. */
+  connect: readonly string[] = [],
+) {
   const root = path.resolve(distDir);
   const indexFile = path.join(root, 'index.html');
   if (!existsSync(indexFile)) {
@@ -35,11 +41,16 @@ export function serveWebApp(distDir: string, excludedPrefixes: readonly string[]
     const file = await existingFile(root, pathname);
     if (file) {
       const cache = pathname.startsWith(HASHED_ASSETS) ? IMMUTABLE : NO_CACHE;
-      return sendFile(method, file, cache, path.extname(file) === '.html' ? cspHeaders() : {});
+      return sendFile(
+        method,
+        file,
+        cache,
+        path.extname(file) === '.html' ? cspHeaders(connect) : {},
+      );
     }
     // `/assets/old-hash.js` after a deploy, `/favicon.png` typos, …: no HTML in place of a script.
     if (looksLikeFile(pathname)) return next();
-    return sendFile(method, indexFile, NO_CACHE, cspHeaders());
+    return sendFile(method, indexFile, NO_CACHE, cspHeaders(connect));
   });
 }
 
