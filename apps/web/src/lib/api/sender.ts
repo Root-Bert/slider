@@ -2,6 +2,9 @@ import {
   API_PREFIX,
   mentionsIn,
   type AccountAuthor,
+  type CommentReactionKind,
+  type SenderReplyQuote,
+  type SenderMessageHit,
   type SenderChannel,
   type SenderChannelAgent,
   type SenderCreateGroup,
@@ -23,7 +26,7 @@ import {
   type InfiniteData,
   type QueryClient,
 } from '@tanstack/react-query';
-import { useCallback, useEffect } from 'react';
+import { useCallback, useEffect, useSyncExternalStore } from 'react';
 import { api, apiRequest } from '../api-client';
 import { cloudAgentKeys } from './cloud-agents';
 import { mailChanged, mailKeys } from './mail';
@@ -51,6 +54,19 @@ export const senderKeys = {
 };
 
 type Pages = InfiniteData<SenderMessagePage, number | null>;
+
+/** The side bar's search: messages with these words in every conversation one sees. */
+export function useSenderMessageSearch(workspaceId: string, query: string) {
+  return useQuery({
+    queryKey: ['sender', workspaceId, 'search', query] as const,
+    queryFn: () =>
+      api.get<SenderMessageHit[]>(
+        `/workspaces/${workspaceId}/sender/search?q=${encodeURIComponent(query)}`,
+      ),
+    enabled: query.length >= 2,
+    staleTime: 10_000,
+  });
+}
 
 export function useSenderHome(workspaceId: string) {
   return useQuery({
@@ -116,22 +132,60 @@ const PENDING = 'pending:';
 export const isPending = (message: SenderMessage) => message.id.startsWith(PENDING);
 
 /** What one writes stands at once; refused, it goes again and the text comes back. */
+/**
+ * One's messages that could not be sent, by their `pending:` id: they stay in the list with why
+ * („Nicht gesendet“) – „Erneut senden“ or „Löschen“ – instead of vanishing. This tab's alone.
+ */
+interface FailedSend {
+  reason: string;
+  text: string;
+  attachments: Attachment[];
+  replyTo?: SenderReplyQuote;
+}
+const failedSends = new Map<string, FailedSend>();
+const failedListeners = new Set<() => void>();
+let failedVersion = 0;
+function setFailed(pendingId: string, failed: FailedSend | null) {
+  if (failed) failedSends.set(pendingId, failed);
+  else if (!failedSends.delete(pendingId)) return;
+  failedVersion += 1;
+  for (const listener of failedListeners) listener();
+}
+
+/** Why a message of one's own was not sent, by id; `undefined` – it was, or is on its way. */
+export function useFailedSends(): (id: string) => FailedSend | undefined {
+  useSyncExternalStore(
+    (listener) => {
+      failedListeners.add(listener);
+      return () => failedListeners.delete(listener);
+    },
+    () => failedVersion,
+  );
+  return (id) => failedSends.get(id);
+}
+
 export function usePostSenderMessage(workspaceId: string, channelId: string, me: AccountAuthor) {
   const queryClient = useQueryClient();
   return useMutation({
     mutationFn: ({
       text,
       attachments = [],
+      replyTo,
     }: {
       text: string;
       attachments?: Attachment[];
       pendingId: string;
+      /** „Antworten“: the message answered, quoted above it at once. */
+      replyTo?: SenderReplyQuote;
     }) =>
       api.post<SenderMessage>(`/sender/channels/${channelId}/messages`, {
         text,
         attachments: attachments.map((one) => one.id),
+        ...(replyTo ? { replyTo: replyTo.id } : {}),
       }),
-    onMutate: ({ text, attachments, pendingId }) => {
+    onMutate: ({ text, attachments, pendingId, replyTo }) => {
+      // Sent again: on its way once more.
+      setFailed(pendingId, null);
       placeMessage(queryClient, workspaceId, channelId, {
         id: pendingId,
         seq: Number.MAX_SAFE_INTEGER,
@@ -142,6 +196,7 @@ export function usePostSenderMessage(workspaceId: string, channelId: string, me:
         createdAt: new Date().toISOString(),
         editedAt: null,
         deleted: false,
+        replyTo: replyTo ?? null,
       });
     },
     onSuccess: (message, { pendingId }) => {
@@ -162,20 +217,28 @@ export function usePostSenderMessage(workspaceId: string, channelId: string, me:
       placeMessage(queryClient, workspaceId, channelId, message, pendingId);
       bumpChannel(queryClient, workspaceId, channelId, message.createdAt);
     },
-    onError: (_error, { pendingId }) => {
-      queryClient.setQueryData<Pages>(senderKeys.messages(workspaceId, channelId), (data) =>
-        data
-          ? {
-              ...data,
-              pages: data.pages.map((page) => ({
-                ...page,
-                messages: page.messages.filter((each) => each.id !== pendingId),
-              })),
-            }
-          : data,
-      );
-    },
+    onError: (error, { pendingId, text, attachments = [], replyTo }) =>
+      setFailed(pendingId, { reason: error.message, text, attachments, replyTo }),
   });
+}
+
+/** „Löschen“ on a message that was not sent: it goes, from this tab alone. */
+export function useDiscardFailedSend(workspaceId: string, channelId: string) {
+  const queryClient = useQueryClient();
+  return (pendingId: string) => {
+    setFailed(pendingId, null);
+    queryClient.setQueryData<Pages>(senderKeys.messages(workspaceId, channelId), (data) =>
+      data
+        ? {
+            ...data,
+            pages: data.pages.map((page) => ({
+              ...page,
+              messages: page.messages.filter((each) => each.id !== pendingId),
+            })),
+          }
+        : data,
+    );
+  };
 }
 
 export const newPendingId = () => `${PENDING}${crypto.randomUUID()}`;
@@ -191,6 +254,24 @@ export function useEditSenderMessage(workspaceId: string, channelId: string) {
         text,
         editedAt: new Date().toISOString(),
       }),
+    onSuccess: (message) => placeMessage(queryClient, workspaceId, channelId, message),
+    onError: (_error, { before }) => placeMessage(queryClient, workspaceId, channelId, before),
+  });
+}
+
+/** 👍 / 👎 / egal on a message, or taken back (`null`): shown at once, put back if refused. */
+export function useReactSenderMessage(workspaceId: string, channelId: string, me: AccountAuthor) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({ before, kind }: { before: SenderMessage; kind: CommentReactionKind | null }) =>
+      api.put<SenderMessage>(`/sender/messages/${before.id}/reaction`, { kind }),
+    onMutate: ({ before, kind }) => {
+      const others = (before.reactions ?? []).filter((each) => each.author.id !== me.id);
+      placeMessage(queryClient, workspaceId, channelId, {
+        ...before,
+        reactions: kind ? [...others, { kind, author: me }] : others,
+      });
+    },
     onSuccess: (message) => placeMessage(queryClient, workspaceId, channelId, message),
     onError: (_error, { before }) => placeMessage(queryClient, workspaceId, channelId, before),
   });
@@ -406,6 +487,61 @@ export function usePinSender(workspaceId: string) {
   });
 }
 
+/** „Stummschalten“ / „Laut schalten“: at once in the side bar; a refusal puts it back. */
+export function useMuteSenderChannel(workspaceId: string) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    scope: { id: `sender-mute:${workspaceId}` },
+    mutationFn: ({ id, muted }: { id: string; muted: boolean }) =>
+      api.put<{ muted: boolean }>(`/sender/channels/${id}/muted`, { muted }),
+    onMutate: async ({ id, muted }) => {
+      await queryClient.cancelQueries({ queryKey: senderKeys.home(workspaceId) });
+      patchChannel(queryClient, workspaceId, id, (channel) => ({ ...channel, muted }));
+      // The open conversation's menu says it too.
+      queryClient.setQueryData<Pages>(senderKeys.messages(workspaceId, id), (data) =>
+        data
+          ? {
+              ...data,
+              pages: data.pages.map((page) => ({ ...page, channel: { ...page.channel, muted } })),
+            }
+          : data,
+      );
+    },
+    onError: (_error, { id }) => {
+      void queryClient.invalidateQueries({ queryKey: senderKeys.home(workspaceId) });
+      void queryClient.invalidateQueries({ queryKey: senderKeys.messages(workspaceId, id) });
+    },
+  });
+}
+
+/**
+ * „Als ungelesen markieren“ (its last message by someone else new again) or „Als gelesen
+ * markieren“: the side bar shows it at once.
+ */
+export function useMarkSenderChannel(workspaceId: string) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({ id, unread }: { id: string; unread: boolean }) =>
+      unread
+        ? api.put<void>(`/sender/channels/${id}/unread`, {})
+        : api.post<void>(`/sender/channels/${id}/read`, { seq: 2 ** 31 - 1 }),
+    onMutate: ({ id, unread }) => {
+      // Read again later: told to the server anew.
+      readAt.delete(id);
+      patchChannel(queryClient, workspaceId, id, (channel) => ({
+        ...channel,
+        unread: unread ? Math.max(1, channel.unread) : 0,
+        mentioned: unread && channel.mentioned,
+      }));
+    },
+    onSettled: (_data, _error, { id }) => {
+      void queryClient.invalidateQueries({ queryKey: senderKeys.home(workspaceId) });
+      // Opened again: the „Neu“ line where it now stands.
+      void queryClient.invalidateQueries({ queryKey: senderKeys.messages(workspaceId, id) });
+    },
+  });
+}
+
 export const useDeleteSenderChannel = (workspaceId: string) =>
   useHomeChange(workspaceId, (channelId: string) => api.delete(`/sender/channels/${channelId}`));
 
@@ -419,6 +555,20 @@ export function useAddToSenderGroup(workspaceId: string, channelId: string) {
   return useMutation({
     mutationFn: (userIds: string[]) =>
       api.post<SenderChannel>(`/sender/channels/${channelId}/members`, { userIds }),
+    onSuccess: (channel) =>
+      queryClient.setQueryData<Pages>(senderKeys.messages(workspaceId, channelId), (data) =>
+        data ? { ...data, pages: data.pages.map((page) => ({ ...page, channel })) } : data,
+      ),
+    onSettled: () => queryClient.invalidateQueries({ queryKey: senderKeys.home(workspaceId) }),
+  });
+}
+
+/** „Entfernen“: someone out of a group, by who manages it. */
+export function useRemoveFromSenderGroup(workspaceId: string, channelId: string) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (userId: string) =>
+      api.delete<SenderChannel>(`/sender/channels/${channelId}/members/${userId}`),
     onSuccess: (channel) =>
       queryClient.setQueryData<Pages>(senderKeys.messages(workspaceId, channelId), (data) =>
         data ? { ...data, pages: data.pages.map((page) => ({ ...page, channel })) } : data,
@@ -498,6 +648,10 @@ export function useSenderLive(
           break;
         case 'calendar':
           calendarChanged(queryClient, workspaceId);
+          break;
+        // The start's AI look was made anew (`useSenderTriage`): the page shows the new one.
+        case 'triage':
+          void queryClient.invalidateQueries({ queryKey: [...senderKeys.all(workspaceId), 'triage'] });
           break;
       }
     };

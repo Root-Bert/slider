@@ -379,6 +379,8 @@ export function CloudPage({
     <div
       // As high as the window leaves under the app's header (88) and the gap above the title.
       className="relative flex h-[calc(100dvh-104px)] flex-col gap-5"
+      // An empty list's picture stands at the same height on every page (`Empty`).
+      data-empty-frame=""
       style={selectionStyle(user.color)}
       onMouseDown={selection.onMouseDown}
       onContextMenu={(event: MouseEvent) => {

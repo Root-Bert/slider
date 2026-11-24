@@ -1226,6 +1226,48 @@
       "when": 1799841600000,
       "tag": "0174_sender_file_references",
       "breakpoints": true
+    },
+    {
+      "idx": 175,
+      "version": "7",
+      "when": 1799928000000,
+      "tag": "0175_sender_muted",
+      "breakpoints": true
+    },
+    {
+      "idx": 176,
+      "version": "7",
+      "when": 1800014400000,
+      "tag": "0176_push_subscriptions",
+      "breakpoints": true
+    },
+    {
+      "idx": 177,
+      "version": "7",
+      "when": 1800100800000,
+      "tag": "0177_sender_reactions",
+      "breakpoints": true
+    },
+    {
+      "idx": 178,
+      "version": "7",
+      "when": 1800187200000,
+      "tag": "0178_sender_reply",
+      "breakpoints": true
+    },
+    {
+      "idx": 179,
+      "version": "7",
+      "when": 1800273600000,
+      "tag": "0179_mail_unsubscribe",
+      "breakpoints": true
+    },
+    {
+      "idx": 180,
+      "version": "7",
+      "when": 1800360000000,
+      "tag": "0180_cloud_agent_asks",
+      "breakpoints": true
     }
   ]
 }

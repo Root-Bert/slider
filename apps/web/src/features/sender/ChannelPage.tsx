@@ -1,9 +1,10 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { Link, useNavigate, useParams } from 'react-router';
+import { Link, useLocation, useNavigate, useParams } from 'react-router';
 import {
   CONVERSATION_AGENT_TAG,
   callableHere,
   MAX_SENDER_NAME,
+  MAX_SENDER_TOPIC,
   type Attachment,
   type CloudAgentSummary,
   type SenderChannel,
@@ -19,7 +20,10 @@ import {
   useDeleteSenderMessage,
   useEditSenderMessage,
   useLeaveSenderGroup,
+  useDiscardFailedSend,
+  useFailedSends,
   usePostSenderMessage,
+  useReactSenderMessage,
   useReadSenderChannel,
   useSenderMessages,
   useCloudAgents,
@@ -32,12 +36,12 @@ import { CallBoxes, CallButtons, useChannelCall } from '@/features/calls';
 import { AgentAvatar, AreaDot, AsideToggle, useAgentAside } from '@/features/cloud';
 import { useAgentAvatars, ViewSearch, WorkspaceMark } from '@/features/workspaces';
 import {
-  Avatar,
   AvatarStack,
   cn,
   ConfirmDialog,
   EmptyState,
   Icon,
+  IconButton,
   Menu,
   type MenuAction,
   useMediaQuery,
@@ -46,11 +50,16 @@ import { AddPeople } from './components/AddPeople';
 import { Composer, type TagAgent } from './components/Composer';
 import { useAttachments } from '@/features/attachments';
 import { MessageList } from './components/MessageList';
+import { ReplyQuote } from './components/ReplyQuote';
+import { PersonFace } from './components/PersonFace';
+import { quoteOf } from './lib/quote';
 import { ChatFiles } from './components/ChatFiles';
 import { ChatTitle, useChatView } from './components/ChatTitle';
 import { ChatAgents, useChatAside } from './components/ChatAside';
 import { TypingLine } from './components/TypingLine';
 import { MenuButton } from './components/MenuButton';
+import { useMuteAction } from './hooks/useMuteAction';
+import { useUnreadAction } from './hooks/useUnreadAction';
 import { useSender } from './hooks/useSender';
 import { PAGE_HEADER } from './lib/title';
 
@@ -96,7 +105,7 @@ function Mark({ channel }: { channel: SenderChannel }) {
   const ui = useSender();
   const area = ui.home?.areas.find((each) => each.id === channel.areaId);
   if (channel.kind === 'direct' && channel.person)
-    return <Avatar author={channel.person} size={32} />;
+    return <PersonFace person={channel.person} size={32} workspaceId={ui.workspace.id} />;
   if (channel.kind === 'area' && area) {
     return area.root ? (
       <WorkspaceMark name={ui.workspace.name} logoUrl={ui.workspace.logoUrl} size={32} />
@@ -167,6 +176,8 @@ export function Conversation({
   const workspaceId = ui.workspace.id;
   const query = useSenderMessages(workspaceId, channelId);
   const post = usePostSenderMessage(workspaceId, channelId, ui.me);
+  const failedOf = useFailedSends();
+  const discard = useDiscardFailedSend(workspaceId, channelId);
   // Files put on the message being written – kept per conversation, as its words.
   const attach = useAttachments({
     workspaceId,
@@ -175,6 +186,7 @@ export function Conversation({
   });
   const edit = useEditSenderMessage(workspaceId, channelId);
   const remove = useDeleteSenderMessage(workspaceId, channelId);
+  const react = useReactSenderMessage(workspaceId, channelId, ui.me);
   const update = useUpdateSenderChannel(workspaceId, channelId);
   const addAgent = useAddSenderAgent(workspaceId, channelId);
   const removeAgent = useRemoveSenderAgent(workspaceId, channelId);
@@ -183,8 +195,13 @@ export function Conversation({
   const leave = useLeaveSenderGroup(workspaceId);
   const read = useReadSenderChannel(workspaceId);
   const [editing, setEditing] = useState<string | null>(null);
-  const [renaming, setRenaming] = useState<'name' | null>(null);
+  // „Antworten“: the message answered, quoted above the field – of this conversation only.
+  const [replyingTo, setReplyingTo] = useState<SenderMessage | null>(null);
+  const composerRef = useRef<HTMLDivElement>(null);
+  const [renaming, setRenaming] = useState<'name' | 'topic' | null>(null);
   const [adding, setAdding] = useState(false);
+  const muteAction = useMuteAction(workspaceId, ui.notify);
+  const unreadAction = useUnreadAction(workspaceId, ui.notify);
   const [asking, setAsking] = useState<Asking | null>(null);
   const [search, setSearch] = useState('');
   // In its call: the call beside the messages, as on an agent's page (the corner's dock stands
@@ -198,11 +215,16 @@ export function Conversation({
   const aside = useAgentAside(wide && (!!inCall || ai), 360, asideRef);
 
   const messages = useMemo(() => messagesOf(query.data), [query.data]);
+  const replying =
+    replyingTo && messages.some((each) => each.id === replyingTo.id && !each.deleted)
+      ? replyingTo
+      : null;
   const page = query.data?.pages[0];
   // The side bar's copy is the live one (names, counts); the page's has the people.
   const channel = page
     ? { ...page.channel, ...ui.channel(channelId), members: page.channel.members }
     : undefined;
+  const isRootArea = !!ui.home?.areas.some((area) => area.root && area.id === channel?.areaId);
   // Where the „Neu“ line stands: what was read when it opened, not what is read now.
   const [readAt, setReadAt] = useState<{ id: string; seq: number } | null>(null);
   if (page && readAt?.id !== channelId) setReadAt({ id: channelId, seq: page.readSeq });
@@ -217,6 +239,14 @@ export function Conversation({
     setRenaming(null);
     setAdding(false);
     setSearch('');
+  }
+  // Opened from the side bar's search: its words searched here, once per visit.
+  const location = useLocation();
+  const find = (location.state as { find?: string } | null)?.find;
+  const [found, setFound] = useState<string | null>(null);
+  if (find && found !== location.key) {
+    setFound(location.key);
+    setSearch(find);
   }
 
   // Searched, its older messages come in too: the search looks through the whole conversation.
@@ -296,17 +326,20 @@ export function Conversation({
         onPick={(agent) => void bringAgent(agent)}
       />
     );
-  const send = (text: string, attachments: Attachment[]) =>
-    post.mutate(
-      { text, attachments, pendingId: newPendingId() },
-      {
-        onError: (error) => {
-          // Refused: the files go back on the field.
-          attach.restore(attachments);
-          fail(error);
-        },
-      },
-    );
+  // Not sent: it stays in the list with why, „Erneut senden“ or „Löschen“ – no toast.
+  const send = (text: string, attachments: Attachment[]) => {
+    post.mutate({
+      text,
+      attachments,
+      pendingId: newPendingId(),
+      replyTo: replying ? quoteOf(replying) : undefined,
+    });
+    setReplyingTo(null);
+  };
+  const reply = (message: SenderMessage) => {
+    setReplyingTo(message);
+    composerRef.current?.querySelector<HTMLElement>('textarea, [contenteditable="true"]')?.focus();
+  };
   const lastOwn = [...messages]
     .reverse()
     .find(
@@ -322,8 +355,8 @@ export function Conversation({
     ...(channel.kind === 'group'
       ? [
           {
-            label: 'Personen hinzufügen',
-            icon: 'personAdd',
+            label: 'Personen …',
+            icon: 'groups',
             onSelect: () => setAdding(true),
           } satisfies MenuAction,
         ]
@@ -334,6 +367,16 @@ export function Conversation({
             label: 'Umbenennen',
             icon: 'driveFileRename',
             onSelect: () => setRenaming('name'),
+          } satisfies MenuAction,
+        ]
+      : []),
+    // What it is about: a line under its name, typed into where it stands.
+    ...(channel.canManage && channel.kind !== 'direct'
+      ? [
+          {
+            label: channel.topic ? 'Thema ändern' : 'Thema festlegen',
+            icon: 'notes',
+            onSelect: () => setRenaming('topic'),
           } satisfies MenuAction,
         ]
       : []),
@@ -350,6 +393,8 @@ export function Conversation({
               }) satisfies MenuAction,
           )
       : []),
+    unreadAction(channel, ui.homePath),
+    muteAction(channel),
     ...(channel.kind === 'group'
       ? [
           {
@@ -391,8 +436,33 @@ export function Conversation({
               }}
             />
           ) : (
-            <ChatTitle name={shownName} view={tab} href={viewHref} />
+            <ChatTitle
+              name={shownName}
+              view={tab}
+              href={viewHref}
+              // The workspace's own chat: „Bereiche“ beside it, its people.
+              areas={channel.kind === 'area' && isRootArea ? ui.areasPath : undefined}
+            />
           )}
+          {!compact &&
+            (renaming === 'topic' ? (
+              <InlineField
+                label="Thema"
+                value={channel.topic}
+                max={MAX_SENDER_TOPIC}
+                className="h-5 text-xs text-fg-muted"
+                onDone={(value) => {
+                  setRenaming(null);
+                  if (value !== null) update.mutate({ topic: value }, { onError: fail });
+                }}
+              />
+            ) : (
+              channel.topic && (
+                <p className="truncate text-xs text-fg-subtle" title={channel.topic}>
+                  {channel.topic}
+                </p>
+              )
+            ))}
         </div>
         <ViewSearch
           label={tab === 'files' ? 'Dateien durchsuchen' : 'Chat durchsuchen'}
@@ -454,6 +524,20 @@ export function Conversation({
                     edit.mutate({ id: message.id, text, before: message }, { onError: fail })
                   }
                   onDelete={(message) => setAsking({ kind: 'message', message })}
+                  moderate={channel.canManage}
+                  onReact={
+                    channel.canWrite
+                      ? (message, kind) =>
+                          react.mutate({ before: message, kind }, { onError: fail })
+                      : undefined
+                  }
+                  failed={(message) => failedOf(message.id)?.reason}
+                  onRetry={(message) => {
+                    const again = failedOf(message.id);
+                    if (again) post.mutate({ ...again, pendingId: message.id });
+                  }}
+                  onDiscard={(message) => discard(message.id)}
+                  onReply={channel.canWrite ? reply : undefined}
                   callHref={
                     callHref ??
                     ((callId) => routes.messagesChannelCall(workspaceId, channelId, callId))
@@ -463,18 +547,34 @@ export function Conversation({
               </div>
               <TypingLine people={typing} />
               {channel.canWrite ? (
-                <Composer
-                  conversationId={channelId}
-                  target={{ kind: 'conversation', workspaceId }}
-                  placeholder={`Nachricht an ${shownName}`}
-                  people={people}
-                  agents={agentsToTag(channel, callable)}
-                  onNewAgent={() => bringAgent()}
-                  onSend={send}
-                  attach={attach}
-                  onTyping={() => tellTypingInSender(channelId)}
-                  onEditLast={lastOwn ? () => setEditing(lastOwn.id) : undefined}
-                />
+                <div ref={composerRef} className="flex shrink-0 flex-col gap-1.5">
+                  {replying && (
+                    <div className="flex items-center gap-2 px-1">
+                      <Icon name="reply" size={16} className="shrink-0 text-fg-subtle" />
+                      <ReplyQuote quote={quoteOf(replying)} className="flex-1" />
+                      <IconButton
+                        icon="close"
+                        label="Nicht antworten"
+                        size="xs"
+                        variant="subtle"
+                        onClick={() => setReplyingTo(null)}
+                      />
+                    </div>
+                  )}
+                  <Composer
+                    conversationId={channelId}
+                    target={{ kind: 'conversation', workspaceId }}
+                    placeholder={`Nachricht an ${shownName}`}
+                    people={people}
+                    agents={agentsToTag(channel, callable)}
+                    onNewAgent={() => bringAgent()}
+                    onSend={send}
+                    everyone
+                    attach={attach}
+                    onTyping={() => tellTypingInSender(channelId)}
+                    onEditLast={lastOwn ? () => setEditing(lastOwn.id) : undefined}
+                  />
+                </div>
               ) : (
                 <p className="shrink-0 text-xs text-fg-subtle">Du liest in diesem Bereich mit.</p>
               )}

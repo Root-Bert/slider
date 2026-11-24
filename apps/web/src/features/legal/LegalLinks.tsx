@@ -4,7 +4,7 @@ import { cn, TextLink } from '@/ui';
 
 /**
  * "Impressum | Datenschutz" (BER-141) under every public page and in the settings – only the
- * texts the instance admin has written – and the credit the mail avatars' licence asks for.
+ * texts the instance admin has written.
  */
 export function LegalLinks({ className }: { className?: string }) {
   const texts = useLegalTexts().data;
@@ -22,14 +22,6 @@ export function LegalLinks({ className }: { className?: string }) {
           {link.label}
         </TextLink>
       ))}
-      {/* CC BY 4.0 asks for the credit where it is seen: the mail avatars (generated-avatar.ts). */}
-      <TextLink
-        href="https://creativecommons.org/licenses/by/4.0/"
-        target="_blank"
-        rel="noreferrer"
-      >
-        Mail-Avatare „Glyphs“ von Matt Houser, CC BY 4.0
-      </TextLink>
     </nav>
   );
 }

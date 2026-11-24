@@ -366,6 +366,7 @@ export function Component() {
                 />
               ) : nodes.length === 0 ? (
                 <Empty
+                  inline
                   icon="cloud"
                   title="Noch keine Dateien"
                   message="Zieh Dateien oder ganze Ordner hierher, sie landen in „Meine Dateien“."

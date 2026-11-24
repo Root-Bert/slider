@@ -2,6 +2,7 @@ import type {
   Attachment,
   CloudAgentAuto,
   CloudAgentRepeatInput,
+  CloudAgentAsk,
   CloudAgentDetail,
   CloudAgentFile,
   CloudAgentFileContent,
@@ -362,6 +363,51 @@ export function useTakeCloudAgentFile(workspaceId: string, agentId: string) {
       patch(file);
       void queryClient.invalidateQueries({ queryKey: cloudKeys.all(workspaceId) });
     },
+  });
+}
+
+/**
+ * „Löschen“, „Senden“ … or „Abbrechen“ on an agent's card: shown decided at once; what came of
+ * it (done, or why not) when the server answers. A refusal comes back as the card was.
+ */
+export function useDecideCloudAgentAsk(workspaceId: string, agentId: string) {
+  const queryClient = useQueryClient();
+  const key = cloudAgentKeys.one(workspaceId, agentId);
+  const patch = (ask: Pick<CloudAgentAsk, 'id'> & Partial<CloudAgentAsk>) =>
+    queryClient.setQueryData<CloudAgentDetail>(key, (agent) =>
+      agent
+        ? {
+            ...agent,
+            chats: agent.chats.map((chat) => ({
+              ...chat,
+              messages: chat.messages.map((message) =>
+                message.asks?.some((each) => each.id === ask.id)
+                  ? {
+                      ...message,
+                      asks: message.asks.map((each) =>
+                        each.id === ask.id ? { ...each, ...ask } : each,
+                      ),
+                    }
+                  : message,
+              ),
+            })),
+          }
+        : agent,
+    );
+  return useMutation({
+    mutationFn: ({ ask, confirm }: { ask: CloudAgentAsk; confirm: boolean }) =>
+      api.post<CloudAgentAsk>(`/cloud/agents/${agentId}/asks/${ask.id}`, { confirm }),
+    onMutate: ({ ask, confirm }) => {
+      patch({ id: ask.id, state: confirm ? 'done' : 'cancelled' });
+    },
+    onSuccess: (ask) => {
+      patch(ask);
+      void queryClient.invalidateQueries({ queryKey: cloudKeys.all(workspaceId) });
+    },
+    onError: (_error, { ask }) => {
+      patch(ask);
+    },
+    onSettled: () => queryClient.invalidateQueries({ queryKey: key }),
   });
 }
 

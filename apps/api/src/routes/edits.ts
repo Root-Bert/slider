@@ -11,6 +11,7 @@ import {
   imageSymbolSchema,
   pickStockPhotoInputSchema,
   revertEditInputSchema,
+  keepExportInputSchema,
   sendExportInputSchema,
   setCommentReactionInputSchema,
   stockOrientationSchema,
@@ -50,6 +51,7 @@ import {
   getDeckNotes,
   getEditState,
   revertEdit,
+  keepExport,
   sendExport,
   uploadEditImage,
   uploadedPicture,
@@ -418,6 +420,13 @@ export function editsRoutes(deps: AppDeps) {
         await sendExport(deps, c.var.viewer, c.req.param('deckId'), input);
         reportChosenPhotosLater(deps, c.req.param('deckId'));
         return c.body(null, 204);
+      })
+      // Any of them kept in Cloud, as a file of its own where one picked.
+      .post('/decks/:deckId/edit/keep', viewer, pdfRequests, async (c) => {
+        const input = await readJson(c, keepExportInputSchema);
+        const node = await keepExport(deps, c.var.viewer, c.req.param('deckId'), input);
+        reportChosenPhotosLater(deps, c.req.param('deckId'));
+        return c.json(node, 201);
       })
   );
 }

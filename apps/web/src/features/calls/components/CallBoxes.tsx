@@ -38,7 +38,6 @@ export function CallBoxes({ call, className }: { call: CallState; className?: st
       <CallOrders
         place="box"
         orders={call.orders}
-        ownCall={!call.channelId}
         onAnswer={(orderId, send) => calls.client.answerOrder(orderId, send)}
         onOpen={(agentId) => calls.openAgent(call.workspaceId, agentId)}
       />

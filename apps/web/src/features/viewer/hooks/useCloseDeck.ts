@@ -1,10 +1,12 @@
 import { useNavigate } from 'react-router';
+import { appBetween, appHome } from '@/lib/apps';
 import { routes } from '@/lib/routes';
 import { useViewerData } from '../state/viewer-data';
 
 /**
- * Closing the presentation (the deck pill's ✕, in the desktop app the tab bar's): back to the
- * Präsentationen, or for a template being designed back to the library's templates.
+ * Closing the presentation (the deck pill's ✕, in the desktop app the tab bar's): back to the app
+ * it was opened from (Cloud's files, Slider's Präsentationen – Cloud when none is known), or for a
+ * template being designed back to the library's templates.
  */
 export function useCloseDeck(): { label: string; template: boolean; close: () => void } {
   const { deck } = useViewerData();
@@ -17,7 +19,7 @@ export function useCloseDeck(): { label: string; template: boolean; close: () =>
       navigate(
         template
           ? routes.workspaceMaterial(deck.workspaceId, 'vorlagen')
-          : routes.workspace(deck.workspaceId),
+          : appHome(appBetween(), deck.workspaceId).to,
       ),
   };
 }

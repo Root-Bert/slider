@@ -1,5 +1,6 @@
 import { useEffect, useId, useLayoutEffect, useRef, useState } from 'react';
 import {
+  EVERYONE_TAG,
   MAX_SENDER_MESSAGE,
   searchFold,
   type AccountAuthor,
@@ -37,7 +38,10 @@ export interface TagAgent {
 
 /** One to name with @: a person, or an agent – or „Neuer Agent“, made for the conversation. */
 type Named =
-  { kind: 'person'; person: AccountAuthor } | ({ kind: 'agent' } & TagAgent) | { kind: 'new' };
+  | { kind: 'person'; person: AccountAuthor }
+  | ({ kind: 'agent' } & TagAgent)
+  | { kind: 'new' }
+  | { kind: 'everyone' };
 const NEW_AGENT = 'Neuer Agent';
 
 /**
@@ -63,6 +67,7 @@ export function Composer({
   flat = false,
   typeInto = true,
   signature,
+  everyone = false,
 }: {
   /** Drafts are kept per conversation. */
   conversationId: string;
@@ -109,6 +114,8 @@ export function Composer({
   typeInto?: boolean;
   /** What goes under it on sending (a mail's reply, `withSignature`): shown once words stand. */
   signature?: string | null;
+  /** „@alle“ offered first among the people (a conversation's field). */
+  everyone?: boolean;
 }) {
   const fieldRef = useRef<HTMLTextAreaElement>(null);
   const pickerRef = useRef<HTMLInputElement>(null);
@@ -179,14 +186,22 @@ export function Composer({
       ].slice(0, SUGGESTIONS)
     : [];
   const personRows: Named[] = mention
-    ? people
-        .filter((person) => fits(person.name))
-        .map((person) => ({ kind: 'person' as const, person }))
-        .slice(0, SUGGESTIONS)
+    ? [
+        ...(everyone && fits(EVERYONE_TAG) ? [{ kind: 'everyone' as const }] : []),
+        ...people
+          .filter((person) => fits(person.name))
+          .map((person) => ({ kind: 'person' as const, person })),
+      ].slice(0, SUGGESTIONS)
     : [];
   const suggestions = [...agentRows, ...personRows];
   const nameOf = (named: Named) =>
-    named.kind === 'person' ? named.person.name : named.kind === 'new' ? NEW_AGENT : named.name;
+    named.kind === 'person'
+      ? named.person.name
+      : named.kind === 'new'
+        ? NEW_AGENT
+        : named.kind === 'everyone'
+          ? EVERYONE_TAG
+          : named.name;
 
   const change = (text: string) => {
     setBody(text);
@@ -298,8 +313,8 @@ export function Composer({
               key={
                 named.kind === 'person'
                   ? named.person.id
-                  : named.kind === 'new'
-                    ? 'new'
+                  : named.kind === 'new' || named.kind === 'everyone'
+                    ? named.kind
                     : `agent:${named.id ?? ''}`
               }
               id={`${listId}-${index}`}
@@ -326,6 +341,10 @@ export function Composer({
                 <span className="flex size-5 shrink-0 items-center justify-center">
                   <Icon name="add" size={16} />
                 </span>
+              ) : named.kind === 'everyone' ? (
+                <span className="flex size-5 shrink-0 items-center justify-center">
+                  <Icon name="groups" size={16} />
+                </span>
               ) : named.id ? (
                 <AgentAvatar id={named.id} size={20} className="rounded-mark" />
               ) : (
@@ -334,6 +353,9 @@ export function Composer({
                 </span>
               )}
               <span className="truncate">{nameOf(named)}</span>
+              {named.kind === 'everyone' && (
+                <span className="ml-auto shrink-0 text-xs text-fg-subtle">Alle hier</span>
+              )}
               {named.kind === 'agent' && named.name !== 'Agent' && (
                 <span className="ml-auto shrink-0 text-xs text-fg-subtle">Agent</span>
               )}

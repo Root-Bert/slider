@@ -1,11 +1,15 @@
 import { useNavigate } from 'react-router';
-import { routes } from '@/lib/routes';
+import { appHome, usePageApp } from '@/lib/apps';
 import { Button, Dialog } from '@/ui';
 import { CreateWorkspaceForm } from './CreateWorkspaceForm';
 
-/** "Workspace erstellen" from the switcher; opens the new workspace afterwards. */
+/**
+ * "Workspace erstellen" from the switcher; opens the new workspace afterwards – in the app one is
+ * in, as the switcher does (from a page between the apps in Cloud).
+ */
 export function CreateWorkspaceDialog({ open, onClose }: { open: boolean; onClose: () => void }) {
   const navigate = useNavigate();
+  const app = usePageApp() ?? 'cloud';
   return (
     <Dialog
       open={open}
@@ -18,7 +22,7 @@ export function CreateWorkspaceDialog({ open, onClose }: { open: boolean; onClos
           autoFocus
           onCreated={(workspace) => {
             onClose();
-            void navigate(routes.workspace(workspace.id));
+            void navigate(appHome(app, workspace.id).to);
           }}
           secondaryAction={
             <Button variant="ghost" size="lg" onClick={onClose}>

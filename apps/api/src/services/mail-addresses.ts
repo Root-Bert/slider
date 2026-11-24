@@ -17,7 +17,8 @@ const MAILS_READ = 3000;
 /** Addresses handed out, the best first. */
 export const MAX_ADDRESS_BOOK = 400;
 
-const MACHINE =
+/** A sender no person writes from: no-reply, notifications, a list's bounces. */
+export const MACHINE =
   /^(?:no-?reply|do-?not-?reply|mailer-daemon|postmaster|bounces?|notifications?|newsletter)\b|[+-]bounces?\b/i;
 
 export async function mailAddressBook(

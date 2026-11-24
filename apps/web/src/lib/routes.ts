@@ -151,6 +151,8 @@ export const routes = {
     `/w/${workspaceId}/nachrichten/kanal/${channelId}/anruf/${callId}`,
   /** „Entwürfe“: what was written in any conversation and not sent. */
   messagesDrafts: (workspaceId: string) => `/w/${workspaceId}/nachrichten/entwuerfe`,
+  /** Sender's „Bereiche“: the areas' people, to find whom to write to. */
+  messagesAreas: (workspaceId: string) => `/w/${workspaceId}/nachrichten/bereiche`,
   /** „Post“: one's mail conversations, one of them, one's mailboxes („Postfächer“). */
   messagesMail: (workspaceId: string) => `/w/${workspaceId}/nachrichten/mail`,
   messagesMailThread: (workspaceId: string, threadId: string) =>

@@ -64,21 +64,14 @@ export function ChatFiles({
   const files = all.filter((one) => !wanted || searchFold(one.attachment.name).includes(wanted));
 
   const put = (one: ChatFile, to?: Destination) => {
-    const moving = !!one.node;
     place.mutate(
       {
         attachmentId: one.attachment.id,
         ...(to && { place: { areaId: to.areaId ?? null, parentId: to.parentId ?? null } }),
       },
       {
-        onSuccess: (done) => {
-          setPicking(null);
-          notify(
-            moving
-              ? `„${one.attachment.name}“ nach „${done.place}“ verschoben`
-              : `„${one.attachment.name}“ abgelegt`,
-          );
-        },
+        // Filed or moved, the row shows its new place.
+        onSuccess: () => setPicking(null),
         onError: (error) => notify(error.message, 'danger'),
       },
     );
@@ -256,7 +249,7 @@ export function ChatFiles({
           workspaceId={workspaceId}
           nodes={[]}
           heading={picking.attachment.name}
-          verb={picking.node ? 'verschieben' : 'kopieren'}
+          verb={picking.node ? 'verschieben' : 'ablegen'}
           pending={place.isPending}
           error={place.error?.message ?? null}
           onPick={(to) => put(picking, to)}

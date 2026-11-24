@@ -1,7 +1,7 @@
 import { useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router';
 import type { InviteState, JoinPreview } from '@slider/shared';
-import { appStart, useBackApp } from '@/lib/apps';
+import { appHome, appStart, useBackApp, useCurrentApp } from '@/lib/apps';
 import { routes } from '@/lib/routes';
 import { ApiError } from '@/lib/api-client';
 import { useAuthProviders, useJoinWorkspace, useMe, useOtherAccounts } from '@/lib/api';
@@ -126,13 +126,15 @@ export function JoinButton({
 }) {
   const join = useJoinWorkspace(token);
   const navigate = useNavigate();
+  // Into the workspace in the app last open, else in Cloud; an invitation to a deck opens it.
+  const app = useCurrentApp();
   const user = useMe().data?.user;
   const others = useOtherAccounts(Boolean(user));
   const accounts = useAccountSwitch();
   const joinNow = () =>
     join.mutate(undefined, {
       onSuccess: ({ workspace, deckId }) =>
-        void navigate(deckId ? routes.deck(deckId) : routes.workspace(workspace.id)),
+        void navigate(deckId ? routes.deck(deckId) : appHome(app, workspace.id).to),
     });
   // Several accounts on this browser, and the invitation is not for the one in use: which one
   // joins is asked, never guessed.

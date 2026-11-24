@@ -20,7 +20,7 @@ type Step =
   | { at: 'folder'; folderId: string };
 
 /**
- * „Verschieben …“ and „Kopieren nach …“: walk to where it should go – one's own files, an area,
+ * „Verschieben …“, „Kopieren nach …“ and „In Cloud ablegen …“: walk to where it should go – one's own files, an area,
  * a folder in either – and say „Hierher“. Places one may only look at are not offered, and a
  * folder is never offered itself or anything inside it.
  */
@@ -38,8 +38,8 @@ export function DestinationDialog({
   nodes: readonly CloudNode[];
   /** For what is no file here yet (a presentation getting its place): the title to show. */
   heading?: string;
-  /** „verschieben“ or „kopieren“. */
-  verb: 'verschieben' | 'kopieren';
+  /** „verschieben“, „kopieren“, or „ablegen“ (something new filed there: an export). */
+  verb: 'verschieben' | 'kopieren' | 'ablegen';
   pending: boolean;
   error?: string | null;
   onPick: (destination: Destination) => void;
@@ -116,7 +116,11 @@ export function DestinationDialog({
             title={same ? 'Liegt schon hier' : undefined}
             onClick={() => here && onPick(here)}
           >
-            {verb === 'verschieben' ? 'Hierher verschieben' : 'Hierher kopieren'}
+            {verb === 'verschieben'
+              ? 'Hierher verschieben'
+              : verb === 'kopieren'
+                ? 'Hierher kopieren'
+                : 'Hier ablegen'}
           </Button>
         </>
       }

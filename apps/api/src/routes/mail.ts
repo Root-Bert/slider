@@ -10,6 +10,7 @@ import {
   mailSendSchema,
   mailRuleSchema,
   mailSpamSchema,
+  mailUnsubscribeSchema,
   mailSyncSchema,
   MAX_MAIL_UPLOAD_BYTES,
   type AccountAuthor,
@@ -62,6 +63,7 @@ import { forgetPreparedMailbox, preparedMailbox } from '../services/mail-agent';
 import { mailOAuthResult, startMailOAuth } from '../services/mail-oauth';
 import { cloudContext } from '../services/cloud/context';
 import { mailAddressBook } from '../services/mail-addresses';
+import { unsubscribeMailThread } from '../services/mail-unsubscribe';
 
 /**
  * Mail in Sender (`services/mail.ts`): one's mailboxes in a workspace, the mail conversations,
@@ -92,6 +94,8 @@ export function mailRoutes(deps: AppDeps) {
   const logoLookups = fixedWindow({ limit: 400, windowMs: 60 * 60 * 1000, clock: deps.clock });
   // Each picture from outside a mail is fetched by the server: dozens of newsletters an hour.
   const pictures = fixedWindow({ limit: 1500, windowMs: 60 * 60 * 1000, clock: deps.clock });
+  // Leaving lists: each a request to a sender's server or a mail – a few rounds an hour.
+  const leaving = fixedWindow({ limit: 30, windowMs: 60 * 60 * 1000, clock: deps.clock });
   // A new rule reads all one's conversations to place them.
   const rules = fixedWindow({ limit: 120, windowMs: 60 * 60 * 1000, clock: deps.clock });
   return (
@@ -293,6 +297,22 @@ export function mailRoutes(deps: AppDeps) {
       .post('/mail/threads/:threadId/unread', viewer, async (c) => {
         await unreadMailThread(deps, me(c), c.req.param('threadId'));
         return c.body(null, 204);
+      })
+      /** „Abbestellen“, many at once: each list left by one click or its mail, else its page. */
+      .post('/workspaces/:workspaceId/mail/unsubscribe', viewer, async (c) => {
+        const { threadIds } = await readJson(c, mailUnsubscribeSchema);
+        const userId = me(c);
+        assertWithinLimit(
+          c,
+          leaving.hit(userId),
+          'Zu viele Abmeldungen auf einmal. Bitte warte ein wenig.',
+        );
+        const results = [];
+        for (const threadId of threadIds)
+          results.push(
+            await unsubscribeMailThread(deps, userId, c.req.param('workspaceId'), threadId),
+          );
+        return c.json(results);
       })
       .post('/mail/threads/:threadId/spam', viewer, async (c) => {
         const input = await readJson(c, mailSpamSchema);

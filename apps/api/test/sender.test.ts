@@ -1,4 +1,10 @@
-import { generateKeyPairSync } from 'node:crypto';
+import {
+  createDecipheriv,
+  createECDH,
+  generateKeyPairSync,
+  hkdfSync,
+  randomBytes,
+} from 'node:crypto';
 import { createServer, type AddressInfo } from 'node:net';
 import { ImapFlow } from 'imapflow';
 import { createTransport } from 'nodemailer';
@@ -17,6 +23,7 @@ import type {
   SenderMessagePage,
   SenderSummary,
   SenderUnread,
+  SenderTriage,
   SenderDraft,
   WorkspaceRole,
   LinkedMailAccount,
@@ -27,6 +34,7 @@ import type {
   MailRule,
   MailRuleAdded,
   MailThread,
+  MailUnsubscribed,
   MailThreadSummary,
 } from '@slider/shared';
 import {
@@ -39,6 +47,7 @@ import {
   mailServersToCheck,
   mailThreadKind,
   mentionsIn,
+  type Viewer,
 } from '@slider/shared';
 import { and, eq, inArray, sql } from 'drizzle-orm';
 import {
@@ -78,6 +87,7 @@ import { SEALED_PREFIX } from '../src/crypto/content-crypto';
 import { dkimDomains } from '../src/mail/dkim';
 import { MAIL_TOOLS, preparedMailbox } from '../src/services/mail-agent';
 import { besideMail, runMailTool } from '../src/services/mail-agent-run';
+import { askPin, askText } from '../src/services/cloud-agent-asks';
 import {
   foldersToRead,
   MAX_RAW_BYTES,
@@ -547,6 +557,16 @@ describe('Sender – the workspace’s messages', () => {
       201,
     );
     expect(lunch).toMatchObject({ kind: 'group', name: 'Anna' });
+    // An agent adding someone asks first – they would see everything said so far.
+    expect(
+      await askText(
+        ctx.deps,
+        { kind: 'owner', author: { id: ctx.ownerId, name: 'Robert' } } as Viewer,
+        ctx.workspaceId,
+        'add_to_group',
+        { conversation: lunch.id, people: ['Ben Krüger'] },
+      ),
+    ).toBe('Ben Krüger zu „Anna“ hinzufügen? Wer dazukommt, sieht den ganzen Verlauf.');
     await write(lunch.id, 'Mittag?');
     expect((await home(anna.cookie)).groups[0]).toMatchObject({ id: lunch.id, unread: 1 });
     expect((await home(ben.cookie)).groups).toHaveLength(0);
@@ -1854,6 +1874,106 @@ describe('Sender – the workspace’s messages', () => {
     await tool('draft_mail_reply', { thread: offer.id, text: 'Anders.', replace: true });
     expect((await replyDraft())?.text).toBe('Anders.');
     await ok(send('DELETE', `${drafts}/mail:${offer.id}`), 204);
+    // A new mail goes in as the person's one new-mail draft (`mail-new:<workspace>`, „Entwürfe“),
+    // to addresses from their own mails – a made-up one is refused, theirs never written over.
+    expect((await tool('find_mail_address', { query: 'kunde' })).content).toMatch(/<\S+@\S+>/);
+    expect((await tool('find_mail_address', { query: 'niemand-xyz' })).content).toContain(
+      'never guess',
+    );
+    expect(
+      (await tool('draft_mail', { to: 'neven.allison.de', subject: 'Wischer', text: 'Hallo' }))
+        .content,
+    ).toContain('Not a mail address: „neven.allison.de“');
+    const newDraft = async () =>
+      (await ok<SenderDraft[]>(send('GET', drafts))).find(
+        (one) => one.key === `mail-new:${ctx.workspaceId}`,
+      );
+    expect(await newDraft()).toBeUndefined();
+    expect(
+      (
+        await tool('draft_mail', {
+          to: 'Neven Allison <neven@allison.de>',
+          subject: 'Wischer',
+          text: 'Hallo Neven,\n\nder Wischer …',
+        })
+      ).content,
+    ).toContain('under „Entwürfe“');
+    expect(await newDraft()).toMatchObject({
+      text: 'Hallo Neven,\n\nder Wischer …',
+      target: { kind: 'mail-new', to: 'Neven Allison <neven@allison.de>', subject: 'Wischer' },
+    });
+    expect((await tool('draft_mail', { to: '', subject: 'X', text: 'Y' })).content).toContain(
+      'not overwritten',
+    );
+    // An agent asks first, on a card that says what goes where (`cloud-agent-asks.ts`).
+    const asking = { kind: 'owner', author: { id: ctx.ownerId, name: 'Robert' } } as Viewer;
+    expect(
+      await askText(ctx.deps, asking, ctx.workspaceId, 'send_mail', { draft: 'new', asked: true }),
+    ).toBe('Die Mail „Wischer“ an Neven Allison <neven@allison.de> senden?');
+    // The card stands for the mail as it was asked: rewritten after (a Bcc slipped in), the pin
+    // no longer matches and the click does nothing; the card names Bcc too.
+    const pinned = await askPin(ctx.deps, asking, ctx.workspaceId, 'send_mail', { draft: 'new' });
+    expect(pinned).toBe(
+      await askPin(ctx.deps, asking, ctx.workspaceId, 'send_mail', { draft: 'new' }),
+    );
+    await tool('draft_mail', {
+      to: 'Neven Allison <neven@allison.de>',
+      bcc: 'spy@example.com',
+      subject: 'Wischer',
+      text: 'Hallo Neven,\n\nder Wischer …',
+      replace: true,
+    });
+    expect(await askPin(ctx.deps, asking, ctx.workspaceId, 'send_mail', { draft: 'new' })).not.toBe(
+      pinned,
+    );
+    expect(await askText(ctx.deps, asking, ctx.workspaceId, 'send_mail', { draft: 'new' })).toBe(
+      'Die Mail „Wischer“ an Neven Allison <neven@allison.de> (Bcc: spy@example.com) senden?',
+    );
+    expect(
+      await askText(ctx.deps, asking, ctx.workspaceId, 'delete_mail', { thread: offer.id }),
+    ).toBe('Die Mail „Angebot Messestand“ löschen? Sie ist dann auch im Postfach weg.');
+    // On the person's word the draft goes as it stands – a minute in the outbox first, the draft
+    // gone; with none in the works nothing goes. Marking does what „Gelesen“ and „Spam“ do.
+    expect((await tool('send_mail', { draft: 'new', asked: true })).content).toContain(
+      'waits a minute in the outbox',
+    );
+    expect(await newDraft()).toBeUndefined();
+    const outbox = await ctx.deps.db
+      .select({
+        subject: mailMessages.subject,
+        sendState: mailMessages.sendState,
+        threadId: mailMessages.threadId,
+      })
+      .from(mailMessages);
+    const wiper = outbox.filter((one) => one.subject === 'Wischer');
+    expect(wiper).toEqual([expect.objectContaining({ sendState: 'queued' })]);
+    // Deleting a conversation: only on the person's word, then gone.
+    await expect(tool('delete_mail', { thread: wiper[0]!.threadId })).rejects.toThrow();
+    expect(await tool('delete_mail', { thread: wiper[0]!.threadId, asked: true })).toMatchObject({
+      changed: true,
+    });
+    await expect(tool('read_mail_thread', { thread: wiper[0]!.threadId })).rejects.toThrow(
+      /No mail conversation/,
+    );
+    expect((await tool('send_mail', { draft: 'new', asked: true })).content).toContain(
+      'No new mail in the works',
+    );
+    await expect(tool('send_mail', { draft: 'new' })).rejects.toThrow();
+    expect(await tool('mark_mail', { thread: offer.id, read: false })).toMatchObject({
+      changed: true,
+    });
+    await tool('mark_mail', { thread: offer.id, read: true });
+    // Its sender rules as the person's: set, listed, taken back; leaving a list waits for a card.
+    expect(
+      (await tool('add_mail_rule', { thread: offer.id, kind: 'trust', match: 'address' })).content,
+    ).toMatch(/^Rule .+: trust /);
+    const ruleLine = (await tool('list_mail_rules', {})).content;
+    expect(ruleLine).toMatch(/^.+: trust address .+@/);
+    await tool('delete_mail_rule', { rule: ruleLine.split(':')[0] });
+    expect((await tool('list_mail_rules', {})).content).toBe('No sender rules.');
+    expect(
+      await askText(ctx.deps, asking, ctx.workspaceId, 'unsubscribe_mail', { thread: offer.id }),
+    ).toMatch(/^„.+“ abbestellen\?$/);
     // Asked beside a mail, the agent is told which one – not what it says; only its person's
     // own (anyone else's: 404, as the mail's page).
     const beside = await besideMail(
@@ -2345,11 +2465,53 @@ describe('Sender – the workspace’s messages', () => {
       ].join('\r\n'),
       [
         'Message-ID: <news-1@news.de>',
+        'List-Unsubscribe: <mailto:leave@news.de?subject=weg>, <https://news.de/leave?u=1>',
+        'List-Unsubscribe-Post: List-Unsubscribe=One-Click',
         'MIME-Version: 1.0',
         'Content-Type: multipart/alternative; boundary="alt"',
       ],
     );
     const newsThread = await ingestMail(ctx.deps, mailbox!, newsMail);
+    // ── Sender's start as a to-do list: the newsletter (its List-Unsubscribe) in its own group,
+    // left in one click (RFC 8058: a POST, no page) and read at once; a mailbox's own view.
+    const triage = (query = '') =>
+      ok<SenderTriage>(send('GET', `/workspaces/${ctx.workspaceId}/sender/triage${query}`));
+    const groupOf = (found: SenderTriage, id: string) =>
+      found.groups.find((group) => group.items.some((one) => one.item.id === id))?.key;
+    const [newsRow] = await ctx.deps.db
+      .select({ unsubscribe: mailMessages.unsubscribe })
+      .from(mailMessages)
+      .where(eq(mailMessages.threadId, newsThread!));
+    expect(newsRow?.unsubscribe).toEqual({
+      http: 'https://news.de/leave?u=1',
+      mailto: 'mailto:leave@news.de?subject=weg',
+      oneClick: true,
+    });
+    const triaged = await triage();
+    expect([triaged.ai, groupOf(triaged, newsThread!)]).toEqual(['none', 'newsletters']);
+    const onlyMailbox = await triage(`?mailbox=${mailbox!.id}`);
+    expect(
+      onlyMailbox.groups.flatMap((group) => group.items.map((one) => one.item.kind)),
+    ).not.toContain('channel');
+    expect(groupOf(onlyMailbox, newsThread!)).toBe('newsletters');
+    sites['https://news.de/leave?u=1'] = () => new Response('ok');
+    const leftList = await ok<MailUnsubscribed[]>(
+      send('POST', `/workspaces/${ctx.workspaceId}/mail/unsubscribe`, { threadIds: [newsThread] }),
+    );
+    expect(leftList).toEqual([{ threadId: newsThread, result: 'done', url: null }]);
+    expect(fetched.at(-1)).toBe('https://news.de/leave?u=1');
+    expect(groupOf(await triage(), newsThread!)).toBeUndefined();
+    // Someone else's mail is no one's to leave.
+    expect(
+      (
+        await send(
+          'POST',
+          `/workspaces/${ctx.workspaceId}/mail/unsubscribe`,
+          { threadIds: [newsThread] },
+          anna.cookie,
+        )
+      ).status,
+    ).toBe(404);
     const news = (await ok<MailThread>(send('GET', `/mail/threads/${newsThread}`))).messages[0]!;
     // The text stays what the AI, search and answers read; the mail's own picture is no attachment.
     expect([news.html, news.attachments, news.text]).toEqual([
@@ -2444,6 +2606,7 @@ describe('Sender – the workspace’s messages', () => {
     ).toBe(404);
     expect((await send('GET', framePath, undefined, mia.cookie)).status).toBe(404);
     expect(fetched.filter((url) => url.includes('news.de') || url.includes('lan-firma'))).toEqual([
+      'https://news.de/leave?u=1',
       'https://cdn.news.de/hero.png',
       'https://cdn.news.de/plain.png',
       'https://cdn.news.de/bg.png',
@@ -3921,5 +4084,393 @@ describe('Sender – the workspace’s messages', () => {
     expect(wire.join('\n')).not.toMatch(/LOGIN|PLAIN/);
     imapFake.close();
     smtpFake.close();
+
+    // A script flooding a conversation is stopped; typing past its limit is dropped, not overLimit.
+    ctx.clock.advance(60 * 60_000);
+    const floodChat = await ok<SenderChannel>(
+      send(
+        'POST',
+        `/workspaces/${ctx.workspaceId}/sender/groups`,
+        { userIds: [anna.user.id], name: '' },
+        ben.cookie,
+      ),
+      201,
+    );
+    const floods: number[] = [];
+    for (let i = 0; i < 121; i++)
+      floods.push(
+        (
+          await send(
+            'POST',
+            `/sender/channels/${floodChat.id}/messages`,
+            { text: `${i}` },
+            ben.cookie,
+          )
+        ).status,
+      );
+    expect(floods.slice(0, 120).every((status) => status === 201)).toBe(true);
+    const overLimit = await send(
+      'POST',
+      `/sender/channels/${floodChat.id}/messages`,
+      { text: 'x' },
+      ben.cookie,
+    );
+    expect(overLimit.status).toBe(429);
+    expect(overLimit.headers.get('Retry-After')).toBeTruthy();
+    expect(floods[120]).toBe(429);
+    // Someone else in the same conversation still writes.
+    await write(floodChat.id, 'Ich darf noch', anna.cookie);
+    for (let i = 0; i < 70; i++)
+      expect(
+        (await send('POST', `/sender/channels/${floodChat.id}/typing`, {}, ben.cookie)).status,
+      ).toBe(204);
+    ctx.clock.advance(61_000);
+    const floodBack = await write(floodChat.id, 'Wieder da', ben.cookie);
+
+    // Who opened a group moderates it: deletes someone else's message, takes someone out.
+    const floodRude = await write(floodChat.id, 'Unhöflich', anna.cookie);
+    expect(
+      (await send('DELETE', `/sender/messages/${floodBack.id}`, undefined, anna.cookie)).status,
+    ).toBe(403);
+    const floodGone = await ok<SenderMessage>(
+      send('DELETE', `/sender/messages/${floodRude.id}`, undefined, ben.cookie),
+    );
+    expect(floodGone.deleted).toBe(true);
+    expect(
+      (await send('PATCH', `/sender/messages/${floodBack.id}`, { text: 'x' }, anna.cookie)).status,
+    ).toBe(403);
+    expect(
+      (
+        await send(
+          'DELETE',
+          `/sender/channels/${floodChat.id}/members/${ben.user.id}`,
+          undefined,
+          anna.cookie,
+        )
+      ).status,
+    ).toBe(403);
+    const floodFewer = await ok<SenderChannel>(
+      send(
+        'DELETE',
+        `/sender/channels/${floodChat.id}/members/${anna.user.id}`,
+        undefined,
+        ben.cookie,
+      ),
+    );
+    expect(floodFewer.members.map((person) => person.id)).toEqual([ben.user.id]);
+    expect(
+      (await send('GET', `/sender/channels/${floodChat.id}/messages`, undefined, anna.cookie))
+        .status,
+    ).toBe(404);
+    expect((await home(anna.cookie)).groups.some((group) => group.id === floodChat.id)).toBe(false);
+    expect(
+      (
+        await send(
+          'DELETE',
+          `/sender/channels/${floodChat.id}/members/${anna.user.id}`,
+          undefined,
+          ben.cookie,
+        )
+      ).status,
+    ).toBe(404);
+
+    // „Stummschalten“: for the caller alone; a channel never opened keeps what it had unread.
+    const quietRoot = (await home(ben.cookie)).areas[0]!.channels[0]!;
+    await write(quietRoot.id, 'Für alle, auch die Stummen');
+    const quietBefore = (await home(ben.cookie)).areas[0]!.channels[0]!;
+    expect(
+      await ok(send('PUT', `/sender/channels/${quietRoot.id}/muted`, { muted: true }, ben.cookie)),
+    ).toEqual({ muted: true });
+    const quietAfter = (await home(ben.cookie)).areas[0]!.channels[0]!;
+    expect(quietAfter.muted).toBe(true);
+    expect(quietAfter.unread).toBe(quietBefore.unread);
+    expect(quietBefore.unread).toBeGreaterThan(0);
+    expect((await home(anna.cookie)).areas[0]!.channels[0]!.muted).toBe(false);
+    await ok(send('PUT', `/sender/channels/${floodChat.id}/muted`, { muted: true }, ben.cookie));
+    expect((await home(ben.cookie)).groups.find((each) => each.id === floodChat.id)?.muted).toBe(
+      true,
+    );
+    await ok(send('PUT', `/sender/channels/${quietRoot.id}/muted`, { muted: false }, ben.cookie));
+    expect((await home(ben.cookie)).areas[0]!.channels[0]!.muted).toBe(false);
+    expect(
+      (await send('PUT', `/sender/channels/${floodChat.id}/muted`, { muted: true }, anna.cookie))
+        .status,
+    ).toBe(404);
+
+    // Web Push: who has no tab open is told on the browsers they let – encrypted for each.
+    const pushKey = await ok<{ publicKey: string }>(
+      send('GET', '/push/key', undefined, ben.cookie),
+    );
+    expect(Buffer.from(pushKey.publicKey, 'base64url')).toHaveLength(65);
+    const pushBrowser = createECDH('prime256v1');
+    const pushAuth = randomBytes(16);
+    const pushSub = {
+      endpoint: 'https://fcm.googleapis.com/fcm/send/ben-1',
+      keys: {
+        p256dh: pushBrowser.generateKeys().toString('base64url'),
+        auth: pushAuth.toString('base64url'),
+      },
+    };
+    // Only a browser's push service – no host the server would knock on for someone.
+    expect(
+      (
+        await send(
+          'PUT',
+          '/push/subscription',
+          { ...pushSub, endpoint: 'https://10.0.0.5:8443/admin/hook' },
+          ben.cookie,
+        )
+      ).status,
+    ).toBe(400);
+    await ok(send('PUT', '/push/subscription', pushSub, ben.cookie), 204);
+    const pushed: { url: string; headers: Record<string, string>; body: Buffer }[] = [];
+    let pushStatus = 201;
+    // The push services, stood in for.
+    vi.stubGlobal('fetch', async (url: string, init: RequestInit) => {
+      pushed.push({
+        url,
+        headers: init.headers as Record<string, string>,
+        body: Buffer.from(init.body as Uint8Array),
+      });
+      return new Response(null, { status: pushStatus });
+    });
+    const pushChat = await ok<SenderChannel>(
+      send(
+        'POST',
+        `/workspaces/${ctx.workspaceId}/sender/groups`,
+        { userIds: [ben.user.id], name: 'Push' },
+        anna.cookie,
+      ),
+      201,
+    );
+    await write(pushChat.id, 'Bist du da?', anna.cookie);
+    await vi.waitFor(() => expect(pushed).toHaveLength(1));
+    expect(pushed[0]!.url).toBe(pushSub.endpoint);
+    expect(pushed[0]!.headers['content-encoding']).toBe('aes128gcm');
+    expect(pushed[0]!.headers.authorization).toMatch(
+      new RegExp(`^vapid t=[\\w-]+\\.[\\w-]+\\.[\\w-]+, k=${pushKey.publicKey}$`),
+    );
+    // As the browser reads it (RFC 8291).
+    const pushBody = pushed[0]!.body;
+    const pushSalt = pushBody.subarray(0, 16);
+    const pushServer = pushBody.subarray(21, 21 + pushBody[20]!);
+    const pushIkm = hkdfSync(
+      'sha256',
+      pushBrowser.computeSecret(pushServer),
+      pushAuth,
+      Buffer.concat([
+        Buffer.from('WebPush: info\0'),
+        Buffer.from(pushSub.keys.p256dh, 'base64url'),
+        pushServer,
+      ]),
+      32,
+    );
+    const pushDecipher = createDecipheriv(
+      'aes-128-gcm',
+      Buffer.from(hkdfSync('sha256', pushIkm, pushSalt, 'Content-Encoding: aes128gcm\0', 16)),
+      Buffer.from(hkdfSync('sha256', pushIkm, pushSalt, 'Content-Encoding: nonce\0', 12)),
+    );
+    const pushSealed = pushBody.subarray(21 + pushBody[20]!);
+    pushDecipher.setAuthTag(pushSealed.subarray(-16));
+    const pushPlain = Buffer.concat([
+      pushDecipher.update(pushSealed.subarray(0, -16)),
+      pushDecipher.final(),
+    ]);
+    expect(pushPlain.at(-1)).toBe(2);
+    expect(JSON.parse(pushPlain.subarray(0, -1).toString())).toEqual({
+      title: 'Anna Lenz in Push',
+      body: 'Bist du da?',
+      tag: `sender:${pushChat.id}`,
+      url: `/w/${ctx.workspaceId}/nachrichten/kanal/${pushChat.id}`,
+    });
+    // Muted: nothing – unless one is named; a gone address is dropped.
+    await ok(send('PUT', `/sender/channels/${pushChat.id}/muted`, { muted: true }, ben.cookie));
+    await write(pushChat.id, 'Still?', anna.cookie);
+    pushStatus = 410;
+    await write(pushChat.id, '@Ben jetzt aber', anna.cookie);
+    await vi.waitFor(() => expect(pushed).toHaveLength(2));
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    await write(pushChat.id, '@Ben noch einmal', anna.cookie);
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    expect(pushed).toHaveLength(2);
+    vi.unstubAllGlobals();
+
+    // Reactions: one per person, another replaces it, the same again (null) takes it back;
+    // everyone in the conversation sees them on the page; who is not in it cannot.
+    const reactMsg = await write(pushChat.id, 'Wer reagiert?', anna.cookie);
+    const reacted = await ok<SenderMessage>(
+      send('PUT', `/sender/messages/${reactMsg.id}/reaction`, { kind: 'up' }, ben.cookie),
+    );
+    expect(reacted.reactions).toEqual([
+      { kind: 'up', author: expect.objectContaining({ id: ben.user.id }) },
+    ]);
+    await ok(send('PUT', `/sender/messages/${reactMsg.id}/reaction`, { kind: 'down' }, ben.cookie));
+    await ok(send('PUT', `/sender/messages/${reactMsg.id}/reaction`, { kind: 'up' }, anna.cookie));
+    const reactPage = await page(pushChat.id, anna.cookie);
+    expect(
+      reactPage.messages
+        .find((each) => each.id === reactMsg.id)
+        ?.reactions?.map((each) => [each.kind, each.author.id]),
+    ).toEqual([
+      ['down', ben.user.id],
+      ['up', anna.user.id],
+    ]);
+    const reactBack = await ok<SenderMessage>(
+      send('PUT', `/sender/messages/${reactMsg.id}/reaction`, { kind: null }, ben.cookie),
+    );
+    expect(reactBack.reactions?.map((each) => each.author.id)).toEqual([anna.user.id]);
+    const reactEdited = await ok<SenderMessage>(
+      send('PATCH', `/sender/messages/${reactMsg.id}`, { text: 'Wer reagiert noch?' }, anna.cookie),
+    );
+    expect(reactEdited.reactions).toHaveLength(1);
+    const reactOutsider = await send(
+      'PUT',
+      `/sender/messages/${reactMsg.id}/reaction`,
+      { kind: 'up' },
+      vera.cookie,
+    );
+    expect([403, 404]).toContain(reactOutsider.status);
+    expect(
+      (await send('PUT', `/sender/messages/${reactMsg.id}/reaction`, { kind: 'love' }, ben.cookie))
+        .status,
+    ).toBe(400);
+
+    // „Antworten“: the answered message quoted above (same conversation only); gone with it.
+    const replyAnswer = await ok<SenderMessage>(
+      send(
+        'POST',
+        `/sender/channels/${pushChat.id}/messages`,
+        { text: 'Ich!', replyTo: reactMsg.id },
+        ben.cookie,
+      ),
+      201,
+    );
+    expect(replyAnswer.replyTo).toEqual({
+      id: reactMsg.id,
+      name: 'Anna Lenz',
+      text: 'Wer reagiert noch?',
+      deleted: false,
+    });
+    const replyElsewhere = await ok<SenderMessage>(
+      send('POST', `/sender/channels/${pushChat.id}/messages`, { text: 'x' }, anna.cookie),
+      201,
+    );
+    const replyOtherChat = await ok<{ id: string }>(
+      send(
+        'POST',
+        `/workspaces/${ctx.workspaceId}/sender/groups`,
+        { name: 'Antwort', userIds: [ben.user.id] },
+        anna.cookie,
+      ),
+      201,
+    );
+    expect(
+      (
+        await send(
+          'POST',
+          `/sender/channels/${replyOtherChat.id}/messages`,
+          { text: 'y', replyTo: replyElsewhere.id },
+          anna.cookie,
+        )
+      ).status,
+    ).toBe(400);
+    await ok(send('DELETE', `/sender/messages/${reactMsg.id}`, undefined, anna.cookie));
+    expect(
+      (await page(pushChat.id, ben.cookie)).messages.find((each) => each.id === replyAnswer.id)
+        ?.replyTo,
+    ).toMatchObject({
+      deleted: true,
+      text: '',
+    });
+
+    // The side bar's search: in every conversation one sees, newest first, with the words around.
+    const findOld = await write(pushChat.id, 'Die Kiwi kommt am Montag', anna.cookie);
+    const findNew = await write(pushChat.id, 'Noch eine KIWI für dich', anna.cookie);
+    const findGone = await write(pushChat.id, 'Kiwi weg', anna.cookie);
+    await ok(send('DELETE', `/sender/messages/${findGone.id}`, undefined, anna.cookie));
+    const findHits = await ok<
+      { messageId: string; channelId: string; name: string; text: string }[]
+    >(send('GET', `/workspaces/${ctx.workspaceId}/sender/search?q=kiwi`, undefined, ben.cookie));
+    expect(findHits.map((each) => each.messageId)).toEqual([findNew.id, findOld.id]);
+    expect(findHits[0]).toMatchObject({
+      channelId: pushChat.id,
+      name: 'Anna Lenz',
+      text: 'Noch eine KIWI für dich',
+    });
+    expect(
+      await ok(
+        send('GET', `/workspaces/${ctx.workspaceId}/sender/search?q=kiwi`, undefined, vera.cookie),
+      ),
+    ).toEqual([]);
+    expect(
+      await ok(
+        send('GET', `/workspaces/${ctx.workspaceId}/sender/search?q=k`, undefined, ben.cookie),
+      ),
+    ).toEqual([]);
+
+    // „@alle“: everyone in the conversation is named (not the writer) – counted as a mention.
+    const allChat = await ok<SenderChannel>(
+      send(
+        'POST',
+        `/workspaces/${ctx.workspaceId}/sender/groups`,
+        { userIds: [ben.user.id], name: 'Alle' },
+        anna.cookie,
+      ),
+      201,
+    );
+    const allNot = await ok<SenderChannel>(
+      send(
+        'POST',
+        `/workspaces/${ctx.workspaceId}/sender/groups`,
+        { userIds: [ben.user.id], name: 'Allen' },
+        anna.cookie,
+      ),
+      201,
+    );
+    await write(allChat.id, 'Hallo @alle, gleich geht es los', anna.cookie);
+    await write(allNot.id, 'Das gilt nicht @allen', anna.cookie);
+    const allBen = await home(ben.cookie);
+    expect(allBen.groups.find((each) => each.id === allChat.id)?.mentioned).toBe(true);
+    expect(allBen.groups.find((each) => each.id === allNot.id)?.mentioned).toBe(false);
+    expect((await home(anna.cookie)).groups.find((each) => each.id === allChat.id)?.mentioned).toBe(
+      false,
+    );
+
+    // „Als ungelesen markieren“: the last message by someone else is new again, until read.
+    await ok(
+      send('POST', `/sender/channels/${allChat.id}/read`, { seq: 1_000_000 }, ben.cookie),
+      204,
+    );
+    expect((await home(ben.cookie)).groups.find((each) => each.id === allChat.id)?.unread).toBe(0);
+    await write(allChat.id, 'Meine eigene', ben.cookie);
+    await ok(send('PUT', `/sender/channels/${allChat.id}/unread`, undefined, ben.cookie), 204);
+    const unreadAgain = (await home(ben.cookie)).groups.find((each) => each.id === allChat.id);
+    expect(unreadAgain?.unread).toBe(1);
+    expect((await page(allChat.id, ben.cookie)).readSeq).toBe(0);
+    // „Alle gelesen“ on the start page: what is the caller's to read goes, the rest is left alone.
+    const bensTriage = () =>
+      ok<SenderTriage>(
+        send('GET', `/workspaces/${ctx.workspaceId}/sender/triage`, undefined, ben.cookie),
+      );
+    const unreadIds = async () =>
+      (await bensTriage()).groups.flatMap((group) => group.items.map((one) => one.item.id));
+    expect(await unreadIds()).toContain(allChat.id);
+    await ok(
+      send(
+        'POST',
+        `/workspaces/${ctx.workspaceId}/sender/triage/read`,
+        {
+          // A mail gone since the list loaded is skipped, the rest still read.
+          items: [
+            { kind: 'mail', id: 'gone-meanwhile' },
+            { kind: 'channel', id: allChat.id },
+            { kind: 'channel', id: 'not-his' },
+          ],
+        },
+        ben.cookie,
+      ),
+      204,
+    );
+    expect(await unreadIds()).not.toContain(allChat.id);
   });
 });

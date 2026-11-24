@@ -65,7 +65,7 @@ export function ReaderLogo({ className }: { className?: string }) {
  */
 export function SenderMark({ width = 24 }: { width?: number }) {
   return (
-    <img src={senderMark} alt="" width={width} height={(width * 93.65) / 96} draggable={false} />
+    <img src={senderMark} alt="" width={width} height={(width * 158) / 173} draggable={false} />
   );
 }
 
@@ -108,7 +108,7 @@ const mark = (child: ReactNode) => (
  * switcher beside it: one row per app, the open one picked. At the app's start the logo is part
  * of the button (`logo`).
  * In the desktop app there is one app only: the logo stands alone, no menu. Installed as a web
- * app, the menu is there – the other app opens in a window of its own.
+ * app too – save Cloud: installed, it keeps the menu and the other app opens in a window of its own.
  */
 export function AppSwitcher({
   workspaceId,
@@ -127,9 +127,11 @@ export function AppSwitcher({
   const app = useCurrentApp();
   const navigate = useNavigate();
   if (!workspaceId) return link ?? null;
-  // The desktop app's window is one app; an installed web app has the menu too – the other app
-  // opens in a window of its own (`windowForApp`).
-  if (installedApp && /\bElectron\//.test(navigator.userAgent)) return link ?? logo ?? null;
+  // The desktop app's window is one app, and so is an installed web app's – save Cloud's, the
+  // whole suite: there the menu stays and the other app opens in a window of its own
+  // (`windowForApp`).
+  if (installedApp && (installedApp !== 'cloud' || /\bElectron\//.test(navigator.userAgent)))
+    return link ?? logo ?? null;
 
   const apps: AppEntry[] = [
     {
@@ -146,6 +148,7 @@ export function AppSwitcher({
       note: 'Präsentationen',
       mark: mark(<LogoMark width={22} />),
       to: routes.workspace(workspaceId),
+      stage: 'Beta',
     },
     {
       id: 'writer',
@@ -169,7 +172,7 @@ export function AppSwitcher({
       note: 'Nachrichten',
       mark: mark(<SenderMark width={22} />),
       to: routes.messages(workspaceId),
-      stage: 'Alpha',
+      stage: 'Beta',
     },
   ];
 
@@ -177,11 +180,12 @@ export function AppSwitcher({
     <HeaderPopover
       label="App wechseln"
       before={link}
-      className={logo ? undefined : 'flex shrink-0 items-center gap-0.5'}
+      // The padding hangs out to the left, so the logo stands where the link's does – on the
+      // wrapper, so the panel opens flush with the button's hover, not 6px inside it.
+      className={logo ? '-ml-1.5' : 'flex shrink-0 items-center gap-0.5'}
       triggerClassName={
         logo
-          ? // The padding hangs out to the left, so the logo stands where the link's does.
-            '-ml-1.5 flex h-9 items-center gap-0.5 rounded-control pl-1.5 text-fg transition-colors hover:bg-hover aria-expanded:bg-hover'
+          ? 'flex h-9 items-center gap-0.5 rounded-control pl-1.5 text-fg transition-colors hover:bg-hover aria-expanded:bg-hover'
           : 'flex h-9 w-6 items-center justify-center rounded-chip text-fg-subtle transition-colors hover:bg-hover hover:text-fg aria-expanded:bg-hover aria-expanded:text-fg'
       }
       panelClassName="w-[min(280px,calc(100vw-32px))]"

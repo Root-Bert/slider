@@ -211,3 +211,45 @@ async function checkOwner(me) {
   if (owner !== null) await forget();
   await cache.put(OWNER, new Response(id));
 }
+
+/*
+ * Web Push (`services/web-push.ts`): Sender tells while no tab of it is open – as the page's own
+ * notification (`features/sender/lib/notify.ts`): one per conversation, a click opens it. The
+ * server pushes only to who has no tab of the workspace open.
+ */
+self.addEventListener('push', (event) => {
+  let notice = null;
+  try {
+    notice = event.data?.json() ?? null;
+  } catch {
+    // Not ours.
+  }
+  if (!notice?.title) return;
+  event.waitUntil(
+    self.registration.showNotification(notice.title, {
+      body: notice.body ?? '',
+      icon: '/sender-icon-192.png?v=2',
+      badge: '/sender-icon-192.png?v=2',
+      tag: notice.tag,
+      data: { url: notice.url ?? '/' },
+    }),
+  );
+});
+
+self.addEventListener('notificationclick', (event) => {
+  event.notification.close();
+  const url = new URL(event.notification.data?.url ?? '/', self.location.origin).href;
+  event.waitUntil(
+    (async () => {
+      const windows = await self.clients.matchAll({ type: 'window', includeUncontrolled: true });
+      // A window of the app already: it goes there, no second one.
+      const open = windows.find((each) => new URL(each.url).origin === self.location.origin);
+      if (open) {
+        await open.focus();
+        await open.navigate(url).catch(() => {});
+        return;
+      }
+      await self.clients.openWindow(url);
+    })(),
+  );
+});

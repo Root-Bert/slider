@@ -14,6 +14,7 @@ import { useNavigate, useSearchParams } from 'react-router';
 import {
   API_PREFIX,
   cloudAccessAtLeast,
+  cloudBaseName,
   cloudExtension,
   cloudPaths,
   type CloudArea,
@@ -26,6 +27,7 @@ import {
   useCloudHome,
   cloudListQuery,
   useCopyCloudNodes,
+  useKeepCloudPdf,
   useCreateCloudFolder,
   useDeleteCloudArea,
   useColorCloudNode,
@@ -61,6 +63,7 @@ import { DestinationDialog, type Destination } from '../components/DestinationDi
 import { ShareDialog } from '../components/ShareDialog';
 import { UploadTray } from '../components/UploadTray';
 import { flyInto, leaveList } from '../lib/fly';
+import { keptText } from '../lib/kept';
 import { appFor } from '../lib/kinds';
 import {
   cloudBridge,
@@ -77,8 +80,29 @@ export interface CloudTarget extends UploadTarget {
   name: string;
 }
 
+/**
+ * The presentations, documents and tables of which the server's LibreOffice makes a PDF
+ * (`MATERIAL_PDF_FILTERS`, `DOCUMENT_IMPORT_FILTERS`) – „Als PDF ablegen …“.
+ */
+const PDF_ABLE = new Set([
+  'pptx',
+  'pptm',
+  'ppsx',
+  'ppt',
+  'odp',
+  'docx',
+  'docm',
+  'doc',
+  'odt',
+  'rtf',
+  'xlsx',
+  'xlsm',
+]);
+const pdfAble = (node: CloudNode) => PDF_ABLE.has(cloudExtension(node.name));
+
 type DialogState =
   | { kind: 'place'; nodes: CloudNode[]; copy: boolean }
+  | { kind: 'pdf'; node: CloudNode }
   | { kind: 'share'; node: CloudNode }
   | { kind: 'color'; node: CloudNode }
   | { kind: 'purge'; nodes: CloudNode[] }
@@ -256,6 +280,7 @@ export function CloudProvider({
   const pinNode = usePinCloudNode(workspace.id);
   const moveNodes = useMoveCloudNodes(workspace.id);
   const copyNodes = useCopyCloudNodes(workspace.id);
+  const keepPdf = useKeepCloudPdf(workspace.id);
   const trashNodes = useTrashCloudNodes(workspace.id);
   const restoreNodes = useRestoreCloudNodes(workspace.id);
   const purgeNodes = usePurgeCloudNodes(workspace.id);
@@ -801,6 +826,15 @@ export function CloudProvider({
           icon: 'contentCopy',
           onSelect: () => setDialog({ kind: 'place', nodes: [...nodes], copy: true }),
         });
+        // A presentation, document or table LibreOffice reads: as a PDF of its own, as in Slider's
+        // „Exportieren“.
+        if (!many && first.kind === 'file' && pdfAble(first)) {
+          actions.push({
+            label: 'Als PDF ablegen …',
+            icon: 'pictureAsPdf',
+            onSelect: () => setDialog({ kind: 'pdf', node: first }),
+          });
+        }
       }
       if (editable) {
         // On this computer the file is changed where it lies: what is saved there goes up.
@@ -966,6 +1000,32 @@ export function CloudProvider({
               },
             );
           }}
+        />
+      )}
+      {dialog?.kind === 'pdf' && (
+        <DestinationDialog
+          workspaceId={workspace.id}
+          nodes={[]}
+          heading={`„${cloudBaseName(dialog.node.name)}“ als PDF ablegen`}
+          verb="ablegen"
+          pending={keepPdf.isPending}
+          error={keepPdf.error?.message ?? null}
+          // A refusal stays with this dialog, not the next one.
+          onClose={() => {
+            keepPdf.reset();
+            close();
+          }}
+          onPick={({ name, ...target }) =>
+            keepPdf.mutate(
+              { nodeId: dialog.node.id, ...target },
+              {
+                onSuccess: ({ node, created }) => {
+                  notify(keptText(node.name, name, created));
+                  close();
+                },
+              },
+            )
+          }
         />
       )}
       {dialog?.kind === 'share' && (

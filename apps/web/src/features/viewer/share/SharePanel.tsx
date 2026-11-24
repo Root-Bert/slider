@@ -8,10 +8,20 @@ import {
   type MouseEvent,
   type ReactNode,
 } from 'react';
+import { useNavigate } from 'react-router';
 import type { ExportFormat, Slide } from '@slider/shared';
+import { DestinationDialog, keptText } from '@/features/cloud';
 import { Stars, stars } from '@/features/workspaces';
+import { windowForApp } from '@/lib/apps';
 import { isEmailAddress } from '@/lib/format';
-import { editedFileUrl, useDownloadEditedPdf, useDownloadSlide, useSendExport } from '@/lib/api';
+import {
+  editedFileUrl,
+  useDownloadEditedPdf,
+  useDownloadSlide,
+  useKeepExport,
+  useSendExport,
+} from '@/lib/api';
+import { routes } from '@/lib/routes';
 import {
   AutosizeTextarea,
   Button,
@@ -36,7 +46,9 @@ import { useViewerToast } from '../state/viewer-toast';
  * a PDF or a picture. Featured cards like „Neue Präsentation“ (`BlankDeckCard`), a little
  * see-through: the space with its stars, the pointer's light, and the deck's own slides on the
  * right – fanned out for the file, stacked as pages for the PDF, the one slide for itself. Each
- * downloads, or – where the server sends mail – goes to someone as an attachment („Senden“).
+ * downloads, or – where the server sends mail – goes to someone as an attachment („Senden“); a PDF
+ * or the slide is also filed in Cloud where one picks („In Cloud ablegen …“). The file needs no
+ * such copy: the presentation lies in Cloud as it is.
  */
 export function SharePanel() {
   const { sharePanelOpen } = useViewerState();
@@ -60,6 +72,15 @@ interface Sending {
   setOpen: (card: CardId | null) => void;
 }
 
+type KeptFormat = Exclude<ExportFormat, 'file'>;
+
+/** What the cards need to offer „In Cloud ablegen …“: the pick of a place, and who is at it. */
+interface Keeping {
+  ask: (what: { heading: string; format: KeptFormat; slideId?: string }) => void;
+  /** The card whose export is being made and filed. */
+  busy: CardId | null;
+}
+
 function SharePanelView() {
   const dispatch = useViewerDispatch();
   const { deck, slides, slideIndex } = useViewerData();
@@ -71,6 +92,22 @@ function SharePanelView() {
   const [open, setOpen] = useState<CardId | null>(null);
   const sending: Sending = { available: state?.mail ?? false, open, setOpen };
   const activeIndex = activeSlideId === null ? undefined : slideIndex.get(activeSlideId);
+  const keep = useKeepExport(deck.id, deck.workspaceId);
+  const [asking, setAsking] = useState<Parameters<Keeping['ask']>[0] | null>(null);
+  const keepFormat = keep.isPending ? keep.variables.format : null;
+  const keeping: Keeping = {
+    ask: setAsking,
+    busy: keepFormat === null ? null : keepFormat === 'pdf' ? 'pdf' : 'slide',
+  };
+  const showToast = useViewerToast();
+  const navigate = useNavigate();
+  // Installed, Slider stays Slider: Cloud gets a window of its own.
+  const openInCloud = (nodeId: string) => {
+    const to = routes.cloudFile(deck.workspaceId, nodeId);
+    const cloud = windowForApp('cloud');
+    if (cloud) cloud.go(to);
+    else void navigate(to);
+  };
 
   useRestoreFocus();
   useEffect(() => {
@@ -100,11 +137,40 @@ function SharePanelView() {
       </SidePanelHeader>
       <div className="flex min-h-0 flex-1 flex-col gap-3 overflow-y-auto overscroll-contain p-3 pb-6">
         <FileCard slides={slides} template={template} sending={sending} />
-        <PdfCard slides={slides} sending={sending} />
+        <PdfCard slides={slides} sending={sending} keeping={keeping} />
         {activeIndex !== undefined && (
-          <SlideCard slide={slides[activeIndex]!} number={activeIndex + 1} sending={sending} />
+          <SlideCard
+            slide={slides[activeIndex]!}
+            number={activeIndex + 1}
+            sending={sending}
+            keeping={keeping}
+          />
         )}
       </div>
+      {/* Beside the cards, not in one: a click in the dialog would reach the card and download. */}
+      {asking && (
+        <DestinationDialog
+          workspaceId={deck.workspaceId}
+          nodes={[]}
+          heading={asking.heading}
+          verb="ablegen"
+          pending={false}
+          onClose={() => setAsking(null)}
+          onPick={({ name, ...target }) => {
+            // The dialog closes at once; the card shows it is at work until the file is there.
+            setAsking(null);
+            void keep
+              .mutateAsync({ format: asking.format, slideId: asking.slideId, ...target })
+              .then(({ node, created }) =>
+                showToast(keptText(node.name, name, created), 'neutral', {
+                  label: 'In Cloud öffnen',
+                  run: () => openInCloud(node.id),
+                }),
+              )
+              .catch((error: Error) => showToast(error.message, 'danger'));
+          }}
+        />
+      )}
     </SidePanel>
   );
 }
@@ -165,13 +231,22 @@ function FileCard({
   );
 }
 
-function PdfCard({ slides, sending }: { slides: readonly Slide[]; sending: Sending }) {
+function PdfCard({
+  slides,
+  sending,
+  keeping,
+}: {
+  slides: readonly Slide[];
+  sending: Sending;
+  keeping: Keeping;
+}) {
   const { deck } = useViewerData();
   const download = useDownloadEditedPdf(deck.id);
   const send = useSend('pdf', sending);
   const showToast = useViewerToast();
   const making = download.isPending;
-  const busy = making || send.pending;
+  const kept = keeping.busy === 'pdf';
+  const busy = making || send.pending || kept;
   return (
     <ExportCard
       title="Als PDF"
@@ -181,7 +256,7 @@ function PdfCard({ slides, sending }: { slides: readonly Slide[]; sending: Sendi
       sky={SKY_PDF}
       art={<StackedPages slides={slides} busy={busy} />}
       busy={busy}
-      busyLabel={making ? 'PDF wird erstellt …' : 'Wird gesendet …'}
+      busyLabel={making ? 'PDF wird erstellt …' : kept ? 'Wird abgelegt …' : 'Wird gesendet …'}
       // Told by the viewer even once the panel closed meanwhile (`mutate`'s own callbacks would not).
       onDownload={() => {
         if (busy) return;
@@ -192,6 +267,7 @@ function PdfCard({ slides, sending }: { slides: readonly Slide[]; sending: Sendi
       send={
         send.props && { ...send.props, onSend: (to, note) => send.props!.onSend(to, note, 'pdf') }
       }
+      onKeep={() => keeping.ask({ heading: `„${deck.title}“ als PDF ablegen`, format: 'pdf' })}
     />
   );
 }
@@ -202,14 +278,25 @@ const SLIDE_FORMATS = [
 ] as const;
 
 /** „Nur diese Folie“: the slide shown, alone – as a one-page PDF or as its picture. */
-function SlideCard({ slide, number, sending }: { slide: Slide; number: number; sending: Sending }) {
+function SlideCard({
+  slide,
+  number,
+  sending,
+  keeping,
+}: {
+  slide: Slide;
+  number: number;
+  sending: Sending;
+  keeping: Keeping;
+}) {
   const { deck } = useViewerData();
   const [format, setFormat] = useState<'pdf' | 'png'>('pdf');
   const download = useDownloadSlide(deck.id);
   const send = useSend('slide', sending);
   const showToast = useViewerToast();
   const making = download.isPending;
-  const busy = making || send.pending;
+  const kept = keeping.busy === 'slide';
+  const busy = making || send.pending || kept;
   return (
     <ExportCard
       title="Nur diese Folie"
@@ -234,7 +321,9 @@ function SlideCard({ slide, number, sending }: { slide: Slide; number: number; s
           ? format === 'pdf'
             ? 'PDF wird erstellt …'
             : 'Bild wird erstellt …'
-          : 'Wird gesendet …'
+          : kept
+            ? 'Wird abgelegt …'
+            : 'Wird gesendet …'
       }
       onDownload={() => {
         if (busy) return;
@@ -252,6 +341,13 @@ function SlideCard({ slide, number, sending }: { slide: Slide; number: number; s
           onSend: (to, note) =>
             send.props!.onSend(to, note, format === 'pdf' ? 'slidePdf' : 'slidePng', slide.id),
         }
+      }
+      onKeep={() =>
+        keeping.ask({
+          heading: `Folie ${number} als ${format === 'pdf' ? 'PDF' : 'Bild'} ablegen`,
+          format: format === 'pdf' ? 'slidePdf' : 'slidePng',
+          slideId: slide.id,
+        })
       }
     />
   );
@@ -286,7 +382,7 @@ function FormatBadge({ children }: { children: ReactNode }) {
   );
 }
 
-/** The card's two buttons, „Herunterladen“ and „Senden“: the same pill, one height. */
+/** The card's buttons, „Herunterladen“, „In Cloud ablegen …“ and „Senden“: one pill, one height. */
 const pill =
   'flex h-8 items-center gap-1.5 rounded-control px-3 text-sm font-medium outline-none transition-[background-color,color,box-shadow] duration-200';
 /** A pill at rest – primary only while pointed at or focused itself, never with the card. */
@@ -296,11 +392,14 @@ const pillIdle = cn(
   'focus-visible:bg-primary focus-visible:text-on-primary focus-visible:shadow-glow focus-visible:ring-transparent',
 );
 const pillLit = 'bg-primary text-on-primary shadow-glow ring-transparent';
+/** A pill with only its icon: square, so three fit beside the card's picture. */
+const pillIcon = 'w-8 justify-center px-0';
 
 /**
  * One way out, as a featured card (`BlankDeckCard`'s look): the card glows under the pointer and
- * a click anywhere on it downloads; its two pills light up only when pointed at themselves –
- * „Herunterladen“, and „Senden“, which opens a small form in the card (lit while open). While
+ * a click anywhere on it downloads; its pills light up only when pointed at themselves –
+ * „Herunterladen“, „In Cloud ablegen …“ (the pick of a place, beside the cards), and „Senden“,
+ * which opens a small form in the card (lit while open). While
  * busy „Herunterladen“ stays lit and focusable (`aria-disabled`): a disabled button would drop
  * the focus.
  */
@@ -316,6 +415,7 @@ function ExportCard({
   busyLabel,
   onDownload,
   send,
+  onKeep,
 }: {
   title: string;
   description: string;
@@ -333,6 +433,8 @@ function ExportCard({
     onToggle: () => void;
     onSend: (to: string, note: string) => void;
   } | null;
+  /** „In Cloud ablegen …“ – none for what lies in Cloud already. */
+  onKeep?: () => void;
 }) {
   const followPointer = usePointerSpot();
   const formId = useId();
@@ -383,7 +485,7 @@ function ExportCard({
             <p className="text-xs leading-4 text-fg-subtle">{description}</p>
             {meta && <p className="text-caption text-fg-muted">{meta}</p>}
           </div>
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-1.5">
             <button
               type="button"
               onClick={() => !busy && onDownload()}
@@ -404,6 +506,17 @@ function ExportCard({
               )}
               {busy ? busyLabel : 'Herunterladen'}
             </button>
+            {onKeep && !busy && (
+              <button
+                type="button"
+                aria-label="In Cloud ablegen"
+                title="In Cloud ablegen …"
+                onClick={onKeep}
+                className={cn(pill, pillIcon, pillIdle)}
+              >
+                <Icon name="cloud" size={18} />
+              </button>
+            )}
             {send && !busy && (
               <button
                 type="button"
@@ -412,7 +525,7 @@ function ExportCard({
                 aria-expanded={send.open}
                 aria-controls={send.open ? formId : undefined}
                 onClick={send.onToggle}
-                className={cn(pill, send.open ? cn(pillLit, 'cursor-pointer') : pillIdle)}
+                className={cn(pill, pillIcon, send.open ? cn(pillLit, 'cursor-pointer') : pillIdle)}
               >
                 <Icon name="send" size={18} />
               </button>

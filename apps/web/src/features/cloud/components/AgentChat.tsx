@@ -18,6 +18,7 @@ import { plainNamed, type Named } from '../lib/named';
 import { messageWords } from '../lib/message-words';
 import { AgentAvatar } from './AgentAvatar';
 import { AgentComposer } from './AgentComposer';
+import { AgentAsks } from './AgentAsks';
 import { AgentChoices, AgentWatching } from './AgentWatching';
 import { useShownCall } from './CallPanel';
 import { CallEntry } from './CallRecord';
@@ -242,6 +243,14 @@ export function AgentChat({
                 onCopied={(ok) =>
                   ui.notify(ok ? 'Antwort kopiert' : 'Nicht kopiert', ok ? 'neutral' : 'danger')
                 }
+              />
+            )}
+            {each.asks && each.asks.length > 0 && !searching && (
+              <AgentAsks
+                workspaceId={ui.workspace.id}
+                agentId={agent.id}
+                asks={each.asks}
+                onError={(message) => ui.notify(message, 'danger')}
               />
             )}
             {each === last && !searching && (

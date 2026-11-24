@@ -9,6 +9,7 @@ import {
   cloudAreaNameSchema,
   cloudExtension,
   cloudNameSchema,
+  cloudAreaColorSchema,
   cloudShareRoleSchema,
   isOpenTodo,
   MAX_CLOUD_AGENT_FILE_CHARS,
@@ -40,8 +41,12 @@ import { runMailTool } from './mail-agent-run';
 import { listMessages, postMessage, senderHome } from './sender';
 import {
   cloudContext,
+  copyNodes,
   createArea,
   createShare,
+  deleteArea,
+  deleteVersion,
+  labelVersion,
   listAreas,
   listNodes,
   listPeople,
@@ -52,6 +57,8 @@ import {
   restoreNodes,
   restoreVersion,
   setAreaMembers,
+  setNodeColor,
+  setPin,
   storeUpload,
   updateArea,
 } from './cloud';
@@ -267,6 +274,26 @@ const INPUTS = {
   list_deleted: z.object({}),
   restore_files: z.object({ items: z.array(id).min(1).max(200) }),
   restore_version: z.object({ item: id, version: id }),
+  copy_files: z.object({
+    items: z.array(id).min(1).max(200),
+    folder: id.optional(),
+    area: id.optional(),
+    own: z.boolean().optional(),
+  }),
+  set_color: z.object({ item: id, color: z.string().trim().max(20).nullable() }),
+  pin_folder: z.object({ item: id, pinned: z.boolean() }),
+  share_link: z.object({
+    item: id,
+    expires: z
+      .string()
+      .regex(/^\d{4}-\d{2}-\d{2}$/)
+      .nullable()
+      .optional(),
+  }),
+  end_link: z.object({ item: id }),
+  label_version: z.object({ item: id, version: id, label: z.string().trim().max(80).nullable() }),
+  delete_version: z.object({ item: id, version: id }),
+  delete_area: z.object({ area: id }),
   list_documents: z.object({ query: z.string().trim().max(200).optional() }),
   read_document: z.object({ document: id }),
   create_document: z.object({
@@ -383,6 +410,78 @@ const MORE_TOOLS: McpTool[] = [
     'Files (Cloud): brings files and folders back from „Gelöscht“ to where they were – or, with that folder gone, to the top of its area.',
     { items: { type: 'array', items: { type: 'string' }, minItems: 1, maxItems: 200 } },
     ['items'],
+  ),
+  tool(
+    'copy_files',
+    'Copy files or folders',
+    'Files (Cloud): copies files and folders, as „Kopieren“ does – into a folder (`folder`), the top of an area (`area`) or of the person’s own files (`own: true`); a copy beside another of its name gets a free one.',
+    {
+      items: { type: 'array', items: { type: 'string' }, minItems: 1, maxItems: 200 },
+      folder: { type: 'string' },
+      area: { type: 'string' },
+      own: { type: 'boolean' },
+    },
+    ['items'],
+  ),
+  tool(
+    'set_color',
+    'Colour a folder',
+    'Files (Cloud): gives a folder or file a colour – an accent (red, yellow, green, cyan, blue, violet) or #rrggbb; null takes it off.',
+    { item: { type: 'string' }, color: { type: ['string', 'null'] } },
+    ['item', 'color'],
+  ),
+  tool(
+    'pin_folder',
+    'Pin a folder to the side bar',
+    'Files (Cloud): pins a folder to the person’s side bar under „Angeheftet“, or takes it off (`pinned: false`).',
+    { item: { type: 'string' }, pinned: { type: 'boolean' } },
+    ['item', 'pinned'],
+  ),
+  tool(
+    'share_link',
+    'Make a link for anyone',
+    'Files (Cloud): a link that opens a file or folder to anyone who has it, without signing in – viewing only; `expires` (YYYY-MM-DD) ends it, null never. Asking again changes when it ends. Only when the person asked for it.',
+    { item: { type: 'string' }, expires: { type: ['string', 'null'] } },
+    ['item'],
+    { destructiveHint: true, openWorldHint: true },
+  ),
+  tool(
+    'end_link',
+    'End the link for anyone',
+    'Files (Cloud): ends a file’s or folder’s link for anyone at once – who has it can no longer open it.',
+    { item: { type: 'string' } },
+    ['item'],
+    { idempotentHint: true, openWorldHint: false },
+  ),
+  tool(
+    'label_version',
+    'Name a version',
+    'Files (Cloud): gives one of a file’s versions a name („Fassung für Kunde“), kept apart from the automatic ones; null takes it off.',
+    {
+      item: { type: 'string', description: 'The file’s id.' },
+      version: { type: 'string', description: 'The version’s id (file_details).' },
+      label: { type: ['string', 'null'] },
+    },
+    ['item', 'version', 'label'],
+  ),
+  tool(
+    'delete_version',
+    'Delete a version',
+    'Files (Cloud): deletes one earlier version of a file for good (never its newest).',
+    {
+      item: { type: 'string', description: 'The file’s id.' },
+      version: { type: 'string', description: 'The version’s id (file_details).' },
+    },
+    ['item', 'version'],
+    { destructiveHint: true, openWorldHint: false },
+  ),
+  tool(
+    'delete_area',
+    'Delete an area',
+    'Files (Cloud): deletes an area with its files, for good – only one without areas under it, by whoever made it or an admin.',
+    { area: { type: 'string', description: 'The area’s id.' } },
+    ['area'],
+    { destructiveHint: true, openWorldHint: false },
   ),
   tool(
     'restore_version',
@@ -558,9 +657,24 @@ const MAIL_TITLES: Record<MailToolName, string> = {
   search_mail: 'Search the mail',
   read_mail_thread: 'Read a mail conversation',
   draft_mail_reply: 'Draft a reply',
+  draft_mail: 'Draft a new mail',
+  find_mail_address: 'Find a mail address',
+  mark_mail: 'Mark a mail read, unread or spam',
+  delete_mail: 'Delete a mail conversation',
+  send_mail: 'Send a drafted mail',
   file_mail_attachment: 'Put an attachment into the files',
+  list_mail_rules: 'List the sender rules',
+  add_mail_rule: 'Block or trust a sender',
+  delete_mail_rule: 'Delete a sender rule',
+  unsubscribe_mail: 'Unsubscribe from a newsletter',
 };
-const MAIL_READING = new Set<string>(['list_mailboxes', 'search_mail', 'read_mail_thread']);
+const MAIL_READING = new Set<string>([
+  'list_mailboxes',
+  'list_mail_rules',
+  'search_mail',
+  'find_mail_address',
+  'read_mail_thread',
+]);
 
 const PERSON_TOOLS: McpTool[] = [
   personTool(
@@ -617,7 +731,11 @@ const PERSON_TOOLS: McpTool[] = [
     asAppTool(
       each,
       MAIL_TITLES[each.name as MailToolName],
-      MAIL_READING.has(each.name) ? read : { openWorldHint: true },
+      MAIL_READING.has(each.name)
+        ? read
+        : ['delete_mail', 'send_mail', 'unsubscribe_mail'].includes(each.name)
+          ? { destructiveHint: true, openWorldHint: true }
+          : { openWorldHint: true },
     ),
   ),
   // Reading only: an app does not change the person's settings – they do, in Slider.
@@ -646,7 +764,11 @@ export const APP_TOOLS: McpTool[] = [
       properties: { ...each.properties, ...workspaceProperty },
       ...(each.required.length ? { required: each.required } : {}),
     },
-    annotations: each.reads ? read : { openWorldHint: false },
+    annotations: each.reads
+      ? read
+      : each.name.startsWith('delete_')
+        ? { destructiveHint: true, openWorldHint: false }
+        : { openWorldHint: false },
   })),
 ];
 const CLOUD_NAMES = new Set(CLOUD_MCP_TOOLS.map((tool) => tool.name));
@@ -1006,6 +1128,85 @@ async function runMore(call: Call, name: MoreName, raw: unknown): Promise<string
         `Back: ${result.nodes.length}${result.nodes.length ? ` (${result.nodes.map((node) => `„${node.name}“`).join(', ')})` : ''}.`,
         ...result.skipped.map((each) => `Not „${each.name}“: ${each.reason}`),
       ].join('\n');
+    }
+    case 'copy_files': {
+      const input = INPUTS.copy_files.parse(raw);
+      const places = [input.folder, input.area, input.own ? 'own' : undefined].filter(Boolean);
+      if (places.length !== 1)
+        throw new ToolChatError('Say where to: exactly one of folder, area or own.');
+      for (const each of input.items) await nodeOf(call, each);
+      if (input.folder) await nodeOf(call, input.folder, 'edit');
+      const result = await copyNodes(deps, userId, {
+        ids: input.items,
+        parentId: input.folder ?? null,
+        areaId: input.folder ? undefined : (input.area ?? null),
+      });
+      return [
+        `Copied: ${result.nodes.length}${result.nodes.length ? ` (${result.nodes.map((node) => `${node.id} „${node.name}“`).join(', ')})` : ''}.`,
+        ...result.skipped.map((each) => `Not „${each.name}“: ${each.reason}`),
+      ].join('\n');
+    }
+    case 'set_color': {
+      const input = INPUTS.set_color.parse(raw);
+      await nodeOf(call, input.item, 'edit');
+      let color = null;
+      if (input.color !== null) {
+        const parsed = cloudAreaColorSchema.safeParse(input.color);
+        if (!parsed.success)
+          throw new ToolChatError(`No colour "${input.color}": an accent or #rrggbb.`);
+        color = parsed.data;
+      }
+      const node = await setNodeColor(deps, userId, input.item, color);
+      return color ? `„${node.name}“ is ${color} now.` : `„${node.name}“ has no colour now.`;
+    }
+    case 'pin_folder': {
+      const input = INPUTS.pin_folder.parse(raw);
+      await nodeOf(call, input.item);
+      const node = await setPin(deps, userId, input.item, input.pinned);
+      return input.pinned ? `„${node.name}“ is pinned.` : `„${node.name}“ is no longer pinned.`;
+    }
+    case 'share_link': {
+      const input = INPUTS.share_link.parse(raw);
+      const { node } = await nodeOf(call, input.item, 'edit');
+      const share = await createShare(deps, userId, node.id, {
+        link: true,
+        expiresAt: input.expires ? `${input.expires}T23:59:59.000Z` : null,
+      });
+      return `The link for anyone to „${node.name}“${share.expiresAt ? ` (until ${input.expires})` : ''}: ${share.url}`;
+    }
+    case 'end_link': {
+      const input = INPUTS.end_link.parse(raw);
+      const { node } = await nodeOf(call, input.item, 'edit');
+      const { shares } = await nodeDetail(deps, userId, node.id);
+      const link = shares.find((each) => each.kind === 'link');
+      if (!link) return `„${node.name}“ has no link for anyone.`;
+      await removeShare(deps, userId, link.id);
+      return `„${node.name}“: the link for anyone is ended.`;
+    }
+    case 'label_version':
+    case 'delete_version': {
+      const input = INPUTS.delete_version.parse(raw);
+      await nodeOf(call, input.item, 'edit');
+      const { versions } = await nodeDetail(deps, userId, input.item);
+      if (!versions.some((each) => each.id === input.version))
+        throw new ToolChatError(
+          `That file has no version with id ${input.version} – file_details lists them.`,
+        );
+      if (name === 'delete_version') {
+        await deleteVersion(deps, userId, input.version);
+        return 'That version is deleted.';
+      }
+      const { label } = INPUTS.label_version.parse(raw);
+      const version = await labelVersion(deps, userId, input.version, label);
+      return label ? `Version ${version.number} is „${label}“ now.` : `Version ${version.number} has no name now.`;
+    }
+    case 'delete_area': {
+      const input = INPUTS.delete_area.parse(raw);
+      const ctx = await cloudContext(deps.db, await call.workspaceId(), userId);
+      const area = ctx.areas.get(input.area);
+      if (!area) throw new ToolChatError(`No area ${input.area} – list_areas.`);
+      await deleteArea(deps, userId, input.area);
+      return `The area „${area.row.name}“ is deleted.`;
     }
     case 'restore_version': {
       const { item, version } = INPUTS.restore_version.parse(raw);

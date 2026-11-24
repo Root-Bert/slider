@@ -7,7 +7,7 @@ import {
   type DragEvent,
   type ReactNode,
 } from 'react';
-import { NavLink, useNavigate, useSearchParams } from 'react-router';
+import { NavLink, useLocation, useNavigate, useSearchParams } from 'react-router';
 import {
   cloudAccessAtLeast,
   type CloudArea,
@@ -27,11 +27,15 @@ import {
   isMailChat,
   mailGroupName,
   NEW_MAIL,
+  MutedMark,
   PinnedMark,
   pinKindOf,
   ROW_MENU_CLASS,
   unreadMailOf,
+  useMuteAction,
   usePinAction,
+  useUnreadAction,
+  PersonFace,
   useRowMenu,
   withMailChats,
   isNewKind,
@@ -41,7 +45,6 @@ import {
 } from '@/features/sender';
 import { canCreateDecks } from '@/features/workspaces';
 import {
-  Avatar,
   Button,
   cn,
   ContextMenu,
@@ -432,6 +435,9 @@ function ChatRow({
   const folded = use(Folded);
   const menu = useRowMenu();
   const pinAction = usePinAction(ui.workspace.id, ui.notify);
+  const muteAction = useMuteAction(ui.workspace.id, ui.notify);
+  const unreadAction = useUnreadAction(ui.workspace.id, ui.notify);
+  const { pathname } = useLocation();
   const remove = useDeleteAgentAction({
     agent: !isMailChat(chat) && 'title' in chat ? chat : null,
     to,
@@ -453,13 +459,16 @@ function ChatRow({
       className="rounded-mark"
     />
   ) : chat.person ? (
-    <Avatar author={chat.person} size={18} />
+    <PersonFace person={chat.person} size={18} workspaceId={ui.workspace.id} />
   ) : (
     <Icon name="groups" size={18} />
   );
   const name = isMailChat(chat) ? mailGroupName(chat) : 'title' in chat ? chat.title : chat.name;
-  const mentioned = !isMailChat(chat) && !('title' in chat) && chat.mentioned;
-  const unread = chat.unread > 0 || mentioned;
+  const conversation = !isMailChat(chat) && !('title' in chat) ? chat : null;
+  const mentioned = Boolean(conversation?.mentioned);
+  // Muted: its count goes, an „@“ still shows – as in Sender's bar.
+  const count = conversation?.muted ? 0 : chat.unread;
+  const unread = count > 0 || mentioned;
   return (
     <>
       <NavLink
@@ -479,14 +488,27 @@ function ChatRow({
         <span className="flex size-[18px] shrink-0 items-center justify-center">{mark}</span>
         <span className={cn('min-w-0 flex-1 truncate', folded && foldedHide)}>{name}</span>
         {chat.pinnedAt && <PinnedMark className={cn(folded && foldedHide)} />}
+        {conversation?.muted && <MutedMark className={cn(folded && foldedHide)} />}
         <span className={cn('flex', folded && foldedHide)}>
-          <Unread count={chat.unread} mentioned={mentioned} />
+          <Unread count={count} mentioned={mentioned} />
         </span>
       </NavLink>
       {menu.at && (
         <ContextMenu
           label={`Aktionen für „${name}“`}
-          actions={[pinAction(pinKindOf(chat), chat.id, chat.pinnedAt), ...remove.actions]}
+          actions={[
+            pinAction(pinKindOf(chat), chat.id, chat.pinnedAt),
+            ...(conversation
+              ? [
+                  unreadAction(
+                    conversation,
+                    pathname.startsWith(to) ? routes.cloud(ui.workspace.id) : undefined,
+                  ),
+                  muteAction(conversation),
+                ]
+              : []),
+            ...remove.actions,
+          ]}
           at={menu.at}
           onClose={menu.close}
         />

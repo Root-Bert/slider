@@ -2,7 +2,8 @@ import { type ReactNode, useEffect, useMemo, useState } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
 import { bringsIntoCall, type CallState } from '@slider/shared';
 import { useWorkspaceAgentAvatars } from '@/features/workspaces';
-import { cloudAgentKeys, useCloudAgents, useMembers } from '@/lib/api';
+import { AgentAsks } from '@/features/cloud';
+import { cloudAgentKeys, useCloudAgent, useCloudAgents, useMembers } from '@/lib/api';
 import { Avatar, Button, cn, Icon, IconButton, Menu, type MenuAction, TextLink } from '@/ui';
 import { useCalls } from '../CallProvider';
 import { callTitle, duration } from '../lib/names';
@@ -360,10 +361,11 @@ export function CallDock({ call, place = 'dock' }: { call: CallState; place?: 'd
         </div>
       )}
 
+      {!box && call.agent && <CallAsks workspaceId={call.workspaceId} agentId={call.agent.id} />}
+
       {!box && (
         <CallOrders
           orders={call.orders}
-          ownCall={!call.channelId}
           onAnswer={(orderId, send) => client.answerOrder(orderId, send)}
           onOpen={(agentId) => openAgent(call.workspaceId, agentId)}
         />
@@ -378,27 +380,23 @@ export function CallDock({ call, place = 'dock' }: { call: CallState; place?: 'd
           label={snap.local.mic ? 'Stummschalten' : 'Mikrofon an'}
           onClick={() => client.toggleMic()}
         />
-        {!!call.channelId && (
-          <>
-            <IconButton
-              shape="round"
-              size={expanded ? 'md' : 'lg'}
-              variant={snap.local.camera ? 'glass' : 'danger'}
-              icon={snap.local.camera ? 'videocam' : 'videocamOff'}
-              label={snap.local.camera ? 'Kamera aus' : 'Kamera an'}
-              onClick={() => void client.toggleCamera()}
-            />
-            <IconButton
-              shape="round"
-              size={expanded ? 'md' : 'lg'}
-              variant={snap.local.screen ? 'primary' : 'glass'}
-              icon={snap.local.screen ? 'stopScreenShare' : 'screenShare'}
-              label={snap.local.screen ? 'Teilen beenden' : 'Bildschirm teilen'}
-              onClick={() => void client.toggleScreen()}
-            />
-            <AddToCall call={call} me={snap.me} size={expanded ? 'md' : 'lg'} />
-          </>
-        )}
+        <IconButton
+          shape="round"
+          size={expanded ? 'md' : 'lg'}
+          variant={snap.local.camera ? 'glass' : 'danger'}
+          icon={snap.local.camera ? 'videocam' : 'videocamOff'}
+          label={snap.local.camera ? 'Kamera aus' : 'Kamera an'}
+          onClick={() => void client.toggleCamera()}
+        />
+        <IconButton
+          shape="round"
+          size={expanded ? 'md' : 'lg'}
+          variant={snap.local.screen ? 'primary' : 'glass'}
+          icon={snap.local.screen ? 'stopScreenShare' : 'screenShare'}
+          label={snap.local.screen ? 'Teilen beenden' : 'Bildschirm teilen'}
+          onClick={() => void client.toggleScreen()}
+        />
+        <AddToCall call={call} me={snap.me} size={expanded ? 'md' : 'lg'} />
         <Button
           variant="danger"
           size={expanded ? 'field' : 'md'}
@@ -501,4 +499,25 @@ function gridOf(count: number, expanded: boolean): string {
   if (count <= 4) return 'grid-cols-2';
   if (count <= 9) return 'grid-cols-2 md:grid-cols-3';
   return 'grid-cols-2 md:grid-cols-3 lg:grid-cols-4';
+}
+
+/**
+ * What the agent in the call wants done that waits for a click (deleting, sending, …): its open
+ * cards, under the tiles – said in the call, clicked here, without opening its chat. Decided, a
+ * card goes; the agent says what came of it.
+ */
+function CallAsks({ workspaceId, agentId }: { workspaceId: string; agentId: string }) {
+  const agent = useCloudAgent(workspaceId, agentId).data;
+  const open = (agent?.chats ?? []).flatMap((chat) =>
+    chat.messages.flatMap((message) => (message.asks ?? []).filter((ask) => ask.state === 'open')),
+  );
+  if (open.length === 0) return null;
+  return (
+    <AgentAsks
+      workspaceId={workspaceId}
+      agentId={agentId}
+      asks={open}
+      className="mt-0 max-h-44 overflow-y-auto"
+    />
+  );
 }

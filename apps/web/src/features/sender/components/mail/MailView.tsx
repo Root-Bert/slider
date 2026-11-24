@@ -38,6 +38,8 @@ import { useSender } from '../../hooks/useSender';
 import { MailAsideButton } from './MailAside';
 import { NewMailButton } from './MailCompose';
 import { MailboxNameInput } from './MailboxNameInput';
+import { OVERVIEW } from '../../lib/mail';
+import { Triage } from '../Triage';
 import { MailInbox } from './MailInbox';
 
 /**
@@ -189,12 +191,16 @@ export function MailFolderPicker({ view }: { view: MailViewState }) {
         label="Ordner"
         value={folder}
         onChange={setFolder}
-        segments={special.map((each) => ({
-          value: each.key,
-          label: each.name,
-          icon: ROLE_ICONS[each.role ?? 'inbox'],
-          iconOnly: narrow,
-        }))}
+        segments={[
+          // Before the Posteingang: what is unread in this mailbox, as a to-do list.
+          { value: OVERVIEW, label: 'Übersicht', icon: 'dashboard' as const, iconOnly: narrow },
+          ...special.map((each) => ({
+            value: each.key,
+            label: each.name,
+            icon: ROLE_ICONS[each.role ?? 'inbox'],
+            iconOnly: narrow,
+          })),
+        ]}
       />
       {own.length > 0 && (
         <HeaderPopover
@@ -443,7 +449,15 @@ export function MailBody({ view }: { view: MailViewState }) {
               open ? 'shrink-0' : 'min-w-0 flex-1',
             )}
           >
-            <MailInbox view={view} />
+            {view.folder === OVERVIEW && !view.query.trim() ? (
+              <Triage
+                key={view.account?.id}
+                mailbox={view.account?.id}
+                mailHref={view.threadHref}
+              />
+            ) : (
+              <MailInbox view={view} />
+            )}
           </div>
           {open && (
             <BarHandle

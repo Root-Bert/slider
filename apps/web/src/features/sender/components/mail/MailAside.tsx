@@ -175,7 +175,7 @@ function Party({ party }: { party: MailParty }) {
       <MailAvatar
         person={{
           name: party.name,
-          // A firm's glyph by its domain, a person's by their address – as beside their mails.
+          // A firm's logo by its domain, a person's by their address – as beside their mails.
           address: party.domain ?? party.people[0]?.address ?? party.name,
           userId: null,
         }}

@@ -1,6 +1,7 @@
 import { useEffect, useState, type CSSProperties } from 'react';
 import { useNavigate, useSearchParams } from 'react-router';
 import { DEFAULT_DECK_KIND, type Deck, type Workspace } from '@slider/shared';
+import { appHome, appTitle, useCurrentApp } from '@/lib/apps';
 import { routes } from '@/lib/routes';
 import { AppHeader } from '@/shell/AppHeader';
 import { rememberWorkspace, WorkspaceMark } from '@/features/workspaces';
@@ -34,6 +35,13 @@ export function NewReview({ workspace }: { workspace: Workspace }) {
   const folderId = params.get('ordner');
   const areaId = params.get('bereich');
   const place = folderId ? { parentId: folderId } : areaId ? { areaId } : undefined;
+  // Back where it was opened: the folder or area of Cloud's „Neu“, else the app one came from.
+  const app = useCurrentApp();
+  const back = folderId
+    ? { to: routes.cloudFolder(workspace.id, folderId), label: 'Zurück zum Ordner' }
+    : areaId
+      ? { to: routes.cloudArea(workspace.id, areaId), label: 'Zurück zum Bereich' }
+      : appHome(app, workspace.id);
   const placeDecks = usePlaceDecks();
   /** `placed`: the server put it there already (a new one) – one from Nextcloud is moved. */
   const openDeck = (deck: Deck, placed = false) => {
@@ -118,7 +126,7 @@ export function NewReview({ workspace }: { workspace: Workspace }) {
 
   return (
     <div className="dot-grid flex min-h-full flex-col">
-      <title>Neue Präsentation | Slider</title>
+      <title>{appTitle('Neue Präsentation | Slider', app)}</title>
       <AppHeader />
 
       <main className="flex flex-1 justify-center px-4 pt-2 pb-16 sm:px-8 lg:px-12">
@@ -128,7 +136,7 @@ export function NewReview({ workspace }: { workspace: Workspace }) {
           <PageHeader
             title="Neue Präsentation"
             leading={<WorkspaceMark name={workspace.name} logoUrl={workspace.logoUrl} size={32} />}
-            back={{ to: routes.workspace(workspace.id) }}
+            back={back}
           />
           <div className="flex flex-col gap-3">
             {/* Start new, the featured way in, on the template picked under it. Steps aside while

@@ -35,6 +35,8 @@ import { vouchesForDomain } from './workspaces/domains';
  * - Microsoft/Google/OIDC attach to an existing account by e-mail only while that account has no
  *   login yet (e.g. created before logins existed); otherwise `account_exists`. Signed in, a
  *   person can link another provider explicitly ({@link linkIdentity}, "Verbinden" on /konto).
+ *   A mailed login link to the account's own address attaches „E-Mail“ to any account
+ *   (`signInWithEmail` in `services/email-login`): the mailbox confirmed that address.
  * - Passkeys are no identities: they only sign into accounts that exist (`routes/passkeys`).
  */
 
@@ -188,7 +190,8 @@ export async function signInWithIdentity(
   const existing = await findUserByEmail(db, email);
   if (existing) {
     if (existing.blockedAt) return { ok: false, error: 'account_blocked' };
-    // A passkey is a login too: a passkey-only account is never attached to by e-mail.
+    // A passkey is a login too: a passkey-only account is never attached to by another
+    // provider's address (a mailed login link does, `signInWithEmail`).
     if ((await loginCount(db, existing.id)) > 0) return { ok: false, error: 'account_exists' };
     // An account from before logins existed: it may be claimed like a new sign-up.
     if (!(await allowed())) return { ok: false, error: 'signup_closed' };

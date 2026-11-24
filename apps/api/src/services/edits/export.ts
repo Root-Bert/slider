@@ -2,10 +2,21 @@ import { createCanvas } from '@napi-rs/canvas';
 import { loadImage } from '../../import/load-image';
 import { asc, eq } from 'drizzle-orm';
 import { ODP_MIME, OTP_MIME } from '@slider/odp';
-import type { SendExportInput, Viewer } from '@slider/shared';
+import {
+  cloudBaseName,
+  type CloudTargetInput,
+  type CloudUploadResult,
+  type KeepExportInput,
+  type SendExportInput,
+  type Viewer,
+} from '@slider/shared';
 import type { AppDeps } from '../../deps';
 import { slideVersions, users } from '../../db/schema';
 import { ApiError, badRequest, notFound } from '../../http/errors';
+import { loadNode } from '../cloud/context';
+import { storeUpload, versionToServe } from '../cloud/files';
+import { previewPdfKey } from '../cloud/pictures';
+import { deckOfNode } from '../deck-places';
 import { fontSubstituteFor } from '../../import/libreoffice';
 import { inviteMail } from '../../mail/mailer';
 import { drawingFonts } from '../workspace-fonts';
@@ -15,7 +26,7 @@ import { editTarget, openFile, readFile, type EditTarget } from './target';
 
 /*
  * „Exportieren“ beyond the whole deck: one slide as a PDF or as its picture, and any export
- * mailed to someone as an attachment.
+ * mailed to someone as an attachment or kept in Cloud.
  */
 
 /** An export ready to download or to mail. */
@@ -193,4 +204,84 @@ export async function sendExport(
       'Die Mail ließ sich gerade nicht senden. Bitte versuch es gleich noch einmal.',
     );
   }
+}
+
+/**
+ * An export as a file in Cloud where the caller picked – one of its name there gets it as its next
+ * version (the earlier one stays to bring back), as an upload would.
+ */
+async function keepInCloud(
+  deps: AppDeps,
+  userId: string,
+  workspaceId: string,
+  file: ExportedFile,
+  place: CloudTargetInput,
+): Promise<CloudUploadResult> {
+  const { bytes } = file;
+  return storeUpload(
+    deps,
+    userId,
+    workspaceId,
+    {
+      // A deck's title may hold a slash, a Cloud name may not.
+      name: file.fileName.replace(/[/\\]/g, '-'),
+      ...(place.parentId
+        ? { parentId: place.parentId }
+        : place.areaId
+          ? { areaId: place.areaId }
+          : {}),
+    },
+    {
+      data: (async function* () {
+        yield bytes;
+      })(),
+      size: bytes.byteLength,
+      mimeType: file.contentType,
+    },
+  );
+}
+
+/** „In Cloud ablegen …“ in „Exportieren“: any export, as it would download, kept in Cloud. */
+export async function keepExport(
+  deps: AppDeps,
+  viewer: Viewer,
+  deckId: string,
+  input: KeepExportInput,
+): Promise<CloudUploadResult> {
+  const { deck } = await editTarget(deps, viewer, deckId);
+  const file = await exportedFile(deps, viewer, deckId, input.format, input.slideId);
+  return keepInCloud(deps, viewer.author.id, deck.workspaceId, file, input);
+}
+
+/**
+ * „Als PDF ablegen …“ on a file in Cloud: a presentation's file the caller may edit as
+ * „Exportieren“ makes its PDF (the workspace's fonts in it); any other file LibreOffice reads as
+ * the PDF Cloud's preview shows of it.
+ */
+export async function keepNodePdf(
+  deps: AppDeps,
+  viewer: Viewer,
+  nodeId: string,
+  place: CloudTargetInput,
+): Promise<CloudUploadResult> {
+  const userId = viewer.author.id;
+  const { node } = await loadNode(deps, userId, nodeId);
+  const deck = await deckOfNode(deps.db, node.id);
+  const editable =
+    deck &&
+    (await editTarget(deps, viewer, deck.id).then(
+      () => true,
+      () => false,
+    ));
+  let file: ExportedFile;
+  if (deck && editable) {
+    file = await exportedFile(deps, viewer, deck.id, 'pdf', undefined);
+  } else {
+    const version = await versionToServe(deps, node);
+    const key = await previewPdfKey(deps, node, version);
+    const bytes = key ? await deps.storage.get(key) : null;
+    if (!bytes) throw badRequest('Aus dieser Datei lässt sich kein PDF machen.');
+    file = { bytes, fileName: `${cloudBaseName(node.name)}.pdf`, contentType: 'application/pdf' };
+  }
+  return keepInCloud(deps, userId, node.workspaceId, file, place);
 }

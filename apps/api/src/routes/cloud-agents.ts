@@ -1,6 +1,7 @@
 import { Hono } from 'hono';
 import { z } from 'zod';
 import {
+  cloudAgentAskDecision,
   cloudAgentAutoSchema,
   cloudAgentChatRefSchema,
   cloudAgentInputSchema,
@@ -18,6 +19,7 @@ import { readJson } from '../http/validate';
 import {
   autoCloudAgent,
   createCloudAgent,
+  decideCloudAgentAsk,
   deleteCloudAgent,
   getCloudAgent,
   listCloudAgents,
@@ -164,6 +166,19 @@ export function cloudAgentRoutes(deps: AppDeps) {
       requireOwner(c.var.viewer);
       return c.json(
         await takeCloudAgentFile(deps, c.var.viewer, c.req.param('agentId'), c.req.param('fileId')),
+      );
+    })
+    .post('/cloud/agents/:agentId/asks/:askId', viewer, async (c) => {
+      requireOwner(c.var.viewer);
+      const { confirm } = await readJson(c, cloudAgentAskDecision);
+      return c.json(
+        await decideCloudAgentAsk(
+          deps,
+          c.var.viewer,
+          c.req.param('agentId'),
+          c.req.param('askId'),
+          confirm,
+        ),
       );
     })
     .post('/cloud/agents/:agentId/take', viewer, async (c) => {

@@ -48,7 +48,7 @@ export function NotifyPreferences() {
           <Toggle
             className="pb-3"
             label="Am Computer melden"
-            description="Nachrichten aus anderen Chats als dem offenen, Erwähnungen und Anrufe"
+            description="Nachrichten aus anderen Chats als dem offenen, Erwähnungen und Anrufe; Nachrichten auch, wenn Sender geschlossen ist"
             checked={!muted}
             onChange={(on) => setMuted(!on)}
           />

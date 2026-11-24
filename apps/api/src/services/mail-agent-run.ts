@@ -17,11 +17,17 @@ import type { AppDeps } from '../deps';
 import { ApiError, notFound } from '../http/errors';
 import {
   checkMailAccount,
+  deleteMailThread,
   freshPart,
   listMailAccounts,
   listMailThreads,
+  markMailSpam,
   ownThread,
+  readMailThread,
+  replyMail,
+  sendNewMail,
   threadMessages,
+  unreadMailThread,
   updateMailAccount,
 } from './mail';
 import {
@@ -31,7 +37,9 @@ import {
   newMailboxPage,
   type MailToolName,
 } from './mail-agent';
-import { putDraft } from './drafts';
+import { deleteDraft, putDraft } from './drafts';
+import { addMailRule, deleteMailRule, listMailRules } from './mail-rules';
+import { mailAddressBook } from './mail-addresses';
 import { ToolChatError } from './tool-chat';
 
 /* The mailbox and mail tools of `mail-agent.ts`, run for their person. */
@@ -68,7 +76,7 @@ const personWords = (person: { name: string; address: string }) =>
  * One of the person's conversations in this workspace – anyone else's, or one of theirs in
  * another workspace, is none (the same words, nothing told of it).
  */
-async function theirThread(deps: AppDeps, userId: string, workspaceId: string, threadId: string) {
+export async function theirThread(deps: AppDeps, userId: string, workspaceId: string, threadId: string) {
   const none = () =>
     new ToolChatError(`No mail conversation "${threadId}" of the person here (search_mail).`);
   const found = await ownThread(deps, userId, threadId).catch((error: unknown) => {
@@ -146,6 +154,11 @@ const microsoftSmtp = (host: string | undefined) =>
   host === 'smtp.office365.com' || host === 'smtp-mail.outlook.com';
 
 const told = (content: string) => ({ content, changed: false });
+/** Nothing done although asked – a card that ran it says „Ging nicht“, not „Gesendet“. */
+const balked = (content: string) => ({ content, changed: false, isError: true as const });
+
+/** Seconds a mail an agent sends waits in the outbox – time to take it back. */
+const AGENT_SEND_DELAY = 60;
 
 /**
  * Runs one of the tools above for its person – only on their own mailboxes and mails in this
@@ -333,6 +346,204 @@ export async function runMailTool(
       }
       return {
         content: `„${filed.name}“ is in the files now (file id ${filed.nodeId})${parentId || areaId ? '' : ", in the person's own files („Meine Dateien“)"}.`,
+        changed: true,
+      };
+    }
+    case 'find_mail_address': {
+      const input = MAIL_INPUTS.find_mail_address.parse(raw);
+      const words = (input.query ?? '').toLowerCase().split(/\s+/).filter(Boolean);
+      const found = (await mailAddressBook(deps, userId, workspaceId).catch(refused))
+        .filter((person) => {
+          const said = `${person.name} ${person.address}`.toLowerCase();
+          return words.every((word) => said.includes(word));
+        })
+        .slice(0, 30);
+      return told(
+        found.length === 0
+          ? `No address${words.length ? ` for „${input.query}“` : ''} in the person's mails here – leave it out and say so, or ask them; never guess one.`
+          : found
+              .map((person) => `- ${person.name ? `${person.name} ` : ''}<${person.address}>`)
+              .join('\n'),
+      );
+    }
+    case 'draft_mail': {
+      const input = MAIL_INPUTS.draft_mail.parse(raw);
+      if (accounts.length === 0)
+        return told(
+          `The person has no mailbox here yet – no mail can be drafted. They add one on „Neues Postfach“ (${newMailboxPage(deps, workspaceId)}).`,
+        );
+      const account = input.mailbox ? find(input.mailbox) : accounts[0]!;
+      const wrong = [input.to, input.cc ?? '', input.bcc ?? '']
+        .flatMap((field) => field.split(/[,;]/))
+        .map((one) => one.trim())
+        .filter(
+          (one) => one && !/^[^\s@<>]+@[^\s@<>]+\.[^\s@<>]+$/.test(one.replace(/^.*<(.+)>$/, '$1')),
+        );
+      if (wrong.length > 0)
+        return told(
+          `Not a mail address: ${wrong.map((one) => `„${one}“`).join(', ')} – nothing drafted. find_mail_address finds the right one; else leave it out and say so.`,
+        );
+      // The one new mail of the person's in the works (`draftKeys.newMail` – `MailCompose` takes it in).
+      const key = `mail-new:${workspaceId}`;
+      const [kept] = await deps.db
+        .select({ text: senderDrafts.text, target: senderDrafts.target })
+        .from(senderDrafts)
+        .where(
+          and(
+            eq(senderDrafts.userId, userId),
+            eq(senderDrafts.workspaceId, workspaceId),
+            eq(senderDrafts.key, key),
+          ),
+        );
+      const keptTarget = kept?.target.kind === 'mail-new' ? kept.target : null;
+      const holds = !!kept?.text.trim() || !!keptTarget?.to.trim() || !!keptTarget?.subject.trim();
+      // What the person wrote there is theirs: never written over unasked.
+      if (holds && !input.replace)
+        return told(
+          "A new mail of the person's is in the works already („Entwürfe“) – not overwritten, nothing changed. Ask whether it may be replaced (then draft again with replace), or give the mail in your reply.",
+        );
+      await putDraft(deps, userId, workspaceId, key, {
+        text: input.text,
+        target: {
+          kind: 'mail-new',
+          accountId: account.id,
+          to: input.to,
+          cc: input.cc ?? '',
+          bcc: input.bcc ?? '',
+          subject: input.subject,
+          forward: null,
+          uploads: [],
+        },
+        at: deps.clock.now().toISOString(),
+      }).catch(refused);
+      return told(
+        `The mail stands as the person's draft under „Entwürfe“ (from ${account.address}${input.to ? `, to ${input.to}` : ', no one to send it to yet'}), not sent. Say so in one line – ready to check and send.`,
+      );
+    }
+    case 'mark_mail': {
+      const input = MAIL_INPUTS.mark_mail.parse(raw);
+      const { thread } = await theirThread(deps, userId, workspaceId, input.thread);
+      if (input.read === true) await readMailThread(deps, userId, thread.id).catch(refused);
+      if (input.read === false) await unreadMailThread(deps, userId, thread.id).catch(refused);
+      if (input.spam !== undefined)
+        await markMailSpam(deps, userId, thread.id, input.spam).catch(refused);
+      return { content: `„${thread.subject}“ is marked.`, changed: true };
+    }
+    case 'delete_mail': {
+      const input = MAIL_INPUTS.delete_mail.parse(raw);
+      const { thread } = await theirThread(deps, userId, workspaceId, input.thread);
+      await deleteMailThread(deps, userId, thread.id).catch(refused);
+      return { content: `„${thread.subject}“ is deleted.`, changed: true };
+    }
+    case 'list_mail_rules': {
+      const rules = await listMailRules(deps, userId, workspaceId).catch(refused);
+      return told(
+        rules.length === 0
+          ? 'No sender rules.'
+          : rules
+              .map((rule) => `${rule.id}: ${rule.kind} ${rule.match} ${rule.value}`)
+              .join('\n'),
+      );
+    }
+    case 'add_mail_rule': {
+      const input = MAIL_INPUTS.add_mail_rule.parse(raw);
+      const { thread } = await theirThread(deps, userId, workspaceId, input.thread);
+      const added = await addMailRule(deps, userId, thread.id, {
+        kind: input.kind,
+        match: input.match,
+      }).catch(refused);
+      return {
+        content: `Rule ${added.rule.id}: ${added.rule.kind} ${added.rule.value}; ${added.moved} conversation(s) moved.`,
+        changed: true,
+      };
+    }
+    case 'delete_mail_rule': {
+      const input = MAIL_INPUTS.delete_mail_rule.parse(raw);
+      await deleteMailRule(deps, userId, input.rule).catch(refused);
+      return { content: 'The rule is deleted.', changed: true };
+    }
+    case 'unsubscribe_mail': {
+      const input = MAIL_INPUTS.unsubscribe_mail.parse(raw);
+      const { thread } = await theirThread(deps, userId, workspaceId, input.thread);
+      // Loaded here: at the top it would close a ring of imports back to `mail.ts`.
+      const { unsubscribeMailThread } = await import('./mail-unsubscribe');
+      const done = await unsubscribeMailThread(deps, userId, workspaceId, thread.id).catch(
+        refused,
+      );
+      return {
+        content:
+          done.result === 'done'
+            ? `Unsubscribed from „${thread.subject}“.`
+            : done.result === 'link'
+              ? `Only their page does it – give the person this link: ${done.url}`
+              : `„${thread.subject}“ offers no way to unsubscribe.`,
+        changed: done.result !== 'link',
+        ...(done.result === 'done' ? {} : { isError: true as const }),
+      };
+    }
+    case 'send_mail': {
+      const input = MAIL_INPUTS.send_mail.parse(raw);
+      const fresh = input.draft.toLowerCase() === 'new';
+      const threadId = fresh
+        ? null
+        : (await theirThread(deps, userId, workspaceId, input.draft)).thread.id;
+      const key = threadId ? `mail:${threadId}` : `mail-new:${workspaceId}`;
+      const [kept] = await deps.db
+        .select({
+          text: senderDrafts.text,
+          target: senderDrafts.target,
+          at: senderDrafts.updatedAt,
+        })
+        .from(senderDrafts)
+        .where(
+          and(
+            eq(senderDrafts.userId, userId),
+            eq(senderDrafts.workspaceId, workspaceId),
+            eq(senderDrafts.key, key),
+          ),
+        );
+      if (!kept?.text.trim())
+        return balked(
+          threadId
+            ? "„Antworten“ holds no answer to send – draft_mail_reply first, then send on the person's word."
+            : "No new mail in the works to send – draft_mail first, then send on the person's word.",
+        );
+      const uploads = (target: typeof kept.target) =>
+        target.kind === 'mail' || target.kind === 'mail-new'
+          ? (target.uploads ?? []).map((one) => one.id)
+          : [];
+      const list = (field: string) => field.match(/[^\s@,;<>"'()]+@[^\s@,;<>"'()]+/g) ?? [];
+      if (threadId) {
+        await replyMail(deps, userId, threadId, {
+          text: kept.text,
+          all: false,
+          uploads: uploads(kept.target),
+          delay: AGENT_SEND_DELAY,
+        }).catch(refused);
+      } else {
+        const target = kept.target;
+        if (target.kind !== 'mail-new') return balked('No new mail in the works to send.');
+        const to = list(target.to);
+        if (to.length === 0)
+          return balked(
+            'The new mail goes to no one yet – ask the person whom, then draft_mail again.',
+          );
+        await sendNewMail(deps, userId, workspaceId, {
+          accountId: target.accountId || accounts[0]?.id || '',
+          to,
+          cc: list(target.cc ?? ''),
+          bcc: list(target.bcc ?? ''),
+          subject: target.subject,
+          text: kept.text,
+          ...(target.forward ? { forward: target.forward } : {}),
+          uploads: uploads(target),
+          delay: AGENT_SEND_DELAY,
+        }).catch(refused);
+      }
+      await deleteDraft(deps, userId, workspaceId, key, kept.at.toISOString());
+      return {
+        content:
+          'Sent: it waits a minute in the outbox („Zurückholen“ under „Post“ takes it back), then goes. Say so in one line.',
         changed: true,
       };
     }

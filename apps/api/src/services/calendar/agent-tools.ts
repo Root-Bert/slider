@@ -1,12 +1,15 @@
-import type { Calendar, CalendarEvent } from '@slider/shared';
+import { cloudAreaColorSchema, type Calendar, type CalendarEvent } from '@slider/shared';
 import type { AppDeps } from '../../deps';
 import { promptName } from '../ai-prompt-parts';
 import {
+  createCalendar,
   createEvent,
+  deleteCalendar,
   deleteEvent,
   getEvent,
   listCalendars,
   listEvents,
+  updateCalendar,
   updateEvent,
 } from '../calendars';
 import { ToolChatError } from '../tool-chat';
@@ -230,8 +233,45 @@ export async function runCalendarTool(
       await deleteEvent(deps, userId, event.id);
       return `Deleted: ${eventLine(event, byId)}`;
     }
+    case 'create_calendar': {
+      const input = CALENDAR_INPUTS.create_calendar.parse(raw);
+      if (input.mailbox && areasOnly)
+        throw new ToolChatError(`Not here: a calendar in the person's mailbox, and ${areasOnly}.`);
+      if (input.under) calendarOf(input.under);
+      else if (areasOnly)
+        throw new ToolChatError(`Not here: only under an area's calendar, and ${areasOnly}.`);
+      const made = await createCalendar(deps, userId, {
+        name: input.name,
+        parentId: input.under,
+        mailAccountId: input.mailbox,
+        color: colorOf(input.color),
+      });
+      return `Made: [${made.id}] „${promptName(made.name)}“.`;
+    }
+    case 'update_calendar': {
+      const input = CALENDAR_INPUTS.update_calendar.parse(raw);
+      calendarOf(input.calendar);
+      const changed = await updateCalendar(deps, userId, input.calendar, {
+        name: input.name,
+        color: colorOf(input.color),
+      });
+      return `Changed: [${changed.id}] „${promptName(changed.name)}“.`;
+    }
+    case 'delete_calendar': {
+      const calendar = calendarOf(CALENDAR_INPUTS.delete_calendar.parse(raw).calendar);
+      await deleteCalendar(deps, userId, calendar.id);
+      return `Deleted: „${promptName(calendar.name)}“.`;
+    }
   }
 }
+
+/** A colour as the model gives it, checked as the form checks it. */
+const colorOf = (color: string | undefined) => {
+  if (color === undefined) return undefined;
+  const parsed = cloudAreaColorSchema.safeParse(color);
+  if (!parsed.success) throw new ToolChatError(`No colour "${color}": an accent or #rrggbb.`);
+  return parsed.data;
+};
 
 const toInstantOf = (event: CalendarEvent) =>
   event.allDay ? Date.parse(toInstant(event.start)) : Date.parse(event.start);

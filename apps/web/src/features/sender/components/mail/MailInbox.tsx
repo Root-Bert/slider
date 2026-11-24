@@ -11,13 +11,13 @@ import {
   useReadMailThread,
   useUnreadMailThread,
 } from '@/lib/api';
+import { Empty } from '@/features/cloud';
 import { formatRelativeTime } from '@/lib/format';
 import {
   ButtonLink,
   cn,
   ConfirmDialog,
   ContextMenu,
-  EmptyState,
   Icon,
   ListRow,
   Menu,
@@ -113,8 +113,10 @@ export function MailInbox({ view }: { view: MailViewState }) {
   if (!view.accounts) return null;
   if (!account) {
     return (
-      <div className="m-auto py-16">
-        <EmptyState
+      // In the middle in Sender; on a Cloud page at the height of every empty list there.
+      <div className="m-auto in-data-empty-frame:my-0">
+        <Empty
+          icon="mail"
           title="Noch kein Postfach"
           message="Trag dein Postfach ein – Gmail, Outlook, iCloud oder jeden anderen Mail-Server. Mails von Kollegen landen dann im Chat mit ihnen, alle anderen hier."
           action={
@@ -145,8 +147,9 @@ export function MailInbox({ view }: { view: MailViewState }) {
   );
   if (shown.length === 0) {
     return (
-      <div className="m-auto py-16">
-        <EmptyState
+      <div className="m-auto in-data-empty-frame:my-0">
+        <Empty
+          icon={query ? 'search' : 'mail'}
           title={
             query
               ? 'Nichts gefunden'

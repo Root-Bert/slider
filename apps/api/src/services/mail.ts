@@ -55,6 +55,7 @@ import {
 } from '../db/schema';
 import type { AppDeps } from '../deps';
 import { alignedWith, dkimDomains, topField } from '../mail/dkim';
+import { unsubscribeOf } from '../mail/unsubscribe';
 import { ApiError, badRequest, notFound } from '../http/errors';
 import {
   MailCheckError,
@@ -161,7 +162,7 @@ const loginOf = (row: MailLogin): MailLogin => ({
  * How the servers are signed in to: the password, or – signed in through the provider – an
  * access token (`MailSignInNeeded` once the provider ended the sign-in).
  */
-async function loginFor(deps: AppDeps, row: MailAccountRow): Promise<MailLogin> {
+export async function loginFor(deps: AppDeps, row: MailAccountRow): Promise<MailLogin> {
   if (row.auth === 'password') return loginOf(row);
   return { ...loginOf(row), password: '', accessToken: await mailAccessToken(deps, row) };
 }
@@ -1296,6 +1297,14 @@ export async function ingestMail(
       attachmentBytes: [...attachments, ...inlineImages].reduce((sum, one) => sum + one.size, 0),
       auth,
       outgoing,
+      // How to leave the list it came from – only on what came in.
+      unsubscribe:
+        arrives && !outgoing
+          ? unsubscribeOf(
+              topField(mail.raw, 'list-unsubscribe'),
+              topField(mail.raw, 'list-unsubscribe-post'),
+            )
+          : null,
       // As on the server; what one wrote, or found in another folder, is read.
       seen: outgoing || !arrives || mail.seen === true,
       sentAt,

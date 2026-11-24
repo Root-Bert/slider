@@ -23,6 +23,7 @@ import type {
   ReaderAnchor,
   ReaderMarkBody,
   CloudAreaVisibility,
+  CloudAgentAskState,
   CloudAgentFileKind,
   ApiSettings,
   CloudConnectionKind,
@@ -2222,6 +2223,40 @@ export const cloudAgentMessages = pgTable(
 );
 
 /**
+ * What an agent wants done that cannot be undone or reaches out (delete, send, a public link):
+ * not done at once but asked in its chat (`services/cloud-agent-asks.ts`) – done only when the
+ * person whose rights it runs with (`user_id`) confirms it, with those rights then. `input` the
+ * tool's input, `text` what the card says, `result` what came of it.
+ */
+export const cloudAgentAsks = pgTable(
+  'cloud_agent_asks',
+  {
+    id: text('id').primaryKey(),
+    agentId: text('agent_id')
+      .notNull()
+      .references(() => cloudAgents.id, { onDelete: 'cascade' }),
+    chatId: text('chat_id')
+      .notNull()
+      .references(() => cloudAgentChats.id, { onDelete: 'cascade' }),
+    userId: text('user_id')
+      .notNull()
+      .references(() => users.id, { onDelete: 'cascade' }),
+    tool: text('tool').notNull(),
+    input: encryptedJson<unknown>('cloud_agent_asks', 'input').notNull(),
+    text: encryptedText('cloud_agent_asks', 'text').notNull(),
+    state: text('state').$type<CloudAgentAskState>().notNull().default('open'),
+    result: encryptedText('cloud_agent_asks', 'result'),
+    /** As the run it was asked in: by itself (a watch), on others' words (a to-do's). */
+    unattended: boolean('unattended').notNull().default(false),
+    foreign: boolean('foreign').notNull().default(false),
+    createdAt: createdAt(),
+    decidedAt: timestamptz('decided_at'),
+  },
+  (t) => [index('cloud_agent_asks_chat_idx').on(t.chatId, t.createdAt)],
+);
+export type CloudAgentAskRow = typeof cloudAgentAsks.$inferSelect;
+
+/**
  * A call that is over, as it was written down (`services/call-records.ts`): who was in it, every
  * turn – people's and the agent's –, what was sent to agents, and the notes the AI writes once
  * after it. A conversation's call is seen by who sees the conversation; one's own call with an
@@ -2604,6 +2639,8 @@ export const senderMembers = pgTable(
       .notNull()
       .references(() => users.id, { onDelete: 'cascade' }),
     readSeq: integer('read_seq').notNull().default(0),
+    /** „Stummschalten“: no count on the app's icon, no notification – but „@“ still tells. */
+    muted: boolean('muted').notNull().default(false),
     createdAt: createdAt(),
   },
   (t) => [
@@ -2637,11 +2674,34 @@ export const senderMessages = pgTable(
     deletedAt: timestamptz('deleted_at'),
     /** A call in the conversation, over: the entry that opens its page (`call_records`). */
     callId: text('call_id').references((): AnyPgColumn => callRecords.id, { onDelete: 'cascade' }),
+    /** „Antworten“: the message of the same conversation it answers, quoted above it. */
+    replyTo: text('reply_to').references((): AnyPgColumn => senderMessages.id, {
+      onDelete: 'set null',
+    }),
     createdAt: createdAt(),
   },
   (t) => [uniqueIndex('sender_messages_channel_seq_idx').on(t.channelId, t.seq)],
 );
 export type SenderMessageRow = typeof senderMessages.$inferSelect;
+
+/** One reaction per person on a message (👍 / 👎 / egal, as on comments); gone with either. */
+export const senderReactions = pgTable(
+  'sender_reactions',
+  {
+    messageId: text('message_id')
+      .notNull()
+      .references(() => senderMessages.id, { onDelete: 'cascade' }),
+    userId: text('user_id')
+      .notNull()
+      .references(() => users.id, { onDelete: 'cascade' }),
+    kind: text('kind').$type<CommentReactionKind>().notNull(),
+    createdAt: createdAt(),
+  },
+  (t) => [
+    primaryKey({ columns: [t.messageId, t.userId] }),
+    index('sender_reactions_user_idx').on(t.userId),
+  ],
+);
 
 /** How far a person has read an agent's answers in Sender (its messages' seq). */
 export const senderAgentReads = pgTable(
@@ -2857,6 +2917,13 @@ export interface MailInlineImageRow {
  * conversation here (`thread_id` null) but the chat's message (`sender_message_id`) – read again,
  * it is known and not posted twice.
  */
+/** A mail's `List-Unsubscribe` (+ `List-Unsubscribe-Post`), as far as it can be used. */
+export interface MailUnsubscribeRow {
+  http: string | null;
+  mailto: string | null;
+  oneClick: boolean;
+}
+
 export const mailMessages = pgTable(
   'mail_messages',
   {
@@ -2915,6 +2982,11 @@ export const mailMessages = pgTable(
      * (taken back meanwhile, it goes), `sending` while it goes out, `failed` with `sendError` –
      * sent again or taken back. `null`: sent, or received.
      */
+    /**
+     * How its sender lets one leave the list (`List-Unsubscribe`, RFC 2369/8058): a web address
+     * (`oneClick`: a POST does it, no page), a mail address. `null`: none, or before 0179.
+     */
+    unsubscribe: encryptedJson<MailUnsubscribeRow>('mail_messages', 'unsubscribe'),
     sendState: text('send_state').$type<'queued' | 'sending' | 'failed'>(),
     sendAt: timestamptz('send_at'),
     sendError: text('send_error'),
@@ -3088,6 +3160,30 @@ export const senderPins = pgTable(
       'sender_pins_target_check',
       sql`num_nonnulls(${t.channelId}, ${t.agentId}, ${t.threadId}) = 1`,
     ),
+  ],
+);
+
+/**
+ * Web Push (`services/web-push.ts`): a browser that lets Sender tell while no tab of it is open –
+ * the push service's address and the browser's keys to encrypt for it. One per browser: signed
+ * in there as someone else, it moves to them; gone with them, and when the push service says the
+ * address is gone (404/410).
+ */
+export const pushSubscriptions = pgTable(
+  'push_subscriptions',
+  {
+    id: text('id').primaryKey(),
+    userId: text('user_id')
+      .notNull()
+      .references(() => users.id, { onDelete: 'cascade' }),
+    endpoint: text('endpoint').notNull(),
+    p256dh: text('p256dh').notNull(),
+    auth: text('auth').notNull(),
+    createdAt: createdAt(),
+  },
+  (t) => [
+    uniqueIndex('push_subscriptions_endpoint_idx').on(t.endpoint),
+    index('push_subscriptions_user_idx').on(t.userId),
   ],
 );
 

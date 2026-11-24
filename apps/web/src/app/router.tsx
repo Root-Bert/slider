@@ -188,6 +188,7 @@ export const router = createBrowserRouter([
                     lazy: () => import('@/features/sender/CallPage'),
                   },
                   { path: 'entwuerfe', lazy: () => import('@/features/sender/DraftsPage') },
+                  { path: 'bereiche', lazy: () => import('@/features/sender/AreasPage') },
                   {
                     // The list – wide, with the open mail beside it (`MailBody`).
                     path: 'mail',

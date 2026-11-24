@@ -4,7 +4,7 @@ import { mailboxLabels, type MailAccount, type MailFolder } from '@slider/shared
 import { useMailAccounts, useMailThreads } from '@/lib/api';
 import { createStoredStore } from '@/lib/storage';
 import { useMediaQuery } from '@/ui';
-import { mailViewOf, mailViewSearch, NEW_MAIL } from '../lib/mail';
+import { mailViewOf, mailViewSearch, NEW_MAIL, OVERVIEW } from '../lib/mail';
 import { useSender } from './useSender';
 
 /** From this width an opened mail stands beside the list; below, it takes the page (with back). */
@@ -68,7 +68,10 @@ export function useMailView(): MailViewState {
     accounts?.[0] ??
     null;
   const folders = account?.folders ?? [];
-  const folder = folders.some((each) => each.key === asked.folder) ? asked.folder : 'inbox';
+  const folder =
+    asked.folder === OVERVIEW || folders.some((each) => each.key === asked.folder)
+      ? asked.folder
+      : 'inbox';
   const unread = useSyncExternalStore(unreadStore.subscribe, unreadStore.getSnapshot);
   const [query, setQuery] = useState('');
   const searchOf = (accountId: string, key: string) =>

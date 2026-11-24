@@ -20,6 +20,7 @@ import {
   type RemoteEvent,
 } from '../src/services/calendar/remote';
 import { SEALED_PREFIX } from '../src/crypto/content-crypto';
+import { askText } from '../src/services/cloud-agent-asks';
 import { runCalendarTool } from '../src/services/calendar/agent-tools';
 import { runAppTool } from '../src/services/mcp-cloud';
 import { senderLive } from '../src/services/sender';
@@ -749,6 +750,50 @@ describe('Calendars', () => {
       ),
     ).rejects.toThrow("Not here: that is the person's own calendar, and this agent is shared.");
     expect(await app('delete_event', { event: dentist })).toMatch(/^Deleted: .*Zahnarzt/);
+    // Calendars themselves: made under one, renamed, and deleted – by an agent on a card.
+    const privat = /\[([^\]]+)\] „Privat“/.exec(await app('list_calendars', {}))?.[1] ?? '';
+    const sport = /^Made: \[([^\]]+)\] „Sport“/.exec(
+      await app('create_calendar', { name: 'Sport', under: privat, color: 'green' }),
+    )?.[1];
+    expect(sport).toBeTruthy();
+    expect(await app('update_calendar', { calendar: sport, name: 'Laufen' })).toBe(
+      `Changed: [${sport}] „Laufen“.`,
+    );
+    await expect(
+      runCalendarTool(ctx.deps, ctx.ownerId, ctx.workspaceId, 'create_calendar', { name: 'X' }, shared),
+    ).rejects.toThrow('Not here');
+    expect(
+      await askText(
+        ctx.deps,
+        { kind: 'owner', author: { type: 'owner', id: ctx.ownerId, name: 'Owner', color: 'blue' } },
+        ctx.workspaceId,
+        'delete_calendar',
+        { calendar: sport },
+      ),
+    ).toBe('Den Kalender „Laufen“ löschen? Seine Termine sind dann auch weg.');
+    // Asked from a shared agent, the card names nothing of the person's own; nor does a mailbox
+    // calendar get past keeping to areas.
+    await expect(
+      askText(
+        ctx.deps,
+        { kind: 'owner', author: { type: 'owner', id: ctx.ownerId, name: 'Owner', color: 'blue' } },
+        ctx.workspaceId,
+        'delete_calendar',
+        { calendar: sport },
+        { why: 'this agent is shared' },
+      ),
+    ).rejects.toThrow("Not here: that is the person's own calendar");
+    await expect(
+      runCalendarTool(
+        ctx.deps,
+        ctx.ownerId,
+        ctx.workspaceId,
+        'create_calendar',
+        { name: 'X', under: sport, mailbox: crypto.randomUUID() },
+        shared,
+      ),
+    ).rejects.toThrow("Not here: a calendar in the person's mailbox");
+    expect(await app('delete_calendar', { calendar: sport })).toBe('Deleted: „Laufen“.');
     // A mailbox signed in through Google before calendars were asked for: none, a hint to sign in
     // anew; signed in anew, its calendars come at once.
     const gmail = crypto.randomUUID();

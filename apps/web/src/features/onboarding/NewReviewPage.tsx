@@ -1,4 +1,5 @@
 import { Navigate } from 'react-router';
+import { appHome, useCurrentApp } from '@/lib/apps';
 import { routes } from '@/lib/routes';
 import { CenteredMessage } from '@/shell/CenteredMessage';
 import { TextLink } from '@/ui';
@@ -19,12 +20,15 @@ import { noCreateMessage } from './lib/no-create';
  */
 export function Component() {
   const workspace = useActiveWorkspace();
+  // Back into the app it was opened from (Cloud's „Neu“, Slider's Präsentationen).
+  const app = useCurrentApp();
   if (!workspace) return <Navigate to={routes.home()} replace />;
+  const back = appHome(app, workspace.id);
   if (!canCreateDecks(workspace.role)) {
     return (
       <CenteredMessage title="Keine Berechtigung zum Anlegen" message={noCreateMessage(workspace)}>
-        <TextLink to={routes.workspace(workspace.id)} variant="underline" size="sm">
-          Zurück zu den Präsentationen
+        <TextLink to={back.to} variant="underline" size="sm">
+          {back.label}
         </TextLink>
       </CenteredMessage>
     );
@@ -43,8 +47,8 @@ export function Component() {
     // The plan's deck limit (BER-130) – the API would refuse the import anyway.
     return (
       <CenteredMessage title="Keine Präsentation mehr frei" message={deckLimitMessage(workspace)}>
-        <TextLink to={routes.workspace(workspace.id)} variant="underline" size="sm">
-          Zu den Präsentationen
+        <TextLink to={back.to} variant="underline" size="sm">
+          {back.label}
         </TextLink>
       </CenteredMessage>
     );

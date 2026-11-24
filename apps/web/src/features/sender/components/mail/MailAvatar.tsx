@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { API_PREFIX, emailDomain, FREEMAIL_DOMAINS, type MailPerson } from '@slider/shared';
-import { generatedGlyph } from '@/lib/generated-avatar';
+import { generatedInitials } from '@/lib/generated-avatar';
 import { Avatar, type AvatarSize } from '@/ui';
 import { useSender } from '../../hooks/useSender';
 import { mailAuthor } from '../../lib/mail';
@@ -9,12 +9,12 @@ import { mailAuthor } from '../../lib/mail';
 const logos = new Map<string, 'shown' | 'none'>();
 
 /**
- * A person of a mail: a colleague as everywhere in the workspace; anyone else a glyph of their
- * address, with their firm's logo over it (BIMI or the site's icon, looked up by Slider's server
+ * A person of a mail: a colleague as everywhere in the workspace; anyone else their initials,
+ * with their firm's logo over it (BIMI or the site's icon, looked up by Slider's server
  * by the domain alone – `services/mail-logos.ts`) where their domain vouched for the mail
- * (`vouched`) and is no mail provider's. The glyph stands at once; the logo only once it has
+ * (`vouched`) and is no mail provider's. The initials stand at once; the logo only once it has
  * loaded – no wait, no shift – and then alone, filling the circle: one round picture, as Gmail's
- * and Outlook's, no glyph's ring around it.
+ * and Outlook's, no ring of the initials around it.
  */
 export function MailAvatar({
   person,
@@ -65,10 +65,10 @@ export function MailAvatar({
       author={author}
       size={size}
       nativeTitle={nativeTitle}
-      picture={generatedGlyph(person.address)}
+      picture={generatedInitials(author.name)}
     >
       {src && logo === 'loading' && (
-        // Loaded unseen over the glyph; then the logo stands alone (above).
+        // Loaded unseen over the initials; then the logo stands alone (above).
         <img
           src={src}
           alt=""

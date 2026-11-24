@@ -70,6 +70,7 @@ export function Component() {
       agentPath={(agentId) => routes.cloudAgent(workspace.id, agentId)}
       homePath={routes.cloud(workspace.id)}
       draftsPath={routes.cloudDrafts(workspace.id)}
+      areasPath={routes.cloudAreas(workspace.id)}
       mailPath={routes.cloudMail(workspace.id)}
       mailThreadPath={(threadId) => routes.cloudMailThread(workspace.id, threadId)}
       mailAccountsPath={routes.cloudMailAccounts(workspace.id)}

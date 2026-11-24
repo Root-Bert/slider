@@ -427,6 +427,21 @@ export type MailSummaryState =
  * workspace's files that fit, where its attachments could go – worked out on each request – and
  * the AI's bullets (`POST …/insights/summary` makes them).
  */
+/** „Abbestellen“, many at once (`POST /workspaces/:id/mail/unsubscribe`). */
+export const mailUnsubscribeSchema = z.object({
+  threadIds: z.array(z.string().min(1).max(100)).min(1).max(200),
+});
+
+/**
+ * How leaving one list went: `done` – one click (RFC 8058) or the mail to its address went;
+ * `link` – only its page does it (`url`, opened by the person); `none` – nothing found.
+ */
+export interface MailUnsubscribed {
+  threadId: string;
+  result: 'done' | 'link' | 'none';
+  url: string | null;
+}
+
 export interface MailInsights {
   /** The latest mail's id: the version the bullets are for. */
   version: string;

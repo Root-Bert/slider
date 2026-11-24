@@ -1409,6 +1409,30 @@ describe('the material page', () => {
     expect((await call(tokens.access_token, 'unshare_file', shareWith)).text).toBe(
       '„Protokoll.odt“ is not shared with Mona.',
     );
+    // Copied, coloured, pinned; a version named and one deleted; no link where links are off.
+    expect((await call(tokens.access_token, 'copy_files', { items: [docId], own: true })).text).toMatch(
+      /^Copied: 1 \(\S+ „Protokoll\.odt“\)\.$/,
+    );
+    expect((await call(tokens.access_token, 'set_color', { item: ablageId, color: 'green' })).text).toMatch(
+      / is green now\.$/,
+    );
+    expect((await call(tokens.access_token, 'pin_folder', { item: ablageId, pinned: true })).text).toMatch(
+      / is pinned\.$/,
+    );
+    expect(
+      (await call(tokens.access_token, 'label_version', { item: docId, version: before, label: 'Für Kunde' }))
+        .text,
+    ).toMatch(/^Version \d+ is „Für Kunde“ now\.$/);
+    expect((await call(tokens.access_token, 'delete_version', { item: docId, version: before })).text).toBe(
+      'That version is deleted.',
+    );
+    expect(await call(tokens.access_token, 'share_link', { item: docId })).toEqual({
+      text: expect.stringContaining('Links nach außen gibt es hier nicht'),
+      error: true,
+    });
+    expect(await call(tokens.access_token, 'delete_area', { area: 'nope' })).toMatchObject({
+      error: true,
+    });
     // Deleted is not gone: it lies in „Gelöscht“ and comes back from there.
     await call(tokens.access_token, 'delete_files', { items: [docId] });
     expect((await call(tokens.access_token, 'list_deleted')).text).toMatch(

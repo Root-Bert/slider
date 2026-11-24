@@ -123,6 +123,11 @@ export function callRoutes(deps: AppDeps, calls: CallHub) {
         const input = await readJson(c, callPersonInviteSchema);
         return c.json(await calls.invite(deps, me(c), c.req.param('callId'), input));
       })
+      // Joining a call one was rung into (a call with an agent has no conversation to join by).
+      .post('/calls/:callId/join', viewer, async (c) => {
+        const input = await readJson(c, callJoinSchema);
+        return c.json(await calls.joinAsGuest(deps, me(c), c.req.param('callId'), input));
+      })
       .post('/calls/:callId/agent/leave', viewer, async (c) => {
         const { peerId } = await readJson(c, callPeerSchema);
         calls.sendAgentAway(c.req.param('callId'), me(c).id, peerId);

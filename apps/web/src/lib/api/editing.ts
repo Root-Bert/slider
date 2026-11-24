@@ -8,6 +8,7 @@ import {
 import type {
   AiProposal,
   ApplyEditInput,
+  CloudUploadResult,
   ApplyEditResult,
   Author,
   CommentReaction,
@@ -20,6 +21,7 @@ import type {
   WrittenNotes,
   GenerateEditImageInput,
   ImageSymbol,
+  KeepExportInput,
   RevertEditInput,
   SendExportInput,
   SlideLayers,
@@ -320,6 +322,16 @@ export const useSendExport = (deckId: string) =>
   useMutation({
     mutationFn: (input: SendExportInput) => api.post<void>(`/decks/${deckId}/edit/send`, input),
   });
+
+/** An export kept in Cloud as a file of its own, where one picked („In Cloud ablegen …“). */
+export const useKeepExport = (deckId: string, workspaceId: string) => {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (input: KeepExportInput) =>
+      api.post<CloudUploadResult>(`/decks/${deckId}/edit/keep`, input),
+    onSettled: () => queryClient.invalidateQueries({ queryKey: ['cloud', workspaceId] }),
+  });
+};
 
 // ── AI proposals ─────────────────────────────────────────────────────────
 

@@ -1,4 +1,5 @@
 import {
+  mentionsAll,
   mentionsIn,
   type AccountAuthor,
   type SenderChannel,
@@ -25,13 +26,17 @@ declare global {
 
 /**
  * What counts on the app's icon: what was written to one in a group or directly, a channel
- * where one was named, an agent's answers – as Slack does, not every channel's chatter.
+ * where one was named, an agent's answers – as Slack does, not every channel's chatter. A muted
+ * conversation („Stummschalten“) counts only where one was named.
  */
 export function badgeCount(home: SenderHome | undefined): number {
   if (!home) return 0;
   const channels = home.areas.flatMap((area) => area.channels);
   return (
-    [...home.groups, ...home.direct].reduce((sum, each) => sum + each.unread, 0) +
+    [...home.groups, ...home.direct].reduce(
+      (sum, each) => sum + (each.muted ? Number(each.mentioned) : each.unread),
+      0,
+    ) +
     channels.filter((each) => each.mentioned).length +
     home.agents.reduce((sum, each) => sum + each.unread, 0)
   );
@@ -47,15 +52,18 @@ export function showBadge(count: number): void {
   else void nav.clearAppBadge?.().catch(() => {});
 }
 
-/** Whether a message is worth a notification: to oneself, in a group, or naming one. */
+/**
+ * Whether a message is worth a notification: to oneself, in a group, or naming one – in a muted
+ * conversation only what names one.
+ */
 export function worthTelling(
   channel: SenderChannel,
   message: SenderMessage,
   me: AccountAuthor,
 ): boolean {
   if (message.deleted || (!message.agent && message.author?.id === me.id)) return false;
-  if (channel.kind === 'direct' || channel.kind === 'group') return true;
-  return mentionsIn(message.text, [me]).length > 0;
+  if (!channel.muted && (channel.kind === 'direct' || channel.kind === 'group')) return true;
+  return mentionsIn(message.text, [me]).length > 0 || mentionsAll(message.text);
 }
 
 /** The notification's title: who wrote, and where if not to oneself alone. */

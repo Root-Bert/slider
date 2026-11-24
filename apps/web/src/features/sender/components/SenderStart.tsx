@@ -32,7 +32,7 @@ function usePlace() {
  * A conversation's mark as in the side bar: the area, the person, the group, the agent – a mail
  * with colleagues only on it as a group, as it stands among the chats there.
  */
-function Mark({ item }: { item: Pick<SenderUnreadItem, 'kind' | 'id'> }) {
+export function Mark({ item }: { item: Pick<SenderUnreadItem, 'kind' | 'id'> }) {
   const ui = useSender();
   const threads = useMailThreads(ui.workspace.id).data;
   const mailGroup =

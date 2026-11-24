@@ -1,6 +1,6 @@
 import { Avatar, Style } from '@dicebear/core';
 import cameo from '@dicebear/styles/cameo.json';
-import glyphs from '@dicebear/styles/glyphs.json';
+import initials from '@dicebear/styles/initials.json';
 import landscape from '@dicebear/styles/landscape.json';
 import slice from '@dicebear/styles/slice.json';
 import { DEFAULT_AGENT_AVATARS, type AgentAvatarStyle } from '@slider/shared';
@@ -11,12 +11,8 @@ import { CAMEO_GROUNDS, GENERATED_AVATAR_GROUNDS } from './palette';
 const style = new Style(slice);
 /** DiceBear "landscape" (CC0, like "slice") with its own pastel skies: workspaces without a logo. */
 const landscapeStyle = new Style(landscape);
-/**
- * DiceBear "glyphs" – „Abstract Avatars for All Creative Profile Use“ by Matt Houser, CC BY 4.0
- * (https://creativecommons.org/licenses/by/4.0/; credited where it is seen, `LegalLinks`):
- * people of a mail from outside, seeded by their address.
- */
-const glyphStyle = new Style(glyphs);
+/** DiceBear "initials" (CC0, like "slice"): people of a mail from outside, by their name. */
+const initialsStyle = new Style(initials);
 
 /**
  * The styles a workspace picks for its agents (`Workspace.agentAvatars`), all bundled – no agent
@@ -36,7 +32,7 @@ const agentStyles: Record<
 const cache = new Map<string, string>();
 const agentCache = new Map<string, string>();
 const landscapeCache = new Map<string, string>();
-const glyphCache = new Map<string, string>();
+const initialsCache = new Map<string, string>();
 
 /** Avatar for someone without a photo, seeded by their name so it is the same everywhere. */
 export function generatedAvatar(name: string): string {
@@ -50,15 +46,16 @@ export function generatedAvatar(name: string): string {
 }
 
 /**
- * Picture of someone from outside who writes mail – no one of the workspace, no agent: an abstract
- * glyph seeded by their address, so the same sender has the same one everywhere.
+ * Picture of someone from outside who writes mail – no one of the workspace, no agent: their
+ * initials (of the address where there is no name) on a ground seeded by the same, so the same
+ * sender has the same one everywhere.
  */
-export function generatedGlyph(address: string): string {
-  const seed = address.trim().toLowerCase();
-  let uri = glyphCache.get(seed);
+export function generatedInitials(name: string): string {
+  const seed = name.trim();
+  let uri = initialsCache.get(seed);
   if (!uri) {
-    uri = new Avatar(glyphStyle, { seed }).toDataUri();
-    glyphCache.set(seed, uri);
+    uri = new Avatar(initialsStyle, { seed, fontWeight: 600 }).toDataUri();
+    initialsCache.set(seed, uri);
   }
   return uri;
 }

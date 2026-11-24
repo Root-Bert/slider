@@ -432,6 +432,15 @@ Unsplash can revoke the key; production approval needs screenshots of credits.
   (über Slider)“). In code „office“ otherwise means LibreOffice or an office file (`officePreviewable`,
   `office-fonts`). Left from before: `/office` still leads to `/cloud` (`router.tsx`, `OLD_START`),
   the usage feature is still `office` (rows in the database).
+- Login by mail (`services/email-login.ts`, since 2026-11-24 after the user's report of a login
+  mail without code): every account of the address gets link + code, also one that signs in with
+  Microsoft/Google/passkey (`signInWithEmail` adds „E-Mail“ to its logins; removing it on /konto
+  does not lock mail out) – no „Du hast schon ein Konto“ mail any more. The link only works in the
+  browser that asked (login CSRF); mail apps on phones open links in their own browser, so the
+  code is the way there. Brevo (the SMTP of bertro.dev) rewrites links to click-tracking redirects
+  over the own domain `r.send.bertro.dev` (CNAME at Cloudflare, DNS only, valid certificate,
+  checked 2026-11-24) – no reason for failing links; no header turns it off per mail.
+  `img.send.bertro.dev` (Brevo's images and open pixel) had an expired certificate then.
 - Cut shadows and focus rings: every Cloud page's content scrolls in `CloudPage`'s scroll box, and
   a scroll box cuts what reaches past its padding – `shadow-float` (`glass-elevated`, the agents'
   order field, tooltips) reaches 24 px up, 32 px sideways, 40 px down; a focus ring 4 px. The box
@@ -543,6 +552,32 @@ Unsplash can revoke the key; production approval needs screenshots of credits.
   yet. An area's agent is told its area in its prompt (`home` in `system`) and its crumbs lead
   through its area to the area's agents. Each has its own picture: our own DiceBear style „Glaze
   Flowers“ (CC0), seeded by its id (`AgentAvatar`, `generatedAgentAvatar`).
+- Agents ask before what cannot be undone or reaches out (`NEEDS_OK` in
+  `services/cloud-agent-asks.ts`: delete, delete_event, delete_mail, send_mail,
+  delete_presentation, delete_item, …): the tool call only writes a `cloud_agent_asks` row
+  (migration 0180, by hand) and tells the model it waits; the chat shows a card under the
+  answer it was asked in (`asksByAnswer`: the first answer kept at or after it) with „Abbrechen“
+  and the verb. Only the person whose rights it runs with (`user_id`) decides
+  (`POST /cloud/agents/:id/asks/:askId {confirm}`), once; confirmed, `runAgentTool` runs it with
+  their rights now and the run's flags then (`unattended`, `foreign`). The outcome is told the
+  model beside that answer in the next run's history (`askNote`); no run is started by the
+  click. The dispatch lives in `runAgentTool(deps, ToolRun, …)`, its refusals in `refuse()` –
+  checked before an ask is written too.
+  In a call's dock the agent's open cards show under the tiles (`CallAsks` in `CallDock.tsx`).
+  A card stands for what it named when asked: `askPin` keeps a fingerprint (the mail draft with
+  its recipients, the presentation/milestone/person a name resolved to) in the input as `_pin`;
+  at the click it is taken again and a mismatch fails the card. `askText` gets the run's
+  `AskScope` (areas only, foreign, the asking agent) and refuses what the tool would – a card
+  never names the person's own to-dos, calendars, groups or another's message to a shared agent.
+  `set_access` changes only in a `mailRun`; telling who has access stays open.
+  Sharing a file (`share_file`), adding someone to a group (`add_to_group`) and copying into an
+  area (`copy_files`, via `mustAsk` – into one's own files it runs at once) wait for a card too.
+  Unnamed groups have `name` '' in the table: `groupName` builds the side bar's first names.
+  The Cloud panel chat (`cloud-chat.ts`) has no cards: its delete goes to „Gelöscht“ at once,
+  and it lacks what cannot be brought back (deleting presentations, board items, events).
+- `mail-agent-run.ts` loads `mail-unsubscribe` with `await import()`: imported at the top it
+  closes a ring `mail-context` → `mail.ts` (`onNewMail` before `afterMail` exists) and the API
+  does not start.
 - An agent is a shared space with **one chat** (`cloud_agent_chats`, migration 0117; its id is
   the agent's id, its title the agent's) plus one tag chat per conversation it was called in.
   Several chats side by side („Neuer Chat“, `POST …/chats`, `list_chats`/`read_chat`/`tell_chat`)
@@ -964,8 +999,9 @@ Unsplash can revoke the key; production approval needs screenshots of credits.
   did not hold up; since 2026-11-19 Cloud's app shows the others' pages in its own tabs, see
   „Cloud's app shows Slider and Writer“): no way across in a desktop app – `installedApp`
   (apps/web `lib/apps.ts`, also true in Electron) with Electron's user agent takes the app
-  switcher's menu away. An installed web app has the menu (the user's call, 2026-11-21): the
-  other app opens in a window of its own (`windowForApp`, manifests' scope `/`). A page of the other app reached anyway (a presentation
+  switcher's menu away. An installed web app is one app too – no menu – save Cloud's (the user's
+  call, 2026-11-24, over 2026-11-21's „menu in every installed app“): installed Cloud keeps the
+  menu, the other app opens in a window of its own (`windowForApp`, manifests' scope `/`). A page of the other app reached anyway (a presentation
   opened from the files) goes to the browser: `inBrowser` as `elsewhere` in both mains, which
   page is whose in `SLIDER_PAGE` / `CLOUD_PAGE` there (as `appOfPath`). No `…://open` links, no
   menu setting. macOS starts a link's app (the sign-in's `…://auth`) without arguments, so the
@@ -1073,6 +1109,11 @@ Unsplash can revoke the key; production approval needs screenshots of credits.
   after 30 days, unnamed earlier versions after 180, and own files of accounts that are gone.
 - Files count against the workspace's plan (`StorageBreakdown.files`) and show on `/instanz`
   (tile and column) and in the admins' `…/dateien/uebersicht`.
+- An export kept in Cloud („In Cloud ablegen …“ in „Exportieren“, „Als PDF ablegen …“ on a file,
+  `services/edits/export.ts` `keepInCloud`) goes in without `keepBoth`: one of its name there gets
+  it as its next version. `cloudFreeName` strips a trailing number, so a kept-both second
+  „X – Folie 2.png“ would be called „X – Folie 3.png“. A presentation's file is exported as
+  „Exportieren“ does (workspace fonts) when the caller may edit it, else Cloud's preview PDF.
 - Scratch look at it: copy `e2e/playwright.config.ts` with own ports and data dir and the real
   `soffice`; the dev login is the workspace's admin. Open: a member removed from a workspace
   leaves their own files behind unreachable (cleared only with the account); content search;
@@ -1317,6 +1358,32 @@ hidden while pending and when nothing is unread. Slider's own start is „Präse
   roles (`cloudContext`), groups and direct ones from `sender_members`. Agents are not channels:
   the side bar lists the user's Cloud agents and `AgentChatPage` talks to them over the Cloud
   agent API (`useCloudAgent`), reading marks them read (`readAgent`).
+- Moderation/limits: `manages()` (creator, area manager) deletes anyone's message and takes people
+  out of a group (`DELETE /sender/channels/:id/members/:userId`); `routes/sender.ts` caps writes
+  (120/min), new conversations (60/h), typing (dropped past 60/min). „Stummschalten“ is
+  `sender_members.muted` (0175): an area channel's first row gets the `readSeq` of what came before
+  one joined, else muting would make the whole channel unread.
+- Web Push (`services/web-push.ts`, `push_subscriptions` 0176): own RFC 8291/8292 code, no
+  library; VAPID keys come from `SLIDER_SECRET` (HKDF), nothing to configure. `pushNew` in
+  `sender.ts` pushes only to who has no `senderLive` stream in the workspace (an open tab tells by
+  itself), same rule as `worthTelling`. The worker registers only in builds, so pushes never show
+  under Vite; `createApp` copies deps, so tests stub global `fetch` to catch them.
+- Message features (2026-11-24): reactions `sender_reactions` (0177, one per person and message,
+  not on one's own, deleted messages or call entries; area viewers can't) via `PUT
+  /sender/messages/:id/reaction`; answers `sender_messages.reply_to` (0178, set null when the
+  original goes, same channel only) – `fullDtos` adds `reactions` + `replyTo` quote to every DTO.
+  Search: texts are encrypted, so `searchMessages` decrypts the newest 5000 the caller sees
+  (`visibleChannels`, shared with `senderHome`) in batches and filters in JS (≤ 30 hits);
+  `GET /workspaces/:id/sender/search?q=`, shown between chats and mails in Sender's side bar only.
+  `@alle` (`EVERYONE_TAG`, `mentionsAll`) counts as a mention of everyone but the writer
+  (`mentionsHere`, also on edit; writers never mention themselves). „Als ungelesen markieren“
+  (`PUT /sender/channels/:id/unread`) sets `readSeq` to just before the last message by someone
+  else; an open conversation closes (it would be read at once). A failed send stays in the list
+  (`failedSends` in `lib/api/sender.ts`, per tab) with „Erneut senden | Löschen“. Online dot:
+  `PersonFace` reads the header's `useOnlineMembers` (same query, no extra heartbeat). Topic:
+  `channel.topic` under the name, „Thema festlegen/ändern“ for who manages it. Formatting is only
+  rendered (`MessageText`: `**`, `_`/`*`, `~~`, `` ` ``, ``` fences, „- “/„1. “ lists) – the
+  text stays as typed, so previews, pushes and agents see the marks.
 - Live: one SSE stream per workspace (`senderLive`, events in `packages/shared/src/sender.ts`).
   The web side patches the TanStack caches (`lib/api/sender.ts`); sending is optimistic with
   `pending:` ids, the stream's copy and the POST's answer are merged by id. Agents in both side
@@ -1717,9 +1784,9 @@ hidden while pending and when nothing is unread. Slider's own start is „Präse
 - Mail people's pictures (`MailAvatar`, `services/mail-logos.ts`, GET
   `/workspaces/:id/mail/logos/:domain`): a colleague (`userId`, only where their domain signed a
   mail) keeps their own avatar; agents have no mail addresses, so none is matched. Anyone else: a
-  DiceBear „Glyphs“ seeded by the address (`generatedGlyph`, bundled `@dicebear/styles`, **CC BY
-  4.0** – „Abstract Avatars for All Creative Profile Use“ by Matt Houser; credited in `LegalLinks`
-  beside Impressum/Datenschutz – keep it there while the style is used), and over it, once loaded (no spinner, no shift; per tab
+  DiceBear „Initials“ of their name, else address (`generatedInitials`, bundled `@dicebear/styles`,
+  CC0 – no credit needed; the CC BY „Glyphs“ were dropped so `LegalLinks` names no artist), and
+  over it, once loaded (no spinner, no shift; per tab
   remembered in `MailAvatar`'s `logos`), the firm's logo – only where the mail was vouched for
   (`MailPerson.vouched` on `people`, `message.auth === 'pass'`): a spoofed `paypal.com` never
   wears PayPal's logo. The server looks up by the org domain alone (`logoDomain`: no mail
@@ -1777,6 +1844,37 @@ hidden while pending and when nothing is unread. Slider's own start is „Präse
   Off with Google's login set up, the button shows greyed with a tooltip (`GoogleMailPending`):
   Gmail's scope is restricted – its verification needs a yearly CASA audit; app password till then.
 - Calls: see „Calls“ below (also calling an agent and the agent that writes along).
+
+- Sender's start („Aktuell“) and each mailbox's „Übersicht“ (the user 2026-11-24: „kompakt sehen
+  was es zu tun gibt … komplett AI-native“) are one to-do list, `components/Triage.tsx` over
+  `GET /sender/triage?ai=0|1&mailbox=` (`services/sender-triage.ts`): everything unread – chats,
+  agents, mail incl. spam – in `TRIAGE_GROUPS` (mentions, direct, requests, conversations, agents,
+  mail, notices, newsletters, spam). `ai=0` sorts at once by rules (mention, direct, a mail's
+  `context.kind`, list headers, no-reply regex); `ai=1` lets the quick model move mail between
+  groups (never out of spam), write a line per item, a sentence per group and a headline – only
+  for mailboxes with `aiReads`, never spam. The client shows `ai=0` first, then the AI's answer
+  (`shownTriage` keeps its last answer for what is still unread while it is asked anew). The
+  server keeps the answer per user/workspace/mailbox until something new comes in: only reading
+  (the unread marks a subset of the kept ones) reuses it, no second AI call. No spinner (the user
+  2026-11-24: „man sieht da immer kurz die lade animation für ki … soll nicht so sein“): once an
+  answer is kept, `ai=1` returns it at once (new items without their line) and remakes it in the
+  background; `senderLive.watch` remakes it ~8 s after any live event for whoever looked in the
+  last 3 days and publishes `{ type: 'triage' }`, so the page refetches. Kept in memory only: the
+  first look after a server start waits for the AI (the page shows the count meanwhile). Watch
+  sees only events that are published, and publishers skip when nobody has Sender open
+  (`senderLive.open`). `agenda` („Heute und diese Woche“): events of the next 7 days, one's open
+  to-dos due in them or overdue, and read mails of the last 30 days the AI finds a date in; no
+  AI = events + to-dos as they stand. The words speak to the person („du“, never their name, no
+  „;“ – `SPEAK_TO_THEM`/`withoutSemicolons` in `ai-prompt-parts.ts`, also news and the calendar
+  overview).
+  „Alle gelesen“ = `POST /sender/triage/read` (chats only where they are the caller's unread);
+  „Abbestellen“ = `POST /mail/unsubscribe` (`services/mail-unsubscribe.ts`): RFC 8058 one-click
+  POST through `safeFetch`, else a mail to the `mailto:`, else `link` – the page handed back and
+  the thread left unread, so it stays on the list with „Seite öffnen“. `List-Unsubscribe` is kept
+  per mail since 0179 (`mail_messages.unsubscribe`); older mails get it once from the server
+  (`MailServers.headers`). „An Agent geben“ orders a Cloud agent with the items by id (one mail:
+  `mailThreadId`) and reads them; „Besprechen“ opens the direct chat with the items as its draft.
+  The tab is `?ordner=uebersicht` (`OVERVIEW`), not a server folder; Posteingang stays the default.
 
 ## Attachments – files on what is written (`services/attachments.ts`, `services/sender-files.ts`, `features/attachments/`)
 
@@ -2078,8 +2176,9 @@ hidden while pending and when nothing is unread. Slider's own start is „Präse
   (`streamChat`, metered `live`) with a short German prompt (`voiceSystem`: per du with first
   names, one or two sentences, digits – it said „360 Tage“ and „Herr Hofmann“ before), its last
   16 turns, who is there, the agent chat's summary and the call's orders. Work goes through the
-  tool `auftrag_vorschlagen` → `call.orders` (`proposed`, confirm first as before); no text but an
-  order → „Soll ich „X“ losschicken?“. The answer is cut into parts as it streams (`speechCut`:
+  tools `auftrag_ausfuehren` (sent at once), `auftrag_vormerken` (listed) and `auftrag_verwerfen`
+  (see „Orders from a call“); no text but an order → „Ich kümmere mich drum: „X“.“ / „Hab ich
+  vorgemerkt: …“ / „Verworfen: …“ (`saidOf`). The answer is cut into parts as it streams (`speechCut`:
   after `.!?…` + space, not after digits or abbreviations; the first part also at `, ; : –`
   after 60 chars) and each part becomes a `say` at once. Each turn is kept in the agent's first
   chat afterwards (`noteCallTurn`, not while the agent runs). `warm` (on call/bring-in/first
@@ -2105,8 +2204,19 @@ hidden while pending and when nothing is unread. Slider's own start is „Präse
   with the same `peerId` cancels the hub's 12 s leave, which kept a lone „Beitreten“ with one's
   own face. A stream event that throws is caught (the stream goes on); what breaks in the dock or
   ringing card is caught by `CallGuard`: hung up, toast „Der Anruf wurde wegen eines Fehlers
-  beendet.“, the app goes on. It answers only turns matching `CALL_AGENT_ADDRESS` (`\bagent(in)?\b`, not
-  „Agentur“); the message carries who is there plus the lines since it was last asked
+  beendet.“, the app goes on. A brought-in agent answers turns to it (`spokenTo`):
+  `CALL_AGENT_ADDRESS` (`\bagent(in)?\b`, not „Agentur“), its short name (`calledBy`: at the start,
+  after „hey/hallo“, at the end; not a ≥4-word chat title), or who it just answered going on
+  within 30 s (`FOLLOW_UP_MS`) – unless that turn names another person in the call („Vera, …“).
+  Other turns it overhears like a colleague (the user's call 2026-11-24: „nicht nur auf agent
+  hören sondern wie ein richtiger kollege“): 1.5 s after the talk pauses (`overhear`, each new
+  turn restarts it) the quick voice gets the lines since it last spoke with `overheard` – it
+  answers `[still]` (never read out, `SILENT_MARK`) or chimes in; no „denkt“, no „Moment.“, only
+  `auftrag_vormerken`/`auftrag_verwerfen` (a now-order overheard is listed, never sent), anyone
+  speaking before its first word aborts it (`call.quiet`). Silently: no history entry, `heardFrom`
+  stays. Only on the fast path (a Cloud agent per turn would be seconds and an AI round each),
+  only where the speaker may write to the agent, counted against `aiRequests` (over it: quiet).
+  The message carries who is there plus the lines since it was last asked
   (`heardFrom`, at most 40 lines / 8000 chars), ending „<Name> zu dir: …“. Measured with Claude:
   „Agent, wann ist laut uns der Launch?“ after „Launch ist am dritten März“ → right answer in
   ~2 s. The live token always carries „Agent“ as a key term.
@@ -2149,27 +2259,36 @@ hidden while pending and when nothing is unread. Slider's own start is „Präse
   handed over 0.75–0.99 s, first sound 1.59–1.72 s median, p95 2.0–3.1 s (3 runs). The floor is
   Voxtral's turn end (~0.75 s) + Mistral Small's first sentence (~0.45 s) + TTS first byte
   (~0.3 s); ≤ 1.2 s would need a speculative start on `turn.eager_end`.
-- Orders from a call (the user's call 2026-11-19: confirm first, said or with a button): the agent
-  in a call (own or brought in) is told (`ORDER_HOWTO`, on the first turn of an own call, in every
-  message of a brought-in one) not to do longer work in the call but to propose it as a line
-  `AUFTRAG: <Titel> | <Auftrag>` (the fast voice path: the tool `auftrag_vorschlagen`). `ordersIn`
-  takes those lines out of its answer into `call.orders` (`proposed`, at most 20); nothing is sent
-  until someone agrees: ✓ „Losschicken“ / ✕ „Verwerfen“ in the dock's „Aufträge“ (`POST
-  /calls/:id/orders/:orderId {send}`), or a short turn `replyTo` reads as yes/no – in a
-  conversation's call only a clear one („schick los“, „bestätigt“) or one to the agent („Agent,
-  ja“), since people say „ja“ to each other; in an own call a plain „ja“. A yes/no turn is not
-  passed to the agent. Sent = `createCloudAgent` with the agreeing person's rights (in the call's
-  area, else outside it); the hub polls it every 3 s while the call runs (`running` + `doing` →
-  `done`). The notes agent gets the sent orders listed so it does not send them again. Cloud agents
-  rename themselves with `name_chat` – the howto tells them not to, else the called agent took the
-  order's name. Measured with Claude: proposal ~4 s, a memo agent done in ~21 s.
+- Orders from a call (the user's call 2026-11-19, changed 2026-11-24: „klar werden was direkt
+  gemacht werden soll und er dann macht und was er sich erstmal als auftrag vorbehält und einfach
+  auflistet“ – no more „Soll ich X losschicken?“): the agent in a call (own or brought in) is told
+  (`ORDER_HOWTO`, on the first turn of an own call, in every message of a brought-in one) not to
+  do longer work in the call but to give it to an agent of its own: said to be done now →
+  `SOFORT: <Titel> | <Auftrag>` (fast path: tool `auftrag_ausfuehren`), sent at once with the
+  speaker's rights, no question back; work that only came up → `AUFTRAG: <Titel> | <Auftrag>`
+  (`auftrag_vormerken`), listed quietly as `proposed` („Vorgemerkt | ✓ schickt es los“ in the
+  dock), nobody asked; dropped → `VERWERFEN: <Titel>` (`auftrag_verwerfen`, `drop`: by title,
+  else by its words). `ordersIn` takes the lines out of the answer, `give` applies them
+  (`propose` hands back what it made or changed; a now-order under a listed title sends that
+  one). Listed work is also sent/dropped by voice without the agent (`orderReply`, the turn is not
+  passed on): „Schick … los“ / „Verwirf …“ / „Vergiss …“, ≤ 10 words, for the orders it names
+  (`namedIn`: half a title's words by 5-letter stems, or one ≥ 6 letters), „alle“, or the only one
+  listed when nothing else is said („Schick ihn los“) – never a plain „ja“ (listed work was not
+  asked about), never „Schick Ben die Mail ab“ beside an unrelated listed one; the agent says
+  „Losgeschickt: …“ / „Verworfen: …“. ✓ „Losschicken“ / ✕ „Verwerfen“ in the dock's „Aufträge“
+  (`POST /calls/:id/orders/:orderId {send}`) as before, silent. Sent = `createCloudAgent` with
+  the sending person's rights (in the call's area, else outside it); the hub polls it every 3 s
+  while the call runs (`running` + `doing` → `done`). The notes agent gets the sent orders listed
+  so it does not send them again. Cloud agents rename themselves with `name_chat` – the howto
+  tells them not to, else the called agent took the order's name. Measured with Claude (old
+  confirm flow): proposal ~4 s, a memo agent done in ~21 s.
 - Correcting a waiting order (the user's call 2026-11-20: „Ja, und nenn ihn Test 2 Bereich“ gave a
   second, identical order): a correction is the same order, changed (`propose`: same id, new
   title + text). The model names it – tool field `ersetzt` / line `AUFTRAG: … | … | ersetzt:
   <alter Titel>` – and the voice prompt lists the waiting orders' text; the server also takes a proposal
   under a waiting order's title (Mistral Small re-proposes the waiting one beside a new one) and,
   with one waiting, any `ersetzt`. A yes/no with a change („Ja, nenn es …“, „Nein, lieber …“;
-  `replyTo`'s change words) is not a yes: it goes to the agent, which amends and asks once more.
+  `orderReply`'s change words) is not a yes: it goes to the agent, which amends it.
   Measured with Mistral Small (8+6 runs): amended in place every time; a different order while one
   waits stays a second order in 7/8 (once a renamed re-proposal without `ersetzt` doubled it).
   The prompt said „ersetzt = <Titel>“ first – titles then came out as „X = Name“.

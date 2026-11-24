@@ -6,14 +6,12 @@ import {
   type PointerEvent as ReactPointerEvent,
 } from 'react';
 import { Link, useNavigate } from 'react-router';
-import type { CloudArea, CloudAreaMember } from '@slider/shared';
+import type { CloudArea, CloudAreaMember, Workspace } from '@slider/shared';
 import { useOpenSenderDirect } from '@/lib/api';
 import { pluralize } from '@/lib/format';
-import { routes } from '@/lib/routes';
 import { Avatar, Badge, Button, cn, Icon, IconButton, Menu, type MenuAction } from '@/ui';
 import { useSenderOrNull } from '@/features/sender';
 import { WorkspaceMark } from '@/features/workspaces';
-import { useCloud } from '../hooks/useCloud';
 
 /** Where the lines to the areas begin: around the workspace's picture and name. */
 const HUB_EDGE = 52;
@@ -35,18 +33,26 @@ const clamp = (zoom: number) => Math.min(MAX_ZOOM, Math.max(MIN_ZOOM, zoom));
  * area's people as dots around it – who works in several areas stands in each of them, and
  * all their dots light up together. Free to move (drag) and to zoom (pinch, ⌘ and the wheel, the buttons), so it holds
  * hundreds of people; an area picked – or a name typed in the page's bar (`query`) – lights up
- * its people.
+ * its people. The same net in Cloud's „Bereiche“ and in Sender's, where one finds whom to write
+ * to (the user, 2026-11-24: „um alle leute zu finden denen ich schreiben wollen könnte“).
  */
 export function PeopleGraph({
   areas,
   query,
-  actionsFor,
+  workspace,
+  userId,
+  areaTo,
+  actionsFor = () => [],
 }: {
   areas: readonly CloudArea[];
   query: string;
-  actionsFor: (area: CloudArea) => MenuAction[];
+  workspace: Pick<Workspace, 'id' | 'name' | 'logoUrl'>;
+  /** The caller: their own dot opens no chat. */
+  userId: string;
+  /** Where a picked area's name leads – its files in Cloud, its channel in Sender. */
+  areaTo: (area: CloudArea) => string;
+  actionsFor?: (area: CloudArea) => MenuAction[];
 }) {
-  const ui = useCloud();
   const graph = useMemo(() => layoutPeopleGraph(areas), [areas]);
   const areaOf = useMemo(() => new Map(areas.map((area) => [area.id, area])), [areas]);
   const memberOf = useMemo(() => {
@@ -167,7 +173,7 @@ export function PeopleGraph({
   // A click on someone's picture opens the chat with them – one already there straight away.
   const sender = useSenderOrNull();
   const navigate = useNavigate();
-  const openDirect = useOpenSenderDirect(ui.workspace.id);
+  const openDirect = useOpenSenderDirect(workspace.id);
   const chatWith = (personId: string) => {
     if (!sender || openDirect.isPending) return;
     const known = sender.home?.direct.find((each) => each.person?.id === personId);
@@ -240,8 +246,8 @@ export function PeopleGraph({
               transformOrigin: '50% 20px',
             }}
           >
-            <WorkspaceMark name={ui.workspace.name} logoUrl={ui.workspace.logoUrl} size={40} />
-            <span className="text-xs font-medium text-fg-muted">{ui.workspace.name}</span>
+            <WorkspaceMark name={workspace.name} logoUrl={workspace.logoUrl} size={40} />
+            <span className="text-xs font-medium text-fg-muted">{workspace.name}</span>
           </div>
 
           {/* The people come first; an area is only the ground they stand on. */}
@@ -283,7 +289,7 @@ export function PeopleGraph({
                   onPointerEnter={() => setOverDot(person.key)}
                   onPointerLeave={() => setOverDot(null)}
                 >
-                  {member.id === ui.userId || !sender ? (
+                  {member.id === userId || !sender ? (
                     <span className="flex items-center justify-center" style={{ height: DOT }}>
                       <Avatar author={member} size={32} nativeTitle={false} />
                       <span className="sr-only">
@@ -356,7 +362,7 @@ export function PeopleGraph({
         >
           <span className="flex items-center gap-2">
             <span className="truncate text-body font-medium text-fg">
-              {pointedMember.id === ui.userId ? 'Du' : pointedMember.name}
+              {pointedMember.id === userId ? 'Du' : pointedMember.name}
             </span>
             {pointedMember.role === 'viewer' && <Badge>Betrachter</Badge>}
           </span>
@@ -376,7 +382,7 @@ export function PeopleGraph({
           <span className="flex min-w-0 flex-1 flex-col">
             <span className="flex min-w-0 items-center gap-1.5">
               <Link
-                to={routes.cloudArea(ui.workspace.id, pickedArea.id)}
+                to={areaTo(pickedArea)}
                 className="truncate rounded-mark text-body font-semibold text-fg outline-none hover:underline focus-visible:ring-2 focus-visible:ring-focus"
               >
                 {pickedArea.name}

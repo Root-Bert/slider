@@ -12,6 +12,7 @@ export { DateButton } from './components/calendar/DateButton';
 export { AppMark, AppTag, type AppName } from './components/AppMark';
 export { FilesPreferences } from './components/FilesPreferences';
 export { DestinationDialog, type Destination } from './components/DestinationDialog';
+export { keptText } from './lib/kept';
 export {
   canPlaceApps,
   cloudBridge,
@@ -42,6 +43,9 @@ export { Empty, LoadFailed } from './components/Empty';
 export { NamedIcon, WithNamed } from './components/Named';
 export { namedHref, plainNamed, type Named } from './lib/named';
 export { AgentChoices } from './components/AgentWatching';
+export { AgentAsks } from './components/AgentAsks';
 export { AreaDot } from './components/AreaDot';
+export { PeopleGraph } from './components/PeopleGraph';
+export { peopleFound } from './lib/people-graph';
 export { VersionList } from './components/VersionList';
 export { choicesIn, withoutChoices } from './lib/choices';

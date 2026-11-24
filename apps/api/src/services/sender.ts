@@ -18,6 +18,7 @@ import {
   MAX_SENDER_MESSAGE,
   SENDER_PAGE,
   channelName,
+  mentionsAll,
   mentionsIn,
   CONVERSATION_AGENT_TAG,
   agentsTagged,
@@ -25,6 +26,10 @@ import {
   MAX_AGENTS_CALLED,
   newAgentTitle,
   type AccountAuthor,
+  type CommentReaction,
+  type CommentReactionKind,
+  type SenderReplyQuote,
+  type SenderMessageHit,
   type CallBrief,
   type SenderAgent,
   type SenderArea,
@@ -51,6 +56,7 @@ import {
   senderFiles,
   senderMembers,
   senderMessages,
+  senderReactions,
   users,
   workspaceMembers,
   type CloudAgentRow,
@@ -83,8 +89,10 @@ import {
   messageCloudAgent,
 } from './cloud-agents';
 import { pinnedAtOf } from './sender-pins';
+import { pushTo } from './web-push';
 
 type Deps = Pick<AppDeps, 'db' | 'clock' | 'log'>;
+type PushDeps = Deps & Pick<AppDeps, 'config'>;
 
 const channelNotFound = () => notFound('Diesen Kanal gibt es nicht (mehr).');
 const messageNotFound = () => notFound('Diese Nachricht gibt es nicht (mehr).');
@@ -104,6 +112,17 @@ interface Listener {
  */
 export class SenderLive {
   private readonly rooms = new Map<string, Set<Listener>>();
+  private readonly watchers = new Set<
+    (workspaceId: string, audience: ReadonlySet<string> | null, event: SenderEvent) => void
+  >();
+
+  /** Told of every event published (the start's AI look made anew in the background). */
+  watch(
+    watcher: (workspaceId: string, audience: ReadonlySet<string> | null, event: SenderEvent) => void,
+  ): () => void {
+    this.watchers.add(watcher);
+    return () => this.watchers.delete(watcher);
+  }
 
   join(workspaceId: string, userId: string, send: Listener['send']): () => void {
     const listener = { userId, send };
@@ -121,6 +140,14 @@ export class SenderLive {
     };
   }
 
+  /** This person has Sender open in the workspace: the page tells them itself. */
+  has(workspaceId: string, userId: string): boolean {
+    for (const listener of this.rooms.get(workspaceId) ?? []) {
+      if (listener.userId === userId) return true;
+    }
+    return false;
+  }
+
   /** Someone of the workspace has it open: worth working out an audience. */
   open(workspaceId: string): boolean {
     return (this.rooms.get(workspaceId)?.size ?? 0) > 0;
@@ -132,6 +159,13 @@ export class SenderLive {
     event: SenderEvent,
     except?: string,
   ): void {
+    for (const watcher of this.watchers) {
+      try {
+        watcher(workspaceId, audience, event);
+      } catch {
+        // A watcher's slip never keeps the event from the pages.
+      }
+    }
     for (const listener of this.rooms.get(workspaceId) ?? []) {
       if (listener.userId === except) continue;
       if (audience && !audience.has(listener.userId)) continue;
@@ -353,6 +387,28 @@ interface Lookup {
   agents: Map<string, SenderChannelAgent[]>;
   /** By conversation: when the caller pinned it. */
   pins: Map<string, string>;
+  /** The conversations the caller muted („Stummschalten“). */
+  muted: Set<string>;
+}
+
+/** Of these, the conversations the caller muted. */
+async function mutedOf(
+  db: Executor,
+  userId: string,
+  channelIds: readonly string[],
+): Promise<Set<string>> {
+  if (channelIds.length === 0) return new Set();
+  const rows = await db
+    .select({ channelId: senderMembers.channelId })
+    .from(senderMembers)
+    .where(
+      and(
+        eq(senderMembers.userId, userId),
+        eq(senderMembers.muted, true),
+        inArray(senderMembers.channelId, [...channelIds]),
+      ),
+    );
+  return new Set(rows.map((row) => row.channelId));
 }
 
 /** The agent of a conversation: its own, or (an area's channel) the one of its area. */
@@ -480,6 +536,7 @@ function channelDto(
     agents: look.agents.get(row.id) ?? [],
     updatedAt: row.updatedAt.toISOString(),
     pinnedAt: look.pins.get(row.id) ?? null,
+    muted: look.muted.has(row.id),
   };
 }
 
@@ -513,14 +570,15 @@ async function membersOf(
 
 /** One conversation as the side bar shows it. */
 async function oneChannel(deps: Deps, ctx: CloudCtx, userId: string, row: SenderChannelRow) {
-  const [people, members, unread, agents, pins] = await Promise.all([
+  const [people, members, unread, agents, pins, muted] = await Promise.all([
     peopleOf(deps.db, row.workspaceId),
     membersOf(deps.db, inArea(row) ? [] : [row.id]),
     unreadOf(deps.db, userId, await joinedAt(deps.db, row.workspaceId, userId), [row.id]),
     agentsOf(deps.db, [row]),
     pinnedAtOf(deps.db, userId, 'channel', [row.id]),
+    mutedOf(deps.db, userId, [row.id]),
   ]);
-  return channelDto(ctx, userId, row, { people, members, unread, agents, pins });
+  return channelDto(ctx, userId, row, { people, members, unread, agents, pins, muted });
 }
 
 /** Unread answers of the caller's agents – their own always, others' once opened here. */
@@ -558,12 +616,8 @@ async function agentUnread(
 }
 
 /** Everything Sender's side bar shows. */
-export async function senderHome(
-  deps: AppDeps,
-  userId: string,
-  workspaceId: string,
-): Promise<SenderHome> {
-  const ctx = await cloudContext(deps.db, workspaceId, userId);
+/** The conversations one sees: one's areas' channels, one's groups and direct ones. */
+async function visibleChannels(deps: Deps, ctx: CloudCtx, userId: string, workspaceId: string) {
   const areas = listed(ctx);
   await ensureAreaChannels(deps, ctx, areas);
   const seenAreas = new Set(areas.map((area) => area.id));
@@ -591,9 +645,75 @@ export async function senderHome(
         ),
       ),
   ]);
-  const own = mine.map((each) => each.channel);
+  return { areas, inAreas, own: mine.map((each) => each.channel) };
+}
+
+/** How many of the newest messages one sees a search looks through, and how many it gives. */
+const SEARCH_SCAN = 5000;
+const SEARCH_HITS = 30;
+
+/**
+ * Messages with these words, in every conversation one sees – newest first. The words are kept
+ * encrypted, so they are read here: through the newest {@link SEARCH_SCAN}, at most
+ * {@link SEARCH_HITS} hits, each with the words around the match.
+ */
+export async function searchMessages(
+  deps: AppDeps,
+  userId: string,
+  workspaceId: string,
+  query: string,
+): Promise<SenderMessageHit[]> {
+  const needle = query.trim().toLowerCase();
+  if (needle.length < 2) return [];
+  const ctx = await cloudContext(deps.db, workspaceId, userId);
+  const { inAreas, own } = await visibleChannels(deps, ctx, userId, workspaceId);
+  const ids = [...inAreas, ...own].map((row) => row.id);
+  if (ids.length === 0) return [];
+  const people = await peopleOf(deps.db, workspaceId);
+  const hits: SenderMessageHit[] = [];
+  const batch = 500;
+  for (let scanned = 0; scanned < SEARCH_SCAN && hits.length < SEARCH_HITS; scanned += batch) {
+    const rows = await deps.db
+      .select()
+      .from(senderMessages)
+      .where(and(inArray(senderMessages.channelId, ids), isNull(senderMessages.deletedAt)))
+      .orderBy(desc(senderMessages.createdAt), desc(senderMessages.seq))
+      .limit(batch)
+      .offset(scanned);
+    const agents = await agentTitles(deps.db, rows);
+    for (const row of rows) {
+      const flat = row.text.replace(/\s+/g, ' ');
+      const at = flat.toLowerCase().indexOf(needle);
+      if (at < 0) continue;
+      const from = Math.max(0, at - 40);
+      const to = Math.min(flat.length, at + needle.length + 80);
+      hits.push({
+        channelId: row.channelId,
+        messageId: row.id,
+        name: row.agentId
+          ? (agents.get(row.agentId) ?? 'Agent')
+          : row.userId
+            ? (people.get(row.userId)?.name ?? null)
+            : null,
+        text: `${from > 0 ? '…' : ''}${flat.slice(from, to).trim()}${to < flat.length ? '…' : ''}`,
+        createdAt: row.createdAt.toISOString(),
+      });
+      if (hits.length >= SEARCH_HITS) break;
+    }
+    if (rows.length < batch) break;
+  }
+  return hits;
+}
+
+export async function senderHome(
+  deps: AppDeps,
+  userId: string,
+  workspaceId: string,
+): Promise<SenderHome> {
+  const ctx = await cloudContext(deps.db, workspaceId, userId);
+  const { areas, inAreas, own } = await visibleChannels(deps, ctx, userId, workspaceId);
   const all = [...inAreas, ...own];
-  const [people, members, unread, tagged, pins] = await Promise.all([
+  const [people, members, unread, tagged, pins, muted] = await Promise.all([
     peopleOf(deps.db, workspaceId),
     membersOf(
       deps.db,
@@ -612,8 +732,13 @@ export async function senderHome(
       'channel',
       all.map((row) => row.id),
     ),
+    mutedOf(
+      deps.db,
+      userId,
+      all.map((row) => row.id),
+    ),
   ]);
-  const look = { people, members, unread, agents: tagged, pins };
+  const look = { people, members, unread, agents: tagged, pins, muted };
   const latest = (a: SenderChannelRow, b: SenderChannelRow) =>
     b.updatedAt.getTime() - a.updatedAt.getTime();
 
@@ -736,6 +861,81 @@ function messageDto(
   };
 }
 
+/** The reactions on these messages, by message – who reacted as they are now. */
+async function reactionsOf(
+  db: Executor,
+  people: ReadonlyMap<string, AccountAuthor>,
+  messageIds: readonly string[],
+): Promise<Map<string, CommentReaction[]>> {
+  const result = new Map<string, CommentReaction[]>();
+  if (messageIds.length === 0) return result;
+  const rows = await db
+    .select()
+    .from(senderReactions)
+    .where(inArray(senderReactions.messageId, [...messageIds]))
+    .orderBy(asc(senderReactions.createdAt));
+  for (const row of rows) {
+    const author = people.get(row.userId);
+    if (!author) continue;
+    const list = result.get(row.messageId) ?? [];
+    list.push({ kind: row.kind, author });
+    result.set(row.messageId, list);
+  }
+  return result;
+}
+
+/** The messages they answer, as quoted above them – by the answering message's reply id. */
+async function quotesOf(
+  db: Executor,
+  people: ReadonlyMap<string, AccountAuthor>,
+  rows: readonly SenderMessageRow[],
+): Promise<Map<string, SenderReplyQuote>> {
+  const result = new Map<string, SenderReplyQuote>();
+  const ids = [...new Set(rows.flatMap((row) => (row.replyTo ? [row.replyTo] : [])))];
+  if (ids.length === 0) return result;
+  const answered = await db.select().from(senderMessages).where(inArray(senderMessages.id, ids));
+  const agents = await agentTitles(db, answered);
+  for (const each of answered) {
+    const name = each.agentId
+      ? (agents.get(each.agentId) ?? 'Agent')
+      : each.userId
+        ? (people.get(each.userId)?.name ?? null)
+        : null;
+    const deleted = Boolean(each.deletedAt);
+    const text = deleted ? '' : each.text.replace(/\s+/g, ' ').trim();
+    result.set(each.id, {
+      id: each.id,
+      name,
+      text: text.length > 200 ? `${text.slice(0, 199)}…` : text,
+      deleted,
+    });
+  }
+  return result;
+}
+
+/** Messages as shown in the list: with their reactions and the message each answers. */
+async function fullDtos(
+  db: Executor,
+  people: ReadonlyMap<string, AccountAuthor>,
+  agents: ReadonlyMap<string, string>,
+  calls: ReadonlyMap<string, CallBrief>,
+  rows: readonly SenderMessageRow[],
+): Promise<SenderMessage[]> {
+  const [reactions, quotes] = await Promise.all([
+    reactionsOf(
+      db,
+      people,
+      rows.map((row) => row.id),
+    ),
+    quotesOf(db, people, rows),
+  ]);
+  return rows.map((row) => ({
+    ...messageDto(row, people, agents, calls),
+    reactions: reactions.get(row.id) ?? [],
+    replyTo: row.replyTo && !row.deletedAt ? (quotes.get(row.replyTo) ?? null) : null,
+  }));
+}
+
 async function agentTitles(db: Executor, rows: readonly SenderMessageRow[]) {
   const ids = [...new Set(rows.map((row) => row.agentId).filter((id): id is string => !!id))];
   const result = new Map<string, string>();
@@ -787,7 +987,7 @@ export async function listMessages(
   }
   return {
     channel: await oneChannel(deps, ctx, userId, row),
-    messages: page.map((each) => messageDto(each, people, agents, calls)),
+    messages: await fullDtos(deps.db, people, agents, calls, page),
     more,
     readSeq: since,
   };
@@ -796,6 +996,20 @@ export async function listMessages(
 // ── Writing ─────────────────────────────────────────────────────────────────
 
 /** Appends a message with the next seq; the conversation moves up in the side bar. */
+/** Who a message names: by „@Name“, and with „@alle“ everyone in the conversation but its writer. */
+async function mentionsHere(
+  db: Executor,
+  row: SenderChannelRow,
+  text: string,
+  people: ReadonlyMap<string, AccountAuthor>,
+  writer: string | null,
+): Promise<string[]> {
+  const named = new Set(mentionsIn(text, people.values()));
+  if (mentionsAll(text)) for (const id of await audienceOf(db, row)) named.add(id);
+  if (writer) named.delete(writer);
+  return [...named];
+}
+
 async function append(
   deps: Deps,
   row: SenderChannelRow,
@@ -805,9 +1019,10 @@ async function append(
   callId: string | null = null,
   /** Files its writer put on it (`claimAttachments`). */
   attachmentIds: readonly string[] = [],
+  replyTo: string | null = null,
 ): Promise<{ message: SenderMessageRow; people: Map<string, AccountAuthor> }> {
   const people = await peopleOf(deps.db, row.workspaceId);
-  const mentions = mentionsIn(text, people.values());
+  const mentions = await mentionsHere(deps.db, row, text, people, author.userId);
   const now = deps.clock.now();
   const message = await deps.db.transaction(async (tx) => {
     const [bumped] = await tx
@@ -833,6 +1048,7 @@ async function append(
         mail,
         mentions,
         callId,
+        replyTo,
         createdAt: now,
       })
       .returning();
@@ -852,6 +1068,69 @@ async function append(
   return { message, people };
 }
 
+/**
+ * Web Push for a new message to who has no tab of the workspace open (an open one tells by itself,
+ * `features/sender/lib/notify.ts`), by the same rule: what is written in a group or directly – not
+ * where one muted it – and wherever one is named.
+ */
+async function pushNew(
+  deps: PushDeps,
+  row: SenderChannelRow,
+  message: SenderMessage,
+  mentions: readonly string[],
+) {
+  const writer = message.author?.id ?? null;
+  const named = new Set(mentions);
+  const audience = await audienceOf(deps.db, row);
+  const candidates = [...audience].filter(
+    (id) =>
+      id !== writer && !senderLive.has(row.workspaceId, id) && (inArea(row) ? named.has(id) : true),
+  );
+  if (candidates.length === 0) return;
+  const muted = inArea(row) ? new Set<string>() : await mutedBy(deps.db, row.id, candidates);
+  const told = candidates.filter((id) => named.has(id) || !muted.has(id));
+  const who = message.agent?.title ?? message.author?.name ?? 'Jemand';
+  let where = row.name || 'Gruppe';
+  if (row.kind === 'channel') where = `#${row.name}`;
+  if (row.kind === 'area' && row.areaId) {
+    const [area] = await deps.db
+      .select({ name: cloudAreas.name })
+      .from(cloudAreas)
+      .where(eq(cloudAreas.id, row.areaId));
+    where = area?.name ?? where;
+  }
+  const files = message.attachments ?? [];
+  const text = (
+    message.text ||
+    (files.length
+      ? `${files.length === 1 ? 'Datei' : 'Dateien'}: ${files.map((one) => one.name).join(', ')}`
+      : '')
+  )
+    .replace(/\s+/g, ' ')
+    .trim();
+  pushTo(deps, told, {
+    title: row.kind === 'direct' ? who : `${who} in ${where}`,
+    body: text.length > 180 ? `${text.slice(0, 179)}…` : text,
+    tag: `sender:${row.id}`,
+    url: `/w/${row.workspaceId}/nachrichten/kanal/${row.id}`,
+  });
+}
+
+/** Of these people, who muted the conversation. */
+async function mutedBy(db: Executor, channelId: string, userIds: readonly string[]) {
+  const rows = await db
+    .select({ userId: senderMembers.userId })
+    .from(senderMembers)
+    .where(
+      and(
+        eq(senderMembers.channelId, channelId),
+        eq(senderMembers.muted, true),
+        inArray(senderMembers.userId, [...userIds]),
+      ),
+    );
+  return new Set(rows.map((each) => each.userId));
+}
+
 async function announce(deps: Deps, row: SenderChannelRow, event: SenderEvent) {
   if (!senderLive.open(row.workspaceId)) return;
   senderLive.publish(row.workspaceId, await audienceOf(deps.db, row), event);
@@ -866,6 +1145,8 @@ export async function postMessage(
   viewer?: Viewer,
   /** Files put on it – words or files, one of them at least. */
   attachmentIds: readonly string[] = [],
+  /** „Antworten“: a message of this conversation, quoted above it. */
+  replyTo?: string,
 ): Promise<SenderMessage> {
   if (!text.trim() && attachmentIds.length === 0) throw badRequest('Schreib etwas.');
   const { row, ctx } = await seen(deps, userId, channelId);
@@ -873,6 +1154,19 @@ export async function postMessage(
   if (row.kind === 'direct') {
     const ids = await memberIds(deps.db, row.id);
     if (ids.length < 2) throw forbidden('Diese Person ist nicht mehr im Workspace.');
+  }
+  if (replyTo) {
+    const [answered] = await deps.db
+      .select({ id: senderMessages.id })
+      .from(senderMessages)
+      .where(
+        and(
+          eq(senderMessages.id, replyTo),
+          eq(senderMessages.channelId, row.id),
+          isNull(senderMessages.deletedAt),
+        ),
+      );
+    if (!answered) throw badRequest('Diese Nachricht gibt es nicht (mehr).');
   }
   const { message, people } = await append(
     deps,
@@ -882,9 +1176,14 @@ export async function postMessage(
     null,
     null,
     attachmentIds,
+    replyTo ?? null,
   );
-  const dto = messageDto(message, people, new Map());
+  const [dto] = await fullDtos(deps.db, people, new Map(), new Map(), [message]);
+  if (!dto) throw messageNotFound();
   await announce(deps, row, { type: 'message', channelId: row.id, message: dto });
+  void pushNew(deps, row, dto, message.mentions ?? []).catch((error: unknown) =>
+    deps.log.warn(`Web Push for ${row.id}: ${String(error)}`),
+  );
   // Its files in the conversation's „Dateien“ – in an area's chat in Cloud too.
   await keepSenderFiles(deps, row, message, userId, message.attachments ?? []);
   if (viewer && viewer.author.id === userId)
@@ -1105,7 +1404,7 @@ async function callAgent(
  * a direct one of theirs): the people there read it under the agent's name.
  */
 export async function postAsAgent(
-  deps: Deps,
+  deps: PushDeps,
   agent: { id: string; title: string; userId: string },
   channelId: string,
   text: string,
@@ -1114,6 +1413,69 @@ export async function postAsAgent(
   const { message, people } = await append(deps, row, { userId: null, agentId: agent.id }, text);
   const dto = messageDto(message, people, new Map([[agent.id, agent.title]]));
   await announce(deps, row, { type: 'message', channelId: row.id, message: dto });
+  void pushNew(deps, row, dto, message.mentions ?? []).catch((error: unknown) =>
+    deps.log.warn(`Web Push for ${row.id}: ${String(error)}`),
+  );
+  return dto;
+}
+
+/**
+ * An agent's own message: one it wrote itself (`agent_id`), in a conversation its person sees –
+ * changed or deleted as „Bearbeiten“ and „Löschen“ do a person's own.
+ */
+async function agentsMessage(
+  deps: Deps,
+  agent: { id: string; userId: string },
+  messageId: string,
+) {
+  const [message] = await deps.db
+    .select()
+    .from(senderMessages)
+    .where(eq(senderMessages.id, messageId));
+  if (!message || message.deletedAt) throw messageNotFound();
+  const { row } = await seen(deps, agent.userId, message.channelId);
+  if (message.agentId !== agent.id)
+    throw forbidden('Nur eigene Nachrichten lassen sich ändern.');
+  return { message, row };
+}
+
+export async function editAgentMessage(
+  deps: AppDeps,
+  agent: { id: string; title: string; userId: string },
+  messageId: string,
+  text: string,
+): Promise<SenderMessage> {
+  const { message, row } = await agentsMessage(deps, agent, messageId);
+  const people = await peopleOf(deps.db, row.workspaceId);
+  const [updated] = await deps.db
+    .update(senderMessages)
+    .set({
+      text,
+      mentions: await mentionsHere(deps.db, row, text, people, agent.userId),
+      editedAt: deps.clock.now(),
+    })
+    .where(eq(senderMessages.id, message.id))
+    .returning();
+  if (!updated) throw messageNotFound();
+  const dto = messageDto(updated, people, new Map([[agent.id, agent.title]]));
+  await announce(deps, row, { type: 'changed', channelId: row.id, message: dto });
+  return dto;
+}
+
+export async function deleteAgentMessage(
+  deps: AppDeps,
+  agent: { id: string; title: string; userId: string },
+  messageId: string,
+): Promise<SenderMessage> {
+  const { message, row } = await agentsMessage(deps, agent, messageId);
+  const [updated] = await deps.db
+    .update(senderMessages)
+    .set({ text: '', attachments: [], mentions: [], deletedAt: deps.clock.now() })
+    .where(eq(senderMessages.id, message.id))
+    .returning();
+  if (!updated) throw messageNotFound();
+  const dto = messageDto(updated, await peopleOf(deps.db, row.workspaceId), new Map());
+  await announce(deps, row, { type: 'changed', channelId: row.id, message: dto });
   return dto;
 }
 
@@ -1177,15 +1539,19 @@ export async function postFromMail(
   return dto;
 }
 
-async function ownMessage(deps: Deps, userId: string, messageId: string) {
+/**
+ * A message the caller may change – their own; `moderate`: also someone else's where the caller
+ * manages the conversation (its creator, the area's managers), to delete it.
+ */
+async function ownMessage(deps: Deps, userId: string, messageId: string, moderate = false) {
   const [message] = await deps.db
     .select()
     .from(senderMessages)
     .where(eq(senderMessages.id, messageId));
   if (!message) throw messageNotFound();
-  const { row } = await seen(deps, userId, message.channelId);
-  if (message.userId !== userId || message.callId)
-    throw forbidden('Nur eigene Nachrichten lassen sich ändern.');
+  const { row, ctx } = await seen(deps, userId, message.channelId);
+  const allowed = message.userId === userId || (moderate && manages(ctx, userId, row));
+  if (!allowed || message.callId) throw forbidden('Nur eigene Nachrichten lassen sich ändern.');
   if (message.deletedAt) throw messageNotFound();
   return { message, row };
 }
@@ -1200,11 +1566,55 @@ export async function editMessage(
   const people = await peopleOf(deps.db, row.workspaceId);
   const [updated] = await deps.db
     .update(senderMessages)
-    .set({ text, mentions: mentionsIn(text, people.values()), editedAt: deps.clock.now() })
+    .set({
+      text,
+      mentions: await mentionsHere(deps.db, row, text, people, userId),
+      editedAt: deps.clock.now(),
+    })
     .where(eq(senderMessages.id, message.id))
     .returning();
-  if (!updated) throw messageNotFound();
-  const dto = messageDto(updated, people, new Map());
+  const [dto] = updated ? await fullDtos(deps.db, people, new Map(), new Map(), [updated]) : [];
+  if (!dto) throw messageNotFound();
+  await announce(deps, row, { type: 'changed', channelId: row.id, message: dto });
+  return dto;
+}
+
+/**
+ * A reaction of the caller on a message (👍 / 👎 / egal), or none (`null`) – one each, another
+ * replaces it. Who may write in the conversation; everyone there sees it at once.
+ */
+export async function reactToMessage(
+  deps: AppDeps,
+  userId: string,
+  messageId: string,
+  kind: CommentReactionKind | null,
+): Promise<SenderMessage> {
+  const [message] = await deps.db
+    .select()
+    .from(senderMessages)
+    .where(eq(senderMessages.id, messageId));
+  // A call's entry takes none.
+  if (!message || message.deletedAt || message.callId) throw messageNotFound();
+  const { row, ctx } = await seen(deps, userId, message.channelId);
+  if (inArea(row) && ctx.role === 'viewer') throw forbidden(READS_ALONG);
+  if (kind) {
+    await deps.db
+      .insert(senderReactions)
+      .values({ messageId, userId, kind, createdAt: deps.clock.now() })
+      .onConflictDoUpdate({
+        target: [senderReactions.messageId, senderReactions.userId],
+        set: { kind },
+      });
+  } else {
+    await deps.db
+      .delete(senderReactions)
+      .where(and(eq(senderReactions.messageId, messageId), eq(senderReactions.userId, userId)));
+  }
+  const people = await peopleOf(deps.db, row.workspaceId);
+  const [dto] = await fullDtos(deps.db, people, await agentTitles(deps.db, [message]), new Map(), [
+    message,
+  ]);
+  if (!dto) throw messageNotFound();
   await announce(deps, row, { type: 'changed', channelId: row.id, message: dto });
   return dto;
 }
@@ -1214,7 +1624,7 @@ export async function deleteMessage(
   userId: string,
   messageId: string,
 ): Promise<SenderMessage> {
-  const { message, row } = await ownMessage(deps, userId, messageId);
+  const { message, row } = await ownMessage(deps, userId, messageId, true);
   const [updated] = await deps.db
     .update(senderMessages)
     .set({ text: '', attachments: [], mentions: [], deletedAt: deps.clock.now() })
@@ -1227,6 +1637,39 @@ export async function deleteMessage(
   const dto = messageDto(updated, await peopleOf(deps.db, row.workspaceId), new Map());
   await announce(deps, row, { type: 'changed', channelId: row.id, message: dto });
   return dto;
+}
+
+/**
+ * „Stummschalten“ / „Laut schalten“: for the caller alone – no count on the app's icon, no
+ * notification; „@“ with their name still tells. Their other tabs and devices hear of it.
+ */
+export async function muteChannel(
+  deps: AppDeps,
+  userId: string,
+  channelId: string,
+  muted: boolean,
+): Promise<{ muted: boolean }> {
+  const { row } = await seen(deps, userId, channelId);
+  const since = await joinedAt(deps.db, row.workspaceId, userId);
+  await deps.db
+    .insert(senderMembers)
+    .values({
+      channelId: row.id,
+      userId,
+      muted,
+      // A first row (an area's channel never opened) reads as no row did: what came after one
+      // joined is unread.
+      readSeq: sql`(select coalesce(max(m.seq), 0) from sender_messages m where m.channel_id = ${row.id} and m.created_at <= ${since.toISOString()}::timestamptz)`,
+      createdAt: deps.clock.now(),
+    })
+    .onConflictDoUpdate({
+      target: [senderMembers.channelId, senderMembers.userId],
+      set: { muted },
+    });
+  if (senderLive.open(row.workspaceId)) {
+    senderLive.publish(row.workspaceId, new Set([userId]), { type: 'channels' });
+  }
+  return { muted };
 }
 
 /** The caller read up to `seq` (never back). */
@@ -1245,6 +1688,38 @@ export async function readChannel(
       target: [senderMembers.channelId, senderMembers.userId],
       set: { readSeq: sql`greatest(${senderMembers.readSeq}, ${upTo})` },
     });
+}
+
+/**
+ * „Als ungelesen markieren“: the last message someone else wrote is new again for the caller –
+ * counted in the side bar until the conversation is opened.
+ */
+export async function markUnread(deps: AppDeps, userId: string, channelId: string): Promise<void> {
+  const { row } = await seen(deps, userId, channelId);
+  const [last] = await deps.db
+    .select({ seq: senderMessages.seq })
+    .from(senderMessages)
+    .where(
+      and(
+        eq(senderMessages.channelId, row.id),
+        isNull(senderMessages.deletedAt),
+        or(isNull(senderMessages.userId), ne(senderMessages.userId, userId)),
+      ),
+    )
+    .orderBy(desc(senderMessages.seq))
+    .limit(1);
+  if (!last) return;
+  const readSeq = last.seq - 1;
+  await deps.db
+    .insert(senderMembers)
+    .values({ channelId: row.id, userId, readSeq, createdAt: deps.clock.now() })
+    .onConflictDoUpdate({
+      target: [senderMembers.channelId, senderMembers.userId],
+      set: { readSeq },
+    });
+  if (senderLive.open(row.workspaceId)) {
+    senderLive.publish(row.workspaceId, new Set([userId]), { type: 'channels' });
+  }
 }
 
 export async function typingIn(
@@ -1577,6 +2052,28 @@ export async function addToGroup(
 export async function leaveGroup(deps: AppDeps, userId: string, channelId: string): Promise<void> {
   const { row } = await seen(deps, userId, channelId);
   if (row.kind !== 'group') throw badRequest('Verlassen lässt sich nur eine Gruppe.');
+  await dropMember(deps, row, userId);
+}
+
+/** „Entfernen“: who manages a group (who opened it) takes someone else out of it. */
+export async function removeFromGroup(
+  deps: AppDeps,
+  userId: string,
+  channelId: string,
+  personId: string,
+): Promise<SenderChannel> {
+  const { row, ctx } = await seen(deps, userId, channelId);
+  if (row.kind !== 'group') throw badRequest('Entfernen lässt sich nur aus einer Gruppe.');
+  if (personId === userId) throw badRequest('Verlasse die Gruppe, um selbst zu gehen.');
+  if (!manages(ctx, userId, row)) throw forbidden();
+  if (!(await memberIds(deps.db, row.id)).includes(personId))
+    throw notFound('Diese Person ist nicht in der Gruppe.');
+  await dropMember(deps, row, personId);
+  return oneChannel(deps, ctx, userId, row);
+}
+
+/** One out of a group, with their private agents; the last one out takes it along. */
+async function dropMember(deps: AppDeps, row: SenderChannelRow, userId: string): Promise<void> {
   await deps.db
     .delete(senderMembers)
     .where(and(eq(senderMembers.channelId, row.id), eq(senderMembers.userId, userId)));

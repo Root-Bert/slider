@@ -18,7 +18,7 @@ interface AvatarProps {
   source?: CommentSource;
   /** Native name tooltip; off where the caller shows its own. */
   nativeTitle?: boolean;
-  /** Another picture in the ring instead of the one seeded by the name (a mail sender's glyph). */
+  /** Another picture in the ring instead of the one seeded by the name (a mail sender's initials). */
   picture?: string;
   /** Over the picture, inside the ring (a sender's logo once it has loaded). */
   children?: ReactNode;

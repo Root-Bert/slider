@@ -29,7 +29,13 @@ import { aiLimits } from '../http/ai-limits';
 import { ApiError, badRequest, forbidden, notFound } from '../http/errors';
 import { prepareSpeech, speechStream, type AiConnection } from './ai-providers';
 import { hearAudiences } from './call-audience';
-import { voiceAnswer, VOICE_HISTORY, type ProposedOrder, type VoiceTurn } from './call-voice';
+import {
+  SILENT,
+  voiceAnswer,
+  VOICE_HISTORY,
+  type ProposedOrder,
+  type VoiceTurn,
+} from './call-voice';
 import { personsVoice } from './call-voices';
 import type { KeptCall } from './call-records';
 import {
@@ -60,13 +66,18 @@ const AGENT_CONTEXT_LINES = 40;
 const AGENT_CONTEXT_CHARS = 8000;
 /** How often a sent order's agent is looked at, to show how far it got. */
 const ORDER_POLL_MS = 3000;
+/** Who the agent just answered is still talking to it this long after – no „Agent“ needed. */
+const FOLLOW_UP_MS = 30_000;
+/** Talk not to the agent: it thinks about chiming in once nobody has said more for this long. */
+const OVERHEAR_AFTER_MS = 1500;
 
 /**
- * What the agent in a call is told about work for other agents: it proposes, the call agrees.
- * Its answer's `AUFTRAG:` lines become the call's orders (`ordersIn`).
+ * What the agent in a call is told about work for other agents: said to be done now, it goes at
+ * once (`SOFORT:`); work that only came up is listed, nobody asked (`AUFTRAG:`); a listed one is
+ * dropped by voice (`VERWERFEN:`). Its answer's lines become the call's orders (`ordersIn`).
  */
 const ORDER_HOWTO =
-  'Soll etwas erledigt werden, das länger dauert oder ohne uns weiterlaufen kann (recherchieren, eine Präsentation bauen, etwas schreiben oder verschicken), mach es nicht selbst im Gespräch: schlag es als Auftrag für einen eigenen Agenten vor – je Auftrag eine Zeile „AUFTRAG: <kurzer Titel> | <der ganze Auftrag, so dass ein Agent ihn ohne das Gespräch versteht>“ – und frag kurz, ob du ihn losschicken sollst. Losgeschickt wird erst, wenn jemand im Anruf zustimmt. Ändert oder ergänzt jemand einen Auftrag, der noch wartet (auch mit „ja, und …“), schreib ihn ganz neu als „AUFTRAG: <Titel> | <der ganze geänderte Auftrag> | ersetzt: <sein bisheriger Titel>“ – er ersetzt den wartenden, es bleibt ein Auftrag – und frag noch einmal. Benenne den Chat dafür nicht um.';
+  'Soll etwas erledigt werden, das länger dauert oder ohne uns weiterlaufen kann (recherchieren, eine Präsentation bauen, etwas schreiben oder verschicken, Dateien lesen oder ändern), mach es nicht selbst im Gespräch – ein eigener Agent macht es. Sagt dir jemand, dass es jetzt passieren soll, schreib eine Zeile „SOFORT: <kurzer Titel> | <der ganze Auftrag, so dass ein Agent ihn ohne das Gespräch versteht>“ – er geht gleich los; sag kurz, dass du dich drum kümmerst, und frag nicht nach. Kommt Arbeit nur im Gespräch auf, ohne dass sie dir jemand für jetzt aufgetragen hat, merk sie vor: „AUFTRAG: <kurzer Titel> | <der ganze Auftrag>“ – sie steht still in der Liste der Aufträge, frag nicht, ob du sie losschicken sollst. Im Zweifel vormerken. Ändert oder ergänzt jemand einen vorgemerkten Auftrag, schreib ihn ganz neu mit „ | ersetzt: <sein bisheriger Titel>“ am Ende (als SOFORT, wenn er jetzt los soll) – es bleibt ein Auftrag. Will jemand einen vorgemerkten nicht mehr: „VERWERFEN: <sein Titel>“. Benenne den Chat dafür nicht um.';
 
 /**
  * How the agent in a call talks: like a friendly colleague – a hello is greeted back, small talk
@@ -86,6 +97,12 @@ const FIRST_PART_CHARS = 60;
  */
 const ACK_AFTER_MS = 700;
 const ACK = 'Moment.';
+/** How many people are in the call (tabs of one person count once). */
+const peopleIn = (call: { peers: Map<string, { userId: string }> }) =>
+  new Set([...call.peers.values()].map((peer) => peer.userId)).size;
+
+/** The voice's {@link SILENT} wherever it stands in what it wrote – never read out. */
+const SILENT_MARK = /\[\s*still\s*\]/gi;
 
 /**
  * One part of an answer (a sentence) to read out, its audio made at once when published – as
@@ -244,6 +261,13 @@ interface Call {
   refused: Map<string, number>;
   /** The answer being written – aborted when a newer turn comes or the call ends. */
   answering: AbortController | null;
+  /** An answer to what it only overheard, not a word read out yet: anyone speaking stops it. */
+  quiet: AbortController | null;
+  /** Waits for the talk to pause before the agent thinks about chiming in (`overhear`). */
+  overhear: ReturnType<typeof setTimeout> | null;
+  /** When the agent last answered, and whom (user id): their next words are to it, too. */
+  spokeAt: number;
+  spokeTo: string | null;
   /** The voice's last answer, part by part as published – cut to what was heard when hushed. */
   answer: { asked: string; parts: { sayId: string; text: string }[]; kept: boolean } | null;
   /** `ACK` in the agent's voice, made as it comes into the call; null until then (or failed). */
@@ -406,6 +430,10 @@ export class CallHub {
         mayAsk: new Map(),
         refused: new Map(),
         answering: null,
+        quiet: null,
+        overhear: null,
+        spokeAt: 0,
+        spokeTo: null,
         answer: null,
         ack: null,
         acking: false,
@@ -429,8 +457,9 @@ export class CallHub {
   }
 
   /**
-   * Calls a Cloud agent: a call of one's own with it – no one rings, nobody else joins. What one
-   * says goes into the agent's chat (`heard`), its answers are read out. Who may write to the
+   * Calls a Cloud agent: a call of one's own with it – no one rings; others come in only when rung
+   * from inside it (`invite`), as in any call. What one says goes into the agent's chat (`heard`),
+   * its answers are read out. Who may write to the
    * agent may call it; the workspace needs live writing (`live`), the agent hears nothing else.
    */
   async callAgent(
@@ -494,6 +523,10 @@ export class CallHub {
         mayAsk: new Map(),
         refused: new Map(),
         answering: null,
+        quiet: null,
+        overhear: null,
+        spokeAt: 0,
+        spokeTo: null,
         answer: null,
         ack: null,
         acking: false,
@@ -536,11 +569,15 @@ export class CallHub {
       call.record.push({ userId: peer.author.id, name: peer.author.name, at, text, parts: [] });
       call.chars += text.length;
     }
-    // A yes or no to proposed work is the answer to it, not something for the agent.
-    if (call.orders.some((order) => order.state === 'proposed')) {
-      const reply = replyTo(text, !call.channelId);
+    // Someone speaks while the agent only thinks about chiming in: the talk goes on without it.
+    call.quiet?.abort();
+    call.quiet = null;
+    // „Schick … los“ or „Verwirf …“ for listed work is the answer to it, not something for the agent.
+    const waiting = call.orders.filter((order) => order.state === 'proposed');
+    if (waiting.length > 0) {
+      const reply = orderReply(text, waiting);
       if (reply) {
-        void this.decide(deps, viewer, call, null, reply === 'yes');
+        void this.decide(deps, viewer, call, reply.ids, reply.send, true);
         return;
       }
     }
@@ -558,15 +595,24 @@ export class CallHub {
     let voice = { asked: text, said: text };
     // What was said is taken as heard only once the agent takes the question.
     let heardTo: number | undefined;
-    if (agent.invitedBy) {
-      // Brought into a conversation's call: it answers when spoken to, with what was said since.
-      if (!CALL_AGENT_ADDRESS.test(text)) return;
+    // With more than one person – brought into a conversation's call, or someone rung into one's
+    // call with it – it is at the table like in any call with people.
+    const group = !!agent.invitedBy || peopleIn(call) > 1;
+    if (group) {
+      // It answers when spoken to – „Agent“, its name, or who it just answered goes on – with what
+      // was said since; else it may chime in.
+      if (!this.spokenTo(call, agent, peer.author.id, text)) {
+        this.overhear(deps, viewer, call, agent);
+        return;
+      }
+      if (call.overhear) clearTimeout(call.overhear);
+      call.overhear = null;
       message = askedInCall(call, peer.author, text);
       voice = { asked: voiceAsked(call, peer.author, text), said: text };
       heardTo = call.lines.length;
     }
     if (this.tooMany(deps, viewer, call)) return;
-    if (!agent.invitedBy && !call.briefed) {
+    if (!group && !call.briefed) {
       call.briefed = true;
       message = `Wir telefonieren – deine Antworten werden vorgelesen: kurz, gesprochen, ohne Listen. ${CALL_TONE} ${ORDER_HOWTO}\n\n${text}`;
     }
@@ -574,6 +620,59 @@ export class CallHub {
     call.asking = call.asking.then(() =>
       this.ask(deps, viewer, call, agent, message, undefined, voice, heardTo),
     );
+  }
+
+  /**
+   * Whether a turn is to the agent: „Agent“, its name, or who it just answered says more (not to
+   * someone else by name).
+   */
+  private spokenTo(call: Call, agent: CallAgent, userId: string, text: string): boolean {
+    if (CALL_AGENT_ADDRESS.test(text) || calledBy(agent.title, text)) return true;
+    if (call.spokeTo !== userId || this.now() - call.spokeAt >= FOLLOW_UP_MS) return false;
+    // „Vera, was meinst du?“ – to someone else, not on to the agent.
+    return ![...call.peers.values()].some(
+      (peer) => peer.userId !== userId && calledBy(peer.author.name.split(' ')[0] ?? '', text),
+    );
+  }
+
+  /**
+   * Talk in the call not to the agent: once it pauses, the agent hears it like a colleague at the
+   * table – it says something where it helps (a question to the room it can answer, a mistake),
+   * notes work that comes up, and else stays quiet. Only with the quick voice: a Cloud agent
+   * would take seconds and an AI round for each turn.
+   */
+  private overhear(deps: AppDeps, viewer: Viewer, call: Call, agent: CallAgent) {
+    if (call.overhear) clearTimeout(call.overhear);
+    call.overhear = setTimeout(() => {
+      call.overhear = null;
+      this.chimeIn(deps, viewer, call, agent).catch((error: unknown) =>
+        deps.log.warn('Calls: the agent did not hear along', error),
+      );
+    }, OVERHEAR_AFTER_MS);
+  }
+
+  private async chimeIn(deps: AppDeps, viewer: Viewer, call: Call, agent: CallAgent) {
+    const busy = () =>
+      !this.calls.has(call.id) ||
+      call.agent !== agent ||
+      Boolean(call.answering && !call.answering.signal.aborted);
+    if (busy()) return;
+    const connection = await this.voiceOf(deps, call);
+    if (!connection) return;
+    // Heard as who spoke: only who may write to it (or the agent that writes along, as its maker).
+    const notes = call.notesAgent;
+    const through = agent.id && notes?.id === agent.id && notes.by.author.id !== viewer.author.id;
+    if (agent.id && !through && !(await this.mayAsk(deps, viewer, call, agent.id))) return;
+    const last = call.lines.at(-1);
+    if (!last || busy()) return;
+    // An AI request like any other – past the limit it just keeps quiet.
+    if (!aiLimits(deps).aiRequests.hit(viewer.author.id).allowed) return;
+    const voice = {
+      asked: voiceAsked(call, last.author, last.text, true),
+      said: last.text,
+      overheard: true,
+    };
+    await this.speak(deps, viewer, call, agent, connection, voice);
   }
 
   /**
@@ -747,8 +846,27 @@ export class CallHub {
   }
 
   /**
-   * Rings a member of the workspace into a conversation's call from inside it: a guest of the
-   * call – they hear of it and may join, without seeing the conversation.
+   * Joins a call one was rung into as its guest – the way into a call with an agent, which has no
+   * conversation to join by (`join` takes a conversation's).
+   */
+  async joinAsGuest(
+    deps: AppDeps,
+    me: AccountAuthor,
+    callId: string,
+    input: { peerId: string; video: boolean; mic: boolean },
+  ): Promise<CallJoined> {
+    const call = this.calls.get(callId);
+    if (!call?.guests.has(me.id)) throw callNotFound();
+    if (call.channelId) return this.join(deps, me, call.channelId, input);
+    this.ownTab(me.id, input.peerId);
+    this.leaveOthers(me.id, input.peerId, call.place);
+    return this.withTicket(call, me, input.peerId, this.enter(call, me, input, deps.clock.now()));
+  }
+
+  /**
+   * Rings a member of the workspace into a call from inside it – a conversation's or one with an
+   * agent: a guest of the call – they hear of it and may join, without seeing the conversation or
+   * the agent's chat (`joinAsGuest`).
    */
   async invite(
     deps: AppDeps,
@@ -759,7 +877,6 @@ export class CallHub {
     const call = this.calls.get(callId);
     const peer = call?.peers.get(input.peerId);
     if (!call || !peer || peer.userId !== me.id) throw callNotFound();
-    if (!call.channelId) throw badRequest('Zu einem Anruf mit einem Agenten kommt niemand dazu.');
     const [row] = await deps.db
       .select({ user: users })
       .from(workspaceMembers)
@@ -1034,10 +1151,12 @@ export class CallHub {
     if (!here()) return;
     agent.state = 'listening';
     agent.doing = null;
-    const { rest, orders } = ordersIn(answer);
-    propose(call.orders, orders);
+    const { rest, orders, dropped } = ordersIn(answer);
+    const given = this.give(deps, viewer, call, orders, dropped);
     this.changed(call);
-    const said = speakable(rest) || (orders[0] ? `Soll ich „${orders[0].title}“ losschicken?` : '');
+    const said = speakable(rest) || saidOf(given);
+    call.spokeAt = this.now();
+    call.spokeTo = viewer.author.id;
     await this.say(deps, call, said);
   }
 
@@ -1129,15 +1248,20 @@ export class CallHub {
     call: Call,
     agent: CallAgent,
     connection: AiConnection,
-    voice: { asked: string; said: string },
+    voice: { asked: string; said: string; overheard?: boolean },
   ) {
     if (!this.calls.has(call.id)) return;
     call.answering?.abort();
     const controller = new AbortController();
     call.answering = controller;
-    agent.state = 'thinking';
-    agent.doing = null;
-    this.changed(call);
+    // Only overheard: it may well say nothing – no „denkt“, no „Moment.“ until it does.
+    const quiet = Boolean(voice.overheard);
+    call.quiet = quiet ? controller : null;
+    if (!quiet) {
+      agent.state = 'thinking';
+      agent.doing = null;
+      this.changed(call);
+    }
     const here = () =>
       this.calls.has(call.id) && call.agent === agent && call.answering === controller;
     this.warm(deps, viewer, call);
@@ -1151,6 +1275,7 @@ export class CallHub {
       writesAlong: call.notes && Boolean(call.channelId),
       history: call.voiceHistory,
       asked: voice.asked,
+      overheard: quiet,
     };
     // Read out sentence by sentence as it is written: the first while the rest is still coming.
     const parts: string[] = [];
@@ -1161,15 +1286,17 @@ export class CallHub {
     // Slow to begin: a short „Moment.“ meanwhile (not part of the answer).
     const ack = setTimeout(() => {
       const audio = call.ack;
-      if (parts.length > 0 || !audio || !here()) return;
+      if (quiet || parts.length > 0 || !audio || !here()) return;
       saying = saying.then(async () => {
         if (!controller.signal.aborted) await this.say(deps, call, ACK, audio);
       });
     }, ACK_AFTER_MS);
     const out = (part: string) => {
-      const text = speakable(part);
+      const text = speakable(part.replace(SILENT_MARK, ''));
       if (!text || !here()) return;
       clearTimeout(ack);
+      // It has something to say: from here on an answer like any other.
+      if (call.quiet === controller) call.quiet = null;
       parts.push(text);
       saying = saying.then(async () => {
         if (controller.signal.aborted) return;
@@ -1177,7 +1304,7 @@ export class CallHub {
         if (sayId) current.parts.push({ sayId, text });
       });
     };
-    let answer: { text: string; orders: ProposedOrder[] };
+    let answer: { text: string; orders: ProposedOrder[]; dropped: string[] };
     try {
       answer = await voiceAnswer(deps, connection, turn, controller.signal, (piece) => {
         pending += piece;
@@ -1191,19 +1318,25 @@ export class CallHub {
       clearTimeout(ack);
       if (controller.signal.aborted || !here()) return;
       deps.log.warn('Calls: the voice did not answer', error);
-      if (parts.length === 0)
+      if (parts.length === 0 && !quiet)
         pending = 'Ich bin gerade nicht zu erreichen. Versuch es gleich noch mal.';
-      answer = { text: '', orders: [] };
+      answer = { text: '', orders: [], dropped: [] };
     }
     if (!here()) return;
     out(pending);
-    if (parts.length === 0 && answer.orders[0])
-      out(`Soll ich „${answer.orders[0].title}“ losschicken?`);
+    const given = this.give(deps, viewer, call, answer.orders, answer.dropped);
+    if (parts.length === 0 && !quiet) out(saidOf(given));
     call.answering = null;
+    if (call.quiet === controller) call.quiet = null;
     agent.state = 'listening';
-    propose(call.orders, answer.orders);
-    this.changed(call);
     const said = parts.join(' ');
+    if (!quiet || said || given.sent.length + given.listed.length + given.dropped.length > 0)
+      this.changed(call);
+    if (quiet && !said) return;
+    call.spokeAt = this.now();
+    call.spokeTo = viewer.author.id;
+    // What it heard before chiming in is heard: the next turn tells it what came after.
+    if (quiet) call.heardFrom = call.lines.length;
     call.voiceHistory.push(
       { role: 'user', content: voice.asked },
       { role: 'assistant', content: said || '…' },
@@ -1212,7 +1345,7 @@ export class CallHub {
     call.voiceHistory.splice(0, Math.max(0, call.voiceHistory.length - VOICE_HISTORY));
     // One's own call goes into the agent's chat as one entry once over (`keep`); a conversation's
     // call leaves what was asked of the agent there, turn by turn.
-    if (agent.id && said && call.channelId) {
+    if (agent.id && said && call.channelId && !quiet) {
       noteCallTurn(deps, agent.id, viewer.author.id, voice.said, said).catch((error: unknown) =>
         deps.log.warn('Calls: a turn was not kept in the agent chat', error),
       );
@@ -1221,24 +1354,55 @@ export class CallHub {
   }
 
   /**
-   * Sends proposed work (`orderId`, or all that waits) to agents of their own – or drops it.
-   * Who agrees sends it: it works with their rights.
+   * What an answer did with work: listed orders join the call's („Aufträge“), nothing sent; those
+   * someone said to do now go at once, as who said it (a listed one of that title with them);
+   * those named to drop leave the list.
+   */
+  private give(
+    deps: AppDeps,
+    viewer: Viewer,
+    call: Call,
+    orders: readonly ProposedOrder[],
+    dropped: readonly string[],
+  ): Given {
+    const gone = drop(call.orders, dropped);
+    const listed = propose(
+      call.orders,
+      orders.filter((order) => !order.now),
+    );
+    const sent = propose(
+      call.orders,
+      orders.filter((order) => order.now),
+    ).filter((order) => order.state === 'proposed');
+    for (const order of sent) {
+      order.state = 'running';
+      order.sentBy = viewer.author as AccountAuthor;
+    }
+    for (const order of sent) void this.dispatch(deps, viewer, call, order);
+    return { sent, listed: listed.filter((order) => !sent.includes(order)), dropped: gone };
+  }
+
+  /**
+   * Sends listed work (`ids`, or all of it) to agents of their own – or drops it. Who agrees
+   * sends it: it works with their rights. Said in the call (`spoken`), the agent says what it did.
    */
   private async decide(
     deps: AppDeps,
     viewer: Viewer,
     call: Call,
-    orderId: string | null,
+    ids: readonly string[] | null,
     send: boolean,
+    spoken = false,
   ): Promise<void> {
     const picked = call.orders.filter(
-      (order) => order.state === 'proposed' && (orderId === null || order.id === orderId),
+      (order) => order.state === 'proposed' && (ids === null || ids.includes(order.id)),
     );
     if (picked.length === 0) return;
+    const names = picked.map((order) => `„${order.title}“`).join(', ');
     if (!send) {
       call.orders = call.orders.filter((order) => !picked.includes(order));
       this.changed(call);
-      if (orderId === null) await this.say(deps, call, 'Gut, ich schicke nichts los.');
+      if (spoken) await this.say(deps, call, `Verworfen: ${names}.`);
       return;
     }
     for (const order of picked) {
@@ -1246,10 +1410,7 @@ export class CallHub {
       order.sentBy = viewer.author as AccountAuthor;
     }
     this.changed(call);
-    if (orderId === null) {
-      const names = picked.map((order) => `„${order.title}“`).join(', ');
-      void this.say(deps, call, `Losgeschickt: ${names}.`);
-    }
+    if (spoken) void this.say(deps, call, `Losgeschickt: ${names}.`);
     await Promise.all(picked.map((order) => this.dispatch(deps, viewer, call, order)));
   }
 
@@ -1266,7 +1427,7 @@ export class CallHub {
     if (!call || !peer || peer.userId !== viewer.author.id) throw callNotFound();
     if (!call.orders.some((order) => order.id === orderId))
       throw notFound('Diesen Auftrag gibt es nicht mehr.');
-    await this.decide(deps, viewer, call, orderId, input.send);
+    await this.decide(deps, viewer, call, [orderId], input.send);
   }
 
   /** One order as a Cloud agent of its own; then how far it got, while the call runs. */
@@ -1501,6 +1662,7 @@ export class CallHub {
 
   private end(call: Call, reason: CallEndReason) {
     call.answering?.abort();
+    if (call.overhear) clearTimeout(call.overhear);
     for (const say of call.says.values()) say.stop.abort();
     for (const timer of call.ringing.values()) clearTimeout(timer);
     call.ringing.clear();
@@ -1736,29 +1898,50 @@ async function agentForCall(deps: AppDeps, viewer: Viewer, agentId: string) {
 }
 
 /**
- * The work an agent's answer proposes – its `AUFTRAG: <Titel> | <Auftrag>` lines – and the rest
- * of the answer, to be read out.
+ * The work an agent's answer gives – its `SOFORT:` (now), `AUFTRAG:` (listed) and `VERWERFEN:`
+ * lines – and the rest of the answer, to be read out.
  */
-export function ordersIn(answer: string): { rest: string; orders: ProposedOrder[] } {
+export function ordersIn(answer: string): {
+  rest: string;
+  orders: ProposedOrder[];
+  dropped: string[];
+} {
   const orders: ProposedOrder[] = [];
+  const dropped: string[] = [];
+  const clean = (title: string) =>
+    title
+      .replace(/[*_`„“"]/g, '')
+      .trim()
+      .slice(0, 120);
   const rest = answer
     .split('\n')
     .filter((line) => {
-      const found = /^\s*(?:[-*•]\s*)?\**auftrag\**\s*:\s*(.+?)\s*\|\s*(.+?)\s*$/i.exec(line);
+      const gone = /^\s*(?:[-*•]\s*)?\**verwerfen\**\s*:\s*(.+?)\s*$/i.exec(line);
+      if (gone) {
+        const title = clean(gone[1]!);
+        if (title) dropped.push(title);
+        return false;
+      }
+      const found = /^\s*(?:[-*•]\s*)?\**(auftrag|sofort)\**\s*:\s*(.+?)\s*\|\s*(.+?)\s*$/i.exec(
+        line,
+      );
       if (!found) return true;
-      const title = found[1]!
-        .replace(/[*_`„“"]/g, '')
-        .trim()
-        .slice(0, 120);
-      // „… | ersetzt: <Titel>“ – it changes the waiting order of that title.
-      const [, body, replaced] = /^(.*?)(?:\s*\|\s*\**ersetzt\**\s*:\s*(.*))?$/i.exec(found[2]!)!;
+      const title = clean(found[2]!);
+      // „… | ersetzt: <Titel>“ – it changes the listed order of that title.
+      const [, body, replaced] = /^(.*?)(?:\s*\|\s*\**ersetzt\**\s*:\s*(.*))?$/i.exec(found[3]!)!;
       const text = body!.trim().slice(0, MAX_CALL_UTTERANCE);
       const replaces = replaced?.replace(/[*_`„“"]/g, '').trim();
-      if (title && text) orders.push({ title, text, ...(replaces ? { replaces } : {}) });
+      if (title && text)
+        orders.push({
+          title,
+          text,
+          ...(replaces ? { replaces } : {}),
+          ...(found[1]!.toLowerCase() === 'sofort' ? { now: true } : {}),
+        });
       return false;
     })
     .join('\n');
-  return { rest, orders };
+  return { rest, orders, dropped };
 }
 
 /** A title as compared: case, quotes and punctuation aside. */
@@ -1769,14 +1952,48 @@ function titleKey(title: string): string {
     .trim();
 }
 
+/** Words of a title that name nothing in particular. */
+const PLAIN_WORDS = new Set(['auftrag', 'agent', 'agentin', 'neuen', 'neue', 'neues', 'einen']);
+
 /**
- * Proposed work joins the call's orders – nothing is sent before someone agrees. A change to an
- * order that still waits (named by `replaces`, or proposed again under its title) is that order,
- * changed: same id, new title and text – the call keeps one, not a second beside it. With one
- * order waiting, a change naming another title changes that one.
+ * The listed orders `text` names – by the words of their titles, inflected or not („den
+ * Wettbewerb“ for „Wettbewerb Q3“): half of a title's words, or one long one. The best ones.
  */
-export function propose(orders: CallOrder[], proposed: readonly ProposedOrder[]): void {
-  for (const { replaces, ...order } of proposed) {
+export function namedIn(waiting: readonly CallOrder[], text: string): CallOrder[] {
+  const stem = (word: string) => word.slice(0, 5);
+  const heard = new Set(
+    titleKey(text)
+      .split(' ')
+      .filter((word) => word.length >= 3)
+      .map(stem),
+  );
+  let best = 0;
+  let found: CallOrder[] = [];
+  for (const order of waiting) {
+    const own = titleKey(order.title)
+      .split(' ')
+      .filter((word) => word.length >= 3 && !PLAIN_WORDS.has(word));
+    const hits = own.filter((word) => heard.has(stem(word)));
+    if (hits.length === 0) continue;
+    if (hits.length < Math.ceil(own.length / 2) && !hits.some((word) => word.length >= 6)) continue;
+    const score = hits.length / own.length;
+    if (score > best) {
+      best = score;
+      found = [order];
+    } else if (score === best) found.push(order);
+  }
+  return found;
+}
+
+/**
+ * Work joins the call's orders, listed – nothing is sent here. A change to a listed order (named
+ * by `replaces`, or given again under its title) is that order, changed: same id, new title and
+ * text – the call keeps one, not a second beside it. With one listed, a change naming another
+ * title changes that one. Hands back the orders it made or changed.
+ */
+export function propose(orders: CallOrder[], proposed: readonly ProposedOrder[]): CallOrder[] {
+  const touched: CallOrder[] = [];
+  for (const { replaces, now: _now, ...order } of proposed) {
     const waiting = orders.filter((each) => each.state === 'proposed');
     const named = (title: string) => {
       const key = titleKey(title);
@@ -1789,10 +2006,11 @@ export function propose(orders: CallOrder[], proposed: readonly ProposedOrder[])
     if (changed) {
       changed.title = order.title;
       changed.text = order.text;
+      touched.push(changed);
       continue;
     }
     if (orders.length >= MAX_CALL_ORDERS) continue;
-    orders.push({
+    const made: CallOrder = {
       id: randomUUID(),
       ...order,
       state: 'proposed',
@@ -1800,36 +2018,94 @@ export function propose(orders: CallOrder[], proposed: readonly ProposedOrder[])
       sentBy: null,
       doing: null,
       error: null,
-    });
+    };
+    orders.push(made);
+    touched.push(made);
   }
+  return touched;
+}
+
+/** Listed orders dropped by title (as the agent names them) – gone from `orders`; handed back. */
+export function drop(orders: CallOrder[], titles: readonly string[]): CallOrder[] {
+  const gone: CallOrder[] = [];
+  for (const title of titles) {
+    const waiting = orders.filter((each) => each.state === 'proposed' && !gone.includes(each));
+    const key = titleKey(title);
+    const exact = waiting.filter((each) => titleKey(each.title) === key);
+    gone.push(...(exact.length > 0 ? exact : namedIn(waiting, title)));
+  }
+  for (const order of gone) orders.splice(orders.indexOf(order), 1);
+  return gone;
 }
 
 /**
- * A yes or no to proposed work in what was said – short, and in a conversation's call a clear
- * one („schick los“, „bestätigt“) or one to the agent („Agent, ja“): people say „ja“ to each
- * other all the time. In one's own call with the agent a plain „ja“ does.
+ * „Schick … los“ or „Verwirf …“ for listed work, said in the call – short and clear, never a
+ * plain „ja“ (people say it to each other, and listed work was not asked about). Which: the ones
+ * it names, „alle“, or the one listed when nothing else is said („Schick ihn los“). A yes or no
+ * with a change („Ja, nenn es …“) is the agent's to make – null, as anything else.
  */
-export function replyTo(text: string, ownCall: boolean): 'yes' | 'no' | null {
-  const address = /^\s*(?:hey\s+|hallo\s+|okay\s+)?agent(?:in)?\b[\s,.!:]*/i;
-  const addressed = address.test(text);
+export function orderReply(
+  text: string,
+  waiting: readonly CallOrder[],
+): { send: boolean; ids: string[] } | null {
   const said = text
-    .replace(address, '')
+    .replace(/^\s*(?:hey\s+|hallo\s+|okay\s+)?agent(?:in)?\b[\s,.!:]*/i, '')
     .replace(/^[\s,.!?:…-]+/, '')
     .trim();
-  if (!said || said.split(/\s+/).length > 8) return null;
-  // „Ja, nenn es …“, „Nein, lieber …“: a change to the order – the agent's, not a yes or no.
+  if (!said || said.split(/\s+/).length > 10) return null;
   const change =
     /\b(aber|und|statt|anstatt|sondern|nenn\w*|heißen|heißt|nur|noch|zusätzlich|außerdem|ohne)\b|(?:^|\s)änder|\blieber\s+(?!nicht\b)\S/i;
   if (change.test(said)) return null;
-  const clearNo = /\b(nicht\s+(?:los|ab)?schicken|verwerf\w*|abbrechen|doch\s+nicht)\b/i;
-  const no = /^(nein|nee|nö|stopp?|lass\s+(?:es|das|mal))\b/i;
-  const clearYes =
-    /\b(schick\w*|abschicken|losschicken|bestätig\w*|freigeben|leg\s+los|mach\s+(?:das|es))\b/i;
-  const yes = /^(ja|jo|jep|jawohl|okay|ok|passt|genau|gerne|klar|gut)\b/i;
-  const plain = ownCall || addressed;
-  if (clearNo.test(said) || (plain && no.test(said))) return 'no';
-  if (clearYes.test(said) || (plain && yes.test(said))) return 'yes';
-  return null;
+  const no =
+    /\b(verwirf|verwerf\w*|vergiss|streich\w*|nicht\s+(?:los|ab)?schicken|abbrechen|doch\s+nicht|lieber\s+nicht)\b/gi;
+  const yes =
+    /\b(schick\w*(?:\s+\S+){0,5}?\s+(?:los|ab)|losschicken|abschicken|freigeben|bestätig\w*|leg\s+los)\b/gi;
+  const send = yes.test(said);
+  if (!send && !no.test(said)) return null;
+  const named = namedIn(waiting, said);
+  const ids = (list: readonly CallOrder[]) => list.map((order) => order.id);
+  if (named.length > 0) return { send, ids: ids(named) };
+  if (/\b(alle|beide|alles)\b/i.test(said)) return { send, ids: ids(waiting) };
+  // Nothing but the yes or no itself („Schick ihn los“, „Verwirf das“): the one listed.
+  const rest = said
+    .replace(
+      /\b(schick\w*|los|ab|losschicken|abschicken|freigeben|bestätig\w*|leg|verwirf|verwerf\w*|vergiss|streich\w*|nicht|abbrechen|lieber|ja|jo|okay|ok|gut|nein|nee|bitte|mal|jetzt|doch|gleich|ihn|es|das|den|die|der|auftrag)\b/gi,
+      ' ',
+    )
+    .replace(/[^\p{L}\p{N}]+/gu, '');
+  return waiting.length === 1 && !rest ? { send, ids: ids(waiting) } : null;
+}
+
+/**
+ * Whether the agent is called by its name: at the start of what is said („Recherche, was …“),
+ * after a greeting, or at its end („… oder, Recherche?“). Only a short name – a chat's long
+ * one („Anruf mit … am …“) nobody says.
+ */
+export function calledBy(name: string, text: string): boolean {
+  const key = titleKey(name);
+  if (!key || key.split(' ').length > 3) return false;
+  const said = ` ${titleKey(text)} `;
+  return (
+    said.startsWith(` ${key} `) ||
+    said.endsWith(` ${key} `) ||
+    [' hey ', ' hallo ', ' hi ', ' okay ', ' na '].some((hello) => said.includes(`${hello}${key} `))
+  );
+}
+
+/** What an answer did with work. */
+interface Given {
+  sent: CallOrder[];
+  listed: CallOrder[];
+  dropped: CallOrder[];
+}
+
+/** What the agent says when it did something with work but wrote nothing to read out. */
+function saidOf({ sent, listed, dropped }: Given): string {
+  const names = (orders: CallOrder[]) => orders.map((order) => `„${order.title}“`).join(', ');
+  if (sent.length > 0) return `Ich kümmere mich drum: ${names(sent)}.`;
+  if (listed.length > 0) return `Hab ich vorgemerkt: ${names(listed)}.`;
+  if (dropped.length > 0) return `Verworfen: ${names(dropped)}.`;
+  return '';
 }
 
 /** What a brought-in agent gets when spoken to: who is there, the talk since, the words to it. */
@@ -1887,14 +2163,26 @@ function askedInCall(
   ].join('\n');
 }
 
-/** A turn for the call's voice: what was said since it was last asked, then the question. */
-function voiceAsked(call: Call, speaker: AccountAuthor, text: string): string {
-  let lines = call.lines.slice(call.heardFrom, -1).slice(-AGENT_CONTEXT_LINES);
+/**
+ * A turn for the call's voice: what was said since it was last asked, then the question – or,
+ * `overheard`, what was said, to chime in or keep quiet.
+ */
+function voiceAsked(call: Call, speaker: AccountAuthor, text: string, overheard = false): string {
+  let lines = call.lines
+    .slice(call.heardFrom, overheard ? undefined : -1)
+    .slice(-AGENT_CONTEXT_LINES);
   while (
     lines.length > 1 &&
     lines.reduce((sum, line) => sum + line.text.length, 0) > AGENT_CONTEXT_CHARS
   )
     lines = lines.slice(1);
+  if (overheard)
+    return [
+      'Gesagt seit du zuletzt dran warst – niemand hat dich angesprochen:',
+      ...lines.map((l) => `${l.author.name}: ${l.text}`),
+      '',
+      `Trägst du etwas bei, sag es kurz. Sonst antworte nur ${SILENT}.`,
+    ].join('\n');
   return [
     ...(lines.length > 0
       ? [

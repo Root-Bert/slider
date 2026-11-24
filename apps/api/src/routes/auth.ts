@@ -67,10 +67,10 @@ import {
 } from '../services/accounts';
 import {
   EMAIL_LOGIN_TTL_MS,
-  emailIdentity,
   redeemEmailCode,
   redeemEmailLogin,
   sendEmailLogin,
+  signInWithEmail,
 } from '../services/email-login';
 import {
   NEXTCLOUD_SIGNUP_TTL_MS,
@@ -450,7 +450,7 @@ export function authRoutes(deps: AppDeps, gate: InstanceGate) {
     link: { email: string; inviteToken: string | null; returnTo: string },
   ) => {
     const target = safeReturnTo(link.returnTo, DEFAULT_LOGIN_RETURN_TO);
-    const signIn = await signInWithIdentity(deps, emailIdentity(link.email, link.inviteToken));
+    const signIn = await signInWithEmail(deps, link);
     if (!signIn.ok) {
       return c.json<EmailLoginResult>({
         redirectTo: loginErrorPath(signIn.error, target),

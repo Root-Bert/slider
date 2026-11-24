@@ -581,6 +581,40 @@
   backdrop-filter: none;
 }
 
+/* A popover open in a popover (the workspace menu's „Neuer Workspace“): the outer one without its
+   blur let the page show sharp through it. Its glass moves to a layer behind its content – no
+   backdrop root then, both blur the page. */
+[data-popover-panel]:is(.glass-elevated, .glass-control):has([data-popover-panel]) {
+  isolation: isolate;
+  background-color: transparent;
+  &::before {
+    content: '';
+    position: absolute;
+    inset: 0;
+    z-index: -1;
+    border-radius: inherit;
+    pointer-events: none;
+  }
+}
+.glass-elevated[data-popover-panel]:has([data-popover-panel]) {
+  box-shadow: var(--shadow-float);
+  &::before {
+    background-color: var(--color-glass-elevated);
+    -webkit-backdrop-filter: blur(24px) saturate(160%);
+    backdrop-filter: blur(24px) saturate(160%);
+    box-shadow: inset 0 0 0 1px var(--color-hairline-strong);
+  }
+}
+.glass-control[data-popover-panel]:has([data-popover-panel]) {
+  box-shadow: none;
+  &::before {
+    background-color: var(--color-glass-control);
+    -webkit-backdrop-filter: blur(4px) saturate(140%);
+    backdrop-filter: blur(4px) saturate(140%);
+    box-shadow: inset 0 0 0 1px var(--color-hairline);
+  }
+}
+
 /* Chips over a slide or thumbnail (slide numbers, counters): scrim with a light blur. */
 @utility glass-dark {
   background-color: var(--color-scrim);
@@ -2576,5 +2610,299 @@
   60%,
   74% {
     transform: translate(-2.5px, 1px) rotate(-6deg);
+  }
+}
+
+/* More pictures of empty lists (`EmptyScene`): the link snaps shut, the bin's lid peeks, the
+   pencil writes, a letter slips into the envelope, someone turns up in the shared folder, the
+   share reaches out, the areas hop. Still, each is its plain symbol. */
+.empty-scene-post,
+.empty-scene-written {
+  opacity: 0;
+}
+.empty-scene-written,
+.empty-scene-reach {
+  stroke-dasharray: 1;
+}
+/* Still, the pencil stands in the middle of its way. */
+.empty-scene-write {
+  transform: translateX(5px);
+}
+@media (prefers-reduced-motion: no-preference) {
+  .empty-scene-link-left {
+    animation: empty-link-left 3.2s var(--ease-symmetric) infinite;
+  }
+  .empty-scene-link-right {
+    animation: empty-link-right 3.2s var(--ease-symmetric) infinite;
+  }
+  .empty-scene-link-bar {
+    animation: empty-link-bar 3.2s var(--ease-symmetric) infinite;
+  }
+  .empty-scene-lid {
+    transform-origin: 0% 100%;
+    animation: empty-lid 3s ease-in-out infinite;
+  }
+  .empty-scene-bin {
+    transform-origin: 50% 100%;
+    animation: empty-bin 3s ease-out infinite;
+  }
+  .empty-scene-write {
+    animation: empty-write 3.6s infinite;
+  }
+  .empty-scene-written {
+    opacity: 1;
+    animation: empty-written 3.6s infinite;
+  }
+  .empty-scene-post {
+    animation: empty-post 3s infinite;
+  }
+  .empty-scene-envelope {
+    transform-origin: 50% 100%;
+    animation: empty-envelope 3s ease-out infinite;
+  }
+  .empty-scene-arrive {
+    transform-origin: 50% 100%;
+    animation: empty-arrive 3.4s ease-out infinite;
+  }
+  .empty-scene-catch-shared {
+    transform-origin: 50% 100%;
+    animation: empty-catch-shared 3.4s ease-out infinite;
+  }
+  .empty-scene-reach {
+    animation: empty-reach 3.2s ease-out infinite both;
+  }
+  .empty-scene-reached {
+    animation: empty-reached 3.2s ease-out infinite both;
+  }
+  .empty-scene-reach + .empty-scene-reach,
+  .empty-scene-reached + .empty-scene-reached {
+    animation-delay: 0.35s;
+  }
+  .empty-scene-hop {
+    animation: empty-hop 2.4s ease-in-out infinite both;
+  }
+  .empty-scene-hop:nth-child(2) {
+    animation-delay: 0.18s;
+  }
+  .empty-scene-hop:nth-child(3) {
+    animation-delay: 0.36s;
+  }
+}
+@keyframes empty-link-left {
+  0%,
+  10%,
+  90%,
+  100% {
+    transform: translateX(-3px);
+  }
+  30% {
+    transform: translateX(0.4px);
+  }
+  36%,
+  72% {
+    transform: none;
+  }
+}
+@keyframes empty-link-right {
+  0%,
+  10%,
+  90%,
+  100% {
+    transform: translateX(3px);
+  }
+  30% {
+    transform: translateX(-0.4px);
+  }
+  36%,
+  72% {
+    transform: none;
+  }
+}
+@keyframes empty-link-bar {
+  0%,
+  22%,
+  84%,
+  100% {
+    opacity: 0;
+    transform: scaleX(0.2);
+  }
+  36%,
+  72% {
+    opacity: 1;
+    transform: none;
+  }
+}
+@keyframes empty-lid {
+  0%,
+  20%,
+  74%,
+  100% {
+    transform: none;
+  }
+  34%,
+  54% {
+    transform: translate(-0.5px, -2.5px) rotate(-16deg);
+  }
+  64% {
+    transform: none;
+  }
+  69% {
+    transform: translateY(-0.6px);
+  }
+}
+@keyframes empty-bin {
+  0%,
+  62%,
+  74%,
+  100% {
+    transform: none;
+  }
+  66% {
+    transform: scale(1.04, 0.95);
+  }
+}
+@keyframes empty-write {
+  0%,
+  8% {
+    transform: translateX(0);
+    animation-timing-function: linear;
+  }
+  58%,
+  72% {
+    transform: translateX(10px);
+    animation-timing-function: ease-in-out;
+  }
+  90%,
+  100% {
+    transform: translateX(0);
+  }
+}
+@keyframes empty-written {
+  0%,
+  8% {
+    opacity: 1;
+    stroke-dashoffset: 1;
+    animation-timing-function: linear;
+  }
+  58%,
+  72% {
+    opacity: 1;
+    stroke-dashoffset: 0;
+  }
+  84%,
+  100% {
+    opacity: 0;
+    stroke-dashoffset: 0;
+  }
+}
+@keyframes empty-post {
+  from {
+    opacity: 0;
+    transform: translateY(-5px);
+    animation-timing-function: ease-out;
+  }
+  18% {
+    opacity: 1;
+    transform: none;
+  }
+  32% {
+    transform: none;
+    animation-timing-function: cubic-bezier(0.5, 0, 1, 1);
+  }
+  50%,
+  to {
+    opacity: 1;
+    transform: translateY(10px);
+  }
+}
+@keyframes empty-envelope {
+  0%,
+  44%,
+  62%,
+  100% {
+    transform: none;
+  }
+  50% {
+    transform: scale(1.05, 0.94);
+  }
+}
+@keyframes empty-arrive {
+  0%,
+  8% {
+    opacity: 0;
+    transform: translateY(3px) scale(0.6);
+  }
+  24% {
+    opacity: 1;
+    transform: translateY(-0.8px);
+  }
+  32%,
+  74% {
+    opacity: 1;
+    transform: none;
+  }
+  88%,
+  100% {
+    opacity: 0;
+    transform: scale(0.6);
+  }
+}
+@keyframes empty-catch-shared {
+  0%,
+  20%,
+  34%,
+  100% {
+    transform: none;
+  }
+  26% {
+    transform: scale(1.04, 0.95);
+  }
+}
+@keyframes empty-reach {
+  0%,
+  8% {
+    opacity: 1;
+    stroke-dashoffset: 1;
+  }
+  28%,
+  80% {
+    opacity: 1;
+    stroke-dashoffset: 0;
+  }
+  92%,
+  100% {
+    opacity: 0;
+    stroke-dashoffset: 0;
+  }
+}
+@keyframes empty-reached {
+  0%,
+  24% {
+    opacity: 0;
+    transform: scale(0.3);
+  }
+  33% {
+    opacity: 1;
+    transform: scale(1.15);
+  }
+  40%,
+  80% {
+    opacity: 1;
+    transform: none;
+  }
+  92%,
+  100% {
+    opacity: 0;
+    transform: none;
+  }
+}
+@keyframes empty-hop {
+  0%,
+  36%,
+  100% {
+    transform: none;
+  }
+  14% {
+    transform: translateY(-2.6px);
   }
 }

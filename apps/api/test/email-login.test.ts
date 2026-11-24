@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, it } from 'vitest';
 import { RecordingMailer } from '../src/mail/mailer';
+import { listIdentities, signInWithIdentity } from '../src/services/accounts';
 import {
   cookiePair,
   createTestContext,
@@ -115,5 +116,35 @@ describe('login by mail (BER-168)', () => {
     });
     expect(byLink.status).toBe(200);
     expect(sessionCookieFrom(byLink)).toBeTruthy();
+
+    // An account that signs in another way (Google here) gets the link and code too – not a mail
+    // saying it signs in otherwise – and signs into itself, with „E-Mail“ among its logins then.
+    const google = await signInWithIdentity(ctx.deps, {
+      provider: 'google',
+      subject: 'g-bert',
+      email: 'bert@firma.de',
+      emailVerified: true,
+      name: 'Bert',
+      inviteToken: null,
+    });
+    if (!google.ok) throw new Error(google.error);
+    const bertStart = await ctx.request('/api/auth/email/start', {
+      method: 'POST',
+      json: { email: 'Bert@firma.de', returnTo: '/' },
+    });
+    expect(bertStart.status).toBe(204);
+    const bertMail = mailer.sent.at(-1);
+    expect(bertMail?.subject).toBe('Bei Office anmelden');
+    const bertCode = /ein: (\d{6})/.exec(bertMail?.text ?? '')?.[1] ?? '';
+    expect(bertMail?.html).toContain(bertCode);
+    const bert = await typed(bertCode, cookiePair(bertStart, 'slider_email_login'));
+    expect(bert.status).toBe(200);
+    expect(await bert.json()).toEqual({ redirectTo: '/', newAccount: false });
+    const bertMe = await ctx.request('/api/me', { cookie: sessionCookieFrom(bert) ?? '' });
+    expect(await bertMe.json()).toMatchObject({ user: { id: google.user.id } });
+    expect((await listIdentities(ctx.deps.db, google.user.id)).map((i) => i.provider).sort()).toEqual([
+      'email',
+      'google',
+    ]);
   });
 });

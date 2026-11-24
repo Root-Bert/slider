@@ -3,7 +3,7 @@
  * edit a step of its history (`steps`), committed with its slides drawn anew (`commit`).
  */
 export { drawSlides } from './drawing';
-export { editedSlidePdf, editedSlidePng, sendExport } from './export';
+export { editedSlidePdf, editedSlidePng, keepExport, keepNodePdf, sendExport } from './export';
 export { fileSlides } from './file-slides';
 export { MAX_EDIT_IMAGE_BYTES, loadEditImage, storeEditImage, uploadEditImage } from './images';
 export { liveParagraphsOf } from './live-texts';

@@ -1,6 +1,7 @@
 import { useNavigate } from 'react-router';
 import type { DomainWorkspace, PendingInvite } from '@slider/shared';
 import { useAcceptInvite, useJoinByDomain } from '@/lib/api';
+import { appHome, useCurrentApp } from '@/lib/apps';
 import { routes } from '@/lib/routes';
 import type { ShowToast } from '@/ui';
 
@@ -19,6 +20,7 @@ export function useJoinDomainWorkspace(
   { onError, onJoined }: JoinOptions,
 ) {
   const navigate = useNavigate();
+  const app = useCurrentApp();
   const join = useJoinByDomain();
   return {
     pending: join.isPending,
@@ -26,7 +28,7 @@ export function useJoinDomainWorkspace(
       join.mutate(workspace.id, {
         onSuccess: ({ workspace: joined }) => {
           onJoined?.();
-          void navigate(routes.workspace(joined.id));
+          void navigate(appHome(app, joined.id).to);
         },
         onError: (error) => onError(error.message, 'danger'),
       }),
@@ -36,6 +38,7 @@ export function useJoinDomainWorkspace(
 /** "Beitreten" for an e-mail invitation: into the workspace, or straight to its review. */
 export function useAcceptPendingInvite(invite: PendingInvite, { onError, onJoined }: JoinOptions) {
   const navigate = useNavigate();
+  const app = useCurrentApp();
   const accept = useAcceptInvite();
   return {
     pending: accept.isPending,
@@ -43,7 +46,7 @@ export function useAcceptPendingInvite(invite: PendingInvite, { onError, onJoine
       accept.mutate(invite.id, {
         onSuccess: ({ workspace, deckId }) => {
           onJoined?.();
-          void navigate(deckId ? routes.deck(deckId) : routes.workspace(workspace.id));
+          void navigate(deckId ? routes.deck(deckId) : appHome(app, workspace.id).to);
         },
         onError: (error) => onError(error.message, 'danger'),
       }),

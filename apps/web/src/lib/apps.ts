@@ -38,6 +38,8 @@ const NEUTRAL = [
   '/desktop-anmelden',
   '/einrichtung',
   '/join/:token',
+  // „Neue Präsentation“: from Cloud's „Neu“ as from Slider – it stays in the app it came from.
+  '/neu',
 ];
 
 /** Where an installed Cloud starts: on to the files of the workspace last open. */
@@ -263,8 +265,12 @@ export const appStart = (app: AppId | null): { to: string; label: string } =>
 export const appHome = (app: AppId | null, workspaceId: string | null | undefined) =>
   app === null
     ? { to: routes.home(), label: 'Zurück zur Startseite' }
-    : app === 'cloud' && workspaceId
-      ? { to: routes.cloud(workspaceId), label: 'Zurück zu den Dateien' }
+    : app === 'cloud'
+      ? // Without a workspace Cloud's start page, never Slider's.
+        {
+          to: workspaceId ? routes.cloud(workspaceId) : routes.home(),
+          label: 'Zurück zu den Dateien',
+        }
       : app === 'reader'
         ? {
             to: workspaceId ? routes.pdfs(workspaceId) : routes.readerStart(),
@@ -280,7 +286,10 @@ export const appHome = (app: AppId | null, workspaceId: string | null | undefine
                 to: workspaceId ? routes.messages(workspaceId) : routes.senderStart(),
                 label: 'Zurück zu den Nachrichten',
               }
-            : { to: workspaceId ? routes.workspace(workspaceId) : routes.reviews() };
+            : {
+                to: workspaceId ? routes.workspace(workspaceId) : routes.reviews(),
+                label: 'Zurück zu den Präsentationen',
+              };
 
 /** The tabs of the pages that speak for every app: all of it, or one app's part. */
 /** Writer has no part of its own: its documents are files, counted with Cloud's. */

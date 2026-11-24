@@ -110,7 +110,7 @@ export function AppHeader({
       data-app-header
       className={cn(
         // Over what stands close under it (Cloud's path) only while one of its menus is open.
-        'relative z-(--z-raised) grid h-[88px] has-[[aria-expanded=true]]:z-(--z-chrome) shrink-0 grid-cols-[minmax(max-content,1fr)_minmax(0,312px)_minmax(max-content,1fr)] items-center gap-6 px-6',
+        'relative z-(--z-raised) grid h-[88px] has-[[aria-expanded=true]]:z-(--z-chrome) shrink-0 grid-cols-[minmax(max-content,1fr)_minmax(0,312px)_minmax(max-content,1fr)] items-center gap-3 px-4 sm:gap-6 sm:px-6',
         // Cloud's side bar starts at the page's edge: its header lines up with it.
         'md:px-8',
       )}

@@ -17,6 +17,7 @@ import {
   cloudChangesQuerySchema,
   cloudShareInputSchema,
   cloudShareUpdateSchema,
+  cloudTargetInputSchema,
   cloudColorInputSchema,
   cloudPinInputSchema,
   cloudUploadQuerySchema,
@@ -98,6 +99,7 @@ import {
   linkDeck,
 } from '../services/deck-places';
 import { updateDeckAccess } from '../services/deck-access';
+import { keepNodePdf } from '../services/edits';
 import { blobKeys } from '../storage/blob-storage';
 
 /** A file's name for `Content-Disposition`: plain ASCII, and the real one for browsers that read it. */
@@ -465,6 +467,20 @@ export function cloudRoutes(deps: AppDeps) {
       // A presentation (or anything Slider reads) opened in Slider: the presentation this file
       // stands for (`services/deck-places`) – made of its current version the first time, as an
       // upload of it would be, and the same one from then on.
+      // „Als PDF ablegen …“: a presentation (or other office file) as a PDF of its own, where one picked.
+      .post('/cloud/nodes/:nodeId/pdf', viewer, async (c) => {
+        const made = aiLimits(deps).pdfs.hit(user(c));
+        if (!made.allowed) {
+          c.header('Retry-After', String(made.retryAfterS));
+          throw new ApiError(
+            429,
+            'rate_limited',
+            'Zu viele PDFs auf einmal. Bitte warte einen Moment.',
+          );
+        }
+        const input = await readJson(c, cloudTargetInputSchema);
+        return c.json(await keepNodePdf(deps, c.var.viewer, c.req.param('nodeId'), input), 201);
+      })
       .post('/cloud/nodes/:nodeId/present', viewer, async (c) => {
         const { node, sharedRoot } = await loadNode(deps, user(c), c.req.param('nodeId'));
         const placed = await deckOfNode(deps.db, node.id);

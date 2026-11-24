@@ -15,7 +15,7 @@ import {
   sql,
 } from 'drizzle-orm';
 import { read as readSheet, write as writeSheet } from 'xlsx';
-import { z } from 'zod';
+import { ZodError, z } from 'zod';
 import {
   ACCENT_COLORS,
   API_PREFIX,
@@ -37,6 +37,9 @@ import {
   type CloudAgentDetail,
   type CloudAgentFile,
   type CloudAgentFileContent,
+  COMMENT_REACTIONS,
+  type CloudAgentAsk,
+  type CloudAgentAskState,
   type CloudAgentMessage,
   type CloudAgentRepeatInput,
   type CloudAgentUndo,
@@ -57,15 +60,18 @@ import { requireDeckAccess } from '../auth/access';
 import {
   cloudAgentChats,
   cloudAgentFiles,
+  cloudAgentAsks,
   cloudAgentMessages,
   cloudAgents,
   cloudNodes,
   decks,
   senderChannels,
+  senderMessages,
   senderMembers,
   slideVersions,
   users,
   workspaces,
+  type CloudAgentAskRow,
   type CloudAgentChatRow,
   type CloudAgentFileRow,
   type CloudAgentRow,
@@ -149,7 +155,8 @@ import { deleteDeck, trashDeck } from './decks';
 import { editedFile } from './edits/state';
 import { workspaceAiConnection } from './integration-keys';
 import { atLeast } from './workspaces/roles';
-import { MCP_TOOLS, runMcpTool } from './mcp';
+import { MCP_TOOLS, memberNamed, runMcpTool } from './mcp';
+import { listMembers } from './workspaces/members';
 import { APP_TOOLS, runAppTool } from './mcp-cloud';
 import {
   runSettingsTool,
@@ -159,9 +166,46 @@ import {
 } from './agent-settings';
 import { answerToolChat, ToolChatError } from './tool-chat';
 import { CALENDAR_INPUTS, CALENDAR_TOOLS, type CalendarToolName } from './calendar/agent-tool-defs';
+import {
+  ASK_PIN,
+  askAlways,
+  askDone,
+  askPin,
+  askText,
+  askVerb,
+  mustAsk,
+  NEEDS_OK,
+} from './cloud-agent-asks';
 import { runCalendarTool } from './calendar/agent-tools';
-import { announceAgent, listMessages, postAsAgent, readAgent, senderHome } from './sender';
-import { createTodo, listTodos, milestoneNamed, todoByRef, todoLine, updateTodo } from './todos';
+import {
+  addToGroup,
+  announceAgent,
+  createGroup,
+  deleteAgentMessage,
+  editAgentMessage,
+  leaveGroup,
+  listMessages,
+  markUnread,
+  openDirect,
+  postAsAgent,
+  reactToMessage,
+  readAgent,
+  readChannel,
+  removeFromGroup,
+  senderHome,
+} from './sender';
+import {
+  createTodo,
+  deleteMilestone,
+  deleteTodo,
+  listMilestones,
+  listTodos,
+  milestoneNamed,
+  todoByRef,
+  todoLine,
+  updateMilestone,
+  updateTodo,
+} from './todos';
 
 /*
  * „Agenten“ (`cloud-agents.ts` in shared): an order to the workspace's AI that works across
@@ -197,6 +241,11 @@ const FROM_MCP = [
   'update_presentation',
   'add_comment',
   'resolve_comment',
+  'list_materials',
+  'update_note',
+  'delete_item',
+  'set_access',
+  'delete_presentation',
 ] as const;
 /**
  * Of the apps' tools for Cloud: a file's details and versions, sharing, what was deleted, the
@@ -211,6 +260,14 @@ const FROM_APPS = [
   'unshare_file',
   'list_deleted',
   'restore_files',
+  'copy_files',
+  'set_color',
+  'pin_folder',
+  'share_link',
+  'end_link',
+  'label_version',
+  'delete_version',
+  'delete_area',
 ] as const;
 const APP_NAMES = new Set<string>(FROM_APPS);
 /** Of those, the ones that only read. */
@@ -228,6 +285,14 @@ const ASKED_ONLY = new Set<string>([
   'unshare_file',
   'list_deleted',
   'restore_files',
+  'copy_files',
+  'set_color',
+  'pin_folder',
+  'share_link',
+  'end_link',
+  'label_version',
+  'delete_version',
+  'delete_area',
   'read_settings',
   'change_settings',
 ]);
@@ -235,7 +300,12 @@ const ASKED_ONLY = new Set<string>([
  * Written under the person's own name (slide comments): only on a message – a run a watch or a
  * repeat started must not speak for them where nothing shows an agent did.
  */
-const IN_THEIR_NAME = new Set<string>(['add_comment', 'resolve_comment']);
+const IN_THEIR_NAME = new Set<string>([
+  'add_comment',
+  'resolve_comment',
+  'react_message',
+  'mark_read',
+]);
 /** These change a presentation: it is then on the agent's desk. */
 const DECK_CHANGING = new Set<string>([
   'build_presentation',
@@ -284,6 +354,21 @@ const SENDER_INPUTS = {
     conversation: id,
     text: z.string().trim().min(1).max(MAX_SENDER_POST),
   }),
+  edit_message: z.object({ message: id, text: z.string().trim().min(1).max(MAX_SENDER_POST) }),
+  delete_message: z.object({ message: id }),
+  react_message: z.object({ message: id, reaction: z.enum(COMMENT_REACTIONS).nullable() }),
+  mark_read: z.object({ conversation: id, read: z.boolean() }),
+  open_direct: z.object({ person: z.string().trim().min(1).max(200) }),
+  create_group: z.object({
+    name: z.string().trim().min(1).max(80),
+    people: z.array(z.string().trim().min(1).max(200)).min(1).max(50),
+  }),
+  add_to_group: z.object({
+    conversation: id,
+    people: z.array(z.string().trim().min(1).max(200)).min(1).max(50),
+  }),
+  remove_from_group: z.object({ conversation: id, person: z.string().trim().min(1).max(200) }),
+  leave_group: z.object({ conversation: id }),
 };
 
 /** To-dos: the person's own and their areas' – an agent's own work on them too (`services/todos.ts`). */
@@ -319,6 +404,14 @@ const TODO_INPUTS = {
     due: todoDue.optional(),
     milestone: todoMilestone.optional(),
   }),
+  delete_todo: z.object({ todo: id }),
+  list_milestones: z.object({ area: id.optional() }),
+  update_milestone: z.object({
+    milestone: id,
+    name: z.string().trim().min(1).max(MAX_MILESTONE_NAME).optional(),
+    due: todoDue.optional(),
+  }),
+  delete_milestone: z.object({ milestone: id }),
 };
 
 const writable = [...TEXT_EXTENSIONS].join(', ');
@@ -470,6 +563,104 @@ const SENDER_TOOLS: Anthropic.Beta.BetaTool[] = [
       required: ['conversation', 'text'],
     },
   },
+  {
+    name: 'edit_message',
+    description:
+      'Changes a message you wrote yourself in Sender (by its id, from read_conversation) – as „Bearbeiten“ does; everyone there sees the new text, marked as changed.',
+    input_schema: {
+      type: 'object',
+      properties: { message: { type: 'string' }, text: { type: 'string' } },
+      required: ['message', 'text'],
+    },
+  },
+  {
+    name: 'delete_message',
+    description:
+      'Deletes a message you wrote yourself in Sender (by its id). Waits for the person’s „Löschen“ on a card in this chat.',
+    input_schema: {
+      type: 'object',
+      properties: { message: { type: 'string' } },
+      required: ['message'],
+    },
+  },
+  {
+    name: 'react_message',
+    description:
+      "Reacts to a message in Sender as the person – 👍 (up), 👎 (down) or „egal“ (neutral), one each; null takes theirs back. Only on the person's own word.",
+    input_schema: {
+      type: 'object',
+      properties: {
+        message: { type: 'string' },
+        reaction: { type: ['string', 'null'], enum: [...COMMENT_REACTIONS, null] },
+      },
+      required: ['message', 'reaction'],
+    },
+  },
+  {
+    name: 'mark_read',
+    description:
+      'Marks a Sender conversation read (all of it) or unread (from its last message) for the person, as „Gelesen“ and „Ungelesen“ do.',
+    input_schema: {
+      type: 'object',
+      properties: { conversation: { type: 'string' }, read: { type: 'boolean' } },
+      required: ['conversation', 'read'],
+    },
+  },
+  {
+    name: 'open_direct',
+    description:
+      "The person's direct conversation with someone of the workspace (by name, address or id) – opened if there is none yet. Returns its id: post_message writes there.",
+    input_schema: {
+      type: 'object',
+      properties: { person: { type: 'string' } },
+      required: ['person'],
+    },
+  },
+  {
+    name: 'create_group',
+    description:
+      'Makes a group conversation of the person with these people of the workspace (names, addresses or ids) and a name. Returns its id.',
+    input_schema: {
+      type: 'object',
+      properties: {
+        name: { type: 'string' },
+        people: { type: 'array', items: { type: 'string' } },
+      },
+      required: ['name', 'people'],
+    },
+  },
+  {
+    name: 'add_to_group',
+    description: 'Adds people of the workspace (names, addresses or ids) to a group conversation.',
+    input_schema: {
+      type: 'object',
+      properties: {
+        conversation: { type: 'string' },
+        people: { type: 'array', items: { type: 'string' } },
+      },
+      required: ['conversation', 'people'],
+    },
+  },
+  {
+    name: 'remove_from_group',
+    description:
+      'Takes someone out of a group the person manages. Waits for the person’s „Entfernen“ on a card in this chat.',
+    input_schema: {
+      type: 'object',
+      properties: { conversation: { type: 'string' }, person: { type: 'string' } },
+      required: ['conversation', 'person'],
+    },
+  },
+  {
+    name: 'leave_group',
+    description:
+      'The person leaves a group conversation. Waits for their „Verlassen“ on a card in this chat.',
+    input_schema: {
+      type: 'object',
+      properties: { conversation: { type: 'string' } },
+      required: ['conversation'],
+    },
+  },
 ];
 
 const TODO_FIELDS = {
@@ -546,6 +737,41 @@ const TODO_TOOLS: Anthropic.Beta.BetaTool[] = [
       required: ['todo'],
     },
   },
+  {
+    name: 'delete_todo',
+    description:
+      'Deletes a to-do (by id or number). Waits for the person’s „Löschen“ on a card in this chat.',
+    input_schema: { type: 'object', properties: { todo: { type: 'string' } }, required: ['todo'] },
+  },
+  {
+    name: 'list_milestones',
+    description:
+      'The milestones of the person’s own to-dos, or of an area’s (area id): id, name, when due. A to-do gets one by its name (create_todo, update_todo) – a new name makes a new one.',
+    input_schema: { type: 'object', properties: { area: { type: 'string' } } },
+  },
+  {
+    name: 'update_milestone',
+    description: 'Renames a milestone or moves when it is due (YYYY-MM-DD, null: none).',
+    input_schema: {
+      type: 'object',
+      properties: {
+        milestone: { type: 'string' },
+        name: { type: 'string' },
+        due: { type: ['string', 'null'] },
+      },
+      required: ['milestone'],
+    },
+  },
+  {
+    name: 'delete_milestone',
+    description:
+      'Deletes a milestone; its to-dos stay, without it. Waits for the person’s „Löschen“ on a card in this chat.',
+    input_schema: {
+      type: 'object',
+      properties: { milestone: { type: 'string' } },
+      required: ['milestone'],
+    },
+  },
 ];
 
 /** Taken when first asked: the apps' tools come from a module that needs this one. */
@@ -610,10 +836,10 @@ const system = (
 
 What you can do, with the tools:
 - Files: search_files by name, list_folder to look around, list_tree to see a whole folder or area at any depth in one call, read_file to read (PDFs, documents, sheets and text). Read what you need before you write – several files, page by page where they are long.
-- You work in the files and presentations themselves, at once – like a colleague, and together with other agents and people who may be at the same thing. Nothing waits to be approved. So be careful: do what the order asks, no more. Everything you make or change is also listed on your desk, beside this chat: from there the person opens it, and takes a thing back if they do not want it.
+- You work in the files and presentations themselves, at once – like a colleague, and together with other agents and people who may be at the same thing. Nothing waits to be approved – except what cannot be undone or reaches out (deleting anything, sending a mail, leaving or removing people, a link for anyone): those tools put a card in this chat, and it happens only when the person clicks it there; never ask for that in words first as well. So be careful: do what the order asks, no more. Everything you make or change is also listed on your desk, beside this chat: from there the person opens it, and takes a thing back if they do not want it.
 - Write: write_file makes a new file – text (${writable}) as its text, a sheet (xlsx, ods) as CSV. change_file writes the next version of a text file that exists; the one before stays among its versions. Always whole files. Other kinds of file you cannot write: say so.
-- Order the files: create_folder, move, rename and delete happen at once. A folder you made has an id: give it as folder to write or move things into it. What is deleted lies in „Gelöscht“ for 30 days.
-- Presentations (Slider): list_presentations, search and get_presentation read them. A new one: create_presentation, then add_note and add_link for material on its board and build_presentation to have the slides built. To change one that exists: edit_slides, by its id – Slider's own AI changes the real slides, others at work in it see that at once; undo_edit takes a change back. Read the presentation again before you change it when others may be working in it. A presentation is a file in the files too – a new one lies in the person's own files („Meine Dateien“), only they see it there, unless create_presentation is given a folder or an area – and where that file lies says who sees it: to put one that exists into a folder or an area, move it, with its presentation id among items. Never write a file with a link to it instead.
+- Order the files: create_folder, move and rename happen at once; delete waits for the person's „Löschen“ on a card in the chat. A folder you made has an id: give it as folder to write or move things into it. What is deleted lies in „Gelöscht“ for 30 days.
+- Presentations (Slider): list_presentations, search and get_presentation read them. A new one: create_presentation, then add_note and add_link for material on its board and build_presentation to have the slides built. To change one that exists: edit_slides, by its id – Slider's own AI changes the real slides, others at work in it see that at once; undo_edit takes a change back. Read the presentation again before you change it when others may be working in it. A presentation is a file in the files too – a new one lies in the person's own files („Meine Dateien“), only they see it there, unless create_presentation is given a folder or an area – and where that file lies says who sees it: to put one that exists into a folder or an area, move it, with its presentation id among items. Never write a file with a link to it instead. list_materials and update_note read and change its board's material, delete_item takes one away; set_access says who opens it (all of the workspace, or only some); delete_presentation puts it in the trash – both deletes wait for the person's click.
 ${connections ? CONNECTION_LINES : SHARED_CONNECTION_LINE}
 ${mail ? MAIL_LINES : connections ? SELF_MAIL_LINE : SHARED_MAIL_LINE}
 
@@ -628,12 +854,12 @@ How to work:
 ${
   mail
     ? `- A file's details and the areas: file_details shows who a file is shared with, its versions and where it lies; list_areas lists the areas with their people and what the person may do there.
-- Sharing and the person's own: share_file and unshare_file share a file or folder with a person of the workspace or stop it; list_deleted and restore_files bring back what was deleted („Gelöscht“, 30 days); update_area renames an area or says who sees it; read_settings and change_settings read and change the person's own settings (name, colour, the voice in calls, how often mail is checked) – only what they ask for. What lives in their browser (look, notifications) they set under „Einstellungen“ themselves.`
+- Sharing and the person's own: share_file (on their „Freigeben“) and unshare_file share a file or folder with a person of the workspace or stop it; list_deleted and restore_files bring back what was deleted („Gelöscht“, 30 days); update_area renames an area or says who sees it, delete_area deletes one (on their „Löschen“); copy_files copies (into an area on their „Kopieren“), set_color colours a folder, pin_folder pins one to their side bar; share_link makes a link for anyone (on their „Freigeben“), end_link ends it; label_version names a version, delete_version deletes one (on their „Löschen“); read_settings and change_settings read and change the person's own settings (name, colour, the voice in calls, how often mail is checked) – only what they ask for. What lives in their browser (look, notifications) they set under „Einstellungen“ themselves.`
     : "- A file's shares and details, the areas' people, sharing files, what was deleted and the person's settings: only in the person's own private agent and on their own message – say so when asked here."
 }
-- To-dos („Aufgaben“ in Office – call them so to the person): list_todos, read_todo, create_todo, update_todo – the person's own and each area's (an area's list is its plan). Sent on a to-do, keep its status up to date. A shared agent, and any run you started by yourself, keeps to the to-dos of areas.
-- The calendar („Kalender“): list_calendars (each area's, the person's private one, sub-calendars, their mailboxes' – changed at the provider, as far as it lets), list_events, create_event, update_event, delete_event – times are Berlin time. Put events in only when the order asks for it; a shared agent, and any run you started by yourself, keeps to areas' calendars.
-- Sender, the workspace's messages: list_conversations, read_conversation, post_message. Write there only when asked to, or when the people there are waiting for exactly what you did. A shared agent, and any run you started by yourself (a repeated order, a watch), keeps to the channels of areas – groups and direct conversations are refused there.
+- To-dos („Aufgaben“ in Office – call them so to the person): list_todos, read_todo, create_todo, update_todo, delete_todo (on their „Löschen“), and list_milestones, update_milestone, delete_milestone (on their „Löschen“) – the person's own and each area's (an area's list is its plan). Sent on a to-do, keep its status up to date. A shared agent, and any run you started by yourself, keeps to the to-dos of areas.
+- The calendar („Kalender“): list_calendars (each area's, the person's private one, sub-calendars, their mailboxes' – changed at the provider, as far as it lets), list_events, create_event, update_event, delete_event; create_calendar, update_calendar, delete_calendar (on their „Löschen“) – times are Berlin time. Put events in only when the order asks for it; a shared agent, and any run you started by yourself, keeps to areas' calendars.
+- Sender, the workspace's messages: list_conversations, read_conversation, post_message; edit_message and delete_message for what you wrote there yourself; react_message and mark_read as the person, on their word; open_direct, create_group, add_to_group (on their „Hinzufügen“), remove_from_group and leave_group for their direct conversations and groups. Write there only when asked to, or when the people there are waiting for exactly what you did. A shared agent, and any run you started by yourself (a repeated order, a watch), keeps to the channels of areas – groups and direct conversations are refused there.
 - Working by yourself: when the order says to do something again and again („jeden Montag“, „täglich“) or whenever something happens („wenn sich in … was ändert“, „immer wenn in … etwas Neues liegt“, „sobald …“, „wenn jemand zum Bereich dazukommt“), set that up yourself – repeat_order for a time, watch for a change – as the first thing you do, before the rest of the work and before any question: look up the id you need, call the tool. Never ask for times or forms; where a detail is missing take the sensible one and say which. Something else in the order you cannot do, or are unsure about, is no reason to wait with it: set it up anyway, with an order text for the part you can do, and say what is open. Never say you will keep an eye on something or do it again without having called watch or repeat_order in this very turn – otherwise nothing will happen and the person waits in vain. Then do the work once now, unless the order is clearly only about later („wenn sich was ändert“ with nothing to do yet: just set it up and say so). The person changes it by telling you („lieber dienstags“, „hör auf damit“): replace or end what is set (stop_repeating, stop_watching). A run you start by yourself begins with a message that names what happened or that it is time; work it off and report as always.
 ${auto}
 - Name the chat first: call name_chat once, before anything else, with a few words for what the order is about („CCT Dateien finden“, „Angebote 2026 ordnen“). Again only when the chat turns to something else.
@@ -1190,6 +1416,19 @@ export async function getCloudAgent(
     deps,
     kept.flatMap((each) => (each.callId ? [each.callId] : [])),
   );
+  // What it asked to be confirmed: a card under the answer it was asked in.
+  const askRows = await deps.db
+    .select()
+    .from(cloudAgentAsks)
+    .where(eq(cloudAgentAsks.agentId, row.id))
+    .orderBy(asc(cloudAgentAsks.createdAt));
+  const asks = asksByAnswer(kept, askRows);
+  const asksOf = (key: string) => {
+    const found = asks.get(key);
+    return found?.length
+      ? { asks: found.map((each) => askDto(each, authorOf(each.userId), userId)) }
+      : {};
+  };
   const chats: CloudAgentChat[] = chatRows.map((chat) => {
     const messages: CloudAgentMessage[] = kept
       .filter((each) => each.chatId === chat.id)
@@ -1203,17 +1442,19 @@ export async function getCloudAgent(
         author: each.role === 'user' ? authorOf(each.userId) : null,
         fromChat: each.fromChatId ? (titles.get(each.fromChatId) ?? 'Chat') : null,
         call: each.callId ? (calls.get(each.callId) ?? null) : null,
+        ...asksOf(each.id),
       }));
     const run = runs.get(chat.id);
     if (run) {
       messages.push({
-        id: `answering-${chat.id}`,
+        id: `${NOW_PREFIX}${chat.id}`,
         role: 'assistant',
         text: run.text,
         state: 'answering',
         error: null,
         author: null,
         fromChat: null,
+        ...asksOf(`${NOW_PREFIX}${chat.id}`),
       });
     }
     return {
@@ -1299,6 +1540,20 @@ async function runSenderTool(
         `Not here: that is a ${row.kind === 'group' ? 'group' : 'direct conversation'}, and ${why}. Only the channels of areas.`,
       );
   };
+  /** Groups and direct conversations are the person's own: not where the agent keeps to areas. */
+  const privateOnly = () => {
+    if (why) throw new ToolChatError(`Not here: groups and direct conversations, and ${why}.`);
+  };
+  /** The agent as the writer of its own messages. */
+  const self = { id: agent.id, title: agent.title, userId: agent.userId };
+  const personNamed = async (wanted: string) => {
+    const members = await listMembers(deps.db, agent.userId, agent.workspaceId);
+    try {
+      return memberNamed(members, wanted);
+    } catch (error) {
+      throw new ToolChatError(error instanceof Error ? error.message : String(error));
+    }
+  };
   switch (name) {
     case 'list_conversations': {
       const home = await senderHome(deps, agent.userId, agent.workspaceId);
@@ -1325,7 +1580,7 @@ async function runSenderTool(
         .filter((each) => !each.deleted)
         .map(
           (each) =>
-            `${each.createdAt} ${each.agent ? `${each.agent.title} (agent)` : (each.author?.name ?? 'someone gone')}: ${each.text}`,
+            `[${each.id}] ${each.createdAt} ${each.agent ? `${each.agent.id === agent.id ? 'you' : each.agent.title} (agent)` : (each.author?.name ?? 'someone gone')}: ${each.text}`,
         )
         .join('\n');
       return { content: text || 'Nothing written there yet.', changed: false };
@@ -1341,8 +1596,100 @@ async function runSenderTool(
       );
       return { content: 'Posted.', changed: true };
     }
+    case 'edit_message': {
+      const input = SENDER_INPUTS.edit_message.parse(raw);
+      // Rewritten where it may write: not in the person's groups where it keeps to areas.
+      const [where] = await deps.db
+        .select({ channelId: senderMessages.channelId })
+        .from(senderMessages)
+        .where(eq(senderMessages.id, input.message));
+      if (where) await open(where.channelId);
+      await editAgentMessage(deps, self, input.message, input.text).catch(refused);
+      return { content: 'Changed.', changed: true };
+    }
+    case 'delete_message': {
+      const input = SENDER_INPUTS.delete_message.parse(raw);
+      await deleteAgentMessage(deps, self, input.message).catch(refused);
+      return { content: 'Deleted.', changed: true };
+    }
+    case 'react_message': {
+      const input = SENDER_INPUTS.react_message.parse(raw);
+      const [where] = await deps.db
+        .select({ channelId: senderMessages.channelId })
+        .from(senderMessages)
+        .where(eq(senderMessages.id, input.message));
+      if (!where) throw new ToolChatError(`No message "${input.message}" (read_conversation).`);
+      await open(where.channelId);
+      await reactToMessage(deps, agent.userId, input.message, input.reaction).catch(refused);
+      return { content: input.reaction ? 'Reacted.' : 'Reaction taken back.', changed: true };
+    }
+    case 'mark_read': {
+      const input = SENDER_INPUTS.mark_read.parse(raw);
+      await open(input.conversation);
+      if (input.read)
+        await readChannel(deps, agent.userId, input.conversation, Number.MAX_SAFE_INTEGER).catch(
+          refused,
+        );
+      else await markUnread(deps, agent.userId, input.conversation).catch(refused);
+      return { content: input.read ? 'Marked read.' : 'Marked unread.', changed: true };
+    }
+    case 'open_direct': {
+      const input = SENDER_INPUTS.open_direct.parse(raw);
+      privateOnly();
+      const person = await personNamed(input.person);
+      const made = await openDirect(deps, agent.userId, agent.workspaceId, person.userId).catch(
+        refused,
+      );
+      return {
+        content: `The direct conversation with ${person.name}: id ${made.id}.`,
+        changed: true,
+      };
+    }
+    case 'create_group': {
+      const input = SENDER_INPUTS.create_group.parse(raw);
+      privateOnly();
+      const people = [];
+      for (const each of input.people) people.push(await personNamed(each));
+      const made = await createGroup(deps, agent.userId, agent.workspaceId, {
+        name: input.name,
+        userIds: people.map((each) => each.userId),
+      }).catch(refused);
+      return { content: `The group „${made.name}“ is there: id ${made.id}.`, changed: true };
+    }
+    case 'add_to_group': {
+      const input = SENDER_INPUTS.add_to_group.parse(raw);
+      privateOnly();
+      const people = [];
+      for (const each of input.people) people.push(await personNamed(each));
+      await addToGroup(
+        deps,
+        agent.userId,
+        input.conversation,
+        people.map((each) => each.userId),
+      ).catch(refused);
+      return { content: `Added: ${people.map((each) => each.name).join(', ')}.`, changed: true };
+    }
+    case 'remove_from_group': {
+      const input = SENDER_INPUTS.remove_from_group.parse(raw);
+      privateOnly();
+      const person = await personNamed(input.person);
+      await removeFromGroup(deps, agent.userId, input.conversation, person.userId).catch(refused);
+      return { content: `${person.name} is out of the group.`, changed: true };
+    }
+    case 'leave_group': {
+      const input = SENDER_INPUTS.leave_group.parse(raw);
+      privateOnly();
+      await leaveGroup(deps, agent.userId, input.conversation).catch(refused);
+      return { content: 'The person left the group.', changed: true };
+    }
   }
 }
+
+/** A refusal of the server's, told the agent as its mistake. */
+const refused = (error: unknown): never => {
+  if (error instanceof ApiError) throw new ToolChatError(error.message);
+  throw error;
+};
 
 /**
  * What an agent does with to-dos: as the person who wrote may (`actor`), under its own name –
@@ -1370,6 +1717,21 @@ async function runTodoTool(
     const todo = await todoByRef(deps, userId, actor.workspaceId, ref);
     refuseOwn(todo.areaId);
     return todo;
+  };
+  const milestoneOf = async (ref: string) => {
+    const all = await listMilestones(deps, userId, actor.workspaceId).catch(refused);
+    const fold = (text: string) => text.trim().toLowerCase();
+    const found = all.filter((each) => each.id === ref.trim());
+    const named = found.length ? found : all.filter((each) => fold(each.name) === fold(ref));
+    if (named.length !== 1)
+      throw new ToolChatError(
+        named.length
+          ? `${named.length} milestones are called "${ref}" – name it by id (list_milestones).`
+          : `No milestone "${ref}" (list_milestones).`,
+      );
+    const one = named[0]!;
+    refuseOwn(one.areaId);
+    return one;
   };
   switch (name) {
     case 'list_todos': {
@@ -1448,6 +1810,43 @@ async function runTodoTool(
         { agentId: agent.id },
       );
       return { content: `Changed: ${line(changed)}`, changed: true };
+    }
+    case 'delete_todo': {
+      const input = TODO_INPUTS.delete_todo.parse(raw);
+      const todo = await find(input.todo);
+      await deleteTodo(deps, userId, todo.id).catch(refused);
+      return { content: `Deleted: „${todo.title}“.`, changed: true };
+    }
+    case 'list_milestones': {
+      const input = TODO_INPUTS.list_milestones.parse(raw);
+      refuseOwn(input.area ?? null);
+      const list = (
+        await listMilestones(deps, userId, actor.workspaceId, { areaId: input.area }).catch(
+          refused,
+        )
+      ).filter((one) => one.areaId === (input.area ?? null));
+      return {
+        content:
+          list
+            .map((one) => `${one.id}: ${one.name}${one.dueOn ? ` (due ${one.dueOn})` : ''}`)
+            .join('\n') || 'No milestones there.',
+        changed: false,
+      };
+    }
+    case 'update_milestone': {
+      const input = TODO_INPUTS.update_milestone.parse(raw);
+      const one = await milestoneOf(input.milestone);
+      const changed = await updateMilestone(deps, userId, one.id, {
+        name: input.name,
+        dueOn: input.due,
+      }).catch(refused);
+      return { content: `Changed: ${changed.name}.`, changed: true };
+    }
+    case 'delete_milestone': {
+      const input = TODO_INPUTS.delete_milestone.parse(raw);
+      const one = await milestoneOf(input.milestone);
+      await deleteMilestone(deps, userId, one.id).catch(refused);
+      return { content: `Deleted: ${one.name}.`, changed: true };
     }
   }
 }
@@ -1878,6 +2277,18 @@ function deskLabel(name: string, input: unknown): string | null {
       return 'Liest die Nachrichten';
     case 'post_message':
       return 'Schreibt in Sender';
+    case 'edit_message':
+      return 'Ändert eine Nachricht';
+    case 'react_message':
+      return 'Reagiert auf eine Nachricht';
+    case 'mark_read':
+      return 'Markiert Nachrichten';
+    case 'open_direct':
+      return 'Öffnet ein Gespräch';
+    case 'create_group':
+      return said('name') ? `Legt die Gruppe „${said('name')}“ an` : 'Legt eine Gruppe an';
+    case 'add_to_group':
+      return 'Nimmt Leute in die Gruppe';
     case 'list_todos':
     case 'read_todo':
       return 'Sieht die Aufgaben durch';
@@ -1885,6 +2296,10 @@ function deskLabel(name: string, input: unknown): string | null {
       return said('title') ? `Legt die Aufgabe „${said('title')}“ an` : 'Legt eine Aufgabe an';
     case 'update_todo':
       return 'Ändert eine Aufgabe';
+    case 'list_milestones':
+      return 'Sieht die Meilensteine durch';
+    case 'update_milestone':
+      return 'Ändert einen Meilenstein';
     case 'list_calendars':
     case 'list_events':
       return 'Sieht in den Kalender';
@@ -1894,6 +2309,20 @@ function deskLabel(name: string, input: unknown): string | null {
       return 'Ändert einen Termin';
     case 'delete_event':
       return 'Löscht einen Termin';
+    case 'copy_files':
+      return 'Kopiert Dateien';
+    case 'set_color':
+      return 'Färbt einen Ordner';
+    case 'pin_folder':
+      return 'Heftet einen Ordner an';
+    case 'end_link':
+      return 'Beendet einen Link';
+    case 'label_version':
+      return 'Benennt eine Version';
+    case 'create_calendar':
+      return said('name') ? `Legt den Kalender „${said('name')}“ an` : 'Legt einen Kalender an';
+    case 'update_calendar':
+      return 'Ändert einen Kalender';
     case 'list_presentations':
     case 'search':
       return said('query') ? `Sucht „${said('query')}“` : 'Sieht die Präsentationen durch';
@@ -1913,6 +2342,12 @@ function deskLabel(name: string, input: unknown): string | null {
       return 'Legt Material ab';
     case 'update_presentation':
       return 'Ordnet ein';
+    case 'list_materials':
+      return 'Sieht das Board durch';
+    case 'update_note':
+      return 'Ändert eine Notiz';
+    case 'set_access':
+      return 'Sieht nach, wer die Präsentation öffnet';
     default:
       return connectionLabel(name, input) ?? mailToolLabel(name) ?? cloudLabel(name, input);
   }
@@ -2096,6 +2531,386 @@ async function goOn(deps: AppDeps, agentId: string, chat: CloudAgentChatRow, wai
 }
 
 /**
+ * Who a tool of an agent's runs as, and what the run it is in allows: built anew for every
+ * step of {@link begin} and for an ask the person confirmed ({@link decideCloudAgentAsk}).
+ */
+interface ToolRun {
+  agent: CloudAgentRow;
+  chat: CloudAgentChatRow;
+  /** The person who wrote: its tools run as them. */
+  viewer: Viewer;
+  /** Nobody's message among what it answers: it set itself to work (`areasOnly`). */
+  unattended: boolean;
+  /** Words not the person's own in this run (a to-do's, an app's). */
+  foreign: boolean;
+  /** Kept to this conversation: posting there (a call's notes) or, tagged, reading it too. */
+  confined: string | null;
+  /** Tagged in this conversation (`Waiting.tag`). */
+  tag?: string;
+  zone?: string;
+  /** What it does by itself changed (`AUTO_INPUTS`): told anew the next turn. */
+  autoChanged?: (fresh: CloudAgentRow) => void;
+}
+
+/** The person's connections, mailboxes and private things: in their own private agent only. */
+const personalRun = (run: ToolRun) =>
+  run.agent.userId === run.viewer.author.id && !run.agent.shared;
+/** Mailboxes, sharing and the person's settings: on their own message there, too. */
+const mailRun = (run: ToolRun) => personalRun(run) && !run.unattended && !run.foreign;
+/** What a run kept to a conversation does there. */
+const thereOnly = (run: ToolRun, name: string) =>
+  name === 'post_message' || (run.tag !== undefined && name === 'read_conversation');
+
+/** What the run does not allow, refused before anything is done or asked. */
+function refuse(run: ToolRun, name: string, input: unknown) {
+  const { confined } = run;
+  if (
+    confined &&
+    (!thereOnly(run, name) ||
+      (input as { conversation?: unknown } | null)?.conversation !== confined)
+  )
+    throw new ToolChatError(
+      run.tag
+        ? `Not here: you were called in the conversation ${confined} – you only read it and answer there, nothing else.`
+        : `Not now: this message only asks you to post into the conversation ${confined}, nothing else.`,
+    );
+  // Services outside: the connections of who wrote, never the agent's owner's.
+  if (name in CONNECTION_INPUTS && (!personalRun(run) || run.foreign))
+    throw new ToolChatError(
+      run.foreign
+        ? "Not now: this order is not the person's own words (a to-do's, an app's) – their connections only on their own message."
+        : "Not here: a person's connections work only in their own private agent, not in a shared one.",
+    );
+  // Mailboxes: those of who wrote, in their own private agent only.
+  if (name in MAIL_INPUTS && !mailRun(run))
+    throw new ToolChatError(
+      "Not here: a person's mailboxes are set up only in their own private agent, not in a shared one, and only on their message – not in a run it started by itself (a watch, a repeated order).",
+    );
+  if (IN_THEIR_NAME.has(name) && run.unattended)
+    throw new ToolChatError(
+      "Not now: comments go under the person's name – only on their message, not in a run started by itself.",
+    );
+  // Who may open a presentation shows it to others, as sharing does: told always, changed only so.
+  const access = input as { restricted?: unknown; people?: unknown } | null;
+  if (
+    name === 'set_access' &&
+    (access?.restricted !== undefined || access?.people !== undefined) &&
+    !mailRun(run)
+  )
+    throw new ToolChatError(
+      "Not here: who may open a presentation is changed only in the person's own private agent, on their own message – here you may only tell who has access.",
+    );
+  if (ASKED_ONLY.has(name) && !mailRun(run))
+    throw new ToolChatError(
+      "Not here: sharing, what was deleted, an area's people and the person's settings only in their own private agent, on their own message – not in a shared one, not in a run it started by itself, not on a to-do's or an app's order.",
+    );
+}
+
+/** One tool of an agent's, done now – as the person of {@link ToolRun}, as far as the run allows. */
+async function runAgentTool(
+  deps: AppDeps,
+  run: ToolRun,
+  name: string,
+  input: unknown,
+): Promise<{ content: string; changed: boolean }> {
+  refuse(run, name, input);
+  const { agent, chat, viewer } = run;
+  const userId = viewer.author.id;
+  // Its tools run as the person who wrote, whoever the agent is of.
+  const actor: CloudAgentRow = { ...agent, userId };
+  if (name in CALENDAR_INPUTS)
+    return {
+      content: await runCalendarTool(
+        deps,
+        actor.userId,
+        actor.workspaceId,
+        name as CalendarToolName,
+        input,
+        {
+          // Others' words in this run (a to-do's, an app's): not the person's own
+          // calendars either – nor their mailboxes'.
+          areasOnly:
+            areasOnly(agent, run.unattended) ??
+            (run.foreign
+              ? 'this run works on words others wrote (a to-do, an app) – the person’s own calendars only when they ask you themselves'
+              : null),
+        },
+      ),
+      changed: !name.startsWith('list_'),
+    };
+  if (name in TODO_INPUTS)
+    return runTodoTool(
+      deps,
+      agent,
+      actor,
+      name as keyof typeof TODO_INPUTS,
+      input,
+      run.unattended,
+    );
+  if (name in SENDER_INPUTS)
+    return runSenderTool(
+      deps,
+      actor,
+      name as keyof typeof SENDER_INPUTS,
+      input,
+      run.unattended,
+      run.tag,
+    );
+  if (name in AUTO_INPUTS) {
+    const done = await runAutoTool(
+      deps,
+      userId,
+      agent.id,
+      name as AutoToolName,
+      input,
+      run.zone,
+    );
+    const [fresh] = await deps.db
+      .select()
+      .from(cloudAgents)
+      .where(eq(cloudAgents.id, agent.id));
+    if (fresh) run.autoChanged?.(fresh);
+    return done;
+  }
+  // A chat beside the first has a name of its own; the first's is the agent's.
+  if (name === 'name_chat' && chat.id !== agent.id) {
+    const { title } = INPUTS.name_chat.parse(input);
+    await deps.db
+      .update(cloudAgentChats)
+      .set({ title })
+      .where(eq(cloudAgentChats.id, chat.id));
+    return { content: `The chat is called „${title}“ now.`, changed: true };
+  }
+  if (name === 'create_area') {
+    const { name: called } = AREA_INPUT.parse(input);
+    const ctx = await cloudContext(deps.db, agent.workspaceId, userId);
+    const taken = new Set([...ctx.areas.values()].map((each) => each.row.color));
+    const made = await createArea(deps, userId, agent.workspaceId, {
+      name: called,
+      description: '',
+      // A colour no area has yet, as the dialog offers it.
+      color: ACCENT_COLORS.find((each) => !taken.has(each)) ?? ACCENT_COLORS[0],
+      visibility: 'workspace',
+      parentId: null,
+    }).catch((error: unknown) => {
+      if (error instanceof ApiError) throw new ToolChatError(error.message);
+      throw error;
+    });
+    return {
+      content: `The area „${made.name}“ is there (area id ${made.id}), open to everyone in the workspace.`,
+      changed: true,
+    };
+  }
+  // Services outside: the connections of who wrote, never the agent's owner's.
+  if (name in CONNECTION_INPUTS) {
+    return runConnectionTool(
+      deps,
+      userId,
+      agent.workspaceId,
+      name as ConnectionToolName,
+      input,
+    );
+  }
+  // Mailboxes: those of who wrote, in their own private agent only.
+  if (name in MAIL_INPUTS) {
+    return runMailTool(
+      deps,
+      userId,
+      agent.workspaceId,
+      name as MailToolName,
+      input,
+      agent.id,
+    );
+  }
+  if (name in SETTINGS_INPUTS)
+    return {
+      content: await runSettingsTool(deps, viewer, name as SettingsToolName, input),
+      changed: name === 'change_settings',
+    };
+  if (APP_NAMES.has(name)) {
+    const ran = await runAppTool(
+      deps,
+      { viewer, workspaceId: agent.workspaceId },
+      name,
+      { ...(input as Record<string, unknown>), workspace: agent.workspaceId },
+    );
+    const said = ran.content
+      .flatMap((each) => (each.type === 'text' ? [each.text] : []))
+      .join('\n');
+    if (ran.isError) throw new ToolChatError(said);
+    return { content: said, changed: !APP_READING.has(name) };
+  }
+  if (name in INPUTS)
+    return runDeskTool(deps, viewer, actor, name as keyof typeof INPUTS, input);
+  if (CLOUD_NAMES.has(name)) return runCloudTool(deps, actor, name, input);
+  if (!MCP_NAMES.has(name)) throw new ToolChatError(`No tool "${name}".`);
+  return runDeckTool(deps, viewer, actor, name, input);
+}
+
+/**
+ * A tool that waits for „Bestätigen“ (`NEEDS_OK`): refused as the run would refuse it, checked
+ * that what it names is there, then asked in the chat – done only on the person's click.
+ */
+async function askFirst(
+  deps: AppDeps,
+  run: ToolRun,
+  name: string,
+  input: unknown,
+): Promise<{ content: string; changed: boolean }> {
+  refuse(run, name, input);
+  // A copy into one's own files reaches nobody: done at once.
+  if (!(await mustAsk(deps, run.viewer, name, input))) return runAgentTool(deps, run, name, input);
+  const text = await askText(deps, run.viewer, run.agent.workspaceId, name, input, {
+    why: areasOnly(run.agent, run.unattended),
+    foreign: run.foreign,
+    agentId: run.agent.id,
+  });
+  const pin = await askPin(deps, run.viewer, run.agent.workspaceId, name, input);
+  await deps.db.insert(cloudAgentAsks).values({
+    id: crypto.randomUUID(),
+    agentId: run.agent.id,
+    chatId: run.chat.id,
+    userId: run.viewer.author.id,
+    tool: name,
+    input: pin === null ? (input ?? {}) : { ...(input as object), [ASK_PIN]: pin },
+    text,
+    unattended: run.unattended,
+    foreign: run.foreign,
+    createdAt: deps.clock.now(),
+  });
+  return {
+    content: `Not done yet: it waits for ${run.viewer.author.name}'s „${askVerb(name)}“ on a card under your answer („${text}“). Do not call it again and do not ask in words as well – say in one line that it waits for their click, then go on with the rest. You hear what came of it with their next message.`,
+    changed: true,
+  };
+}
+
+/**
+ * „Bestätigen“ or „Abbrechen“ on an agent's card: only the person whose rights it runs with,
+ * once. Confirmed, it is done now with their rights as they are now, as far as the run it was
+ * asked in allowed; what came of it stands on the card and is told the agent next time.
+ */
+export async function decideCloudAgentAsk(
+  deps: AppDeps,
+  viewer: Viewer,
+  agentId: string,
+  askId: string,
+  confirm: boolean,
+): Promise<CloudAgentAsk> {
+  const agent = await agentFor(deps, viewer.author.id, agentId);
+  const [ask] = await deps.db
+    .select()
+    .from(cloudAgentAsks)
+    .where(and(eq(cloudAgentAsks.id, askId), eq(cloudAgentAsks.agentId, agent.id)));
+  if (!ask) throw notFound('Diese Frage gibt es nicht mehr.');
+  if (ask.userId !== viewer.author.id)
+    throw forbidden('Das bestätigt nur, mit wessen Rechten der Agent es tun würde.');
+  // Taken at once: a second click, in another tab too, finds it decided.
+  const [taken] = await deps.db
+    .update(cloudAgentAsks)
+    .set({ state: confirm ? 'done' : 'cancelled', decidedAt: deps.clock.now() })
+    .where(and(eq(cloudAgentAsks.id, ask.id), eq(cloudAgentAsks.state, 'open')))
+    .returning();
+  if (!taken) throw badRequest('Das ist schon entschieden.');
+  if (confirm) {
+    const [chat] = await deps.db
+      .select()
+      .from(cloudAgentChats)
+      .where(eq(cloudAgentChats.id, ask.chatId));
+    let state: CloudAgentAskState = 'done';
+    let result: string;
+    try {
+      if (!chat) throw new ToolChatError('The chat is gone.');
+      const { [ASK_PIN]: pinned, ...input } = (ask.input ?? {}) as Record<string, unknown>;
+      // What was asked, not what came after: a draft rewritten or a name now meaning another.
+      if (
+        typeof pinned === 'string' &&
+        (await askPin(deps, viewer, agent.workspaceId, ask.tool, input).catch(() => '')) !== pinned
+      )
+        throw new ToolChatError(
+          'Das hat sich seit der Frage geändert – nichts getan. Frag den Agenten neu.',
+        );
+      const ran = await asAgent(agent.id, () =>
+        runAgentTool(
+          deps,
+          {
+            agent,
+            chat,
+            viewer,
+            unattended: ask.unattended,
+            foreign: ask.foreign,
+            confined: null,
+          },
+          ask.tool,
+          input,
+        ),
+      );
+      result = ran.content;
+      if ((ran as { isError?: boolean }).isError) state = 'failed';
+    } catch (error) {
+      if (!(error instanceof ToolChatError || error instanceof ApiError || error instanceof ZodError))
+        deps.log.error('Cloud agent ask failed', { agentId: agent.id, error });
+      state = 'failed';
+      result =
+        error instanceof ApiError || error instanceof ToolChatError
+          ? error.message
+          : 'Das ging nicht – ein Problem auf dem Server.';
+    }
+    const [kept] = await deps.db
+      .update(cloudAgentAsks)
+      .set({ state, result })
+      .where(eq(cloudAgentAsks.id, ask.id))
+      .returning();
+    Object.assign(taken, kept ?? { state, result });
+  }
+  await announceAgent(deps, agent);
+  return askDto(taken, viewer.author, viewer.author.id);
+}
+
+const askDto = (row: CloudAgentAskRow, by: Author, userId: string): CloudAgentAsk => ({
+  id: row.id,
+  verb: askVerb(row.tool),
+  doneWord: askDone(row.tool),
+  text: row.text,
+  state: row.state,
+  result: row.state === 'done' || row.state === 'failed' ? row.result : null,
+  by,
+  mine: row.userId === userId,
+});
+
+/** How an ask ended, for the agent's next turn: beside the answer it was asked in. */
+const askNote = (row: CloudAgentAskRow) =>
+  row.state === 'open'
+    ? `[Asked the person to confirm „${row.text}“ – not decided yet]`
+    : row.state === 'cancelled'
+      ? `[The person cancelled „${row.text}“ – it was not done]`
+      : row.state === 'failed'
+        ? `[The person confirmed „${row.text}“, but it failed: ${row.result ?? ''}]`
+        : `[The person confirmed „${row.text}“ and it was done: ${row.result ?? ''}]`;
+
+/**
+ * Each ask with the agent's answer it was asked while writing: the first of the chat's answers
+ * kept at or after it; none yet – the answer being written (`answering-<chat>`).
+ */
+function asksByAnswer<T extends { id: string; role: string; chatId: string; createdAt: Date }>(
+  messages: readonly T[],
+  asks: readonly CloudAgentAskRow[],
+): Map<string, CloudAgentAskRow[]> {
+  const by = new Map<string, CloudAgentAskRow[]>();
+  for (const ask of asks) {
+    const answer = messages.find(
+      (each) =>
+        each.chatId === ask.chatId &&
+        each.role === 'assistant' &&
+        each.createdAt.getTime() >= ask.createdAt.getTime(),
+    );
+    const key = answer ? answer.id : `${NOW_PREFIX}${ask.chatId}`;
+    by.set(key, [...(by.get(key) ?? []), ask]);
+  }
+  return by;
+}
+const NOW_PREFIX = 'answering-';
+
+/**
  * Sets the agent to work on `batch` – one person's messages, kept in the chat already – as
  * `run`, in the background. What that person writes meanwhile it is told between its steps;
  * what others write waits until it answered ({@link goOn}): its tools run as who wrote.
@@ -2114,8 +2929,6 @@ async function begin(
   const userId = viewer.author.id;
   const text = batch.map((each) => each.prompt ?? each.text).join('\n\n');
   const zone = batch.at(-1)?.zone;
-  // Its tools run as the person who wrote, whoever the agent is of.
-  const actor: CloudAgentRow = { ...agent, userId };
   // Their connections only in their own private agent: in a shared one others write along and
   // read what it brought back – their words must not reach out with the writer's sign-ins.
   const personal = agent.userId === userId && !agent.shared;
@@ -2156,11 +2969,28 @@ async function begin(
               attachments: cloudAgentMessages.attachments,
               userId: cloudAgentMessages.userId,
               fromChatId: cloudAgentMessages.fromChatId,
+              chatId: cloudAgentMessages.chatId,
+              createdAt: cloudAgentMessages.createdAt,
             })
             .from(cloudAgentMessages)
             .where(eq(cloudAgentMessages.chatId, chat.id))
             .orderBy(asc(cloudAgentMessages.seq))
         ).filter((each) => !later.has(each.id));
+    // What it asked to be confirmed, and how that ended: told beside the answer it was asked in.
+    const asked = asksByAnswer(
+      before,
+      first.tag
+        ? []
+        : await deps.db
+            .select()
+            .from(cloudAgentAsks)
+            .where(eq(cloudAgentAsks.chatId, chat.id))
+            .orderBy(asc(cloudAgentAsks.createdAt)),
+    );
+    for (const each of before) {
+      const notes = asked.get(each.id);
+      if (notes) each.text = [each.text, ...notes.map(askNote)].join('\n');
+    }
     const others = [
       ...new Set(
         before.flatMap((each) => (each.userId && each.userId !== userId ? [each.userId] : [])),
@@ -2255,164 +3085,26 @@ async function begin(
                       ? !unattended
                       : (personal && !foreign) || !(tool.name in CONNECTION_INPUTS),
               ),
-            run: async (name, input) => {
-              if (
-                confined &&
-                (!there(name) ||
-                  (input as { conversation?: unknown } | null)?.conversation !== confined)
-              )
-                throw new ToolChatError(
-                  first.tag
-                    ? `Not here: you were called in the conversation ${confined} – you only read it and answer there, nothing else.`
-                    : `Not now: this message only asks you to post into the conversation ${confined}, nothing else.`,
-                );
-              if (name in CALENDAR_INPUTS)
-                return {
-                  content: await runCalendarTool(
-                    deps,
-                    actor.userId,
-                    actor.workspaceId,
-                    name as CalendarToolName,
-                    input,
-                    {
-                      // Others' words in this run (a to-do's, an app's): not the person's own
-                      // calendars either – nor their mailboxes'.
-                      areasOnly:
-                        areasOnly(agent, unattended) ??
-                        (foreign
-                          ? 'this run works on words others wrote (a to-do, an app) – the person’s own calendars only when they ask you themselves'
-                          : null),
-                    },
-                  ),
-                  changed: !name.startsWith('list_'),
-                };
-              if (name in TODO_INPUTS)
-                return runTodoTool(
-                  deps,
-                  agent,
-                  actor,
-                  name as keyof typeof TODO_INPUTS,
-                  input,
-                  unattended,
-                );
-              if (name in SENDER_INPUTS)
-                return runSenderTool(
-                  deps,
-                  actor,
-                  name as keyof typeof SENDER_INPUTS,
-                  input,
-                  unattended,
-                  first.tag,
-                );
-              if (name in AUTO_INPUTS) {
-                const done = await runAutoTool(
-                  deps,
-                  userId,
-                  agent.id,
-                  name as AutoToolName,
-                  input,
-                  zone,
-                );
-                const [fresh] = await deps.db
-                  .select()
-                  .from(cloudAgents)
-                  .where(eq(cloudAgents.id, agent.id));
-                if (fresh) auto = autoWords(fresh);
-                return done;
-              }
-              // A chat beside the first has a name of its own; the first's is the agent's.
-              if (name === 'name_chat' && chat.id !== agent.id) {
-                const { title } = INPUTS.name_chat.parse(input);
-                await deps.db
-                  .update(cloudAgentChats)
-                  .set({ title })
-                  .where(eq(cloudAgentChats.id, chat.id));
-                return { content: `The chat is called „${title}“ now.`, changed: true };
-              }
-              if (name === 'create_area') {
-                const { name: called } = AREA_INPUT.parse(input);
-                const ctx = await cloudContext(deps.db, agent.workspaceId, userId);
-                const taken = new Set([...ctx.areas.values()].map((each) => each.row.color));
-                const made = await createArea(deps, userId, agent.workspaceId, {
-                  name: called,
-                  description: '',
-                  // A colour no area has yet, as the dialog offers it.
-                  color: ACCENT_COLORS.find((each) => !taken.has(each)) ?? ACCENT_COLORS[0],
-                  visibility: 'workspace',
-                  parentId: null,
-                }).catch((error: unknown) => {
-                  if (error instanceof ApiError) throw new ToolChatError(error.message);
-                  throw error;
-                });
-                return {
-                  content: `The area „${made.name}“ is there (area id ${made.id}), open to everyone in the workspace.`,
-                  changed: true,
-                };
-              }
-              // Services outside: the connections of who wrote, never the agent's owner's.
-              if (name in CONNECTION_INPUTS) {
-                if (!personal || foreign)
-                  throw new ToolChatError(
-                    foreign
-                      ? "Not now: this order is not the person's own words (a to-do's, an app's) – their connections only on their own message."
-                      : "Not here: a person's connections work only in their own private agent, not in a shared one.",
-                  );
-                return runConnectionTool(
-                  deps,
-                  userId,
-                  agent.workspaceId,
-                  name as ConnectionToolName,
-                  input,
-                );
-              }
-              // Mailboxes: those of who wrote, in their own private agent only.
-              if (name in MAIL_INPUTS) {
-                if (!mailHere())
-                  throw new ToolChatError(
-                    "Not here: a person's mailboxes are set up only in their own private agent, not in a shared one, and only on their message – not in a run it started by itself (a watch, a repeated order).",
-                  );
-                return runMailTool(
-                  deps,
-                  userId,
-                  agent.workspaceId,
-                  name as MailToolName,
-                  input,
-                  agent.id,
-                );
-              }
-              if (IN_THEIR_NAME.has(name) && unattended)
-                throw new ToolChatError(
-                  "Not now: comments go under the person's name – only on their message, not in a run started by itself.",
-                );
-              if (ASKED_ONLY.has(name) && !mailHere())
-                throw new ToolChatError(
-                  "Not here: sharing, what was deleted, an area's people and the person's settings only in their own private agent, on their own message – not in a shared one, not in a run it started by itself, not on a to-do's or an app's order.",
-                );
-              if (name in SETTINGS_INPUTS)
-                return {
-                  content: await runSettingsTool(deps, viewer, name as SettingsToolName, input),
-                  changed: name === 'change_settings',
-                };
-              if (APP_NAMES.has(name)) {
-                const ran = await runAppTool(
-                  deps,
-                  { viewer, workspaceId: agent.workspaceId },
-                  name,
-                  { ...(input as Record<string, unknown>), workspace: agent.workspaceId },
-                );
-                const said = ran.content
-                  .flatMap((each) => (each.type === 'text' ? [each.text] : []))
-                  .join('\n');
-                if (ran.isError) throw new ToolChatError(said);
-                return { content: said, changed: !APP_READING.has(name) };
-              }
-              if (name in INPUTS)
-                return runDeskTool(deps, viewer, actor, name as keyof typeof INPUTS, input);
-              if (CLOUD_NAMES.has(name)) return runCloudTool(deps, actor, name, input);
-              if (!MCP_NAMES.has(name)) throw new ToolChatError(`No tool "${name}".`);
-              return runDeckTool(deps, viewer, actor, name, input);
+            run: (name, input) => {
+              const step: ToolRun = {
+                agent,
+                chat,
+                viewer,
+                unattended,
+                foreign,
+                confined,
+                tag: first.tag,
+                zone,
+                autoChanged: (fresh) => {
+                  auto = autoWords(fresh);
+                },
+              };
+              return NEEDS_OK.has(name)
+                ? askFirst(deps, step, name, input)
+                : runAgentTool(deps, step, name, input);
             },
-            label: deskLabel,
+            label: (name, input) =>
+              askAlways(name) ? 'Bittet um Bestätigung' : deskLabel(name, input),
             app: (name) =>
               MCP_NAMES.has(name) || name === 'copy_presentation' ? 'slider' : undefined,
             more: () => {

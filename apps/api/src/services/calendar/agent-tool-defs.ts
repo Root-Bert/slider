@@ -1,5 +1,10 @@
 import { z } from 'zod';
-import { MAX_EVENT_LOCATION, MAX_EVENT_NOTES, MAX_EVENT_TITLE } from '@slider/shared';
+import {
+  MAX_CALENDAR_NAME,
+  MAX_EVENT_LOCATION,
+  MAX_EVENT_NOTES,
+  MAX_EVENT_TITLE,
+} from '@slider/shared';
 
 /*
  * The calendar tools as the model reads them (`agent-tools.ts` runs them) – apart, so the apps'
@@ -51,6 +56,18 @@ export const CALENDAR_INPUTS = {
     .partial()
     .required({ event: true }),
   delete_event: z.object({ event: id }),
+  create_calendar: z.object({
+    name: z.string().trim().min(1).max(MAX_CALENDAR_NAME),
+    under: id.optional(),
+    mailbox: id.optional(),
+    color: z.string().trim().max(20).optional(),
+  }),
+  update_calendar: z.object({
+    calendar: id,
+    name: z.string().trim().min(1).max(MAX_CALENDAR_NAME).optional(),
+    color: z.string().trim().max(20).optional(),
+  }),
+  delete_calendar: z.object({ calendar: id }),
 };
 export type CalendarToolName = keyof typeof CALENDAR_INPUTS;
 export const CALENDAR_TOOL_NAMES = Object.keys(CALENDAR_INPUTS) as CalendarToolName[];
@@ -132,6 +149,41 @@ export const CALENDAR_TOOLS: {
     description: 'Deletes an event (by id) for everyone who sees its calendar. Only when asked.',
     properties: { event: { type: 'string' } },
     required: ['event'],
+    reads: false,
+  },
+  {
+    name: 'create_calendar',
+    title: 'Create a calendar',
+    description:
+      'Makes a calendar, as „Neuer Kalender“ does: under one that takes events (`under`: an area’s, the person’s own or another one’s sub-calendar) or in one of their mailboxes at its provider (`mailbox`, from list_mailboxes) – exactly one of the two.',
+    properties: {
+      name: { type: 'string' },
+      under: { type: 'string', description: 'A calendar id (list_calendars).' },
+      mailbox: { type: 'string', description: 'A mailbox id.' },
+      color: { type: 'string', description: 'An accent (blue, green, …) or #rrggbb.' },
+    },
+    required: ['name'],
+    reads: false,
+  },
+  {
+    name: 'update_calendar',
+    title: 'Rename or recolour a calendar',
+    description: 'Renames a calendar or gives it another colour – where the person may manage it.',
+    properties: {
+      calendar: { type: 'string' },
+      name: { type: 'string' },
+      color: { type: 'string', description: 'An accent (blue, green, …) or #rrggbb.' },
+    },
+    required: ['calendar'],
+    reads: false,
+  },
+  {
+    name: 'delete_calendar',
+    title: 'Delete a calendar',
+    description:
+      'Deletes a calendar with its events for everyone who sees it. With an agent it waits for the person’s „Löschen“ on a card.',
+    properties: { calendar: { type: 'string' } },
+    required: ['calendar'],
     reads: false,
   },
 ];

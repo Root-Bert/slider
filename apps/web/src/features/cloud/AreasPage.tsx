@@ -23,6 +23,7 @@ import { PeopleGraph } from './components/PeopleGraph';
 import { useCloud } from './hooks/useCloud';
 import { useStoredChoice } from './hooks/useStoredChoice';
 import { canHaveAreasUnder, isWorkspaceOwn } from './lib/areas';
+import { peopleFound } from './lib/people-graph';
 
 /** How many of an area's people its card names before „+ n weitere“. */
 const SHOWN_PEOPLE = 5;
@@ -219,18 +220,7 @@ export function Component() {
   // Typed where it stands, in the bar beside the views: lights up the net's people.
   const [query, setQuery] = useState('');
   const words = query.trim().toLowerCase();
-  const found =
-    words === ''
-      ? 0
-      : new Set(
-          areas.flatMap((area) =>
-            area.members
-              .filter((member) =>
-                `${member.name} ${member.title ?? ''}`.toLowerCase().includes(words),
-              )
-              .map((member) => member.id),
-          ),
-        ).size;
+  const found = peopleFound(areas, query);
   return (
     <CloudPage
       docTitle={root ? `${root.name} | Bereiche` : 'Bereiche'}
@@ -307,6 +297,9 @@ export function Component() {
                 <PeopleGraph
                   areas={areas}
                   query={query}
+                  workspace={ui.workspace}
+                  userId={ui.userId}
+                  areaTo={(area) => routes.cloudArea(ui.workspace.id, area.id)}
                   actionsFor={(area) => areaActions(ui, area, areas)}
                 />
               )}

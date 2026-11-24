@@ -38,6 +38,7 @@ export * from './writer';
 export * from './reader';
 export * from './sender';
 export * from './sender-start';
+export * from './sender-triage';
 export * from './mail';
 export * from './todos';
 export * from './calendar';

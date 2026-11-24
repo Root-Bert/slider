@@ -1,7 +1,13 @@
 import { useEffect, useEffectEvent, useRef, useState, type KeyboardEvent } from 'react';
 import { useNavigate } from 'react-router';
-import type { AccountAuthor, SenderAgent, SenderChannel } from '@slider/shared';
-import { useOpenSenderDirect } from '@/lib/api';
+import {
+  DELETED_ACCOUNT_NAME,
+  type AccountAuthor,
+  type SenderAgent,
+  type SenderChannel,
+  type SenderMessageHit,
+} from '@slider/shared';
+import { useOpenSenderDirect, useSenderMessageSearch } from '@/lib/api';
 import { isModKey } from '@/lib/keyboard';
 import { isApplePlatform } from '@/lib/platform';
 import { AgentAvatar, AreaDot } from '@/features/cloud';
@@ -172,23 +178,82 @@ export function ConversationHitRows({
   );
 }
 
-/** Sender's hits: the conversations and people, then the mails, in place of the bar's list. */
+/**
+ * Messages with the words, in any conversation one sees (the server reads them): a click opens
+ * the conversation with them searched there.
+ */
+function MessageHitRows({
+  hits,
+  query,
+  onPicked,
+}: {
+  hits: SenderMessageHit[];
+  query: string;
+  onPicked: () => void;
+}) {
+  const ui = useSender();
+  const navigate = useNavigate();
+  const all = [
+    ...(ui.home?.areas.flatMap((area) => area.channels) ?? []),
+    ...(ui.home?.groups ?? []),
+    ...(ui.home?.direct ?? []),
+  ];
+  return hits.flatMap((hit) => {
+    const channel = all.find((each) => each.id === hit.channelId);
+    if (!channel) return [];
+    const who = hit.name ?? DELETED_ACCOUNT_NAME;
+    return [
+      <button
+        key={hit.messageId}
+        type="button"
+        role="listitem"
+        {...{ [HIT]: '' }}
+        title={`${channel.name} | ${who}: ${hit.text}`}
+        className={hitClass}
+        onClick={() => {
+          onPicked();
+          void navigate(ui.pathOf(channel), { state: { find: query } });
+        }}
+      >
+        <span className="flex size-[18px] shrink-0 items-center justify-center">
+          <ConversationMark conversation={channel} />
+        </span>
+        <span className="min-w-0 flex-1 truncate">{hit.text}</span>
+        <span className="max-w-[40%] shrink-0 truncate text-xs text-fg-subtle">{channel.name}</span>
+      </button>,
+    ];
+  });
+}
+
+/**
+ * Sender's hits: the conversations and people, then the messages with the words, then the mails,
+ * in place of the bar's list.
+ */
 export function ConversationHits({ query, onPicked }: { query: string; onPicked: () => void }) {
   const ui = useSender();
   const settled = useDebounced(query.trim(), 150);
   const mails = useMailHits(ui.workspace.id, settled);
+  const found = useSenderMessageSearch(ui.workspace.id, settled);
+  const messages = settled.length >= 2 ? (found.data ?? []) : [];
   const chats = searchConversations(ui.home, ui.me.id, query).length > 0;
-  const none = !chats && mails.threads.length === 0 && settled === query.trim() && !mails.settling;
+  const none =
+    !chats &&
+    messages.length === 0 &&
+    mails.threads.length === 0 &&
+    settled === query.trim() &&
+    !mails.settling &&
+    !found.isFetching;
+  const line = <div role="separator" className="mx-2 my-2 shrink-0 border-t border-hairline" />;
   return (
     <div role="list" aria-label="Treffer" className="flex flex-col gap-0.5" onKeyDown={stepHits}>
       <ConversationHitRows query={query} onPicked={onPicked} />
-      {chats && mails.threads.length > 0 && (
-        <div role="separator" className="mx-2 my-2 shrink-0 border-t border-hairline" />
-      )}
+      {chats && messages.length > 0 && line}
+      <MessageHitRows hits={messages} query={settled} onPicked={onPicked} />
+      {(chats || messages.length > 0) && mails.threads.length > 0 && line}
       <MailHitRows threads={mails.threads} onPicked={onPicked} />
       {none && (
         <p className="px-2.5 py-1 text-xs leading-4.5 text-fg-subtle">
-          Kein Chat, keine Mail und niemand heißt so.
+          Kein Chat, keine Nachricht, keine Mail und niemand heißt so.
         </p>
       )}
     </div>

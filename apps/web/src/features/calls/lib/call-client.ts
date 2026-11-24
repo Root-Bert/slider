@@ -246,6 +246,16 @@ export class CallClient {
     return this.enter(channelId, `/sender/channels/${channelId}/call`, { video, agentId: null });
   }
 
+  /**
+   * Answers a call that rings here: a conversation's is joined by its conversation, one with an
+   * agent (none to join by) as its guest, by the call.
+   */
+  answer(call: CallState, { video }: { video: boolean }) {
+    if (call.channelId) return this.join(call.channelId, { video });
+    if (this.snap.active?.callId === call.id) return;
+    return this.enter(call.id, `/calls/${call.id}/join`, { video, agentId: null });
+  }
+
   /** Calls a Cloud agent: it hears what one says and answers aloud. */
   callAgent(agentId: string) {
     if (this.snap.active?.agentId === agentId) return;

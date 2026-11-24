@@ -125,6 +125,9 @@ export interface MailView {
   folder: string;
 }
 
+/** „Übersicht“ before the Posteingang: the mailbox's unread as a to-do list (`Triage`). */
+export const OVERVIEW = 'uebersicht';
+
 export const mailViewOf = (params: URLSearchParams): MailView => ({
   accountId: params.get('postfach'),
   folder: params.get('ordner') || 'inbox',

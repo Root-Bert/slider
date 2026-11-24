@@ -18,6 +18,7 @@ import {
   type CloudShareInput,
   type CloudShareUpdate,
   type CloudSummary,
+  type CloudUploadResult,
   type CloudVersion,
   type Deck,
 } from '@slider/shared';
@@ -293,6 +294,16 @@ export function useCopyCloudNodes(workspaceId: string) {
   return useMutation({
     mutationFn: (input: { ids: string[] } & Target) =>
       api.post<CloudBatchResult>('/cloud/nodes/copy', input),
+    onSettled: refresh,
+  });
+}
+
+/** „Als PDF ablegen …“: a presentation (or other office file) as a PDF of its own, where picked. */
+export function useKeepCloudPdf(workspaceId: string) {
+  const { refresh } = useListPatch(workspaceId);
+  return useMutation({
+    mutationFn: ({ nodeId, ...target }: { nodeId: string } & Target) =>
+      api.post<CloudUploadResult>(`/cloud/nodes/${nodeId}/pdf`, target),
     onSettled: refresh,
   });
 }

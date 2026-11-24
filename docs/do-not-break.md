@@ -283,6 +283,20 @@ Parity script (from `apps/web`): `bun --tsconfig-override=tsconfig.app.json scri
   PDF; a field sized „fit to the box“ gets the same size on screen and in the file. Check: api
   `pdfs.test.ts`, e2e `14-reader.spec.ts`.
 
+## Sender (messages)
+
+- **Only who may read a conversation sees its messages, anywhere** – side bar, search hits,
+  quotes, reactions, pushes and agents keep to `visibleChannels` / `seen`; an area viewer reads
+  but neither writes nor reacts. Where: `services/sender.ts`, `routes/sender.ts`. Check: api
+  `sender.test.ts`.
+- **Nothing typed is lost** – sending is optimistic, a refused send stays in the list with „Erneut
+  senden“ (text, files and quote kept); unread and mentions count only others' messages. Where:
+  `lib/api/sender.ts`, `features/sender/components/MessageList.tsx`. Check: api `sender.test.ts`,
+  e2e `15-sender.spec.ts`; stop the API, send, start it, „Erneut senden“.
+- **A message shows as written** – formatting and links only rendered, never changed in the text;
+  words with underscores and web addresses stay whole. Where: `MessageText.tsx`, `LinkedText.tsx`.
+  Check: e2e `15-sender.spec.ts`.
+
 ## Calls
 
 - **A call from a conversation opens, never a black page** – `CallProvider` and everything it

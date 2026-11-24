@@ -1,10 +1,10 @@
 import { useState } from 'react';
 import { Link } from 'react-router';
-import { AgentAvatar, AGENT_GRID } from '@/features/cloud';
+import { AgentAvatar, AGENT_GRID, Empty } from '@/features/cloud';
 import { dropDraft } from '@/lib/drafts';
 import { formatRelativeTime } from '@/lib/format';
 import { routes } from '@/lib/routes';
-import { ConfirmDialog, EmptyState, Icon, ListRow, Menu, RowList } from '@/ui';
+import { ConfirmDialog, Icon, ListRow, Menu, RowList } from '@/ui';
 import { useSender } from '../hooks/useSender';
 import { useWorkspaceDrafts, type DraftPlace } from '../hooks/useWorkspaceDrafts';
 import { DRAFT_KINDS, draftsOf, summary, type DraftKind, type DraftView } from '../lib/draft-kinds';
@@ -42,8 +42,10 @@ export function DraftList({
   if (!ui.home) return null;
   if (all.length === 0) {
     return (
-      <div className="m-auto py-16">
-        <EmptyState
+      // In the middle in Sender; on a Cloud page at the height of every empty list there.
+      <div className="m-auto in-data-empty-frame:my-0">
+        <Empty
+          icon="edit"
           title="Keine Entwürfe"
           message="Was du in einem Chat, an einen Agenten oder als Mail schreibst und nicht abschickst, steht hier."
         />
@@ -53,8 +55,9 @@ export function DraftList({
   if (entries.length === 0) {
     const label = DRAFT_KINDS.find((each) => each.value === kind)?.label ?? '';
     return (
-      <div className="m-auto py-16">
-        <EmptyState
+      <div className="m-auto in-data-empty-frame:my-0">
+        <Empty
+          icon={query.trim() ? 'search' : 'edit'}
           title={
             query.trim() ? `Keine Treffer für „${query.trim()}“` : `Keine Entwürfe unter „${label}“`
           }

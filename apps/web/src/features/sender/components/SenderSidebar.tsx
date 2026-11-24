@@ -1,9 +1,9 @@
 import { useState, type ReactNode } from 'react';
-import { NavLink, useNavigate, useSearchParams } from 'react-router';
+import { NavLink, useLocation, useNavigate, useSearchParams } from 'react-router';
 import type { SenderAgent, SenderArea, SenderPinKind } from '@slider/shared';
 import { AgentFace, AreaDot, useDeleteAgentAction } from '@/features/cloud';
 import { canCreateDecks, WorkspaceMark } from '@/features/workspaces';
-import { Avatar, Button, cn, ContextMenu, Icon } from '@/ui';
+import { Button, cn, ContextMenu, Icon, SegmentedControl } from '@/ui';
 import { accentColor, onAccentClass } from '@/lib/accent';
 import { useMailThreads, useOwnColor } from '@/lib/api';
 import { routes } from '@/lib/routes';
@@ -14,10 +14,13 @@ import { isMailChat, mailGroupName, unreadMailOf, withMailChats } from '../lib/m
 import { BarSearchField, ConversationHits } from './ConversationSearch';
 import { useWorkspaceDrafts } from '../hooks/useWorkspaceDrafts';
 import { isNewKind, newKinds } from '../lib/new';
+import { useMuteAction } from '../hooks/useMuteAction';
+import { useUnreadAction } from '../hooks/useUnreadAction';
+import { PersonFace } from './PersonFace';
 import { usePinAction } from '../hooks/usePinAction';
 import { ROW_MENU_CLASS, useRowMenu } from '../hooks/useRowMenu';
 import { pinKindOf } from '../lib/pins';
-import { PinnedMark } from './PinnedMark';
+import { MutedMark, PinnedMark } from './PinnedMark';
 
 const rowClass = ({ isActive }: { isActive: boolean }, unread: boolean) =>
   cn(
@@ -62,7 +65,9 @@ function Row({
   after,
   title,
   pin,
+  muted,
   agent,
+  alsoAt,
 }: {
   to: string;
   mark: ReactNode;
@@ -74,12 +79,21 @@ function Row({
   title?: string;
   /** A chat: its menu (right click, long press) pins it to the top of the list or lets it go. */
   pin?: { kind: SenderPinKind; id: string; pinnedAt?: string | null };
+  /** A conversation: „Stummschalten“ in that menu; muted, its count goes (an „@“ still shows). */
+  muted?: { id: string; muted?: boolean };
   /** An agent's chat: „Löschen“ in that menu too, for who may. */
   agent?: SenderAgent;
+  /** Another page that is one of its tabs – the workspace's chat's „Bereiche“: marked there too. */
+  alsoAt?: string;
 }) {
   const ui = useSender();
+  const { pathname } = useLocation();
   const menu = useRowMenu();
   const pinAction = usePinAction(ui.workspace.id, ui.notify);
+  const muteAction = useMuteAction(ui.workspace.id, ui.notify);
+  const unreadAction = useUnreadAction(ui.workspace.id, ui.notify);
+  const quiet = Boolean(muted?.muted);
+  const shown = quiet ? 0 : unread;
   const remove = useDeleteAgentAction({
     agent: agent ?? null,
     to,
@@ -93,20 +107,37 @@ function Row({
         to={to}
         title={title}
         {...(pin ? menu.props : {})}
-        className={(state) =>
-          cn(rowClass(state, unread > 0 || mentioned), indent && 'pl-[34px]', pin && ROW_MENU_CLASS)
+        className={({ isActive }) =>
+          cn(
+            rowClass({ isActive: isActive || pathname === alsoAt }, shown > 0 || mentioned),
+            indent && 'pl-[34px]',
+            pin && ROW_MENU_CLASS,
+          )
         }
       >
         <span className="flex size-[18px] shrink-0 items-center justify-center">{mark}</span>
         <span className="min-w-0 flex-1 truncate">{name}</span>
         {pin?.pinnedAt && <PinnedMark />}
+        {quiet && <MutedMark />}
         {after}
-        <Unread count={unread} mentioned={mentioned} />
+        <Unread count={shown} mentioned={mentioned} />
       </NavLink>
       {pin && menu.at && (
         <ContextMenu
           label={`Aktionen für „${name}“`}
-          actions={[pinAction(pin.kind, pin.id, pin.pinnedAt), ...remove.actions]}
+          actions={[
+            pinAction(pin.kind, pin.id, pin.pinnedAt),
+            ...(muted
+              ? [
+                  unreadAction(
+                    { id: muted.id, unread, mentioned, muted: muted.muted },
+                    pathname.startsWith(to) ? ui.homePath : undefined,
+                  ),
+                  muteAction(muted),
+                ]
+              : []),
+            ...remove.actions,
+          ]}
           at={menu.at}
           onClose={menu.close}
         />
@@ -128,6 +159,8 @@ function AreaBlock({ area }: { area: SenderArea }) {
           name={area.name}
           unread={own.unread}
           mentioned={own.mentioned}
+          muted={own}
+          alsoAt={area.root ? ui.areasPath : undefined}
           mark={
             area.root ? (
               <WorkspaceMark name={ui.workspace.name} logoUrl={ui.workspace.logoUrl} size={18} />
@@ -145,6 +178,7 @@ function AreaBlock({ area }: { area: SenderArea }) {
           name={channel.name}
           unread={channel.unread}
           mentioned={channel.mentioned}
+          muted={channel}
           mark={<Icon name="chatBubble" size={16} />}
         />
       ))}
@@ -211,6 +245,13 @@ function StartButton() {
   );
 }
 
+type DirectFilter = 'all' | 'people' | 'agents';
+const DIRECT_FILTERS: { value: DirectFilter; label: string }[] = [
+  { value: 'all', label: 'Alle' },
+  { value: 'people', label: 'Personen' },
+  { value: 'agents', label: 'Agenten' },
+];
+
 /**
  * Sender's side bar: its start beside „Neu“, every area with its channels (its own first), then
  * „Direkt“ – people, groups and agents as one list, the latest first, pinned ones above them
@@ -222,7 +263,12 @@ export function SenderSidebar({ className }: { className?: string }) {
   // One list: a person, a few people and an agent are all someone one writes with.
   // A mail a colleague is on stands among them, as a group would.
   const threads = useMailThreads(ui.workspace.id).data;
-  const direct = withMailChats(chatsOf(home), threads);
+  const all = withMailChats(chatsOf(home), threads);
+  // „Personen“: everyone one writes with who is not an agent – groups and mails with people too.
+  const [who, setWho] = useState<DirectFilter>('all');
+  const direct = all.filter((each) =>
+    who === 'all' ? true : (!isMailChat(each) && 'title' in each) === (who === 'agents'),
+  );
   const unreadMail = unreadMailOf(threads);
   const drafts = useWorkspaceDrafts();
   const [query, setQuery] = useState('');
@@ -278,6 +324,17 @@ export function SenderSidebar({ className }: { className?: string }) {
               ))}
             </div>
             {home && <SidebarDivider />}
+            {home && (
+              <SegmentedControl
+                label="Direkt zeigen"
+                size="sm"
+                fill
+                value={who}
+                onChange={setWho}
+                segments={DIRECT_FILTERS}
+                className="mb-1 shrink-0"
+              />
+            )}
             <div className="scrollbar-none flex min-h-0 shrink flex-col gap-0.5 overflow-x-hidden overflow-y-auto">
               {direct.map((each) =>
                 isMailChat(each) ? (
@@ -300,9 +357,10 @@ export function SenderSidebar({ className }: { className?: string }) {
                     unread={each.unread}
                     mentioned={each.mentioned}
                     pin={{ kind: pinKindOf(each), id: each.id, pinnedAt: each.pinnedAt }}
+                    muted={each}
                     mark={
                       each.person ? (
-                        <Avatar author={each.person} size={18} />
+                        <PersonFace person={each.person} size={18} workspaceId={ui.workspace.id} />
                       ) : (
                         <Icon name="groups" size={18} />
                       )
@@ -312,7 +370,7 @@ export function SenderSidebar({ className }: { className?: string }) {
               )}
               {home && direct.length === 0 && (
                 <p className="px-2.5 py-1 text-xs leading-4.5 text-fg-subtle">
-                  Schreib jemandem aus dem Workspace.
+                  {who === 'agents' ? 'Noch kein Agent.' : 'Schreib jemandem aus dem Workspace.'}
                 </p>
               )}
             </div>

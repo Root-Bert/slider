@@ -4,6 +4,7 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import type { CloudArea, SenderEvent, Todo, TodoMilestone, WorkspaceRole } from '@slider/shared';
 import JSZip from 'jszip';
 import {
+  cloudAgentAsks,
   cloudAgentChats,
   cloudAgents,
   todoMilestones,
@@ -256,7 +257,11 @@ describe('To-dos', () => {
       areaId: sales.id,
       description: 'Für Acme.',
     });
-    plan = [{ name: 'update_todo', input: { todo: String(plan2.number), status: 'done' } }];
+    plan = [
+      { name: 'update_todo', input: { todo: String(plan2.number), status: 'done' } },
+      { name: 'list_milestones', input: { area: sales.id } },
+      { name: 'delete_todo', input: { todo: String(plan2.number) } },
+    ];
     told.length = 0;
     const given = await ok<Todo>(
       send('PATCH', `/todos/${plan2.id}`, { assigneeAgentId: salesAgent }),
@@ -275,6 +280,14 @@ describe('To-dos', () => {
     expect(told.join('\n')).toContain('Für Acme.');
     const [byAgent] = await ctx.deps.db.select().from(todos).where(eq(todos.id, plan2.id));
     expect(byAgent?.assigneeAgentId).toBe(salesAgent);
+    // Deleting it only asks: a card waits for whose rights it runs with; the to-do stays.
+    await expect
+      .poll(async () =>
+        (await ctx.deps.db.select().from(cloudAgentAsks).where(eq(cloudAgentAsks.agentId, salesAgent))).map(
+          (row) => [row.tool, row.text, row.state],
+        ),
+      )
+      .toEqual([['delete_todo', '„Präsentation bauen“ löschen?', 'open']]);
     // „Neuer Agent“: one's own, plainly „Agent“, in its area, given it – nothing runs.
     told.length = 0;
     const fresh = await ok<Todo>(send('POST', `/todos/${plan2.id}/agent`), 201);

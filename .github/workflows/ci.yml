@@ -518,3 +518,76 @@ jobs:
             desktop/dist/writer/Writer-*.AppImage
             desktop/dist/writer/Writer-*.deb
           retention-days: 14
+
+  # Sender, the messages app for the desktop: a window on the server's Sender that tells by itself
+  # while it runs (no Web Push in it). For the Mac a DMG signed by itself (ad hoc, as Slider's
+  # without an Apple certificate – macOS asks before the first start, there is no update feed),
+  # for Linux an AppImage and a deb.
+  sender-desktop:
+    name: Sender app ${{ matrix.os }} ${{ matrix.arch }}
+    needs: release
+    if: github.repository == 'Root-Bert/slider' && github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 60
+    permissions:
+      contents: write
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: mac
+            arch: arm64
+            runner: macos-15
+          - os: linux
+            arch: x64
+            runner: ubuntu-24.04
+          - os: linux
+            arch: arm64
+            runner: ubuntu-24.04-arm
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: ${{ inputs.ref }}
+          persist-credentials: false
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version-file: package.json
+      - uses: actions/setup-node@v5
+        with:
+          node-version-file: .nvmrc
+      - run: bun install --frozen-lockfile
+        working-directory: desktop
+      - name: Build
+        working-directory: desktop
+        run: |
+          version="${GITHUB_REF_NAME#v}"
+          if [ "${{ matrix.os }}" = mac ]; then
+            # No Apple certificate: a signature of its own making (Apple Silicon starts nothing
+            # without one), then the DMG from that app.
+            npx electron-builder --mac --dir --arm64 --publish never \
+              -c sender/builder.json -c.extraMetadata.version="$version" -c.mac.identity=null
+            codesign --force --deep --sign - dist/sender/mac-arm64/Sender.app
+            codesign --verify --deep --strict dist/sender/mac-arm64/Sender.app
+            npx electron-builder --mac dmg --arm64 --publish never \
+              --prepackaged dist/sender/mac-arm64/Sender.app \
+              -c sender/builder.json -c.extraMetadata.version="$version" -c.mac.identity=null
+          else
+            npx electron-builder --linux AppImage deb --${{ matrix.arch }} --publish never \
+              -c sender/builder.json -c.extraMetadata.version="$version"
+          fi
+          rm -f dist/sender/latest*.yml dist/sender/*.zip dist/sender/*.blockmap
+      - name: Put the packages on the release
+        working-directory: desktop
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: >-
+          gh release upload "$GITHUB_REF_NAME" --clobber --repo "$GITHUB_REPOSITORY"
+          $(ls dist/sender/Sender-*.dmg dist/sender/Sender-*.AppImage dist/sender/Sender-*.deb 2>/dev/null)
+      - uses: actions/upload-artifact@v4
+        with:
+          name: sender-desktop-${{ matrix.os }}-${{ matrix.arch }}
+          path: |
+            desktop/dist/sender/Sender-*.dmg
+            desktop/dist/sender/Sender-*.AppImage
+            desktop/dist/sender/Sender-*.deb
+          retention-days: 14

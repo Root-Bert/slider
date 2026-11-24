@@ -8,7 +8,8 @@ import {
 import { cn } from '@/ui';
 import { PAGE_TITLE } from '../lib/title';
 
-export type ChatView = 'chat' | 'files';
+/** A chat's views; `areas` only beside the workspace's own chat, a page of its own. */
+export type ChatView = 'chat' | 'files' | 'areas';
 
 /** The address's mark for a chat's „Dateien“ (`?ansicht=dateien`); without it, the chat. */
 const VIEW_PARAM = 'ansicht';
@@ -21,7 +22,7 @@ export function useChatView(enabled = true) {
   const { pathname, search } = useLocation();
   const view: ChatView =
     enabled && new URLSearchParams(search).get(VIEW_PARAM) === 'dateien' ? 'files' : 'chat';
-  const href = (to: ChatView) => {
+  const href = (to: Exclude<ChatView, 'areas'>) => {
     const next = new URLSearchParams(search);
     if (to === 'files') next.set(VIEW_PARAM, 'dateien');
     else next.delete(VIEW_PARAM);
@@ -31,27 +32,38 @@ export function useChatView(enabled = true) {
   return { view, href };
 }
 
+/** A chat's view by its address, from a page that is not the chat (its „Bereiche“). */
+export const chatViewPath = (path: string, to: Exclude<ChatView, 'areas'>) =>
+  to === 'files' ? `${path}?${VIEW_PARAM}=dateien` : path;
+
 /**
  * A chat's title, as an area's (`AreaViews`): its name is the chat, „Dateien“ beside it – the
  * open one large, the other smaller and lighter, a link to it; switching morphs the two. The same
  * for a group, a person and an agent, in Sender and in Cloud (the user, 2026-11-23: „der name
  * selbst ist chat. und dann steht da rechts noch dateien“). A long name shortens, „Dateien“
- * stays whole. The words alone – inside a page's own heading (Cloud's `CloudPage`).
+ * stays whole. The words alone – inside a page's own heading (Cloud's `CloudPage`). The
+ * workspace's own chat has „Bereiche“ last (`areas`, where that page is), as its area has in
+ * Cloud – its people, to find whom to write to (the user, 2026-11-24).
  */
 export function ChatViews({
   name,
   view,
   href,
+  areas,
 }: {
   name: string;
   view: ChatView;
-  href: (to: ChatView) => string;
+  href: (to: Exclude<ChatView, 'areas'>) => string;
+  areas?: string;
 }) {
   useViewSwitchTop(view);
-  const views = [
-    { key: 'chat', label: name, morph: VIEW_NAMES.first, grow: true },
-    { key: 'files', label: 'Dateien', morph: VIEW_NAMES.second, grow: false },
-  ] as const;
+  const views: { key: ChatView; label: string; morph: string; grow: boolean; to: string }[] = [
+    { key: 'chat', label: name, morph: VIEW_NAMES.first, grow: true, to: href('chat') },
+    { key: 'files', label: 'Dateien', morph: VIEW_NAMES.second, grow: false, to: href('files') },
+    ...(areas
+      ? [{ key: 'areas' as const, label: 'Bereiche', morph: VIEW_NAMES.areas, grow: false, to: areas }]
+      : []),
+  ];
   return (
     <span className="flex min-w-0 items-baseline gap-5 max-sm:gap-3">
       {views.map((each) =>
@@ -66,7 +78,7 @@ export function ChatViews({
         ) : (
           <Link
             key={each.key}
-            to={href(each.key)}
+            to={each.to}
             viewTransition
             onClick={startViewSwitch}
             className={cn(
@@ -91,7 +103,8 @@ export function ChatTitle({
 }: {
   name: string;
   view: ChatView;
-  href: (to: ChatView) => string;
+  href: (to: Exclude<ChatView, 'areas'>) => string;
+  areas?: string;
   className?: string;
 }) {
   return (

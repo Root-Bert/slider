@@ -236,7 +236,35 @@ export interface CloudAgentMessage {
   fromChat: string | null;
   /** A call with the agent: shown as one entry that opens the call's page (`CallBrief`). */
   call?: CallBrief | null;
+  /** What the agent asked to be confirmed while it wrote this answer: a card each under it. */
+  asks?: CloudAgentAsk[];
 }
+
+/**
+ * „Bestätigen“ or „Abbrechen“: something an agent wants done that cannot be undone or reaches
+ * out (delete, send, a public link) waits in its chat until the person confirms it.
+ */
+export const CLOUD_AGENT_ASK_STATES = ['open', 'done', 'cancelled', 'failed'] as const;
+export type CloudAgentAskState = (typeof CLOUD_AGENT_ASK_STATES)[number];
+
+export interface CloudAgentAsk {
+  id: string;
+  /** What is to be done, as a question („„Angebot.pdf“ löschen?“). */
+  text: string;
+  /** The button that does it („Löschen“, „Senden“). */
+  verb: string;
+  /** What the card says once it is done („Gelöscht“). */
+  doneWord: string;
+  state: CloudAgentAskState;
+  /** What came of it, done or failed. */
+  result: string | null;
+  /** Whose rights it runs with: only they confirm it. */
+  by: Author;
+  /** The viewer may confirm or cancel it. */
+  mine: boolean;
+}
+
+export const cloudAgentAskDecision = z.object({ confirm: z.boolean() });
 
 /** One chat of an agent: everyone the agent is shared with sees all of them. */
 export interface CloudAgentChat {

@@ -7,7 +7,7 @@ import { NotesBadge } from './NotesBadge';
 /** A call that rings here: who calls, from where – „Ablehnen“ or „Annehmen“ (a video call with the camera on, or with sound only). */
 export function IncomingCall({ call }: { call: CallState }) {
   const { snap, client } = useCalls();
-  const joining = snap.joining === call.channelId;
+  const joining = snap.joining === (call.channelId || call.id);
   const kind = call.video ? 'Videoanruf' : 'Anruf';
   const where = call.kind === 'direct' ? kind : `${kind} | ${callTitle(call, snap.me)}`;
   return (
@@ -52,7 +52,7 @@ export function IncomingCall({ call }: { call: CallState }) {
             icon="call"
             label="Nur mit Ton annehmen"
             disabled={joining}
-            onClick={() => void client.join(call.channelId, { video: false })}
+            onClick={() => void client.answer(call, { video: false })}
           />
         )}
         <Button
@@ -61,7 +61,7 @@ export function IncomingCall({ call }: { call: CallState }) {
           icon={call.video ? 'videocam' : 'call'}
           className="flex-1"
           disabled={joining}
-          onClick={() => void client.join(call.channelId, { video: call.video })}
+          onClick={() => void client.answer(call, { video: call.video })}
         >
           Annehmen
         </Button>

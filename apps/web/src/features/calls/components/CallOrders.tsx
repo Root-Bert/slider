@@ -2,26 +2,23 @@ import type { CallOrder } from '@slider/shared';
 import { cn, Icon, IconButton, TextLink } from '@/ui';
 
 /**
- * What the agent in the call proposed for agents of their own and what was sent: a proposal
- * waits for a yes – said („Ja, schick los“) or its ✓ („Losschicken“), ✕ drops it – a sent one
- * shows what its agent does and opens it. In the dock a well under the tiles; on the called
+ * What the agent in the call noted for agents of their own and what was sent: a noted one waits,
+ * quietly – its ✓ („Losschicken“) or „Schick … los“ sends it, ✕ or „Verwirf …“ drops it; what
+ * someone told it to do now was sent at once. A sent one shows what its agent does and opens it. In the dock a well under the tiles; on the called
  * agent's page (`box`) a card of its own beside its chat, like the cards under it.
  */
 export function CallOrders({
   orders,
-  ownCall,
   onAnswer,
   onOpen,
   place = 'dock',
 }: {
   orders: CallOrder[];
-  ownCall: boolean;
   onAnswer: (orderId: string, send: boolean) => void;
   onOpen: (agentId: string) => void;
   place?: 'dock' | 'box';
 }) {
   if (orders.length === 0) return null;
-  const say = ownCall ? '„Ja“' : '„Agent, ja“';
   const box = place === 'box';
   return (
     <section
@@ -64,7 +61,7 @@ export function CallOrders({
                 )}
               >
                 {order.state === 'proposed'
-                  ? `Wartet auf dein Okay – ✓ oder ${say}`
+                  ? 'Vorgemerkt | ✓ schickt es los'
                   : order.state === 'running'
                     ? (order.doing ??
                       `Läuft${order.sentBy ? ` | von ${firstName(order.sentBy.name)}` : ''}`)
@@ -110,9 +107,7 @@ function Mark({ state }: { state: CallOrder['state'] }) {
     <Icon
       name={state === 'proposed' ? 'schedule' : state === 'done' ? 'checkCircle' : 'error'}
       size={16}
-      label={
-        state === 'proposed' ? 'Vorgeschlagen' : state === 'done' ? 'Fertig' : 'Fehlgeschlagen'
-      }
+      label={state === 'proposed' ? 'Vorgemerkt' : state === 'done' ? 'Fertig' : 'Fehlgeschlagen'}
       className={cn(
         'shrink-0',
         state === 'proposed' && 'text-fg-muted',

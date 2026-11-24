@@ -4,6 +4,7 @@ import {
   DELETED_ACCOUNT_NAME,
   MAX_SENDER_MESSAGE,
   type AccountAuthor,
+  type CommentReactionKind,
   type SenderMessage,
 } from '@slider/shared';
 import { accentColor } from '@/lib/accent';
@@ -22,6 +23,13 @@ import {
 } from '@/ui';
 import { dayKey, dayOf, stampOf, timeOf } from '../lib/time';
 import { MessageText } from './MessageText';
+import { ReplyQuote } from './ReplyQuote';
+import {
+  ReactionChipsOf,
+  reactionMenuActions,
+  reactionState,
+  type ReactionState,
+} from '@/features/viewer';
 
 /** Messages of one author this close together stand as one block, under one name. */
 const BLOCK_MS = 5 * 60_000;
@@ -114,15 +122,23 @@ function Tools({
   message,
   own,
   mine,
+  deletable,
   inLine,
+  reaction,
+  onReply,
   onEdit,
   onDelete,
 }: {
   message: SenderMessage;
   own: boolean;
   mine: boolean;
+  /** One's own, or anyone's where one manages the conversation. */
+  deletable: boolean;
   /** In the line of its time and face (the first of a row); otherwise beside the message. */
   inLine: boolean;
+  /** 👍 / 👎 / egal, before the rest (not on one's own). */
+  reaction?: ReactionState;
+  onReply?: () => void;
   onEdit: () => void;
   onDelete: () => void;
 }) {
@@ -140,6 +156,29 @@ function Tools({
           ),
       )}
     >
+      {reaction &&
+        reactionMenuActions(reaction).map((action) => (
+          <button
+            key={action.label}
+            type="button"
+            aria-label={action.label}
+            title={action.label}
+            className="grid size-6 place-items-center rounded-control hover:bg-hover"
+            onClick={action.onSelect}
+          >
+            {action.icon}
+          </button>
+        ))}
+      {onReply && (
+        <IconButton
+          icon="reply"
+          label="Antworten"
+          size="xs"
+          iconSize={16}
+          variant="subtle"
+          onClick={onReply}
+        />
+      )}
       <IconButton
         icon={copied ? 'check' : 'contentCopy'}
         label={copied ? 'Kopiert' : 'Kopieren'}
@@ -149,24 +188,24 @@ function Tools({
         onClick={() => void copy(message.text)}
       />
       {mine && (
-        <>
-          <IconButton
-            icon="edit"
-            label="Bearbeiten"
-            size="xs"
-            iconSize={16}
-            variant="subtle"
-            onClick={onEdit}
-          />
-          <IconButton
-            icon="delete"
-            label="Löschen"
-            size="xs"
-            iconSize={16}
-            variant="subtle"
-            onClick={onDelete}
-          />
-        </>
+        <IconButton
+          icon="edit"
+          label="Bearbeiten"
+          size="xs"
+          iconSize={16}
+          variant="subtle"
+          onClick={onEdit}
+        />
+      )}
+      {deletable && (
+        <IconButton
+          icon="delete"
+          label="Löschen"
+          size="xs"
+          iconSize={16}
+          variant="subtle"
+          onClick={onDelete}
+        />
       )}
     </div>
   );
@@ -190,6 +229,12 @@ export function MessageList({
   onSave,
   onDelete,
   readOnly = false,
+  moderate = false,
+  failed,
+  onRetry,
+  onDiscard,
+  onReact,
+  onReply,
   below,
   callHref,
   search,
@@ -209,6 +254,17 @@ export function MessageList({
   onDelete: (message: SenderMessage) => void;
   /** Nothing to change or delete (a mail conversation shown as a chat): copying only. */
   readOnly?: boolean;
+  /** Who manages the conversation deletes anyone's message (not a call's entry). */
+  moderate?: boolean;
+  /** Why one's own message was not sent (`undefined`: it was, or is on its way). */
+  failed?: (message: SenderMessage) => string | undefined;
+  /** „Erneut senden“ / „Löschen“ under a message that was not sent. */
+  onRetry?: (message: SenderMessage) => void;
+  onDiscard?: (message: SenderMessage) => void;
+  /** 👍 / 👎 / egal, or taken back (`null`) – where one may write. */
+  onReact?: (message: SenderMessage, kind: CommentReactionKind | null) => void;
+  /** „Antworten“: the message quoted above the field. */
+  onReply?: (message: SenderMessage) => void;
   /** Under a message's text – a mail's attachments. */
   below?: (message: SenderMessage) => ReactNode;
   /** Where a call in the conversation opens (its entry, `message.call`). */
@@ -227,6 +283,7 @@ export function MessageList({
   const searching = query !== '';
   useMarkedMatches(listRef, query);
   const showHit = useShowHit(listRef, searching, () => search?.clear());
+  const loaded = new Set(messages.map((each) => each.id));
 
   const firstNew = messages.find(
     (each) =>
@@ -293,6 +350,13 @@ export function MessageList({
     // One's own on the right in a bubble, everyone else's on the left – as in an agent's chat.
     const own = !message.agent && !message.call && message.author?.id === me.id;
     const mine = !readOnly && own;
+    const notSent = isPending(message) ? failed?.(message) : undefined;
+    const reactable = !message.call && !message.deleted && !isPending(message);
+    const reaction = reactable
+      ? reactionState(message.reactions ?? [], me.id, Boolean(onReact), (kind) =>
+          onReact?.(message, kind),
+        )
+      : undefined;
     const name = message.agent?.title ?? message.author?.name ?? DELETED_ACCOUNT_NAME;
     const time = (
       <time
@@ -311,7 +375,10 @@ export function MessageList({
           message={message}
           own={own}
           mine={mine}
+          deletable={mine || (!readOnly && moderate && !message.call)}
           inLine={inLine}
+          reaction={!own && reaction?.canReact ? reaction : undefined}
+          onReply={reactable && onReply ? () => onReply(message) : undefined}
           onEdit={() => onEditing(message.id)}
           onDelete={() => onDelete(message)}
         />
@@ -353,7 +420,7 @@ export function MessageList({
                 ? 'ml-12 items-end self-end sm:ml-24'
                 : 'mr-12 items-start self-start sm:mr-24',
             head ? 'mt-4' : 'mt-1',
-            isPending(message) && 'opacity-60',
+            isPending(message) && notSent === undefined && 'opacity-60',
             searching && 'cursor-pointer',
           )}
         >
@@ -389,6 +456,20 @@ export function MessageList({
                 <span className="truncate">{message.mail.subject || '(ohne Betreff)'}</span>
               </p>
             )}
+            {message.replyTo && !message.deleted && editing !== message.id && (
+              <ReplyQuote
+                quote={message.replyTo}
+                className="mb-1"
+                onShow={
+                  loaded.has(message.replyTo.id)
+                    ? () =>
+                        listRef.current
+                          ?.querySelector(`[data-message="${CSS.escape(message.replyTo!.id)}"]`)
+                          ?.scrollIntoView({ block: 'center', behavior: 'smooth' })
+                    : undefined
+                }
+              />
+            )}
             {editing === message.id ? (
               <Editor
                 message={message}
@@ -408,7 +489,7 @@ export function MessageList({
             ) : (
               <>
                 {(message.text || !message.attachments?.length) && (
-                  <p className="text-body leading-[1.45] break-words whitespace-pre-wrap text-fg select-text">
+                  <div className="text-body leading-[1.45] break-words whitespace-pre-wrap text-fg select-text">
                     <MessageText text={message.text} people={people} me={me} />
                     {message.editedAt && (
                       <span
@@ -418,7 +499,7 @@ export function MessageList({
                         (bearbeitet)
                       </span>
                     )}
-                  </p>
+                  </div>
                 )}
                 <SentAttachments
                   attachments={message.attachments}
@@ -428,6 +509,30 @@ export function MessageList({
             )}
             {below?.(message)}
           </div>
+          {reaction && <ReactionChipsOf state={reaction} />}
+          {notSent !== undefined && (
+            <p role="alert" className="flex flex-wrap items-center gap-x-2 text-xs text-danger">
+              <Icon name="error" size={14} className="shrink-0" />
+              <span>{notSent ? `Nicht gesendet: ${notSent}` : 'Nicht gesendet'}</span>
+              <button
+                type="button"
+                className="font-medium text-fg underline-offset-2 hover:underline"
+                onClick={() => onRetry?.(message)}
+              >
+                Erneut senden
+              </button>
+              <span aria-hidden className="text-fg-subtle">
+                |
+              </span>
+              <button
+                type="button"
+                className="font-medium text-fg underline-offset-2 hover:underline"
+                onClick={() => onDiscard?.(message)}
+              >
+                Löschen
+              </button>
+            </p>
+          )}
           {!head && tools(false)}
         </article>
       </Fragment>,

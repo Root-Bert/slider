@@ -11,6 +11,8 @@ import type { AccountAuthor, SenderChannel, SenderHome, Workspace } from '@slide
 import { useNavigate } from 'react-router';
 import { useMe, useSenderHome, useSenderLive } from '@/lib/api';
 import { useDraftSync } from '@/lib/drafts';
+import { useNotifyPrefs } from '@/lib/notify-prefs';
+import { syncPush } from '@/lib/push';
 import { routes } from '@/lib/routes';
 import { badgeCount, showBadge, tell, worthTelling } from '../lib/notify';
 import { newPath, type NewKind } from '../lib/new';
@@ -40,6 +42,8 @@ interface SenderUi {
   homePath: string;
   /** „Entwürfe“ – Sender's page, or Cloud's. */
   draftsPath: string;
+  /** „Bereiche“ beside the workspace's own chat: the areas' people – Sender's page, or Cloud's. */
+  areasPath: string;
   /** „Post“, a mail conversation, „Postfächer“ – Sender's pages, or Cloud's. */
   mailPath: string;
   mailThreadPath: (threadId: string) => string;
@@ -74,6 +78,7 @@ export function SenderProvider({
   agentPath = (agentId) => routes.messagesAgent(workspace.id, agentId),
   homePath = routes.messages(workspace.id),
   draftsPath = routes.messagesDrafts(workspace.id),
+  areasPath = routes.messagesAreas(workspace.id),
   mailPath = routes.messagesMail(workspace.id),
   mailThreadPath = (threadId) => routes.messagesMailThread(workspace.id, threadId),
   mailAccountsPath = routes.messagesMailAccounts(workspace.id),
@@ -86,6 +91,7 @@ export function SenderProvider({
   agentPath?: (agentId: string) => string;
   homePath?: string;
   draftsPath?: string;
+  areasPath?: string;
   mailPath?: string;
   mailThreadPath?: (threadId: string) => string;
   mailAccountsPath?: string;
@@ -153,6 +159,12 @@ export function SenderProvider({
     showBadge(count);
   }, [count]);
   useEffect(() => () => showBadge(0), []);
+  // Told while no tab is open (Web Push), as long as notifications are allowed and not silenced.
+  const prefs = useNotifyPrefs();
+  const pushOn = prefs.state === 'on' && !prefs.muted;
+  useEffect(() => {
+    void syncPush(pushOn);
+  }, [pushOn]);
 
   const typingIn = useCallback(
     (channelId: string) =>
@@ -184,6 +196,7 @@ export function SenderProvider({
         agentPath,
         homePath,
         draftsPath,
+        areasPath,
         mailPath,
         mailThreadPath,
         mailAccountsPath,

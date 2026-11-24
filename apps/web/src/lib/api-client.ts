@@ -273,7 +273,7 @@ export const api = {
     apiRequest<T>(path, { method: 'POST', body }),
   patch: <T>(path: string, body: JsonBody) => apiRequest<T>(path, { method: 'PATCH', body }),
   put: <T>(path: string, body: JsonBody) => apiRequest<T>(path, { method: 'PUT', body }),
-  delete: (path: string) => apiRequest<void>(path, { method: 'DELETE' }),
+  delete: <T = void>(path: string) => apiRequest<T>(path, { method: 'DELETE' }),
 };
 
 /** A file from the API, named as its answer says (`Content-Disposition`), else `fallbackName`. */

@@ -1,5 +1,6 @@
 import { useNavigate } from 'react-router';
 import type { Deck } from '@slider/shared';
+import { appBetween, appHome } from '@/lib/apps';
 import { routes } from '@/lib/routes';
 import { useDeleteDeck } from '@/lib/api';
 import { slidesLabel, sourceLabel } from '@/lib/deck-labels';
@@ -51,7 +52,8 @@ export function ImportFailed({ deck, error }: { deck: Deck; error: string }) {
               loading={remove.isPending}
               onClick={() =>
                 remove.mutate(deck.id, {
-                  onSuccess: () => void navigate(routes.workspace(deck.workspaceId)),
+                  // Back to the app it was opened from, as on closing it.
+                  onSuccess: () => void navigate(appHome(appBetween(), deck.workspaceId).to),
                 })
               }
             >

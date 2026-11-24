@@ -228,3 +228,19 @@ export function layoutPeopleGraph(input: readonly GraphAreaInput[]): PeopleGraph
   for (const area of list) reach(area.x, area.y, area.radius + 44);
   return { areas: list, people, bounds };
 }
+
+/** How many people a search typed beside the net finds (by name or title) – each once. */
+export function peopleFound(
+  areas: readonly { members: readonly { id: string; name: string; title?: string | null }[] }[],
+  query: string,
+): number {
+  const words = query.trim().toLowerCase();
+  if (words === '') return 0;
+  return new Set(
+    areas.flatMap((area) =>
+      area.members
+        .filter((member) => `${member.name} ${member.title ?? ''}`.toLowerCase().includes(words))
+        .map((member) => member.id),
+    ),
+  ).size;
+}

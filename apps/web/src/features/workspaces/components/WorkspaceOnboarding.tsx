@@ -1,7 +1,7 @@
 import { useState, type ReactNode } from 'react';
 import type { DomainWorkspace, PendingInvite } from '@slider/shared';
 import { useNavigate } from 'react-router';
-import { appTitle, useCurrentApp } from '@/lib/apps';
+import { appHome, appTitle, useCurrentApp } from '@/lib/apps';
 import { routes } from '@/lib/routes';
 import { AppHeader } from '@/shell/AppHeader';
 import {
@@ -39,6 +39,8 @@ import { WorkspaceMark } from './WorkspaceMark';
 export function WorkspaceOnboarding() {
   const { user, pendingInvites, domainWorkspace, canCreateWorkspace } = useAccount();
   const navigate = useNavigate();
+  // The new workspace opens in the app last open, else in Cloud – where the start page leads.
+  const app = useCurrentApp();
   const [toast, showToast] = useToast();
   const [creating, setCreating] = useState(false);
   const firstName = user.name.split(/\s+/)[0] ?? user.name;
@@ -109,7 +111,7 @@ export function WorkspaceOnboarding() {
         {canCreateWorkspace && (
           <CreateWorkspaceForm
             autoFocus
-            onCreated={(workspace) => void navigate(routes.workspace(workspace.id))}
+            onCreated={(workspace) => void navigate(appHome(app, workspace.id).to)}
           />
         )}
       </Section>

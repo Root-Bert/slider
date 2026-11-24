@@ -1,4 +1,5 @@
 import { useSyncExternalStore } from 'react';
+import { dropPush } from './push';
 import { forgetWebFiles } from './web-files';
 
 /*
@@ -96,7 +97,8 @@ export function forgetDrafts(signedOut: SignedOut): void {
  */
 export async function forgetOffline(signedOut: SignedOut = null): Promise<void> {
   forgetDrafts(signedOut);
-  await Promise.all([forgetOutbox(), forgetWebFiles()]);
+  // Pushes were the account's that left (Web Push, `push.ts`).
+  await Promise.all([forgetOutbox(), forgetWebFiles(), dropPush()]);
   try {
     const names = await caches.keys();
     await Promise.all(

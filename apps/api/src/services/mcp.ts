@@ -580,7 +580,7 @@ export async function findWorkspace(deps: AppDeps, caller: McpCaller, wanted: st
 const DECK_LINK = /\/d\/([A-Za-z0-9-]{8,})/;
 
 /** The presentation named – by id, link or exact title – checked for the right and workspace. */
-async function findDeck(
+export async function findDeck(
   deps: AppDeps,
   caller: McpCaller,
   wanted: unknown,
@@ -1927,7 +1927,7 @@ const accessInput = z.object({
 });
 
 /** The member a name, address or id means – exactly one, else the app is told whom it could mean. */
-function memberNamed(members: WorkspaceMember[], wanted: string): WorkspaceMember {
+export function memberNamed(members: WorkspaceMember[], wanted: string): WorkspaceMember {
   const key = searchFold(wanted);
   const byId = members.filter(
     (member) => member.userId === wanted || searchFold(member.email) === key,
@@ -2036,7 +2036,9 @@ async function deletePresentation(
   const deck = await deckToManage(deps, caller, args.presentation);
   // Into the trash, like „Löschen“ in the app: the person can still bring it back.
   await trashDeck(deps, deck.id, caller.viewer.author.id);
-  return text(`Deleted „${deck.title}“. It stays in the trash for ${DECK_TRASH_DAYS} days.`);
+  return text(
+    `Deleted „${deck.title}“. It stays in the trash for ${DECK_TRASH_DAYS} days: its file in list_deleted, restore_files brings it back.`,
+  );
 }
 
 // ── Dispatch ───────────────────────────────────────────────────────────────

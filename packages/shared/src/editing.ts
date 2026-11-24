@@ -1363,6 +1363,19 @@ export const sendExportInputSchema = z.object({
 });
 export type SendExportInput = z.infer<typeof sendExportInputSchema>;
 
+/**
+ * `POST /decks/:id/edit/keep` – the export kept in Cloud as a file of its own: in a folder, at
+ * an area's top, or (neither) in one's own files.
+ */
+export const keepExportInputSchema = z.object({
+  format: exportFormatSchema,
+  /** The slide for `slidePdf` and `slidePng`. */
+  slideId: z.string().min(1).max(100).optional(),
+  parentId: z.string().min(1).max(100).nullable().optional(),
+  areaId: z.string().min(1).max(100).nullable().optional(),
+});
+export type KeepExportInput = z.infer<typeof keepExportInputSchema>;
+
 export const applyEditInputSchema = z.object({
   operations: slideOperationsSchema,
   /**

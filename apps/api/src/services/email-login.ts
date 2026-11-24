@@ -2,24 +2,28 @@ import { createHmac } from 'node:crypto';
 import { and, eq, gt, isNull } from 'drizzle-orm';
 import { loginPath } from '../auth/login-paths';
 import { hashToken, newSecretToken } from '../auth/session';
-import { loginLinks, userIdentities, type IdentityProvider } from '../db/schema';
+import { loginLinks, userIdentities } from '../db/schema';
 import type { AppDeps } from '../deps';
 import { ApiError, badRequest, forbidden, notFound } from '../http/errors';
 import { inviteMail } from '../mail/mailer';
 import {
   findUserByEmail,
-  listIdentities,
+  linkIdentity,
   normalizeEmail,
+  signInWithIdentity,
   signUpBlocked,
   type IdentityInput,
+  type SignInResult,
 } from './accounts';
 import { sendMail } from './data-requests';
 
 /**
  * Login by mail, no password (BER-168): the address typed gets a link, the link signs in – or
  * creates the account under the same rules as any login (`signInWithIdentity`). A new account
- * then adds a passkey for the next time. The answer is the same whether an account exists: only
- * the mailbox learns that, from what the mail says.
+ * then adds a passkey for the next time. An account of the address that signs in another way
+ * (Microsoft, Google, a passkey …) gets the same link: the mailbox is what its address was
+ * confirmed by, and the link adds „E-Mail“ to its logins (`signInWithEmail`). The answer is the
+ * same whether an account exists: only the mailbox learns that, from what the mail says.
  *
  * A link works for 15 minutes, once, and only in the browser that asked (the hash of its signed
  * cookie's key is stored with it): someone who types a stranger's address can't use the link
@@ -58,17 +62,6 @@ async function signsInByEmail(deps: Pick<AppDeps, 'db'>, email: string): Promise
   return known !== undefined;
 }
 
-/** How a login is called in the mail to an account that signs in another way; `null`: not by mail. */
-const PROVIDER_NAMES: Record<IdentityProvider, string | null> = {
-  microsoft: 'Microsoft',
-  google: 'Google',
-  oidc: 'dem Firmen-Login',
-  sso: 'dem Firmen-Login',
-  nextcloud: 'Nextcloud',
-  // An account with this login gets a link, never this mail.
-  email: null,
-};
-
 /**
  * The code of a link: six digits from the server's secret and the token's hash – nothing more to
  * store, and the hash alone (a database dump) does not give it.
@@ -82,47 +75,30 @@ const USED_MESSAGE =
   'Diesen Link hast du schon benutzt. Fordere auf der Anmeldeseite einen neuen an, falls du nicht mehr angemeldet bist.';
 
 /**
- * Mails what fits the address: a login link (an account signing in by mail, or a new one that may
- * be created), or why there is none – the account signs in another way, or this instance only
- * takes invited people. `false` when the mail could not be sent.
+ * Mails what fits the address: a login link (an account of the address, or a new one that may be
+ * created), or why there is none – this instance only takes invited people. `false` when the mail
+ * could not be sent.
  */
 export async function sendEmailLogin(
   deps: AppDeps,
   input: { email: string; returnTo: string; inviteToken: string | null; browser: string },
 ): Promise<boolean> {
   const email = normalizeEmail(input.email);
-  const known = await signsInByEmail(deps, email);
-  const blocked = known ? null : await signUpBlocked(deps, emailIdentity(email, input.inviteToken));
+  const blocked = (await signsInByEmail(deps, email))
+    ? 'account_exists'
+    : await signUpBlocked(deps, emailIdentity(email, input.inviteToken));
+  // An account of the address signs in by the link, whichever way it signed in so far.
+  const known = blocked === 'account_exists';
   const base = { to: email, legalLinks: true };
   const url = (path: string) => new URL(path, deps.config.webOrigin).toString();
-  // Mails without a link: why there is none.
-  const noLink = {
-    ...base,
-    subject: 'Deine Anmeldung bei Office',
-    outro: 'Du warst das nicht? Dann ignoriere diese Mail, es ändert sich nichts.',
-  };
 
-  if (blocked === 'account_exists') {
-    const user = await findUserByEmail(deps.db, email);
-    const logins = user ? await listIdentities(deps.db, user.id) : [];
-    const names = new Set(logins.flatMap(({ provider }) => PROVIDER_NAMES[provider] ?? []));
-    const how = names.size > 0 ? `mit ${[...names].join(' oder ')}` : 'mit deinem Passkey';
+  if (blocked && !known) {
     return sendMail(
       deps,
       inviteMail({
-        ...noLink,
-        heading: 'Du hast schon ein Konto',
-        intro: `Für diese Adresse gibt es schon ein Konto. Es meldet sich ${how} an – nicht per Link aus einer Mail. Nach der Anmeldung kannst du unter „Konto & Anmeldung“ einen Passkey hinzufügen.`,
-        button: 'Zur Anmeldung',
-        url: url(loginPath(input.returnTo)),
-      }),
-    );
-  }
-  if (blocked) {
-    return sendMail(
-      deps,
-      inviteMail({
-        ...noLink,
+        ...base,
+        subject: 'Deine Anmeldung bei Office',
+        outro: 'Du warst das nicht? Dann ignoriere diese Mail, es ändert sich nichts.',
         heading: 'Noch kein Konto',
         intro:
           'Für diese Adresse gibt es auf dieser Office-Instanz kein Konto, und neue Konten entstehen hier nur mit einer Einladung. Bitte jemanden aus deinem Team, dich in euren Workspace einzuladen.',
@@ -158,7 +134,7 @@ export async function sendEmailLogin(
       url: url(`/anmelden/${token}`),
       code: {
         label:
-          'Öffnet sich der Link in einem anderen Browser, etwa aus einer Desktop-App heraus? Dann gib dort, wo du ihn angefordert hast, diesen Code ein:',
+          'Öffnet sich der Link in einem anderen Browser, etwa in deiner Mail-App oder aus einer Desktop-App heraus? Dann gib dort, wo du ihn angefordert hast, diesen Code ein:',
         value: code,
       },
       outro:
@@ -211,7 +187,7 @@ export async function redeemEmailLogin(
   if (link.usedAt) throw new ApiError(410, 'link_expired', USED_MESSAGE);
   // Another browser: the link stays unused and still works in the right one.
   throw forbidden(
-    'Angefordert hast du den Link woanders, etwa in einer Desktop-App. Gib dort den Code aus der Mail ein, oder öffne den Link in dem Browser, in dem du ihn angefordert hast.',
+    'Angefordert hast du den Link in einem anderen Browser – Mail-Apps und Desktop-Apps öffnen Links oft in ihrem eigenen. Gib dort, wo du ihn angefordert hast, den Code aus der Mail ein, oder öffne den Link in dem Browser, in dem du ihn angefordert hast.',
   );
 }
 
@@ -297,4 +273,25 @@ export async function redeemEmailCode(
     });
   if (!used) throw new ApiError(410, 'link_expired', USED_MESSAGE);
   return used;
+}
+
+/**
+ * Signs in with a used link or code: the address's account, or a new one under the rules of any
+ * login. An account of the address that signs in another way is let in too – the mailbox the link
+ * went to is what its address was confirmed by – and signs in by mail from then on, as „E-Mail“
+ * under „Konto & Anmeldung“. Removing that there does not lock mail out: the next link adds it
+ * again.
+ */
+export async function signInWithEmail(
+  deps: AppDeps,
+  link: { email: string; inviteToken: string | null },
+): Promise<SignInResult> {
+  const identity = emailIdentity(link.email, link.inviteToken);
+  const result = await signInWithIdentity(deps, identity);
+  if (result.ok || result.error !== 'account_exists') return result;
+  const existing = await findUserByEmail(deps.db, identity.subject);
+  // A blocked account never gets here: `signInWithIdentity` refuses it before `account_exists`.
+  if (!existing) return result;
+  const linked = await linkIdentity(deps, existing.id, identity);
+  return linked.ok ? { ok: true, user: existing, created: false } : linked;
 }

@@ -38,10 +38,8 @@ export function useChatFileFiling(
             event.stopPropagation();
             place.mutate(
               { attachmentId: filing.attachmentId },
-              {
-                onSuccess: (done) => ui.notify(`„${node.name}“ nach „${done.place}“ verschoben`),
-                onError: (error) => ui.notify(error.message, 'danger'),
-              },
+              // Moved, it leaves the list – the page shows it.
+              { onError: (error) => ui.notify(error.message, 'danger') },
             );
           }}
         >

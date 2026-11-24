@@ -4,6 +4,8 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { OdpDocument, OdpError } from '@slider/odp';
 import {
   applyEditResultSchema,
+  cloudPaths,
+  cloudUploadResultSchema,
   deckEditStateSchema,
   deckNotesSchema,
   deckSchema,
@@ -56,6 +58,8 @@ afterEach(async () => {
 
 type Calls = { pages: readonly number[] | null }[];
 
+const DOCUMENT_PDF = makeSlidesPdf([{ texts: [{ text: 'Brief', x: 80, y: 60, size: 40 }] }]);
+
 async function odpDeck(
   options: {
     calls?: Calls;
@@ -67,6 +71,8 @@ async function odpDeck(
 ) {
   ctx = await createTestContext({
     libreOfficePdf: fakeOdpPdf(options.calls),
+    // A Word file in Cloud drawn as a PDF: one page.
+    documentPdf: async () => DOCUMENT_PDF,
     cutOuts: options.cutOuts,
     mailer: options.mailer,
     ...(options.live ? { live: options.live } : {}),
@@ -192,6 +198,69 @@ describe('editing an ODP deck', () => {
     expect((await send({ ...mailed, format: 'slidePdf', slideId: undefined })).status).toBe(400);
     expect((await send(mailed, cookie)).status).toBe(404);
     expect(mailer.sent).toHaveLength(2);
+
+    // „In Cloud ablegen …“: kept as it downloads, here in one's own files; kept again, it is that
+    // file's next version – only by who may export it. In Cloud, the presentation's file
+    // „Als PDF ablegen …“ is its export.
+    ctx.clock.advance(60_000);
+    const keep = (body: unknown, as?: string) =>
+      ctx.request(`/api/decks/${deckId}/edit/keep`, { method: 'POST', json: body, cookie: as });
+    const keptRes = await keep({ format: 'slidePng', slideId: second.id });
+    expect(keptRes.status).toBe(201);
+    const kept = cloudUploadResultSchema.parse(await keptRes.json());
+    expect(kept).toMatchObject({
+      created: true,
+      node: { name: 'Strategie – Folie 2.png', parentId: null, areaId: null },
+    });
+    const keptBytes = await ctx.request(`/api${cloudPaths.content(kept.node.id)}`);
+    expect(Buffer.compare(Buffer.from(await keptBytes.arrayBuffer()), png)).toBe(0);
+    const again = cloudUploadResultSchema.parse(
+      await (await keep({ format: 'slidePng', slideId: second.id })).json(),
+    );
+    expect(again).toMatchObject({ created: false, node: { id: kept.node.id } });
+    expect((await keep({ format: 'pdf' }, cookie)).status).toBe(404);
+    const [placed] = await ctx.deps.db
+      .select({ nodeId: decks.cloudNodeId })
+      .from(decks)
+      .where(eq(decks.id, deckId));
+    const asPdf = (as?: string) =>
+      ctx.request(`/api/cloud/nodes/${placed!.nodeId}/pdf`, {
+        method: 'POST',
+        json: {},
+        cookie: as,
+      });
+    const pdfRes = await asPdf();
+    expect(pdfRes.status).toBe(201);
+    expect(cloudUploadResultSchema.parse(await pdfRes.json()).node).toMatchObject({
+      name: 'Strategie.pdf',
+      parentId: null,
+    });
+    expect((await asPdf(cookie)).status).toBe(404);
+    // Any other office file: the PDF Cloud's preview shows of it.
+    const letter = Buffer.from('ein Brief');
+    const uploaded = await ctx.request(
+      `/api/workspaces/${ctx.workspaceId}/cloud/files?name=Brief.docx`,
+      {
+        method: 'POST',
+        body: letter,
+        headers: {
+          'Content-Type': 'application/octet-stream',
+          'Content-Length': String(letter.length),
+        },
+      },
+    );
+    const docx = cloudUploadResultSchema.parse(await uploaded.json());
+    const letterPdf = await ctx.request(`/api/cloud/nodes/${docx.node.id}/pdf`, {
+      method: 'POST',
+      json: { parentId: null },
+    });
+    expect(letterPdf.status).toBe(201);
+    const letterNode = cloudUploadResultSchema.parse(await letterPdf.json()).node;
+    expect(letterNode.name).toBe('Brief.pdf');
+    const letterBytes = await ctx.request(`/api${cloudPaths.content(letterNode.id)}`);
+    expect(
+      Buffer.compare(Buffer.from(await letterBytes.arrayBuffer()), Buffer.from(DOCUMENT_PDF)),
+    ).toBe(0);
 
     // No photos before a search is typed on a server without a photo source.
     const photos = await ctx.request(`/api/decks/${deckId}/stock/photos`);

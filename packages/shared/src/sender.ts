@@ -1,5 +1,10 @@
 import { z } from 'zod';
-import type { AccountAuthor, Author } from './model';
+import {
+  commentReactionKindSchema,
+  type AccountAuthor,
+  type Author,
+  type CommentReaction,
+} from './model';
 import type { CloudAreaColor } from './cloud';
 import { MAX_MAIL_UPLOADS, mailUploadSchema, type SenderMessageMail } from './mail';
 import type { CallBrief } from './calls';
@@ -71,6 +76,8 @@ export interface SenderChannel {
   updatedAt: string;
   /** When the caller pinned it („Anpinnen“): it stands above the rest, the latest pinned first. */
   pinnedAt?: string | null;
+  /** The caller muted it („Stummschalten“): no count on the app's icon, no notification. */
+  muted?: boolean;
 }
 
 export interface SenderChannelAgent {
@@ -172,6 +179,32 @@ export interface SenderMessage {
   deleted: boolean;
   /** A call in the conversation, over: shown as one entry that opens its page. */
   call?: CallBrief | null;
+  /** 👍 / 👎 / egal, one per person, as on comments. */
+  reactions?: CommentReaction[];
+  /** „Antworten“: the message it answers, quoted above it. */
+  replyTo?: SenderReplyQuote | null;
+}
+
+/** A message found by the side bar's search, in any conversation one sees (newest first). */
+export interface SenderMessageHit {
+  channelId: string;
+  messageId: string;
+  /** Who wrote it; `null` when the person is gone. */
+  name: string | null;
+  /** The words around the match. */
+  text: string;
+  createdAt: string;
+}
+
+/** The message another answers, as quoted above it: who, and the start of its words. */
+export interface SenderReplyQuote {
+  id: string;
+  /** A person's or an agent's name; `null` when the person is gone. */
+  name: string | null;
+  /** Its words, cut short; empty when only files were on it. */
+  text: string;
+  /** Deleted since: „Nachricht gelöscht“ instead. */
+  deleted: boolean;
 }
 
 export interface SenderMessagePage {
@@ -195,7 +228,9 @@ export type SenderEvent =
   /** To-dos one sees changed (one's own, an area's): the lists are fetched anew. */
   | { type: 'todos' }
   /** Calendars or events one sees changed: the calendar is fetched anew. */
-  | { type: 'calendar' };
+  | { type: 'calendar' }
+  /** The start's AI look („Aktuell“) was made anew in the background: it is fetched again. */
+  | { type: 'triage' };
 
 /**
  * Sender's start („Neuigkeiten“): a conversation with something unread – an area's channel, a
@@ -242,6 +277,80 @@ export interface SenderSummary {
   reason: string | null;
 }
 
+/**
+ * Sender's start as a to-do list („Aktuell“, and a mailbox's „Übersicht“): everything unread,
+ * sorted into what it is – asked of one first, the rest grouped so a whole group is done in one
+ * go. Mails go to `requests`/`mail`/`notices`/`newsletters` by the AI where the mailbox lets it
+ * read along, else by what the mail says of itself (its list header, a no-reply sender).
+ */
+export const TRIAGE_GROUPS = [
+  'mentions',
+  'direct',
+  'requests',
+  'conversations',
+  'agents',
+  'mail',
+  'notices',
+  'newsletters',
+  'spam',
+] as const;
+export type TriageGroupKey = (typeof TRIAGE_GROUPS)[number];
+
+export interface TriageItem {
+  item: SenderUnreadItem;
+  /** The AI's line about it – what it is, what is wanted; `null` without the AI. */
+  line: string | null;
+  /** A mail's sender (newsletters are grouped by it). */
+  from: { name: string; address: string } | null;
+  /** A mail's mailbox. */
+  accountId: string | null;
+}
+
+export interface TriageGroup {
+  key: TriageGroupKey;
+  /** The AI's sentence about the whole group; `null` without the AI. */
+  summary: string | null;
+  items: TriageItem[];
+}
+
+/**
+ * `ai`: `done` – sorted and told by the AI; `off` – without the workspace's AI (`reason`);
+ * `failed` – it gave no answer (sorted without it); `none` – asked without the AI.
+ */
+export interface SenderTriage {
+  ai: 'none' | 'done' | 'off' | 'failed';
+  /** One sentence on top: what needs the person now. */
+  headline: string | null;
+  groups: TriageGroup[];
+  /**
+   * „Heute und diese Woche“: what the coming days hold – events, to-dos due, and what earlier,
+   * read mails say is due (a deadline, an appointment, something promised). Without the AI the
+   * events and to-dos alone; Aktuell only, a mailbox's „Übersicht“ has its mails' alone.
+   */
+  agenda: TriageAgendaItem[];
+  reason: string | null;
+}
+
+export interface TriageAgendaItem {
+  kind: 'event' | 'todo' | 'mail';
+  /** The event's, the to-do's or the mail conversation's id. */
+  id: string;
+  /** The day it is on or due (`YYYY-MM-DD`), when it has one. */
+  day: string | null;
+  /** When, as one says it („Heute 14:00“, „Freitag“, „bis Donnerstag“). */
+  when: string | null;
+  text: string;
+}
+
+/** „Alle gelesen“: these conversations, agents and mails read at once. */
+export const senderTriageReadSchema = z.object({
+  items: z
+    .array(z.object({ kind: z.enum(['channel', 'agent', 'mail']), id: z.string().min(1).max(100) }))
+    .min(1)
+    .max(500),
+});
+export type SenderTriageRead = z.input<typeof senderTriageReadSchema>;
+
 export const senderEditSchema = z.object({
   text: z.string().trim().min(1, 'Schreib etwas.').max(MAX_SENDER_MESSAGE),
 });
@@ -250,6 +359,8 @@ export const senderEditSchema = z.object({
 export const senderPostSchema = senderEditSchema.extend({
   text: z.string().trim().max(MAX_SENDER_MESSAGE),
   attachments: attachmentIdsSchema,
+  /** „Antworten“: a message of the same conversation. */
+  replyTo: z.string().min(1).optional(),
 });
 
 export const senderCreateChannelSchema = z.object({
@@ -292,6 +403,19 @@ export const senderPinSchema = z.object({
 });
 export type SenderPin = z.infer<typeof senderPinSchema>;
 
+/** A browser's Web Push subscription (`PushSubscription.toJSON()`), to tell while no tab is open. */
+export const pushSubscriptionSchema = z.object({
+  endpoint: z.string().url().max(2000).startsWith('https://'),
+  keys: z.object({ p256dh: z.string().min(80).max(200), auth: z.string().min(16).max(100) }),
+});
+export type PushSubscriptionInput = z.infer<typeof pushSubscriptionSchema>;
+
+/** „Stummschalten“ / „Laut schalten“ a conversation, for the caller alone. */
+export const senderMuteSchema = z.object({ muted: z.boolean() });
+
+/** One's reaction on a message, or none (`null`): another replaces it. */
+export const senderReactSchema = z.object({ kind: commentReactionKindSchema.nullable() });
+
 /** The people whose name a text carries after „@“ – the first name will do. */
 export function mentionsIn(text: string, people: Iterable<AccountAuthor>): string[] {
   const lower = text.toLowerCase();
@@ -303,6 +427,10 @@ export function mentionsIn(text: string, people: Iterable<AccountAuthor>): strin
   }
   return found;
 }
+
+/** „@alle“: everyone in the conversation is named – as if each one's name stood there. */
+export const EVERYONE_TAG = 'alle';
+export const mentionsAll = (text: string): boolean => named(text.toLowerCase(), EVERYONE_TAG);
 
 /**
  * What may not stand right before the „@“ of a mention (a regex character class's inside, `u`

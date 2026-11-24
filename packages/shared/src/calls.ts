@@ -67,7 +67,7 @@ export interface CallOrder {
   title: string;
   /** The whole order, as the new agent gets it. */
   text: string;
-  /** Proposed (waits for a yes), sent and running, done, or it could not be sent. */
+  /** Listed („Vorgemerkt“, sent on ✓ or „Schick … los“), sent and running, done, or not sent. */
   state: 'proposed' | 'running' | 'done' | 'failed';
   /** The Cloud agent working on it, once sent. */
   agentId: string | null;

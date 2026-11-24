@@ -13,6 +13,7 @@ import { chatMatches, useMarkedMatches, useShowHit } from '@/lib/chat-search';
 import { draftKeys } from '@/lib/drafts';
 import { routes } from '@/lib/routes';
 import {
+  AgentAsks,
   AgentAvatar,
   AgentChoices,
   AgentComposer,
@@ -53,7 +54,7 @@ export function Component() {
   const agent = query.data;
   // The cards stand beside the chat from xl on (below they are hidden): only there a handle.
   const asideRef = useRef<HTMLDivElement>(null);
-  const aside = useAgentAside(useMediaQuery('(min-width: 1280px)'), 360, asideRef);
+  const aside = useAgentAside(useMediaQuery('(min-width: 1024px)'), 360, asideRef);
   // One's call with it: a card at the top of the cards beside the chat, as in Cloud.
   const call = useAgentCall(agentId);
   // Its one chat (the chats of calls in conversations stay there).
@@ -236,6 +237,14 @@ export function Component() {
                         onCopied={copied}
                       />
                     )}
+                    {each.asks && each.asks.length > 0 && !searching && (
+                      <AgentAsks
+                        workspaceId={workspaceId}
+                        agentId={agent.id}
+                        asks={each.asks}
+                        onError={(text) => ui.notify(text, 'danger')}
+                      />
+                    )}
                     {each === last && !searching && (
                       <AgentChoices choices={choices} onPick={(text) => void send(text)} />
                     )}
@@ -282,7 +291,7 @@ export function Component() {
           ref={asideRef}
           style={aside.style}
           className={cn(
-            'flex min-h-0 w-[360px] shrink-0 flex-col gap-5 max-xl:hidden',
+            'flex min-h-0 w-[360px] shrink-0 flex-col gap-5 max-lg:hidden',
             call && aside.handle && 'overflow-y-auto overscroll-contain',
           )}
         >
