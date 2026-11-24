@@ -24,6 +24,7 @@ import { useBarSearch } from './hooks/useBarSearch';
 import { SearchResults } from './SearchResults';
 import { CloudProvider } from './hooks/useCloud';
 import { useStoredChoice } from './hooks/useStoredChoice';
+import { PageBefore, usePageBefore } from './hooks/useOpenedFrom';
 import { SIDEBAR_KEY, SIDEBAR_STATES } from './lib/kinds';
 
 /**
@@ -33,6 +34,8 @@ import { SIDEBAR_KEY, SIDEBAR_STATES } from './lib/kinds';
 export function Component() {
   const workspace = useWorkspace();
   const location = useLocation();
+  // Where one came from: a page opened from an overview keeps its path (`useOpenedFrom`).
+  const before = usePageBefore();
   // On narrow screens the side bar slides in over the page; a place picked closes it.
   const [menu, setMenu] = useState<string | null>(null);
   // Below lg there is no room beside the page: the places come as a panel from the left.
@@ -74,70 +77,72 @@ export function Component() {
       newBase={routes.cloud(workspace.id)}
     >
       <CloudProvider workspace={workspace}>
-        <div className="relative flex min-h-0 flex-1 items-start">
-          {narrow ? (
-            open && (
-              // The panel of the file's details (`SidePanel`), at the left.
-              <SidePanel ref={panelRef} side="left" aria-labelledby={titleId}>
-                <SidePanelHeader gap="sm">
-                  <div className="flex items-center gap-2">
-                    <h2
-                      id={titleId}
-                      className="min-w-0 flex-1 truncate text-base font-semibold text-fg"
-                    >
-                      Orte
-                    </h2>
-                    <IconButton
-                      icon="close"
-                      label="Schließen (Esc)"
-                      size="sm"
-                      onClick={() => setMenu(null)}
-                    />
+        <PageBefore value={before}>
+          <div className="relative flex min-h-0 flex-1 items-start">
+            {narrow ? (
+              open && (
+                // The panel of the file's details (`SidePanel`), at the left.
+                <SidePanel ref={panelRef} side="left" aria-labelledby={titleId}>
+                  <SidePanelHeader gap="sm">
+                    <div className="flex items-center gap-2">
+                      <h2
+                        id={titleId}
+                        className="min-w-0 flex-1 truncate text-base font-semibold text-fg"
+                      >
+                        Orte
+                      </h2>
+                      <IconButton
+                        icon="close"
+                        label="Schließen (Esc)"
+                        size="sm"
+                        onClick={() => setMenu(null)}
+                      />
+                    </div>
+                  </SidePanelHeader>
+                  <div className="flex min-h-0 flex-1 flex-col overflow-y-auto p-4">
+                    <CloudSidebar className="min-h-full w-full" onFold={() => {}} />
                   </div>
-                </SidePanelHeader>
-                <div className="flex min-h-0 flex-1 flex-col overflow-y-auto p-4">
-                  <CloudSidebar className="min-h-full w-full" onFold={() => {}} />
-                </div>
-              </SidePanel>
-            )
-          ) : (
-            // Over the header's box: the fold button stands in the gap that box reaches into.
-            // `data-cloud-sidebar`: out of the page's crossfade when a view switches (index.css).
-            <div
-              data-cloud-sidebar
-              className="sticky top-0 z-(--z-overlay) flex h-[calc(100dvh-88px)] shrink-0 py-4 pl-6"
-            >
-              <CloudSidebar
-                className="h-full"
-                folded={sidebar === 'icons'}
-                onFold={(folded) => setSidebar(folded ? 'icons' : 'open')}
-              />
-            </div>
-          )}
-          {/* The details' and the chat's panel (`data-cloud-panel`) stand beside the page, not
+                </SidePanel>
+              )
+            ) : (
+              // Over the header's box: the fold button stands in the gap that box reaches into.
+              // `data-cloud-sidebar`: out of the page's crossfade when a view switches (index.css).
+              <div
+                data-cloud-sidebar
+                className="sticky top-0 z-(--z-overlay) flex h-[calc(100dvh-88px)] shrink-0 py-4 pl-6"
+              >
+                <CloudSidebar
+                  className="h-full"
+                  folded={sidebar === 'icons'}
+                  onFold={(folded) => setSidebar(folded ? 'icons' : 'open')}
+                />
+              </div>
+            )}
+            {/* The details' and the chat's panel (`data-cloud-panel`) stand beside the page, not
               over it – as over Slider's presentations and the header's right end. A page's own
               column beside its content (`data-page-aside`: the calendar's, „KI zur Mail“) is lain
               over instead: only the content gives way, as far as the panel reaches past it. */}
-          <div className="min-w-0 flex-1 px-4 pt-4 transition-[margin] duration-300 ease-out md:[body:has([data-cloud-panel]):not(:has([data-page-aside]))_&]:mr-[400px] lg:pr-6 lg:pl-9">
-            <BarFolded value={!narrow && sidebar === 'icons'}>
-              {/* Below lg the places' button stands at the start of the page's head, as in
+            <div className="min-w-0 flex-1 px-4 pt-4 transition-[margin] duration-300 ease-out md:[body:has([data-cloud-panel]):not(:has([data-page-aside]))_&]:mr-[400px] lg:pr-6 lg:pl-9">
+              <BarFolded value={!narrow && sidebar === 'icons'}>
+                {/* Below lg the places' button stands at the start of the page's head, as in
                   Sender (`MenuButton`): nothing floats over the page or its composer. */}
-              <SenderMenuContext.Provider
-                value={
-                  narrow
-                    ? {
-                        open,
-                        toggle: () => setMenu(open ? null : location.pathname),
-                        label: 'Orte zeigen',
-                      }
-                    : null
-                }
-              >
-                <Page />
-              </SenderMenuContext.Provider>
-            </BarFolded>
+                <SenderMenuContext.Provider
+                  value={
+                    narrow
+                      ? {
+                          open,
+                          toggle: () => setMenu(open ? null : location.pathname),
+                          label: 'Orte zeigen',
+                        }
+                      : null
+                  }
+                >
+                  <Page />
+                </SenderMenuContext.Provider>
+              </BarFolded>
+            </div>
           </div>
-        </div>
+        </PageBefore>
         <CloudChat />
         <Preview />
         <TodoPanel />

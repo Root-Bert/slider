@@ -69,7 +69,16 @@ function titleOf(channel: SenderChannel, message: SenderMessage): string {
 /** One notification per conversation: a newer one takes the older one's place. */
 export function tell(channel: SenderChannel, message: SenderMessage, onOpen: () => void): void {
   if (!mayNotify()) return;
-  const text = message.text.replace(/\s+/g, ' ').trim();
+  const files = message.attachments ?? [];
+  // Files alone: their names stand for the words.
+  const text = (
+    message.text ||
+    (files.length
+      ? `${files.length === 1 ? 'Datei' : 'Dateien'}: ${files.map((one) => one.name).join(', ')}`
+      : '')
+  )
+    .replace(/\s+/g, ' ')
+    .trim();
   const notification = new Notification(titleOf(channel, message), {
     body: text.length > 180 ? `${text.slice(0, 179)}…` : text,
     icon: '/sender-icon-192.png?v=2',

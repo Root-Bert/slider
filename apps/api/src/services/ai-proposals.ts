@@ -116,6 +116,7 @@ import { touchDeck } from './decks';
 import { elementAlone } from './edit-backgrounds';
 import { bakeTilt } from './tilt-pictures';
 import { summarizeTranscriptsLater } from './transcripts';
+import { attachmentFile, claimAttachments, deleteAttachments } from './attachments';
 import { summarizeThreadLater } from './thread-summaries';
 import {
   ADD_KINDS,
@@ -1248,10 +1249,12 @@ export async function createProposal(
   let thread: ThreadAsk | null = null;
   let place: CommentPlace;
   let prompt: string;
+  let given: ThreadPicture[] = [];
   if ('variantOf' in input) {
     if (target.deck.isTemplate) throw badRequest('Die Folien einer Vorlage haben keine Varianten.');
     place = await slidePlace(deps, target, input.variantOf);
     prompt = input.prompt.trim();
+    given = await variantPictures(deps, viewer, target.deck, input.attachments ?? []);
   } else {
     thread = await threadOf(deps, target.deck.id, input.commentId);
     // A voice memo asks as well as text, once it is transcribed.
@@ -1318,6 +1321,7 @@ export async function createProposal(
           stopper.signal,
           !heard && !variant,
           !!variant,
+          given,
         ),
   )
     .catch((error: unknown) => deps.log.error(`AI proposal ${proposal.id} crashed`, error))
@@ -1643,15 +1647,72 @@ async function stopped(deps: AppDeps, proposal: ProposalRow, signal: AbortSignal
 /** Why a slide can be neither seen nor written, for the AI. */
 class ToolProblem extends Error {}
 
-/** A picture attached to the comment thread, offered to the AI. */
+/**
+ * A picture attached to the comment thread – or to „Variante erstellen“, kept as one of the deck's
+ * edit pictures (`imageId`) – offered to the AI.
+ */
 interface ThreadPicture {
   mediaId: string;
+  /** Put on „Variante erstellen“: it goes into the file as an edit picture, not a comment's. */
+  imageId?: string;
   bytes: Uint8Array;
   mediaType: Showable;
   width: number;
   height: number;
   /** Who attached it. */
   from: string;
+}
+
+/**
+ * Pictures put on „Variante erstellen“: taken (the caller's, waiting), kept as the deck's edit
+ * pictures – so the variant can show them, undone and redone like a stock photo – and then gone
+ * as attachments. Pictures only: the AI puts them on the slide or takes their look.
+ */
+async function variantPictures(
+  deps: AppDeps,
+  viewer: Viewer,
+  deck: { id: string; workspaceId: string },
+  ids: readonly string[],
+): Promise<ThreadPicture[]> {
+  if (ids.length === 0) return [];
+  // Looked at before they are taken: one refused stays waiting, put back into the field.
+  const files = await Promise.all(
+    ids.map(async (id) => {
+      const file = await attachmentFile(deps, viewer.author.id, id);
+      const size = imageSize(file.bytes);
+      if (!size || !isShowable(size.mediaType) || file.bytes.byteLength > MAX_SHOWN_PICTURE_BYTES) {
+        throw badRequest(
+          `„${file.name}“ ist kein Bild, das die KI ansehen kann (PNG, JPEG, GIF, WebP bis 3,5 MB).`,
+        );
+      }
+      return { ...file, size: { ...size, mediaType: size.mediaType as Showable } };
+    }),
+  );
+  const taken = await claimAttachments(
+    deps.db,
+    deps.clock.now(),
+    viewer.author.id,
+    deck.workspaceId,
+    [...ids],
+  );
+  try {
+    const pictures: ThreadPicture[] = [];
+    for (const { bytes, size } of files) {
+      const stored = await storeEditImage(deps, deck.id, bytes);
+      pictures.push({
+        mediaId: '',
+        imageId: stored.imageId,
+        bytes,
+        mediaType: size.mediaType,
+        width: size.width,
+        height: size.height,
+        from: viewer.author.name,
+      });
+    }
+    return pictures;
+  } finally {
+    await deleteAttachments(deps, taken);
+  }
 }
 
 /** The pictures attached to the thread up to the asking comment – the latest few. */
@@ -2291,7 +2352,13 @@ export class DeckCopy {
     }
     // Only names it here; write puts it into the file once a slide shows it.
     const path = this.document.addPicture(picture.bytes, picture.mediaType);
-    this.added.set(path, picture);
+    if (picture.imageId) {
+      this.photos.set(path, {
+        imageId: picture.imageId,
+        bytes: picture.bytes,
+        mediaType: picture.mediaType,
+      });
+    } else this.added.set(path, picture);
     return `Picture ${number} can be used as ${path} (${picture.width} × ${picture.height} px), e.g. <draw:image xlink:href="${path}" xlink:type="simple" xlink:show="embed" xlink:actuate="onLoad"/> in a draw:frame.`;
   }
 
@@ -3682,6 +3749,8 @@ async function runProposal(
    * changes it as the words (`proposal.prompt`) say.
    */
   variant = false,
+  /** Pictures put on „Variante erstellen“ (a comment's come from its thread). */
+  given: readonly ThreadPicture[] = [],
 ): Promise<void> {
   const clock = new RunClock(deps, proposal.id);
   /** The small drawings shown in the thread – deleted when the run ends. */
@@ -3693,7 +3762,7 @@ async function runProposal(
   try {
     const pictures = proposal.commentId
       ? await threadPictures(deps, target.deck.id, proposal.commentId)
-      : [];
+      : [...given];
     // Ids of its own for what it adds, so they never meet another request's.
     let deck = await DeckCopy.open(deps, target, pictures, `ai${proposal.id.slice(0, 8)}-`);
     deck.thread = await threadRoot(deps, proposal.commentId);
@@ -3738,7 +3807,7 @@ async function runProposal(
           ...pictures.flatMap((picture, i): Anthropic.Beta.BetaContentBlockParam[] => [
             {
               type: 'text',
-              text: `${i === 0 ? 'Pictures attached to the thread (add_picture puts one on a slide).\n' : ''}Picture ${i + 1}, from ${picture.from} (${picture.width} × ${picture.height} px):`,
+              text: `${i === 0 ? `Pictures attached to ${variant ? 'the request' : 'the thread'} (add_picture puts one on a slide; or take their look).\n` : ''}Picture ${i + 1}, from ${picture.from} (${picture.width} × ${picture.height} px):`,
             },
             imageBlock(picture.bytes, picture.mediaType),
           ]),

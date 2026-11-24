@@ -22,10 +22,16 @@ export function useCloudChat(
   const queryClient = useQueryClient();
   return useAgentChat<never>(
     `cloud:${workspaceId}`,
-    (text, history, onEvent, signal) =>
+    (text, history, onEvent, signal, attachments) =>
       chatCloud(
         workspaceId,
-        { text, history, folderId: place.folderId ?? null, areaId: place.areaId ?? null },
+        {
+          text,
+          attachments,
+          history,
+          folderId: place.folderId ?? null,
+          areaId: place.areaId ?? null,
+        },
         onEvent,
         signal,
       ),

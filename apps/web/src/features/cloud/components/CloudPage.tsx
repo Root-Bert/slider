@@ -3,6 +3,7 @@ import {
   useCallback,
   useEffect,
   useEffectEvent,
+  useLayoutEffect,
   useRef,
   useState,
   type DragEvent,
@@ -25,6 +26,7 @@ import { useCloud, type CloudTarget } from '../hooks/useCloud';
 import { carriesNodes, NODES_DRAG } from '../lib/drag';
 import { BarFolded, CRUMB_SEARCH, useCrumbSearch } from '../lib/crumb-search';
 import { CrumbSearchField } from './CrumbSearch';
+import { useFilesInto, useRowDrop } from './CloudSidebar';
 import { DROP_FAILED, droppedFiles } from '../lib/upload';
 import { GIVE_WAY_TO_PANEL } from '../lib/panel';
 import { tabTitle } from '../lib/tab-title';
@@ -33,6 +35,37 @@ import type { CloudItems } from './FileBrowser';
 export interface Crumb {
   label: string;
   to?: string;
+  /** Where files and folders dragged onto it go, as onto the side bar's row – unset, nowhere. */
+  into?: CloudTarget | undefined;
+}
+
+/** A crumb leading back: a link, and – where it may take them – a place to drop files onto. */
+function CrumbLink({ crumb, to }: { crumb: Crumb; to: string }) {
+  const ui = useCloud();
+  const filesInto = useFilesInto();
+  const { into } = crumb;
+  const drop = useRowDrop({
+    enabled: !!into,
+    self: into?.parentId,
+    onNodes: (nodes) => {
+      if (into) ui.moveInto(nodes, into);
+    },
+    onFiles: (data) => {
+      if (into) filesInto(data, into);
+    },
+  });
+  return (
+    <Link
+      to={to}
+      className={cn(
+        '-mx-1 truncate rounded-control-sm px-1 text-fg-subtle transition-colors hover:text-fg',
+        drop.over && 'bg-selected text-fg ring-1 ring-focus',
+      )}
+      {...drop.handlers}
+    >
+      {crumb.label}
+    </Link>
+  );
 }
 
 interface CloudPageProps {
@@ -41,7 +74,16 @@ interface CloudPageProps {
   title: ReactNode;
   /** Before the title: an area's colour, a folder's symbol. */
   lead?: ReactNode;
+  /**
+   * The path: from the side bar's row it lies under (a place there, or an area's way from the
+   * workspace) to the page – never the workspace's name over a place of its own („Agenten“).
+   */
   crumbs?: readonly Crumb[];
+  /**
+   * The side bar's row to light where the address does not say it: an area's agent or folder
+   * lights its area, not „Agenten“ (or nothing). The path starts at that row too.
+   */
+  barRow?: string;
   subtitle?: ReactNode;
   /** Right of the title. */
   actions?: ReactNode;
@@ -78,6 +120,7 @@ export function CloudPage({
   title,
   lead,
   crumbs,
+  barRow,
   subtitle,
   actions,
   toolbar,
@@ -155,6 +198,12 @@ export function CloudPage({
     return () => setPlace(null);
     // eslint-disable-next-line react-hooks/exhaustive-deps -- `targetKey` stands for `target`
   }, [setPlace, targetKey]);
+  // The side bar lights where this page lies – before it is painted, so no other row flashes.
+  const { setBarRow } = ui;
+  useLayoutEffect(() => {
+    setBarRow(barRow ?? null);
+    return () => setBarRow(null);
+  }, [setBarRow, barRow]);
 
   const onKeyDown = useEffectEvent((event: KeyboardEvent) => {
     if (event.defaultPrevented || isTypingTarget(event.target)) return;
@@ -367,12 +416,7 @@ export function CloudPage({
                       <Icon name="chevronRight" size={14} className="shrink-0 text-fg-faint" />
                     )}
                     {crumb.to ? (
-                      <Link
-                        to={crumb.to}
-                        className="truncate text-fg-subtle transition-colors hover:text-fg"
-                      >
-                        {crumb.label}
-                      </Link>
+                      <CrumbLink crumb={crumb} to={crumb.to} />
                     ) : (
                       <span className="truncate text-fg">{crumb.label}</span>
                     )}

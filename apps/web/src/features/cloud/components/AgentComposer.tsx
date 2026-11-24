@@ -1,5 +1,11 @@
 import { useEffect, useRef, useState } from 'react';
-import { MAX_MATERIAL_CHAT_MESSAGE } from '@slider/shared';
+import { MAX_MATERIAL_CHAT_MESSAGE, type Attachment } from '@slider/shared';
+import {
+  AttachButton,
+  AttachmentChips,
+  useAttachments,
+  useCloudDrop,
+} from '@/features/attachments';
 import { draftOf, setDraft, useDrafts, type DraftTarget } from '@/lib/drafts';
 import { isModKey } from '@/lib/keyboard';
 import { useTallField } from '@/lib/useTallField';
@@ -25,7 +31,10 @@ export function AgentComposer({
   onTyping,
   onEscape,
   typeInto = false,
+  workspaceId,
 }: {
+  /** Where files put on the message go up – with it, the clip and pasting files are there. */
+  workspaceId?: string;
   /** A text to start from, put into the field each time it is another one. */
   draft?: { text: string } | null;
   /** What is written and not sent is kept under this key (`Entwürfe`) and comes back here. */
@@ -43,8 +52,8 @@ export function AgentComposer({
    * dressed as every other field there (`TextField`). Otherwise the slim one under a conversation.
    */
   top?: boolean;
-  /** `false`: refused – the text goes back into the field. */
-  onSend: (text: string) => Promise<boolean>;
+  /** `false`: refused – the text and the files go back into the field. */
+  onSend: (text: string, attachments: Attachment[]) => Promise<boolean>;
   onStop?: () => void;
   /** Something is being written – as often as a key is pressed. */
   onTyping?: () => void;
@@ -54,6 +63,12 @@ export function AgentComposer({
   typeInto?: boolean;
 }) {
   const fieldRef = useRef<HTMLTextAreaElement>(null);
+  const attach = useAttachments({
+    workspaceId,
+    keep: keep ? `agent:${keep.key}` : undefined,
+  });
+  // Cloud files and folders dropped on the field: pointed to, not copied.
+  const drop = useCloudDrop(attach);
   const [body, setBody] = useState(() => (keep ? draftOf(keep.key) : (draft?.text ?? '')));
   const change = (text: string) => {
     setBody(text);
@@ -86,7 +101,7 @@ export function AgentComposer({
   }, [autoFocus]);
   useTypeInto(fieldRef, typeInto);
   // Written past one line: the buttons go below the words (as Sender's composer).
-  const tall = useTallField(fieldRef, body);
+  const tall = useTallField(fieldRef, body) || attach.items.length > 0 || !!attach.error;
 
   // A picked example lies in the field at once: taken while rendering, not an effect later.
   const [taken, setTaken] = useState(draft);
@@ -98,13 +113,17 @@ export function AgentComposer({
     if (draft) fieldRef.current?.focus({ preventScroll: true });
   }, [draft]);
 
+  const files = attach.ready;
+  const sendable = (!!body.trim() || files.length > 0) && !attach.busy && !busy;
   const send = () => {
     const text = body.trim();
-    if (!text || busy) return;
+    if (!sendable) return;
     change('');
-    void onSend(text).then((sent) => {
+    attach.clear();
+    void onSend(text, files).then((sent) => {
       if (sent) return;
       setBody((now) => now || text);
+      attach.restore(files);
       if (keep && !draftOf(keep.key)) setDraft(keep.key, text, keep.target);
     });
   };
@@ -116,12 +135,14 @@ export function AgentComposer({
         event.preventDefault();
         send();
       }}
+      {...drop.props}
       className={cn(
         top
           ? 'glass focus-field min-h-10 py-1.5 transition-shadow'
           : cn(inline ? 'glass-control' : 'glass-elevated', 'py-1'),
         'flex shrink-0 items-end gap-0.5 rounded-control pr-1 pl-3',
         tall && 'flex-wrap justify-end',
+        drop.over && 'ring-2 ring-focus',
       )}
     >
       <div className={cn('flex min-w-0 flex-1 flex-col py-[5px]', tall && 'basis-full pr-2')}>
@@ -132,6 +153,7 @@ export function AgentComposer({
           maxLength={MAX_MATERIAL_CHAT_MESSAGE}
           maxHeight={200}
           value={body}
+          onPaste={attach.onPaste}
           onChange={(event) => {
             change(event.target.value);
             if (event.target.value.trim()) onTyping?.();
@@ -154,7 +176,9 @@ export function AgentComposer({
             'leading-4.5 text-fg placeholder:text-fg-subtle',
           )}
         />
+        <AttachmentChips files={attach} className="pt-2 pb-0.5" />
       </div>
+      <AttachButton files={attach} />
       {working && onStop && (
         <IconButton icon="stop" label="Stoppen" size="compact" onClick={onStop} />
       )}
@@ -164,8 +188,8 @@ export function AgentComposer({
         label="Senden"
         title="Senden (Enter)"
         size="compact"
-        iconTone={body.trim() ? 'success' : undefined}
-        disabled={!body.trim() || busy}
+        iconTone={sendable ? 'success' : undefined}
+        disabled={!sendable}
       />
     </form>
   );

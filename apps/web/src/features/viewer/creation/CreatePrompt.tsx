@@ -13,6 +13,8 @@ import { api } from '@/lib/api-client';
 import { queryKeys, useDismissCreation, useStartCreation, useWorkspaceMasters } from '@/lib/api';
 import { isModEnter } from '@/lib/keyboard';
 import { Button, Icon, IconButton, TextLink, useFocusLoop } from '@/ui';
+import { useBoard } from '../board/useBoard';
+import { DeckBoardOwner } from '../components/DeckBoardOwner';
 import { useViewerDispatch } from '../state/viewer-state';
 import { useViewerData } from '../state/viewer-data';
 import { useViewerToast } from '../state/viewer-toast';
@@ -24,18 +26,24 @@ import { useViewerToast } from '../state/viewer-toast';
  * „Erstellen“ starts the run (the window closes at once, the progress shows), „Leer anfangen“
  * closes it for good.
  */
-export function CreatePrompt({
-  x,
-  w,
-  h,
-  templateId,
-}: {
+export function CreatePrompt(props: PromptProps) {
+  // The deck's board: files pasted or picked here lie down in its material.
+  return (
+    <DeckBoardOwner>
+      <Prompt {...props} />
+    </DeckBoardOwner>
+  );
+}
+
+interface PromptProps {
   x: number;
   w: number;
   h: number;
   /** The template picked to begin with: the one the deck is made from, if any. */
   templateId: string | null;
-}) {
+}
+
+function Prompt({ x, w, h, templateId }: PromptProps) {
   const { deck } = useViewerData();
   const toast = useViewerToast();
   const dispatch = useViewerDispatch();
@@ -117,6 +125,19 @@ export function CreatePrompt({
   };
 
   const toBoard = () => dispatch({ type: 'materialSet', open: true });
+  // Files pasted into the description or picked with the paper clip: into the material, which
+  // the AI reads – the line under the field counts them once they are up.
+  const { addFiles } = useBoard();
+  const picker = useRef<HTMLInputElement>(null);
+  const toMaterial = (list: File[]) => {
+    if (list.length === 0) return;
+    addFiles(list, { x: 0, y: 0 });
+    toast(
+      list.length === 1
+        ? `„${list[0]?.name ?? 'Datei'}“ liegt im Material`
+        : `${list.length} Dateien liegen im Material`,
+    );
+  };
 
   // The slide itself is the window: its whole area, no card in it. Too small for everything, the
   // middle scrolls – the text never shrinks – and the actions stay bottom right.
@@ -181,6 +202,12 @@ export function CreatePrompt({
                 value={description}
                 onChange={(event) => change({ description: event.target.value })}
                 onKeyDown={onKeyDown}
+                onPaste={(event) => {
+                  const list = [...event.clipboardData.files];
+                  if (list.length === 0) return;
+                  event.preventDefault();
+                  toMaterial(list);
+                }}
                 maxLength={MAX_CREATION_PROMPT_LENGTH}
                 placeholder={
                   listening && voice.live
@@ -188,6 +215,26 @@ export function CreatePrompt({
                     : 'Worum geht es, für wen ist sie, was soll hängen bleiben?'
                 }
                 className="block h-full min-w-0 flex-1 resize-none self-stretch bg-transparent text-sm leading-5 text-fg outline-none placeholder:text-fg-subtle"
+              />
+              <input
+                ref={picker}
+                type="file"
+                multiple
+                hidden
+                tabIndex={-1}
+                aria-hidden
+                onChange={(event) => {
+                  const list = [...(event.target.files ?? [])];
+                  event.target.value = '';
+                  toMaterial(list);
+                }}
+              />
+              <IconButton
+                icon="attachFile"
+                label="Datei anhängen"
+                title="Dateien ins Material legen – oder direkt ins Textfeld einfügen"
+                size="compact"
+                onClick={() => picker.current?.click()}
               />
               {canSpeak && (
                 <IconButton

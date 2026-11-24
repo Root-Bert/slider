@@ -64,6 +64,7 @@ import { cloudAgentRoutes } from './routes/cloud-agents';
 import { senderRoutes } from './routes/sender';
 import { callRoutes } from './routes/calls';
 import { mailRoutes } from './routes/mail';
+import { attachmentRoutes } from './routes/attachments';
 import { todoRoutes } from './routes/todos';
 import { calendarRoutes } from './routes/calendars';
 import { draftsRoutes } from './routes/drafts';
@@ -194,6 +195,7 @@ export function createApp(appDeps: AppDeps) {
     .route('/', senderRoutes(deps))
     .route('/', callRoutes(deps, calls))
     .route('/', mailRoutes(deps))
+    .route('/', attachmentRoutes(deps))
     .route('/', todoRoutes(deps))
     .route('/', calendarRoutes(deps))
     .route('/', draftsRoutes(deps))

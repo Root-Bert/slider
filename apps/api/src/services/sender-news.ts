@@ -1,3 +1,4 @@
+import { withFileNames } from './attachments';
 import { and, desc, eq, gt, isNull, ne, notLike, or, sql } from 'drizzle-orm';
 import type {
   SenderChannel,
@@ -153,6 +154,7 @@ async function unreadChannelLines(
       const rows = await deps.db
         .select({
           text: senderMessages.text,
+          attachments: senderMessages.attachments,
           mail: senderMessages.mail,
           createdAt: senderMessages.createdAt,
           name: users.name,
@@ -189,9 +191,12 @@ async function unreadChannelLines(
         channel.id,
         rows.reverse().map((row) => ({
           who: row.agentId
-            ? `${channel.agent?.id === row.agentId ? channel.agent.title : 'Agent'} (Agent)`
+            ? `${channel.agents.find((agent) => agent.id === row.agentId)?.title ?? 'Agent'} (Agent)`
             : (row.name ?? 'Jemand, der nicht mehr da ist'),
-          text: row.mail?.subject ? `${row.mail.subject}: ${row.text}` : row.text,
+          text: withFileNames(
+            row.mail?.subject ? `${row.mail.subject}: ${row.text}` : row.text,
+            row.attachments,
+          ),
           at: row.createdAt,
           viaMail: Boolean(row.mail),
         })),

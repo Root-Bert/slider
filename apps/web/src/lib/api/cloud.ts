@@ -17,6 +17,7 @@ import {
   type CloudShare,
   type CloudShareInput,
   type CloudShareUpdate,
+  type CloudSummary,
   type CloudVersion,
   type Deck,
 } from '@slider/shared';
@@ -137,6 +138,25 @@ export const useCloudActivity = (workspaceId: string, areaId: string | null, ena
       ),
     enabled,
     refetchInterval: 30_000,
+  });
+
+/**
+ * „Seit deinem letzten Besuch“ on Cloud's start: slow (the AI), so asked only while the page is
+ * open and anew only when `stamp` changes (something came in, was read or happened to the files);
+ * meanwhile the last answer stays. Outside `['cloud', id]`: a file's change elsewhere is not news
+ * to ask the AI again for.
+ */
+export const useCloudSummary = (workspaceId: string, since: string | null, stamp: string | null) =>
+  useQuery({
+    queryKey: ['cloud-summary', workspaceId, since, stamp],
+    queryFn: () =>
+      api.get<CloudSummary>(
+        `${base(workspaceId)}/summary${queryOf({ since: since ?? undefined })}`,
+      ),
+    enabled: stamp !== null,
+    placeholderData: keepPreviousData,
+    staleTime: Infinity,
+    retry: false,
   });
 
 export const useCloudPeople = (workspaceId: string, enabled = true) =>

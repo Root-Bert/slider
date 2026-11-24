@@ -923,7 +923,7 @@ export function Editor({
         onSelectionMenu={setSelectionMenuAt}
         comments={comments}
         onDraftCancel={() => setDraft(null)}
-        onDraftSent={(body, anchor, toAi) => {
+        onDraftSent={(body, anchor, toAi, attachments) => {
           setDraft(null);
           setActive(
             comments.add(
@@ -931,6 +931,7 @@ export function Editor({
               written ? anchorToRaw(written.rendered, written.lines, anchor) : anchor,
               null,
               toAi,
+              attachments,
             ),
           );
         }}

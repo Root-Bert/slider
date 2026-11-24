@@ -1,7 +1,7 @@
 import { useState, type ReactNode } from 'react';
 import { NavLink, useNavigate, useSearchParams } from 'react-router';
 import type { SenderAgent, SenderArea, SenderPinKind } from '@slider/shared';
-import { AgentAvatar, AreaDot, useDeleteAgentAction } from '@/features/cloud';
+import { AgentFace, AreaDot, useDeleteAgentAction } from '@/features/cloud';
 import { canCreateDecks, WorkspaceMark } from '@/features/workspaces';
 import { Avatar, Button, cn, ContextMenu, Icon } from '@/ui';
 import { accentColor, onAccentClass } from '@/lib/accent';
@@ -162,15 +162,17 @@ function AgentRow({ agent }: { agent: SenderAgent }) {
       unread={agent.unread}
       pin={{ kind: pinKindOf(agent), id: agent.id, pinnedAt: agent.pinnedAt }}
       agent={agent}
-      mark={<AgentAvatar id={agent.id} size={18} className="rounded-mark" />}
-      after={
-        agent.running ? (
-          <span
-            role="img"
-            aria-label="arbeitet"
-            className="size-1.5 shrink-0 animate-pulse rounded-full bg-success"
-          />
-        ) : null
+      // Where it belongs at its corner and, at work, the light round it – as on Cloud's side bar.
+      mark={
+        <AgentFace
+          agent={agent}
+          size={18}
+          showArea
+          areas={ui.home?.areas}
+          workspace={ui.workspace}
+          working={agent.running}
+          className="rounded-mark"
+        />
       }
     />
   );

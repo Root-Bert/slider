@@ -1,5 +1,12 @@
-import type { Calendar, CalendarEvent, CalendarEventChange } from '@slider/shared';
-import { useEffect, useEffectEvent, useRef, useState, type ReactNode } from 'react';
+import type { Attachment, Calendar, CalendarEvent, CalendarEventChange } from '@slider/shared';
+import {
+  useEffect,
+  useEffectEvent,
+  useRef,
+  useState,
+  type ClipboardEvent,
+  type ReactNode,
+} from 'react';
 import { useSearchParams } from 'react-router';
 import {
   useCalendarEvents,
@@ -28,6 +35,12 @@ import {
   Toggle,
   cn,
 } from '@/ui';
+import {
+  AttachButton,
+  AttachmentChips,
+  SentAttachments,
+  useAttachments,
+} from '@/features/attachments';
 import { useCloud } from '../../hooks/useCloud';
 import { Picker } from '../todos/TodoList';
 import { at, clock, iso, midnight, plus } from './days';
@@ -215,9 +228,9 @@ function ShownEvent({
       event={found}
       calendars={calendars}
       onClose={onClose}
-      onChange={(change) =>
+      onChange={(change, files) =>
         update.mutate(
-          { id: found.id, change },
+          { id: found.id, change, ...(files && { files }) },
           {
             onSuccess: (event) => {
               if (event.id !== found.id) onMoved(event.id);
@@ -274,11 +287,19 @@ function NewEventForm({
     endDay: startMinutes + 60 >= 24 * 60 ? iso(plus(at(draft.day), 1)) : draft.day,
     endTime: hhmm(startMinutes + 60),
   });
+  // Files pasted into the notes or picked with the clip go on it when it is put in – not on a
+  // mail calendar's (those live at the provider).
+  const mailCalendar = !!editable.find((each) => each.id === fields.calendarId)?.mailAccountId;
+  const attach = useAttachments({
+    workspaceId: mailCalendar ? null : ui.workspace.id,
+    onError: (message) => ui.notify(message, 'danger'),
+  });
   const put = () => {
     const when = timing(fields);
     const title = fields.title.trim();
     if (!title) return ui.notify('Der Termin braucht einen Titel.', 'danger');
     if (!when) return ui.notify('Der Termin endet vor seinem Beginn.', 'danger');
+    if (attach.busy) return ui.notify('Die Dateien laden noch hoch.', 'danger');
     writeString(lastCalendarKey(ui.workspace.id), fields.calendarId);
     create.mutate(
       {
@@ -286,6 +307,7 @@ function NewEventForm({
         title,
         location: fields.location.trim(),
         notes: fields.notes,
+        ...(attach.enabled && attach.ids.length > 0 && { attachments: attach.ids }),
         ...when,
       },
       {
@@ -310,6 +332,17 @@ function NewEventForm({
         autoFocus
         onFields={setFields}
         onSubmit={put}
+        onPaste={attach.onPaste}
+        files={
+          attach.enabled && (
+            <>
+              <AttachmentChips files={attach} />
+              <div className="-ml-1.5 flex">
+                <AttachButton files={attach} />
+              </div>
+            </>
+          )
+        }
       />
       <Button icon="add" onClick={put} className="self-start">
         Termin anlegen
@@ -327,7 +360,7 @@ function EventForm({
   event: CalendarEvent;
   calendars: Calendar[];
   onClose: () => void;
-  onChange: (change: CalendarEventChange) => void;
+  onChange: (change: CalendarEventChange, files?: Attachment[]) => void;
 }) {
   const ui = useCloud();
   const remove = useDeleteEvent(ui.workspace.id);
@@ -341,6 +374,24 @@ function EventForm({
   }
   const calendar = calendars.find((each) => each.id === event.calendarId);
   const editable = calendars.filter((each) => each.canEdit);
+  // Files pasted into the notes or picked with the clip: up, they are on it at once. A mail
+  // calendar's events live at the provider – no files there.
+  const [deletingFile, setDeletingFile] = useState<Attachment | null>(null);
+  const attach = useAttachments({
+    workspaceId: event.canEdit && !calendar?.mailAccountId ? ui.workspace.id : null,
+    onError: (message) => ui.notify(message, 'danger'),
+  });
+  const setFiles = (files: Attachment[]) =>
+    onChange({ attachments: files.map((one) => one.id) }, files);
+  const upCount = attach.busy ? 0 : attach.ready.length;
+  useEffect(() => {
+    if (upCount === 0) return;
+    const files = [...(event.attachments ?? []), ...attach.ready];
+    attach.clear();
+    setFiles(files);
+    // Only once all are up; `event` is the one shown now.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [upCount]);
   /** Keeps what changed: text on leaving its field, the rest at once. */
   const keep = (next: Fields) => {
     setFields(next);
@@ -387,7 +438,38 @@ function EventForm({
         canEdit={event.canEdit}
         onFields={setFields}
         onKeep={keep}
+        onPaste={attach.onPaste}
+        files={
+          (event.attachments?.length || attach.enabled) && (
+            <>
+              <SentAttachments
+                attachments={event.attachments}
+                onDelete={attach.enabled ? setDeletingFile : undefined}
+              />
+              <AttachmentChips files={attach} />
+              {attach.enabled && (
+                <div className="-ml-1.5 flex">
+                  <AttachButton files={attach} />
+                </div>
+              )}
+            </>
+          )
+        }
       />
+      {deletingFile && (
+        <ConfirmDialog
+          title={`„${deletingFile.name}“ löschen?`}
+          description="Die Datei geht vom Termin und wird gelöscht."
+          confirmLabel="Löschen"
+          onClose={() => setDeletingFile(null)}
+          onConfirm={() => {
+            const gone = deletingFile;
+            setDeletingFile(null);
+            setFiles((event.attachments ?? []).filter((one) => one.id !== gone.id));
+            ui.notify(`„${gone.name}“ gelöscht`);
+          }}
+        />
+      )}
       {event.createdBy && (
         <p className="text-xs text-fg-faint">
           Angelegt von {event.createdBy.id === ui.userId ? 'dir' : event.createdBy.name}
@@ -473,6 +555,8 @@ function Fields({
   onFields,
   onKeep = onFields,
   onSubmit,
+  onPaste,
+  files,
 }: {
   fields: Fields;
   calendars: Calendar[];
@@ -484,6 +568,10 @@ function Fields({
   onKeep?: (fields: Fields) => void;
   /** Enter in the title: a new one is put in. */
   onSubmit?: () => void;
+  /** Files pasted into the notes. */
+  onPaste?: ((event: ClipboardEvent<HTMLTextAreaElement>) => void) | undefined;
+  /** Under the notes: its files and the clip. */
+  files?: ReactNode;
 }) {
   const set = (change: Partial<Fields>) => onKeep({ ...fields, ...change });
   // The panel takes the focus as it opens (`SidePanel`); a new one's title takes it after.
@@ -597,11 +685,13 @@ function Fields({
         readOnly={!canEdit}
         onChange={(event) => onFields({ ...fields, notes: event.target.value })}
         onBlur={() => onKeep(fields)}
+        onPaste={onPaste}
         maxHeight={480}
         placeholder={canEdit ? 'Notizen hinzufügen …' : 'Keine Notizen'}
         aria-label="Notizen"
         className="resize-none bg-transparent text-sm text-fg outline-none placeholder:text-fg-faint"
       />
+      {files && <div className="-mt-2 flex flex-col gap-1.5">{files}</div>}
     </>
   );
 }

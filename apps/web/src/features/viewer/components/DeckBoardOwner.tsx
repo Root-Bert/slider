@@ -26,6 +26,7 @@ export function DeckBoardOwner({ children }: { children: ReactNode }) {
     () => ({
       kind: 'deck',
       id: deck.id,
+      workspaceId: deck.workspaceId,
       canComment,
       canManage,
       viewer: viewer.author,
@@ -40,6 +41,7 @@ export function DeckBoardOwner({ children }: { children: ReactNode }) {
     }),
     [
       deck.id,
+      deck.workspaceId,
       deck.template,
       canComment,
       canManage,

@@ -1,6 +1,7 @@
 import {
   MAX_MATERIAL_CHAT_MESSAGES,
   MAX_MATERIAL_CHAT_TEXT,
+  type Attachment,
   type CloudChatEvent,
 } from '@slider/shared';
 import { useSyncExternalStore } from 'react';
@@ -36,8 +37,12 @@ const patch = (key: string, id: string, change: (entry: ChatEntry) => ChatEntry)
 /** The talk so far as the server takes it: the latest messages, within its limits. */
 function historyOf(entries: readonly ChatEntry[]) {
   const said = entries
-    .filter((entry) => entry.text.trim())
-    .map((entry) => ({ role: entry.role, text: entry.text.slice(0, MAX_MATERIAL_CHAT_TEXT) }));
+    .filter((entry) => entry.text.trim() || entry.attachments?.length)
+    .map((entry) => ({
+      role: entry.role,
+      text: entry.text.slice(0, MAX_MATERIAL_CHAT_TEXT),
+      ...(entry.attachments?.length ? { attachments: entry.attachments } : {}),
+    }));
   return said.slice(-MAX_MATERIAL_CHAT_MESSAGES);
 }
 
@@ -59,6 +64,8 @@ export function useAgentChat<Event extends { type: string }>(
     history: AgentChatHistory,
     onEvent: (event: CloudChatEvent | Event) => void,
     signal: AbortSignal,
+    /** The ids of the files put on it. */
+    attachments: string[],
   ) => Promise<void>,
   on: {
     changed: () => void;
@@ -70,11 +77,16 @@ export function useAgentChat<Event extends { type: string }>(
   const busy = entries.some((entry) => entry.state === 'answering');
   const filesChanged = on.changed;
 
-  const send = async (text: string): Promise<boolean> => {
+  const send = async (text: string, attachments: Attachment[] = []): Promise<boolean> => {
     const message = text.trim();
-    if (!message || busy) return false;
+    if ((!message && attachments.length === 0) || busy) return false;
     const before = current(key);
-    const asked: ChatEntry = { id: crypto.randomUUID(), role: 'user', text: message };
+    const asked: ChatEntry = {
+      id: crypto.randomUUID(),
+      role: 'user',
+      text: message,
+      ...(attachments.length ? { attachments } : {}),
+    };
     const answer: ChatEntry = {
       id: crypto.randomUUID(),
       role: 'assistant',
@@ -125,6 +137,7 @@ export function useAgentChat<Event extends { type: string }>(
             }));
         },
         controller.signal,
+        attachments.map((one) => one.id),
       );
     } catch (error) {
       if (!heard && error instanceof ApiError && error.status >= 400) {

@@ -60,7 +60,7 @@ import { areaTree, canHaveAreasUnder, isWorkspaceOwn } from '../lib/areas';
 import { useShownEvent } from './calendar/EventPanel';
 import { DROP_FAILED, droppedFiles } from '../lib/upload';
 import { areaColor } from './AreaDot';
-import { AgentAvatar } from './AgentAvatar';
+import { AgentFace } from './AgentFace';
 import { useDeleteAgentAction } from './AgentActions';
 import { AreaMark } from './AreaMark';
 import { useBarSearch } from '../hooks/useBarSearch';
@@ -92,7 +92,7 @@ const FOOT_BOX = 'h-[46px] px-2.5 py-1.5';
  * A row of the side bar as a place to drop onto: what is dragged inside the page goes to
  * `onNodes`, files from the desktop to `onFiles` (none: the row takes only the former).
  */
-function useRowDrop({
+export function useRowDrop({
   enabled = true,
   self,
   onNodes,
@@ -136,7 +136,7 @@ function useRowDrop({
 }
 
 /** Files dropped from the desktop go up into `target`; what cannot be read is said. */
-function useFilesInto() {
+export function useFilesInto() {
   const ui = useCloud();
   return (data: DataTransfer, target: CloudTarget) => {
     droppedFiles(data).then(
@@ -172,15 +172,18 @@ function NavRow({
   // „Neu“'s page stands over the page it was opened from (`?neu=`): that one is not where one is.
   const [params] = useSearchParams();
   const away = isNewKind(params.get('neu'));
+  // An area's agent or folder lies under its area: „Agenten“ is not where one is then.
+  const { barRow } = useCloud();
+  const elsewhere = away || (barRow !== null && barRow !== to);
   return (
     <NavLink
       to={to}
       end={end}
       title={folded && typeof children === 'string' ? children : undefined}
-      {...(away ? { 'aria-current': false as const } : {})}
+      {...(elsewhere ? { 'aria-current': false as const } : {})}
       className={(state) =>
         cn(
-          rowClass({ isActive: state.isActive && !away }),
+          rowClass({ isActive: barRow === to || (state.isActive && !elsewhere) }),
           folded && foldedRow,
           drop.over && overClass,
         )
@@ -336,14 +339,17 @@ function AreaRow({
   const toggles = open !== null && !folded;
   // The workspace's own row is where a new area is made: every area stands under it.
   const adds = area.root && !!ui.home?.canCreateAreas && !folded;
+  const areaTo = routes.cloudArea(ui.workspace.id, area.id);
   return (
     <div className="group/area relative flex shrink-0 flex-col">
       <NavLink
-        to={routes.cloudArea(ui.workspace.id, area.id)}
+        to={areaTo}
         title={folded ? area.name : undefined}
+        {...(ui.barRow && ui.barRow !== areaTo ? { 'aria-current': false as const } : {})}
         className={(state) =>
           cn(
-            rowClass(state),
+            // Its agents and folders, whose addresses are not under it, light it too.
+            rowClass({ isActive: ui.barRow ? ui.barRow === areaTo : state.isActive }),
             'h-8',
             folded && foldedRow,
             (toggles || adds) && 'pr-8',
@@ -437,7 +443,15 @@ function ChatRow({
   const mark = isMailChat(chat) ? (
     <Icon name="groups" size={18} />
   ) : 'title' in chat ? (
-    <AgentAvatar id={chat.id} size={18} className="rounded-mark" />
+    <AgentFace
+      agent={chat}
+      size={18}
+      showArea
+      areas={ui.home?.areas}
+      workspace={ui.workspace}
+      working={chat.running}
+      className="rounded-mark"
+    />
   ) : chat.person ? (
     <Avatar author={chat.person} size={18} />
   ) : (
@@ -483,8 +497,8 @@ function ChatRow({
 }
 
 /**
- * Cloud's start („Zuletzt“) as the bar's first button, beside „Neu“: the ink of the bar, full
- * where one is, a shade lighter from any other page.
+ * Cloud's start („Zuletzt“) as the bar's first button, beside „Neu“: the ink of the bar, the
+ * same from every page.
  */
 function HomeButton() {
   const ui = useCloud();
@@ -759,6 +773,29 @@ export function CloudSidebar({
               className="scrollbar-none flex shrink-0 flex-col gap-0.5 overflow-x-hidden overflow-y-auto"
               style={sizes.places === null ? undefined : { height: sizes.places }}
             >
+              {home?.ownFiles !== false && (
+                // Dropped on, it goes to one's own – as what comes in on „Dateien“'s „Alle“.
+                <NavRow
+                  to={routes.cloudFiles(workspace.id)}
+                  icon="folder"
+                  onNodes={(nodes) => ui.moveInto(nodes, OWN_FILES)}
+                  onFiles={(data) => filesInto(data, OWN_FILES)}
+                >
+                  Dateien
+                </NavRow>
+              )}
+              <NavRow to={routes.cloudAgents(workspace.id)} icon="autoAwesome">
+                Agenten
+              </NavRow>
+              <NavRow to={routes.cloudTodos(workspace.id)} icon="checklist" count={myTodos}>
+                Aufgaben
+              </NavRow>
+              {/* Files, agents and to-dos first – each an overview of one's own, the workspace's and
+                every area's –, then the places, set apart by a line. */}
+              {/* The same line as the handles' (`BarHandle`), only not dragged. */}
+              <div role="separator" className="mx-2 flex h-4 shrink-0 items-center">
+                <div className="h-px w-full bg-hairline-strong" />
+              </div>
               <NavRow to={routes.cloudConnections(workspace.id)} icon="link">
                 Verbindungen
               </NavRow>
@@ -802,29 +839,6 @@ export function CloudSidebar({
                   Gelöscht
                 </NavRow>
               )}
-              {/* Files, agents and to-dos, a section of their own under the places, set apart by a
-                line: each an overview of one's own, the workspace's and every area's. */}
-              {/* The same line as the handles' (`BarHandle`), only not dragged. */}
-              <div role="separator" className="mx-2 flex h-4 shrink-0 items-center">
-                <div className="h-px w-full bg-hairline-strong" />
-              </div>
-              {home?.ownFiles !== false && (
-                // Dropped on, it goes to one's own – as what comes in on „Dateien“'s „Alle“.
-                <NavRow
-                  to={routes.cloudFiles(workspace.id)}
-                  icon="folder"
-                  onNodes={(nodes) => ui.moveInto(nodes, OWN_FILES)}
-                  onFiles={(data) => filesInto(data, OWN_FILES)}
-                >
-                  Dateien
-                </NavRow>
-              )}
-              <NavRow to={routes.cloudAgents(workspace.id)} icon="autoAwesome">
-                Agenten
-              </NavRow>
-              <NavRow to={routes.cloudTodos(workspace.id)} icon="checklist" count={myTodos}>
-                Aufgaben
-              </NavRow>
               {home && home.pins.length > 0 && (
                 <>
                   <p

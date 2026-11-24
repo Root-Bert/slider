@@ -55,7 +55,9 @@ import { remeasureDeck } from './workspace-storage';
 import { blobKeys, fileUrl } from '../storage/blob-storage';
 import { deckBlobs, deleteBlobs } from './blob-deletions';
 import { toDeckSync } from './deck-sync';
+import { deleteAttachments } from './attachments';
 import { findFolder } from './folders';
+import { attachmentsOn } from './purge-attachments';
 import { isOpenComment } from './open-comments';
 import { assertDeckSlot, assertStorageFor } from './plans';
 import { rolesOf } from './workspaces/roles';
@@ -609,6 +611,9 @@ export async function createDeckFromFile(
 /** Deletes the deck with everything in it, files included (BER-121). */
 /** Deletes the deck and its files – with `condition`, only if that holds; `false` if not. */
 export async function deleteDeck(deps: AppDeps, deckId: string, condition?: SQL): Promise<boolean> {
+  // The files on its AI chats, gathered while the rows still point at them (a deck without a
+  // file in Cloud too; its file's own go with `purgeRow`).
+  const attached = await attachmentsOn(deps.db, { deckIds: [deckId] });
   const gone = await deps.db
     .delete(decks)
     .where(and(eq(decks.id, deckId), condition))
@@ -621,6 +626,7 @@ export async function deleteDeck(deps: AppDeps, deckId: string, condition?: SQL)
     if (node) await purgeRow(deps, node);
   }
   await deleteBlobs(deps, deckBlobs(blobKeys.deckPrefix(deckId)));
+  await deleteAttachments(deps, attached);
   return true;
 }
 

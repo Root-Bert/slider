@@ -11,7 +11,7 @@ import {
 import type { MenuAction, ShowToast } from '@/ui';
 import { DeleteDeckDialog } from '../components/DeleteDeckDialog';
 import { MoveDecksDialog } from '../components/MoveDecksDialog';
-import { failureMessage, movedMessage } from '../lib/bulk-messages';
+import { failureMessage, movedFailure } from '../lib/bulk-messages';
 import { bulkRerenderProgress } from '../lib/bulk-rerender';
 import { usePinnedDecks } from './usePinnedDecks';
 import { MAX_PINNED } from '../lib/pinned-decks';
@@ -214,10 +214,10 @@ export function useBulkDeckActions(
       decks={moving}
       workspaceId={moving[0]!.workspaceId}
       onClose={() => setMoving(null)}
-      onMoved={(result, placeName) => {
+      onMoved={(result) => {
         setMoving(null);
-        const message = movedMessage(result, placeName);
-        onNotify(message.text, message.tone);
+        const failure = movedFailure(result);
+        if (failure) onNotify(failure, 'danger');
         onDone();
       }}
     />

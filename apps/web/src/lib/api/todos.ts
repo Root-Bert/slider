@@ -1,6 +1,15 @@
-import type { Todo, TodoChange, TodoInput } from '@slider/shared';
+import type {
+  Attachment,
+  MilestoneChange,
+  MilestoneInput,
+  Todo,
+  TodoChange,
+  TodoInput,
+  TodoMilestone,
+} from '@slider/shared';
 import { useMutation, useQuery, useQueryClient, type QueryClient } from '@tanstack/react-query';
 import { api } from '../api-client';
+import { cloudAgentKeys } from './cloud-agents';
 
 /** To-dos (`services/todos.ts`): the overview (one's own and the areas' one sees), an area's. */
 export const todoKeys = {
@@ -52,18 +61,33 @@ export function useCreateTodo(workspaceId: string) {
 export function useUpdateTodo(workspaceId: string) {
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: ({ id, change }: { id: string; change: TodoChange }) =>
-      api.patch<Todo>(`/todos/${id}`, change),
-    onMutate: ({ id, change }) =>
+    mutationFn: ({
+      id,
+      change,
+    }: {
+      id: string;
+      change: TodoChange;
+      /** With `change.attachments`: the files themselves, shown at once. */
+      files?: Attachment[];
+    }) => api.patch<Todo>(`/todos/${id}`, change),
+    onMutate: ({ id, change, files }) =>
       updateLists(queryClient, workspaceId, (list) =>
         list.map((each) => {
           if (each.id !== id) return each;
-          const { assigneeId, assigneeAgentId, ...rest } = change;
+          const { assigneeId, assigneeAgentId, milestoneId, attachments, ...rest } = change;
           return {
             ...each,
             ...rest,
+            ...(attachments && files ? { attachments: files } : {}),
             ...(assigneeId === null ? { assignee: null } : {}),
             ...(assigneeAgentId === null ? { assigneeAgent: null } : {}),
+            ...(milestoneId === null
+              ? { milestone: null }
+              : milestoneId
+                ? {
+                    milestone: milestoneOf(queryClient, workspaceId, milestoneId) ?? each.milestone,
+                  }
+                : {}),
           };
         }),
       ),
@@ -72,6 +96,31 @@ export function useUpdateTodo(workspaceId: string) {
         list.map((each) => (each.id === todo.id ? todo : each)),
       ),
     onSettled: settle(queryClient, workspaceId),
+  });
+}
+
+/** „Neuer Agent“: one of one's own named as the to-do, given it – not yet sent. */
+export function useNewTodoAgent(workspaceId: string) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (id: string) => api.post<Todo>(`/todos/${id}/agent`),
+    onSuccess: (todo) => {
+      updateLists(queryClient, workspaceId, (list) =>
+        list.map((each) => (each.id === todo.id ? todo : each)),
+      );
+      void queryClient.invalidateQueries({ queryKey: cloudAgentKeys.list(workspaceId) });
+    },
+    onSettled: settle(queryClient, workspaceId),
+  });
+}
+
+/** „Losschicken“: the agent given it starts on it – its face pulses once the list says so. */
+export function useSendTodoAgent(workspaceId: string) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (id: string) => api.post<Todo>(`/todos/${id}/send`),
+    onSuccess: () =>
+      void queryClient.invalidateQueries({ queryKey: cloudAgentKeys.list(workspaceId) }),
   });
 }
 
@@ -85,7 +134,106 @@ export function useDeleteTodo(workspaceId: string) {
   });
 }
 
-/** The live stream said to-dos changed: every list fetched anew. */
+/** The live stream said to-dos changed: every list fetched anew, their milestones too. */
 export function todosChanged(queryClient: QueryClient, workspaceId: string) {
   void queryClient.invalidateQueries({ queryKey: todoKeys.all(workspaceId) });
+  void queryClient.invalidateQueries({ queryKey: milestoneKeys.all(workspaceId) });
+}
+
+/**
+ * Milestones (`services/todos.ts`): one's own and the areas' one sees, or one area's – apart from
+ * the to-dos' lists, which `updateLists` changes as to-dos.
+ */
+export const milestoneKeys = {
+  all: (workspaceId: string) => ['todo-milestones', workspaceId] as const,
+  list: (workspaceId: string, areaId: string | null) =>
+    ['todo-milestones', workspaceId, areaId ?? 'all'] as const,
+};
+
+/** A milestone already in a list – a to-do given it shows its name at once. */
+function milestoneOf(queryClient: QueryClient, workspaceId: string, id: string) {
+  for (const [, list] of queryClient.getQueriesData<TodoMilestone[]>({
+    queryKey: milestoneKeys.all(workspaceId),
+  })) {
+    const found = list?.find((one) => one.id === id);
+    if (found) return { id: found.id, name: found.name, dueOn: found.dueOn };
+  }
+  return undefined;
+}
+
+export function useMilestones(workspaceId: string, areaId: string | null = null) {
+  return useQuery({
+    queryKey: milestoneKeys.list(workspaceId, areaId),
+    queryFn: () =>
+      api.get<TodoMilestone[]>(
+        `/workspaces/${workspaceId}/todo-milestones${areaId ? `?area=${encodeURIComponent(areaId)}` : ''}`,
+      ),
+    staleTime: 30_000,
+  });
+}
+
+function updateMilestones(
+  queryClient: QueryClient,
+  workspaceId: string,
+  change: (list: TodoMilestone[]) => TodoMilestone[],
+) {
+  queryClient.setQueriesData<TodoMilestone[]>(
+    { queryKey: milestoneKeys.all(workspaceId) },
+    (list) => (list ? change(list) : list),
+  );
+}
+
+const settleMilestones = (queryClient: QueryClient, workspaceId: string) => () => {
+  void queryClient.invalidateQueries({ queryKey: milestoneKeys.all(workspaceId) });
+  // Their to-dos carry name and date.
+  void queryClient.invalidateQueries({ queryKey: todoKeys.all(workspaceId) });
+};
+
+export function useCreateMilestone(workspaceId: string) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (input: MilestoneInput) =>
+      api.post<TodoMilestone>(`/workspaces/${workspaceId}/todo-milestones`, input),
+    onSuccess: (milestone) =>
+      updateMilestones(queryClient, workspaceId, (list) =>
+        list.some((each) => each.id === milestone.id) ? list : [...list, milestone],
+      ),
+    onSettled: settleMilestones(queryClient, workspaceId),
+  });
+}
+
+/** Renamed or moved to another day – at once, on the timeline and on its to-dos. */
+export function useUpdateMilestone(workspaceId: string) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({ id, change }: { id: string; change: MilestoneChange }) =>
+      api.patch<TodoMilestone>(`/todo-milestones/${id}`, change),
+    onMutate: ({ id, change }) => {
+      updateMilestones(queryClient, workspaceId, (list) =>
+        list.map((each) => (each.id === id ? { ...each, ...change } : each)),
+      );
+      updateLists(queryClient, workspaceId, (list) =>
+        list.map((each) =>
+          each.milestone?.id === id
+            ? { ...each, milestone: { ...each.milestone, ...change } }
+            : each,
+        ),
+      );
+    },
+    onSettled: settleMilestones(queryClient, workspaceId),
+  });
+}
+
+export function useDeleteMilestone(workspaceId: string) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (id: string) => api.delete(`/todo-milestones/${id}`),
+    onMutate: (id) => {
+      updateMilestones(queryClient, workspaceId, (list) => list.filter((each) => each.id !== id));
+      updateLists(queryClient, workspaceId, (list) =>
+        list.map((each) => (each.milestone?.id === id ? { ...each, milestone: null } : each)),
+      );
+    },
+    onSettled: settleMilestones(queryClient, workspaceId),
+  });
 }

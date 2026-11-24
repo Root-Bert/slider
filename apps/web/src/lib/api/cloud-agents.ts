@@ -1,4 +1,5 @@
 import type {
+  Attachment,
   CloudAgentAuto,
   CloudAgentRepeatInput,
   CloudAgentDetail,
@@ -66,19 +67,34 @@ export function useCloudAgentFile(workspaceId: string, agentId: string, fileId: 
   });
 }
 
-/** A new agent with its order – one's own, or (`areaId`) an area's. */
+/** What one writes to an agent: words, and the files put on them. */
+export interface AgentInput {
+  text: string;
+  attachments?: Attachment[];
+}
+const inputBody = (input: string | AgentInput) =>
+  typeof input === 'string'
+    ? { text: input, attachments: [] }
+    : { text: input.text, attachments: (input.attachments ?? []).map((one) => one.id) };
+
+/**
+ * A new agent with its order, standing in an area (`areaId`) or in none – its owner's alone, or
+ * (`shared`) given to that area's people, in none the workspace's.
+ */
 export function useOrderCloudAgent(
   workspaceId: string,
   areaId: string | null = null,
   /** Ordered beside a mail (`MailAside`): the agent is told which one – by id, not its text. */
   mailThreadId?: string,
+  shared = false,
 ) {
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: (text: string) =>
+    mutationFn: (input: string | AgentInput) =>
       api.post<CloudAgentDetail>(`/workspaces/${workspaceId}/cloud/agents`, {
-        text,
+        ...inputBody(input),
         areaId,
+        shared,
         zone: ownZone(),
         mailThreadId,
       }),
@@ -100,6 +116,8 @@ export function useOrderCloudAgent(
                 id: agent.id,
                 title: agent.title,
                 owner: agent.owner,
+                areaId: agent.areaId,
+                shared: agent.shared,
                 running: agent.running,
                 unread: 0,
                 updatedAt: agent.updatedAt,
@@ -146,37 +164,26 @@ export function useMessageCloudAgent(workspaceId: string, agentId: string) {
   return useMutation({
     mutationFn: ({
       text,
+      attachments = [],
       chatId,
       mailThreadId,
     }: {
       text: string;
+      /** Files put on it: the agent reads them. */
+      attachments?: Attachment[];
       chatId: string;
       /** Written beside a mail: the agent is told which one, as with the order. */
       mailThreadId?: string;
     }) =>
       api.post<CloudAgentDetail>(`/cloud/agents/${agentId}/messages`, {
         text,
+        attachments: attachments.map((one) => one.id),
         chatId,
         zone: ownZone(),
         mailThreadId,
       }),
     onMutate: () => markRunning(queryClient, workspaceId, agentId),
     onSuccess: (agent) => queryClient.setQueryData(cloudAgentKeys.one(workspaceId, agentId), agent),
-    onError: () => unmarkRunning(queryClient, workspaceId, agentId),
-  });
-}
-
-/** A further chat in the agent, beside the others – it starts with its first message. */
-export function useOpenCloudAgentChat(workspaceId: string, agentId: string) {
-  const queryClient = useQueryClient();
-  return useMutation({
-    mutationFn: (text: string) =>
-      api.post<{ chatId: string; agent: CloudAgentDetail }>(`/cloud/agents/${agentId}/chats`, {
-        text,
-      }),
-    onMutate: () => markRunning(queryClient, workspaceId, agentId),
-    onSuccess: ({ agent }) =>
-      queryClient.setQueryData(cloudAgentKeys.one(workspaceId, agentId), agent),
     onError: () => unmarkRunning(queryClient, workspaceId, agentId),
   });
 }

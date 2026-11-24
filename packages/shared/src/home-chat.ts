@@ -9,7 +9,11 @@ import { cloudChatInputSchema, type CloudChatEvent } from './cloud-chat';
  * chat lives in the page: each message brings the talk so far.
  */
 
-export const homeChatInputSchema = cloudChatInputSchema.pick({ text: true, history: true });
+export const homeChatInputSchema = cloudChatInputSchema.pick({
+  text: true,
+  attachments: true,
+  history: true,
+});
 export type HomeChatInput = z.input<typeof homeChatInputSchema>;
 
 /**

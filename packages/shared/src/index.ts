@@ -51,3 +51,4 @@ export * from './calls';
 export * from './mail';
 export * from './todos';
 export * from './calendar';
+export * from './attachments';

@@ -2,6 +2,7 @@ import { Hono } from 'hono';
 import { streamSSE } from 'hono/streaming';
 import { z } from 'zod';
 import {
+  senderAddAgentSchema,
   senderCreateChannelSchema,
   senderCreateDirectSchema,
   senderCreateGroupSchema,
@@ -11,6 +12,7 @@ import {
   senderReadSchema,
   senderUpdateChannelSchema,
   type AccountAuthor,
+  senderFilePlaceSchema,
 } from '@slider/shared';
 import { requireOwner } from '../auth/access';
 import { resolveViewer, viewerMiddleware, type ViewerEnv } from '../auth/viewer';
@@ -18,6 +20,7 @@ import type { AppDeps } from '../deps';
 import { ApiError } from '../http/errors';
 import { readJson } from '../http/validate';
 import {
+  addChannelAgent,
   addToGroup,
   createChannel,
   createGroup,
@@ -28,13 +31,16 @@ import {
   listMessages,
   openDirect,
   postMessage,
+  removeChannelAgent,
   readChannel,
   seesSender,
   senderHome,
   senderLive,
   typingIn,
   updateChannel,
+  seenChannel,
 } from '../services/sender';
+import { fileSenderFile, folderFilings, listSenderFiles } from '../services/sender-files';
 import { senderSummary, senderUnread } from '../services/sender-news';
 import { pinSender } from '../services/sender-pins';
 
@@ -87,12 +93,38 @@ export function senderRoutes(deps: AppDeps) {
       return c.json(await listMessages(deps, me(c).id, c.req.param('channelId'), before));
     })
     .post('/sender/channels/:channelId/messages', viewer, async (c) => {
-      const { text } = await readJson(c, senderPostSchema);
+      const { text, attachments } = await readJson(c, senderPostSchema);
       return c.json(
-        await postMessage(deps, me(c).id, c.req.param('channelId'), text, c.var.viewer),
+        await postMessage(
+          deps,
+          me(c).id,
+          c.req.param('channelId'),
+          text,
+          c.var.viewer,
+          attachments,
+        ),
         201,
       );
     })
+    /** A conversation's „Dateien“, newest first, with where each lies in Cloud. */
+    .get('/sender/channels/:channelId/files', viewer, async (c) => {
+      const row = await seenChannel(deps, me(c).id, c.req.param('channelId'));
+      return c.json(await listSenderFiles(deps, me(c).id, row));
+    })
+    /** „Verschieben“ / „Ablegen“: a chat's file to a place, or where the AI would put it. */
+    .post('/sender/files/:attachmentId/place', viewer, async (c) => {
+      const input = await readJson(c, senderFilePlaceSchema);
+      const userId = me(c).id;
+      return c.json(
+        await fileSenderFile(deps, userId, c.req.param('attachmentId'), input, (channelId) =>
+          seenChannel(deps, userId, channelId),
+        ),
+      );
+    })
+    /** A Cloud „Chat-Dateien“ folder's files with where the AI would put each. */
+    .get('/cloud/folders/:folderId/filing', viewer, async (c) =>
+      c.json(await folderFilings(deps, me(c).id, c.req.param('folderId'))),
+    )
     .patch('/sender/channels/:channelId', viewer, async (c) => {
       const input = await readJson(c, senderUpdateChannelSchema);
       return c.json(await updateChannel(deps, me(c).id, c.req.param('channelId'), input));
@@ -101,6 +133,16 @@ export function senderRoutes(deps: AppDeps) {
       await deleteChannel(deps, me(c).id, c.req.param('channelId'));
       return c.body(null, 204);
     })
+    .post('/sender/channels/:channelId/agents', viewer, async (c) => {
+      const { agentId } = await readJson(c, senderAddAgentSchema);
+      me(c);
+      return c.json(await addChannelAgent(deps, c.var.viewer, c.req.param('channelId'), agentId));
+    })
+    .delete('/sender/channels/:channelId/agents/:agentId', viewer, async (c) =>
+      c.json(
+        await removeChannelAgent(deps, me(c).id, c.req.param('channelId'), c.req.param('agentId')),
+      ),
+    )
     .post('/sender/channels/:channelId/members', viewer, async (c) => {
       const { userIds } = await readJson(c, addSchema);
       return c.json(await addToGroup(deps, me(c).id, c.req.param('channelId'), userIds));

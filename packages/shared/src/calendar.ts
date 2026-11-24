@@ -6,6 +6,7 @@
  * Events are seen by whoever sees the calendar and changed by whoever may edit there.
  */
 import { z } from 'zod';
+import { MAX_ATTACHMENTS, type Attachment } from './attachments';
 import { cloudAreaColorSchema } from './cloud';
 import type { Author } from './model';
 
@@ -81,6 +82,8 @@ export interface CalendarEvent {
   end: string;
   canEdit: boolean;
   createdBy: Author | null;
+  /** Files put on it – Slider's own calendars only (a mail calendar's live at its provider). */
+  attachments?: Attachment[];
 }
 
 export const MAX_CALENDAR_NAME = 80;
@@ -139,12 +142,20 @@ export const calendarEventInputSchema = z
     ...eventFields,
     location: eventFields.location.optional(),
     notes: eventFields.notes.optional(),
+    /** Files up already (`/attachments`), waiting as the caller's. */
+    attachments: z.array(z.string().min(1).max(100)).max(MAX_ATTACHMENTS).optional(),
   })
   .refine(fits, { message: 'Der Termin endet vor seinem Beginn.' });
 export type CalendarEventInput = z.infer<typeof calendarEventInputSchema>;
 
 /** A change: any field; `calendarId` moves it to another calendar one may edit. */
-export const calendarEventChangeSchema = z.object(eventFields).partial();
+export const calendarEventChangeSchema = z
+  .object({
+    ...eventFields,
+    /** Its files as they shall be: the ones kept, new ones up already; the rest is deleted. */
+    attachments: z.array(z.string().min(1).max(100)).max(MAX_ATTACHMENTS),
+  })
+  .partial();
 export type CalendarEventChange = z.infer<typeof calendarEventChangeSchema>;
 
 /** What the AI's overview beside the calendar is asked about: the calendars hidden in view. */

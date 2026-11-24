@@ -1,6 +1,7 @@
 import {
   aiAuthor,
   movedAnchor,
+  type Attachment,
   type Author,
   type WriterAiProposal,
   type WriterAnchor,
@@ -134,6 +135,8 @@ export function useDocumentComments(documentId: string, me: Author, notify: Show
       parentId: string | null,
       /** Sent and handed to the AI in one (⌘↵). */
       toAi = false,
+      /** Files put on it, up already. */
+      attachments: Attachment[] = [],
     ) {
       const now = new Date().toISOString();
       const comment: WriterComment = {
@@ -142,6 +145,7 @@ export function useDocumentComments(documentId: string, me: Author, notify: Show
         parentId,
         author: me,
         body,
+        attachments,
         anchor,
         status: 'open',
         resolvedBy: null,
@@ -150,13 +154,16 @@ export function useDocumentComments(documentId: string, me: Author, notify: Show
         updatedAt: now,
       };
       change((list) => [...list, comment]);
-      createDocumentComment(documentId, { id: comment.id, parentId, body, anchor }).then(
-        (saved) => {
-          change((list) => list.map((each) => (each.id === saved.id ? saved : each)));
-          if (toAi) askAi(saved.id);
-        },
-        failed('Kommentar nicht gesendet'),
-      );
+      createDocumentComment(documentId, {
+        id: comment.id,
+        parentId,
+        body,
+        attachments: attachments.map((one) => one.id),
+        anchor,
+      }).then((saved) => {
+        change((list) => list.map((each) => (each.id === saved.id ? saved : each)));
+        if (toAi) askAi(saved.id);
+      }, failed('Kommentar nicht gesendet'));
       return comment.id;
     },
     /** One's own reaction (👍 / 👎 / egal), or `null` taking it back – at once, as on a slide. */

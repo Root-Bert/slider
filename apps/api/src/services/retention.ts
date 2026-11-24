@@ -12,6 +12,7 @@ import type { AppDeps } from '../deps';
 import { retryBlobDeletions } from './blob-deletions';
 import { sweepDowngrades } from './downgrade';
 import { sweepMailUploads } from './mail';
+import { sweepAttachments } from './attachments';
 import { sweepMailInsights } from './mail-insights';
 import { sweepMailLogos } from './mail-logos';
 import { sweepOldEditImages } from './old-edit-images';
@@ -95,6 +96,7 @@ export async function enforceRetention(deps: AppDeps): Promise<void> {
     sweepDeckTrash,
     sweepMailInsights,
     sweepMailUploads,
+    sweepAttachments,
     sweepMailLogos,
     // Not a deletion deadline, but the same hourly rhythm: paid workspaces without payment.
     sweepDowngrades,

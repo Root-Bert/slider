@@ -167,7 +167,7 @@ export function SelectionBar({
             </div>
           ))}
           <div className="flex shrink-0" data-measure="more">
-            <IconButton icon="moreHoriz" label="Weitere Aktionen" size="sm" />
+            <IconButton icon="moreVert" label="Weitere Aktionen" size="sm" />
           </div>
         </div>
       </div>

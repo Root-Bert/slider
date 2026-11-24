@@ -1,5 +1,11 @@
 import { IMAGE_PROMPT_MAX, type EditableElement } from '@slider/shared';
 import { useEffect, useRef, useState } from 'react';
+import {
+  AttachButton,
+  AttachmentChips,
+  useAttachments,
+  type Attachments,
+} from '@/features/attachments';
 import { useGenerateEditImage } from '@/lib/api';
 import { AutosizeTextarea, Button } from '@/ui';
 import { useViewerData } from '../../state/viewer-data';
@@ -26,6 +32,12 @@ export function GenerateImage({
   const { deck } = useViewerData();
   const toast = useViewerToast();
   const generate = useGenerateEditImage(deck.id);
+  // Pictures it goes after – only where the workspace's image model takes them.
+  const references = useAttachments({
+    workspaceId: editing.state?.imageReferences ? deck.workspaceId : null,
+    accept: 'pictures',
+    onError: (message) => toast(message, 'danger'),
+  });
   const [typed, setPrompt] = useState(initialPrompt);
   const prompt = given ?? typed;
   const { w, h } = element.bbox;
@@ -33,8 +45,14 @@ export function GenerateImage({
 
   const submit = async (text: string) => {
     if (generate.isPending) return;
+    const given = references.ids;
     try {
-      const image = await generate.mutateAsync({ prompt: text, aspect });
+      const image = await generate.mutateAsync({
+        prompt: text,
+        aspect,
+        ...(given.length > 0 && { references: given }),
+      });
+      references.clear();
       await editing.apply([
         { type: 'replaceImage', elementId: element.id, imageId: image.imageId },
       ]);
@@ -49,6 +67,7 @@ export function GenerateImage({
       onPrompt={setPrompt}
       pending={generate.isPending}
       onSubmit={(text) => void submit(text)}
+      files={references}
     />
   );
 }
@@ -62,19 +81,23 @@ export function ImagePrompt({
   onPrompt,
   pending,
   onSubmit,
+  files,
 }: {
   prompt: string;
   onPrompt: (prompt: string) => void;
   pending: boolean;
   onSubmit: (prompt: string) => void;
+  /** Pictures to go after (`imageReferences`): pasted into the description, or by the clip. */
+  files?: Attachments;
 }) {
   const field = useRef<HTMLTextAreaElement>(null);
   useEffect(() => {
     const end = field.current?.value.length ?? 0;
     field.current?.setSelectionRange(end, end);
   }, []);
+  const busy = pending || !!files?.busy;
   const submit = () => {
-    if (prompt.trim() && !pending) onSubmit(prompt.trim());
+    if (prompt.trim() && !busy) onSubmit(prompt.trim());
   };
   return (
     <div className="flex flex-col gap-2">
@@ -88,6 +111,7 @@ export function ImagePrompt({
           value={prompt}
           disabled={pending}
           onChange={(event) => onPrompt(event.target.value)}
+          onPaste={files?.onPaste}
           onKeyDown={(event) => {
             // ↵ generates, ⇧↵ is a new line – as in the comments.
             if (event.key === 'Enter' && !event.shiftKey && !event.nativeEvent.isComposing) {
@@ -97,13 +121,21 @@ export function ImagePrompt({
           }}
           className="text-xs leading-5 text-fg"
         />
+        {files?.enabled && (
+          <div className="-mr-1.5 -mb-1 flex items-end gap-1">
+            <AttachmentChips files={files} className="min-w-0 flex-1" />
+            <span className="ml-auto">
+              <AttachButton files={files} disabled={pending} />
+            </span>
+          </div>
+        )}
       </div>
       <Button
         size="sm"
         variant="primary"
         icon="autoAwesome"
         loading={pending}
-        disabled={!prompt.trim()}
+        disabled={!prompt.trim() || !!files?.busy}
         onClick={submit}
       >
         {pending ? 'Wird erzeugt …' : 'Erzeugen'}

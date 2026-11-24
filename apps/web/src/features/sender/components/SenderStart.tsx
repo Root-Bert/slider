@@ -1,8 +1,14 @@
+import type { ReactNode } from 'react';
 import { Link } from 'react-router';
-import type { SenderSummary, SenderSummaryPart, SenderUnreadItem } from '@slider/shared';
+import type {
+  CloudSummary,
+  CloudSummaryPart,
+  SenderSummaryPart,
+  SenderUnreadItem,
+} from '@slider/shared';
 import { useMailThreads } from '@/lib/api';
 import { formatRelativeTime } from '@/lib/format';
-import { Icon, ListRow } from '@/ui';
+import { cn, Icon, ListRow, Spinner } from '@/ui';
 import { useSender } from '../hooks/useSender';
 import { mailGroupsOf } from '../lib/mail';
 import { dayOf, timeOf } from '../lib/time';
@@ -118,16 +124,69 @@ export function Failed({ message, onRetry }: { message: string; onRetry: () => v
   );
 }
 
-export function SummaryBody({
+/** A part of a summary that is not a conversation's: what happened to a file (Cloud's start). */
+export type FileSummaryPart = Extract<CloudSummaryPart, { kind: 'file' }>;
+
+/**
+ * „Seit deinem letzten Besuch“: the AI's summary in its glass panel – Sender's start and Cloud's
+ * alike. Cloud's also has parts about files; it says how they open (`filePart`).
+ */
+export function SummaryAside({
+  summary,
+  pending,
+  fetching,
+  error,
+  onRetry,
+  filePart,
+  sinceLabel = 'Ungelesen seit',
+  className,
+}: {
+  summary: CloudSummary | undefined;
+  pending: boolean;
+  fetching: boolean;
+  error: string | null;
+  onRetry: () => void;
+  filePart?: (part: FileSummaryPart) => ReactNode;
+  sinceLabel?: string;
+  className?: string;
+}) {
+  return (
+    <aside
+      aria-labelledby="summary-since"
+      className={cn('glass flex flex-col gap-2 rounded-panel p-4', className)}
+    >
+      <div className="flex items-center gap-2 pb-1">
+        <h2 id="summary-since" className="min-w-0 flex-1 text-base font-semibold text-fg">
+          Seit deinem letzten Besuch
+        </h2>
+        {fetching && <Spinner size={16} label="Die KI fasst zusammen" />}
+      </div>
+      <SummaryBody
+        summary={summary}
+        pending={pending}
+        error={error}
+        onRetry={onRetry}
+        filePart={filePart}
+        sinceLabel={sinceLabel}
+      />
+    </aside>
+  );
+}
+
+function SummaryBody({
   summary,
   pending,
   error,
   onRetry,
+  filePart,
+  sinceLabel,
 }: {
-  summary: SenderSummary | undefined;
+  summary: CloudSummary | undefined;
   pending: boolean;
   error: string | null;
   onRetry: () => void;
+  filePart?: (part: FileSummaryPart) => ReactNode;
+  sinceLabel: string;
 }) {
   if (error) return <Failed message={error} onRetry={onRetry} />;
   if (pending || !summary) {
@@ -155,15 +214,21 @@ export function SummaryBody({
     <>
       {summary.since && (
         <p className="-mt-2 text-xs text-fg-subtle">
-          Ungelesen seit{' '}
+          {sinceLabel}{' '}
           {dayOf(summary.since).replace(/^(Heute|Gestern)$/, (day) => day.toLowerCase())},{' '}
           {timeOf(summary.since)}
         </p>
       )}
       <ul className="flex flex-col gap-3 pt-1">
-        {summary.parts.map((part) => (
-          <SummaryPart key={`${part.kind}:${part.id}`} part={part} />
-        ))}
+        {summary.parts.map((part, index) =>
+          part.kind === 'file' ? (
+            <li key={`file:${part.id ?? index}`} className="flex gap-2.5">
+              {filePart?.(part)}
+            </li>
+          ) : (
+            <SummaryPart key={`${part.kind}:${part.id}`} part={part} />
+          ),
+        )}
       </ul>
     </>
   );

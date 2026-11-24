@@ -19,6 +19,8 @@ import {
   type CloudScope,
 } from '@slider/shared';
 import type { Executor } from '../../db/client';
+import { deleteAttachments } from '../attachments';
+import { attachmentsOn } from '../purge-attachments';
 import {
   cloudAgentFiles,
   cloudAgents,
@@ -484,10 +486,14 @@ async function listRecent(deps: CloudDeps, ctx: CloudCtx): Promise<CloudNode[]> 
     .sort((a, b) => (at.get(b.id) ?? 0) - (at.get(a.id) ?? 0))
     .slice(0, RECENT_LIMIT);
   const seen = await withAccess(deps, ctx, sorted);
-  return toNodeDtos(deps, ctx, seen.rows, {
+  const nodes = await toNodeDtos(deps, ctx, seen.rows, {
     access: (row) => seen.access.get(row.id) ?? 'view',
     location: true,
   });
+  return nodes.map((node) => ({
+    ...node,
+    recentAt: new Date(at.get(node.id) ?? Date.parse(node.updatedAt)).toISOString(),
+  }));
 }
 
 /**
@@ -1086,6 +1092,8 @@ export async function purgeRow(
     node.workspaceId,
     files.map((file) => file.id),
   );
+  // The files on their comments and AI chats: nothing points at them once the rows are gone.
+  const attached = await attachmentsOn(deps.db, { nodeIds: files.map((file) => file.id) });
   // A presentation is its file: gone for good here, it is gone in Slider.
   const gone: string[] = [];
   for (let at = 0; at < files.length; at += 500) {
@@ -1103,6 +1111,7 @@ export async function purgeRow(
   await deps.db.delete(cloudNodes).where(eq(cloudNodes.id, node.id));
   await deleteBlobs(deps, blobs);
   for (const id of gone) await deleteBlobs(deps, deckBlobs(blobKeys.deckPrefix(id)));
+  await deleteAttachments(deps, attached);
 }
 
 /** „Papierkorb leeren“: everything the caller may delete for good. */

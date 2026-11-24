@@ -55,7 +55,8 @@ function Panel({ workspace, onFilter, toast, onClose }: HomeChatProps & { onClos
   const queryClient = useQueryClient();
   const chat = useAgentChat<{ type: 'filter'; query: string }>(
     `home:${workspace.id}`,
-    (text, history, onEvent, signal) => chatHome(workspace.id, { text, history }, onEvent, signal),
+    (text, history, onEvent, signal, attachments) =>
+      chatHome(workspace.id, { text, attachments, history }, onEvent, signal),
     {
       changed: () => void queryClient.invalidateQueries({ queryKey: queryKeys.decks }),
       refused: (message) => toast(message, 'danger'),
@@ -68,6 +69,8 @@ function Panel({ workspace, onFilter, toast, onClose }: HomeChatProps & { onClos
     <ChatPanel
       title={aiNameOf(workspace.aiName)}
       chat={chat}
+      workspaceId={workspace.id}
+      keep={`home:${workspace.id}`}
       panel={{ 'data-cloud-panel': true }}
       intro={`${aiInSentence(workspace.aiName, true)} findet Präsentationen, zeigt sie in der Liste, benennt sie um, räumt sie in Ordner und legt neue an, sieht und ändert dabei nur, was du darfst.`}
       starters={STARTERS}

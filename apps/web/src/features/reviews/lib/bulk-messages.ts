@@ -10,13 +10,7 @@ export function failureMessage(result: BulkResult<unknown>, verb: string): strin
   return `${pluralize(result.failed.length, 'Präsentation konnte', 'Präsentationen konnten')} nicht ${verb} werden: ${first.message}`;
 }
 
-/** Toast text after a move: what went where, or what failed. */
-export function movedMessage(
-  result: BulkResult<unknown>,
-  placeName: string,
-): { text: string; tone?: 'danger' } {
-  const failure = failureMessage(result, 'verschoben');
-  if (failure) return { text: failure, tone: 'danger' };
-  const what = pluralize(result.done.length, 'Präsentation', 'Präsentationen');
-  return { text: `${what} nach „${placeName}“ verschoben` };
+/** After a move, only what failed – what went is seen going. */
+export function movedFailure(result: BulkResult<unknown>): string | null {
+  return failureMessage(result, 'verschoben');
 }

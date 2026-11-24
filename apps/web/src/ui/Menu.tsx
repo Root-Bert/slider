@@ -131,7 +131,7 @@ export function Menu({
       ) : (
         <IconButton
           ref={triggerRef}
-          icon={triggerIcon ?? 'moreHoriz'}
+          icon={triggerIcon ?? 'moreVert'}
           label={label}
           shape={triggerShape}
           size={triggerSize}

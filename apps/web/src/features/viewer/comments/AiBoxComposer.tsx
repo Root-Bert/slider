@@ -11,13 +11,15 @@ import { ringColor } from '@/lib/accent';
 import { useAiProposals, useCancelProposal } from '@/lib/api';
 import { isTypingTarget } from '@/lib/dom';
 import { typesCharacter } from '@/lib/keyboard';
-import { AutosizeTextarea, cn, IconButton, useFocusLoop, useIsNarrow } from '@/ui';
+import { AutosizeTextarea, cn, ErrorText, IconButton, useFocusLoop, useIsNarrow } from '@/ui';
 import { useEditing } from '../editing/editing-context';
 import { useRestoreFocus } from '../hooks/useRestoreFocus';
 import { useHoldUnsavedWork } from '../lib/unsaved-work';
 import { useViewerData } from '../state/viewer-data';
 import { useViewerDispatch, type Draft } from '../state/viewer-state';
 import { useViewerToast } from '../state/viewer-toast';
+import { AttachedImages, AttachImageButton } from '../media/AttachedImages';
+import { asUploads, useImageAttachments } from '../media/hooks/useImageAttachments';
 import { VoiceAvatar } from '../voice/VoiceBar';
 import { useVoice } from '../voice/voice-context';
 import { useHeardWords } from '../voice/hooks/useHeardWords';
@@ -46,17 +48,20 @@ export function AiBoxComposer({ draft, onSend }: { draft: Draft; onSend: SendAiB
   useFocusLoop(formRef);
   useRestoreFocus();
   const [body, setBody] = useState('');
+  // Pictures pasted or picked: they go along with the words (a screenshot of what is meant).
+  const images = useImageAttachments();
 
   // What the live stream hears from now on is the box's: taken into the field as it comes.
   useHeardWords(setBody);
 
   const text = body.trim();
+  const pictures = images.attachments;
   // Sent, dropped (Esc) or its request stopped: nothing more to send as it closes.
   const closed = useRef(false);
   const send = () => {
-    if (!text) return false;
+    if ((!text && pictures.length === 0) || images.busy) return false;
     closed.current = true;
-    onSend(draft, text.slice(0, MAX_COMMENT_BODY_LENGTH));
+    onSend(draft, text.slice(0, MAX_COMMENT_BODY_LENGTH), true, asUploads(pictures));
     return true;
   };
   const drop = () => {
@@ -65,16 +70,16 @@ export function AiBoxComposer({ draft, onSend }: { draft: Draft; onSend: SendAiB
   };
   // Something else took its place (another box or comment, a click elsewhere, the deck left): what
   // it holds goes to the AI all the same – its field is gone already.
-  const latest = useRef({ draft, text });
+  const latest = useRef({ draft, text, pictures });
   useEffect(() => {
-    latest.current = { draft, text };
+    latest.current = { draft, text, pictures };
   });
   useEffect(
     () => () => {
-      const { draft: last, text: words } = latest.current;
-      if (closed.current || !words) return;
+      const { draft: last, text: words, pictures: taken } = latest.current;
+      if (closed.current || (!words && taken.length === 0)) return;
       closed.current = true;
-      onSend(last, words.slice(0, MAX_COMMENT_BODY_LENGTH), false);
+      onSend(last, words.slice(0, MAX_COMMENT_BODY_LENGTH), false, asUploads(taken));
     },
     // Once, as it closes (`onSend` is made anew each render; the latest is used).
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -106,7 +111,7 @@ export function AiBoxComposer({ draft, onSend }: { draft: Draft; onSend: SendAiB
     drop();
   };
 
-  const held = text !== '';
+  const held = text !== '' || pictures.length > 0;
   useEffect(() => {
     dispatch({ type: 'draftHeld', held });
   }, [dispatch, held]);
@@ -209,6 +214,7 @@ export function AiBoxComposer({ draft, onSend }: { draft: Draft; onSend: SendAiB
           maxHeight={160}
           maxLength={MAX_COMMENT_BODY_LENGTH}
           value={body}
+          onPaste={images.onPaste}
           onChange={(event) => {
             setBody(event.target.value);
           }}
@@ -227,6 +233,12 @@ export function AiBoxComposer({ draft, onSend }: { draft: Draft; onSend: SendAiB
           }}
           className="min-w-0 flex-1 py-1.5 text-body leading-5 text-fg placeholder:text-fg-subtle"
         />
+        <AttachImageButton
+          onPick={(files) => void images.attach(files)}
+          busy={images.busy}
+          disabled={images.room === 0}
+          size="compact"
+        />
         {running && (
           <IconButton
             icon="stop"
@@ -243,9 +255,19 @@ export function AiBoxComposer({ draft, onSend }: { draft: Draft; onSend: SendAiB
           label={`An ${aiAuthor.name} senden`}
           title={`An ${aiAuthor.name} senden (↵)`}
           size="compact"
-          disabled={!text}
+          disabled={(!text && pictures.length === 0) || images.busy}
         />
       </div>
+      {(pictures.length > 0 || images.error) && (
+        <div className="glass-elevated relative mt-1 flex flex-col gap-1 rounded-panel p-1.5">
+          <AttachedImages attachments={pictures} onRemove={images.remove} />
+          {images.error && (
+            <ErrorText role="alert" size="xs">
+              {images.error}
+            </ErrorText>
+          )}
+        </div>
+      )}
     </form>
   );
 }

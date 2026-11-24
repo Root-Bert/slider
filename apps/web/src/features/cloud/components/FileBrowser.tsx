@@ -10,7 +10,7 @@ import {
 } from 'react';
 import { Link } from 'react-router';
 import { API_PREFIX, cloudAccessAtLeast, cloudPaths, type CloudNode } from '@slider/shared';
-import { selectableItemProps, type SelectableItems } from '@/lib/collection-selection';
+import { SELECT_ID, selectableItemProps, type SelectableItems } from '@/lib/collection-selection';
 import { formatDateTime, formatFileSize, formatRelativeTime, pluralize } from '@/lib/format';
 import { routes } from '@/lib/routes';
 import {
@@ -23,6 +23,7 @@ import {
   Menu,
   highlightedCardClass,
   highlightedRowClass,
+  SelectedMark,
   selectedRowClass,
   Tooltip,
 } from '@/ui';
@@ -53,10 +54,10 @@ interface BrowserProps {
   mode: BrowserMode;
   view: CloudView;
   selection: CloudItems;
-  /** Folders as cards above the files (a folder's own list); else they are rows like files. */
-  folderCards?: boolean;
   /** As rows, a line under a name – where the search found it in the file. */
   notes?: Readonly<Record<string, string>> | undefined;
+  /** As rows, more under a name – where a chat's file would rather lie, with „Verschieben“. */
+  aside?: ((node: CloudNode) => ReactNode) | undefined;
 }
 
 // ── One item, however it is drawn ───────────────────────────────────────────
@@ -80,6 +81,146 @@ export function fileClicks(ui: CloudUi, node: CloudNode, pick?: (id: string) => 
     },
     onDoubleClick: () => ui.open(node),
   };
+}
+
+/** Room around a dragged file's picture for its shadow (`--shadow-float`: 8 px down, 32 px blur). */
+const PICTURE_MARGIN = 40;
+/** How the others dragged along lie behind the one in hand: a small pile, turned a little. */
+const PILE = [
+  { turn: '-5deg', shift: '-6px 5px' },
+  { turn: '4deg', shift: '7px 8px' },
+] as const;
+
+/**
+ * What a dragged item is while it is away (`data-lifted` on its `li`, `useItem`): a file's
+ * picture or a folder leaves an empty frame behind; a row stays, faint.
+ */
+const LIFTED_AWAY = 'transition-opacity group-data-lifted:opacity-0';
+const LIFTED_FAINT = 'transition-opacity group-data-lifted:opacity-35';
+
+/** One item's picture, as wide as `width`, for the dragged picture. */
+function copyOf(paper: HTMLElement, width: number): HTMLElement {
+  const box = paper.getBoundingClientRect();
+  const copy = paper.cloneNode(true) as HTMLElement;
+  copy.removeAttribute('data-paper');
+  copy.removeAttribute('data-flown');
+  const kind = paper.dataset.paper;
+  const scale = kind === 'row' || box.width === 0 ? 1 : width / box.width;
+  Object.assign(copy.style, {
+    position: 'absolute',
+    inset: 'auto',
+    left: '0',
+    top: '0',
+    width: `${box.width * scale}px`,
+    height: `${box.height * scale}px`,
+    scale: '1',
+    viewTransitionName: 'none',
+  });
+  if (kind === 'card') {
+    // In hand it is the folder itself: its front with what peeks out of it and its name – not the
+    // back that fills the card like a box, nor the ring of a selected one. Its front solid, the
+    // glass has nothing behind it to blur; the shadow follows its shape.
+    copy.querySelector('[data-folder-back]')?.remove();
+    const flap = copy.querySelector<HTMLElement>('[data-flap-ground]');
+    if (flap)
+      flap.style.background = `color-mix(in srgb, ${flap.dataset.flapGround} 94%, transparent)`;
+    Object.assign(copy.style, {
+      boxShadow: 'none',
+      filter: 'drop-shadow(0 8px 14px rgb(0 0 0 / 0.18))',
+    });
+  } else if (kind === 'row') {
+    // A row's symbol and name, on a ground of their own – in the air there is no row around them.
+    Object.assign(copy.style, {
+      width: 'auto',
+      height: 'auto',
+      maxWidth: '320px',
+      padding: '8px 14px 8px 10px',
+      borderRadius: '12px',
+      background: 'var(--color-glass-solid)',
+      color: getComputedStyle(paper).color,
+      boxShadow: 'var(--shadow-float)',
+    });
+  } else if (paper instanceof HTMLImageElement) {
+    // A page has rounded corners only at its top (its foot is hidden in the frame), a picture none
+    // of its own (its frame rounds it): out of the frame, all of them rounded.
+    const frame = paper.closest<HTMLElement>('[data-flown]');
+    const own = getComputedStyle(paper).borderTopLeftRadius;
+    copy.style.borderRadius =
+      parseFloat(own) > 0 ? own : frame ? getComputedStyle(frame).borderTopLeftRadius : '0';
+  }
+  return copy;
+}
+
+/**
+ * What dragged items show under the pointer: copies of their pictures, out of sight – the one
+ * grabbed on top, two of the others turned behind it, and how many go, as the Finder does. Not
+ * the pictures themselves: Chrome paints all of the page within their box, and a document's page
+ * reaches down under the tile's name, which then hung in the picture too.
+ */
+function pictureOf(grabbed: HTMLElement, others: readonly HTMLElement[], count: number) {
+  const box = grabbed.getBoundingClientRect();
+  const width = box.width;
+  const pile = document.createElement('div');
+  const copies = [
+    ...others.slice(0, PILE.length).map((paper, at) => {
+      const copy = copyOf(paper, width);
+      const lie = PILE[at];
+      if (lie) Object.assign(copy.style, { rotate: lie.turn, translate: lie.shift });
+      return copy;
+    }),
+    copyOf(grabbed, width),
+  ];
+  // The furthest back first: the one grabbed lies on top.
+  pile.append(...copies.slice(0, -1).reverse(), ...copies.slice(-1));
+  pile.style.cssText = `position:relative;width:${width}px;height:${box.height}px`;
+  if (count > 1) {
+    const page = getComputedStyle(grabbed);
+    const badge = document.createElement('span');
+    badge.textContent = String(count);
+    badge.style.cssText = [
+      'position:absolute;top:-10px;right:-10px;min-width:26px;height:26px;padding:0 8px',
+      'box-sizing:border-box;border-radius:999px;text-align:center;line-height:26px',
+      `font:600 13px/26px ${page.fontFamily};font-variant-numeric:tabular-nums`,
+      `background:${page.getPropertyValue('--selection') || 'var(--color-focus)'}`,
+      `color:${page.getPropertyValue('--on-selection') || 'white'}`,
+      'box-shadow:0 2px 6px rgb(0 0 0 / 0.25)',
+    ].join(';');
+    pile.append(badge);
+  }
+  const element = document.createElement('div');
+  element.style.cssText = `position:fixed;top:0;left:-10000px;padding:${PICTURE_MARGIN}px;pointer-events:none`;
+  element.append(pile);
+  document.body.append(element);
+  const at = (pointer: number, start: number, size: number) =>
+    Math.min(Math.max(pointer - start, 0), size) + PICTURE_MARGIN;
+  return {
+    element,
+    x: (pointer: number) => at(pointer, box.left, box.width),
+    y: (pointer: number) => at(pointer, box.top, box.height),
+  };
+}
+
+/** The `li` of a listed item, by its id. */
+const itemOf = (id: string) => document.querySelector<HTMLElement>(`[${SELECT_ID}="${id}"]`);
+
+/**
+ * The dragged items go back into their frames: at once when the drag is given up (the browser
+ * has slid the picture back), a moment after a drop – they leave the list meanwhile
+ * (`leaveList`), as empty frames.
+ */
+function landWhenDone() {
+  const land = () => {
+    for (const item of document.querySelectorAll('[data-lifted]'))
+      item.removeAttribute('data-lifted');
+  };
+  const end = (event: Event) => {
+    window.removeEventListener('drop', end, true);
+    window.removeEventListener('dragend', end, true);
+    if (event.type === 'drop') setTimeout(land, 700);
+    else land();
+  };
+  window.addEventListener('drop', end, true);
+  window.addEventListener('dragend', end, true);
 }
 
 /** Everything a row, a tile and a folder card share: selecting, its menu, dragging, dropping. */
@@ -113,7 +254,32 @@ export function useItem(node: CloudNode, selection: CloudItems, nodes: readonly 
       // One of several picked: they all go; else just this one.
       const dragged = selected ? nodes.filter((each) => selection.selected.has(each.id)) : [node];
       ui.setDragged(dragged);
-      event.dataTransfer.effectAllowed = 'move';
+      // Only the files themselves are in hand, not their frames – grabbed where it was pressed,
+      // the others dragged along piled behind it.
+      const paper = event.currentTarget.querySelector<HTMLElement>('[data-paper]');
+      if (paper) {
+        const others = dragged.flatMap((each) => {
+          const other =
+            each.id === node.id
+              ? null
+              : itemOf(each.id)?.querySelector<HTMLElement>('[data-paper]');
+          return other ? [other] : [];
+        });
+        const picture = pictureOf(paper, others, dragged.length);
+        event.dataTransfer.setDragImage(
+          picture.element,
+          picture.x(event.clientX),
+          picture.y(event.clientY),
+        );
+        // After the browser has taken its picture – hidden at once, it would carry nothing.
+        setTimeout(() => {
+          picture.element.remove();
+          for (const each of dragged) itemOf(each.id)?.setAttribute('data-lifted', '');
+        });
+        landWhenDone();
+      }
+      // Moved within Cloud, pointed to from a chat's field (`useCloudDrop`).
+      event.dataTransfer.effectAllowed = 'linkMove';
       event.dataTransfer.setData('text/plain', node.name);
       carryNodes(event.dataTransfer, ui.workspace.id, dragged);
     },
@@ -309,7 +475,7 @@ function useFolderTint(node: CloudNode): string | null {
 }
 
 /**
- * The folder of the cards (`FolderCard`), small, for a row: its back – plain or in its colour
+ * The folder of the tiles (`FolderPicture`), small, for a row and beside a tile's name: its back – plain or in its colour
  * (its area's by default) –
  * its newest files peeking out and the frosted flap in front, which tips on the row's hover.
  */
@@ -513,7 +679,9 @@ export function Marks({ node }: { node: CloudNode }) {
 function ItemControls({ node, className }: { node: CloudNode; className?: string }) {
   const ui = useCloud();
   return (
-    <span className={cn('relative z-(--z-raised) flex items-center justify-end', className)}>
+    // `cn` does not merge: a tile's `absolute` would lose to `relative`, and the menu sat under
+    // the picture, cut off.
+    <span className={cn('z-(--z-raised) flex items-center justify-end', className ?? 'relative')}>
       {node.deleted && (
         <IconButton
           icon="history"
@@ -599,12 +767,14 @@ function FileRow({
   mode,
   selection,
   note,
+  aside,
 }: {
   node: CloudNode;
   nodes: readonly CloudNode[];
   mode: BrowserMode;
   selection: CloudItems;
   note?: string | undefined;
+  aside?: ReactNode;
 }) {
   const { selected, alone, over, props, menu } = useItem(node, selection, nodes);
   const when = node.deleted?.at ?? node.updatedAt;
@@ -619,18 +789,28 @@ function FileRow({
       )}
     >
       {/* As wide as its name, never wider than its column: a found line under it truncates. */}
-      <div data-grip className="flex max-w-full min-w-0 items-center gap-3.5 justify-self-start">
+      <div
+        data-grip
+        data-paper="row"
+        className={cn(
+          'flex max-w-full min-w-0 items-center gap-3.5 justify-self-start',
+          LIFTED_FAINT,
+        )}
+      >
         <RowIcon node={node} />
-        {note ? (
+        {note || aside ? (
           <span className="flex min-w-0 flex-col">
             <NameLink
               node={node}
               pick={selection.pickOne}
               className="text-sm font-medium text-fg"
             />
-            <span className="truncate text-xs text-fg-subtle" title={note}>
-              {note}
-            </span>
+            {note && (
+              <span className="truncate text-xs text-fg-subtle" title={note}>
+                {note}
+              </span>
+            )}
+            {aside}
           </span>
         ) : (
           <NameLink node={node} pick={selection.pickOne} className="text-sm font-medium text-fg" />
@@ -684,7 +864,7 @@ function Sheet({
     <span
       data-peek={file.id}
       className={cn(
-        'absolute h-24 overflow-hidden rounded-control-sm bg-surface-1 shadow-float ring-1 ring-black/10 transition-transform duration-300 ease-out motion-reduce:transition-none',
+        'absolute h-[72%] overflow-hidden rounded-control-sm bg-surface-1 shadow-float ring-1 ring-black/10 transition-transform duration-300 ease-out motion-reduce:transition-none',
         className,
       )}
     >
@@ -708,96 +888,63 @@ function Sheet({
 }
 
 /**
- * A folder as a folder: a round back – plain, or in the folder's colour (its area's by default) –
- * the newest files
- * peeking out, and a frosted
- * flap in front that blurs them – one guesses what is inside. On hover the flap tips forward and
- * the sheets rise and fan.
+ * A folder as a folder, as a tile's picture: a round back – plain, or in the folder's colour (its
+ * area's by default) – the newest files peeking out, and a frosted flap in front that blurs them –
+ * one guesses what is inside. On hover the flap tips forward and the sheets rise and fan; a file
+ * dragged over tips it further.
  */
-function FolderCard({
-  node,
-  nodes,
-  selection,
-}: {
-  node: CloudNode;
-  nodes: readonly CloudNode[];
-  selection: CloudItems;
-}) {
-  const { selected, alone, over, props, menu } = useItem(node, selection, nodes);
+function FolderPicture({ node, over }: { node: CloudNode; over: boolean }) {
   const peek = node.peek ?? [];
   const tint = useFolderTint(node);
   return (
-    <li
-      {...props}
-      className={cn(
-        // `isolate` + the layers' `-z-10`: they paint behind the name, whose link covers the card.
-        'group relative isolate flex h-[152px] flex-col justify-end rounded-panel p-4 [perspective:700px] has-[a:focus-visible]:ring-2 has-[a:focus-visible]:ring-focus',
-        selected && (alone ? highlightedCardClass : 'ring-2 ring-(--selection)!'),
-        over && 'ring-2 ring-focus!',
-      )}
+    <span
+      aria-hidden
+      // Behind the name (`-z-10` in the tile's `isolate`). The perspective stands on the flap's own
+      // parent – higher up it would not reach it, and the flap would only shrink instead of tipping.
+      className="pointer-events-none absolute inset-0 -z-10 [perspective-origin:50%_100%] [perspective:520px]"
+      style={tint ? ({ '--folder': tint } as CSSProperties) : undefined}
     >
       <span
-        aria-hidden
-        // The perspective stands on the flap's own parent – on the card it would not reach it,
-        // and the flap would only shrink instead of tipping towards one.
-        className="pointer-events-none absolute inset-0 -z-10 [perspective-origin:50%_100%] [perspective:520px]"
-        style={tint ? ({ '--folder': tint } as CSSProperties) : undefined}
+        data-folder-back
+        className={cn(
+          'absolute inset-0 rounded-panel',
+          tint ? 'bg-(--folder)' : 'bg-surface-2 inset-ring inset-ring-hairline',
+        )}
+      />
+      {peek
+        .slice(0, SHEETS.length)
+        .reverse()
+        .map((file, at) => (
+          <Sheet key={file.id} file={file} className={SHEETS[at] ?? SHEETS[0]} />
+        ))}
+      {/* The flap: frosted glass, hinged at the bottom, cut as a file's front. */}
+      <span
+        className={cn(
+          'absolute inset-x-0 bottom-0 h-[70%] origin-bottom transition-transform duration-300 ease-out group-hover:[transform:rotateX(-22deg)] motion-reduce:transition-none',
+          over && '[transform:rotateX(-32deg)]',
+        )}
       >
+        {/* Glass at the top – one guesses what is inside – denser towards the bottom. */}
         <span
-          className={cn(
-            'absolute inset-0 rounded-panel',
-            tint ? 'bg-(--folder)' : 'bg-surface-2 inset-ring inset-ring-hairline',
-          )}
+          data-flap-ground={FLAP_GROUND(!!tint)}
+          style={{
+            clipPath: CARD_FLAP,
+            background: `linear-gradient(to bottom, color-mix(in srgb, ${FLAP_GROUND(!!tint)} 30%, transparent) 0%, color-mix(in srgb, ${FLAP_GROUND(!!tint)} 86%, transparent) 58%)`,
+          }}
+          className="absolute inset-0 backdrop-blur-[10px] backdrop-brightness-75 backdrop-saturate-150"
         />
-        {peek
-          .slice(0, SHEETS.length)
-          .reverse()
-          .map((file, at) => (
-            <Sheet key={file.id} file={file} className={SHEETS[at] ?? SHEETS[0]} />
-          ))}
-        {/* The flap: frosted glass, hinged at the bottom, cut as a file's front. */}
-        <span
-          className={cn(
-            'absolute inset-x-0 bottom-0 h-[70%] origin-bottom transition-transform duration-300 ease-out group-hover:[transform:rotateX(-22deg)] motion-reduce:transition-none',
-            over && '[transform:rotateX(-32deg)]',
-          )}
-        >
-          {/* Glass at the top – one guesses what is inside – dense where the name stands, so
-              it reads over white sheets as over none. */}
-          <span
-            style={{
-              clipPath: CARD_FLAP,
-              background: `linear-gradient(to bottom, color-mix(in srgb, ${FLAP_GROUND(!!tint)} 30%, transparent) 0%, color-mix(in srgb, ${FLAP_GROUND(!!tint)} 86%, transparent) 58%)`,
-            }}
-            className="absolute inset-0 backdrop-blur-[10px] backdrop-brightness-75 backdrop-saturate-150"
-          />
-          {/* Its edge: a light line along the cut. */}
-          <span style={{ clipPath: CARD_FLAP_EDGE }} className="absolute inset-0 bg-white/20" />
-        </span>
+        {/* Its edge: a light line along the cut. */}
+        <span style={{ clipPath: CARD_FLAP_EDGE }} className="absolute inset-0 bg-white/20" />
       </span>
-      <span className="absolute right-2 bottom-[calc(60%-40px)]">
-        <ItemControls node={node} />
-      </span>
-      <div className="flex min-w-0 flex-col gap-1 pr-14">
-        <NameLink
-          node={node}
-          pick={selection.pickOne}
-          lines={2}
-          className="text-sm leading-snug font-medium text-fg"
-        />
-        <span className="flex items-center gap-2 text-xs text-fg-muted">
-          <span className="truncate">{folderSummary(node, formatFileSize(node.sizeBytes))}</span>
-          <Marks node={node} />
-        </span>
-      </div>
-      {menu}
-    </li>
+    </span>
   );
 }
 
 /** A file's small picture where there is one, else its symbol on a quiet ground. */
 export function FilePicture({ node, className }: { node: CloudNode; className?: string }) {
   const [failed, setFailed] = useState(false);
+  // Dragged away (`useItem`): the frame stays, the file – `data-paper`, the drag's picture – is gone.
+  const away = LIFTED_AWAY;
   // Pictures and PDFs draw theirs on first asking; everything else only once it is there.
   const may = node.thumbnail || node.fileType === 'image' || node.fileType === 'pdf';
   if (node.kind === 'file' && may && !failed && !node.deleted) {
@@ -809,8 +956,9 @@ export function FilePicture({ node, className }: { node: CloudNode; className?: 
         alt=""
         loading="lazy"
         draggable={false}
+        data-paper
         onError={() => setFailed(true)}
-        className={cn('size-full object-cover', className)}
+        className={cn('size-full object-cover', className, away)}
       />
     ) : (
       <span className={cn('block size-full overflow-hidden px-[14%] pt-[9%]', className)}>
@@ -819,15 +967,18 @@ export function FilePicture({ node, className }: { node: CloudNode; className?: 
           alt=""
           loading="lazy"
           draggable={false}
+          data-paper
           onError={() => setFailed(true)}
-          className="w-full rounded-t-thumb shadow-float"
+          className={cn('w-full rounded-t-thumb shadow-float', away)}
         />
       </span>
     );
   }
   return (
     <span className={cn('flex size-full items-center justify-center', className)}>
-      <FileIcon kind={node.kind} type={node.fileType} size={56} />
+      <span data-paper className={cn('flex', away)}>
+        <FileIcon kind={node.kind} type={node.fileType} size={56} />
+      </span>
     </span>
   );
 }
@@ -846,21 +997,83 @@ function FileTile({
   const { ui, selected, alone, over, props, menu } = useItem(node, selection, nodes);
   const fetching = ui.fetching.get(node.id);
   const when = node.deleted?.at ?? node.updatedAt;
-  const meta: ReactNode =
-    node.kind === 'folder'
-      ? folderSummary(node, formatFileSize(node.sizeBytes))
-      : `${mode === 'trash' ? node.deleted?.by.name : node.updatedBy.name} | ${formatRelativeTime(when)}`;
+  const folder = node.kind === 'folder';
+  const meta: ReactNode = folder
+    ? folderSummary(node, formatFileSize(node.sizeBytes))
+    : `${mode === 'trash' ? node.deleted?.by.name : node.updatedBy.name} | ${formatRelativeTime(when)}`;
+  const name = (
+    <span className="flex min-w-0 items-center gap-1.5">
+      <NameLink node={node} pick={selection.pickOne} className="text-body font-medium text-fg" />
+      <OnComputer node={node} />
+    </span>
+  );
+  // Its „…“ as a row's, plain beside the name (on the hover) – not over the picture.
+  const caption = (padding: string) => (
+    <div className={cn('flex min-w-0 items-center gap-1', padding)}>
+      <div className="flex min-w-0 flex-1 flex-col gap-0.5">
+        {name}
+        <span className="truncate text-xs text-fg-muted">{meta}</span>
+      </div>
+      <ItemControls
+        node={node}
+        className="relative -mr-1.5 shrink-0 opacity-0 transition-opacity group-hover:opacity-100 has-[:focus-visible]:opacity-100 has-[[aria-expanded=true]]:opacity-100 pointer-coarse:opacity-100"
+      />
+    </div>
+  );
+  const frame = cn(
+    'rounded-panel transition-[scale,background-color,opacity] duration-200 group-has-[a:focus-visible]:ring-2 group-has-[a:focus-visible]:ring-focus',
+    selected && (alone ? highlightedCardClass : 'scale-[0.97] ring-2 ring-(--selection)!'),
+    over && 'bg-selected ring-2 ring-focus!',
+  );
+  if (folder) {
+    // As tall as a file's tile with its name under it – the name stands in the folder instead.
+    return (
+      <li {...props} className="group relative flex flex-col gap-2.5">
+        <span aria-hidden className="invisible aspect-[5/3]" />
+        <span aria-hidden className="invisible flex flex-col gap-0.5 px-0.5">
+          <span className="text-body font-medium">&nbsp;</span>
+          <span className="text-xs">&nbsp;</span>
+        </span>
+        {/* Where the folder lay while it is dragged away – as a file's frame, empty. */}
+        <span
+          aria-hidden
+          className="absolute inset-0 rounded-panel bg-surface-1 opacity-0 inset-ring inset-ring-hairline transition-opacity group-data-lifted:opacity-100"
+        />
+        {/* The name's link reaches over the whole folder: its box is the nearest placed one. */}
+        <div
+          data-flown
+          data-paper="card"
+          style={flyStyle(node.id)}
+          className={cn(
+            'absolute inset-0 isolate flex flex-col justify-end group-data-lifted:opacity-0',
+            frame,
+          )}
+        >
+          {/* Among several picked: marked as Präsentationen are. */}
+          {selected && !alone && <SelectedMark />}
+          <FolderPicture node={node} over={over} />
+          {caption('pl-3.5 pr-2 pb-3')}
+          {fetching && (
+            <span className="absolute inset-0 flex items-center justify-center">
+              <Fetching state={fetching} />
+            </span>
+          )}
+        </div>
+        {menu}
+      </li>
+    );
+  }
   return (
     <li {...props} className="group relative flex flex-col gap-2.5">
       <div
         data-flown
         style={flyStyle(node.id)}
         className={cn(
-          'relative aspect-[5/3] overflow-hidden rounded-panel bg-surface-1 ring-hairline transition-[scale,background-color] duration-200 group-hover:bg-surface-2 group-has-[a:focus-visible]:ring-2 group-has-[a:focus-visible]:ring-focus',
-          selected && (alone ? highlightedCardClass : 'scale-[0.97] ring-2 ring-(--selection)!'),
-          over && 'bg-selected ring-2 ring-focus!',
+          'relative aspect-[5/3] overflow-hidden bg-surface-1 ring-hairline group-hover:bg-surface-2',
+          frame,
         )}
       >
+        {selected && !alone && <SelectedMark />}
         <FilePicture
           node={node}
           className={cn(
@@ -874,25 +1087,8 @@ function FileTile({
           </span>
         )}
         <AgentsBar node={node} />
-        <ItemControls
-          node={node}
-          className="absolute top-1.5 right-1.5 rounded-control-sm bg-scrim opacity-0 backdrop-blur-sm transition-opacity group-hover:opacity-100 has-[:focus-visible]:opacity-100 has-[[aria-expanded=true]]:opacity-100 pointer-coarse:opacity-100"
-        />
       </div>
-      <div className="flex min-w-0 items-start gap-2.5 px-0.5">
-        <FileIcon kind={node.kind} type={node.fileType} size={20} className="mt-0.5" />
-        <div className="flex min-w-0 flex-1 flex-col gap-0.5">
-          <span className="flex min-w-0 items-center gap-1.5">
-            <NameLink
-              node={node}
-              pick={selection.pickOne}
-              className="text-body font-medium text-fg"
-            />
-            <OnComputer node={node} />
-          </span>
-          <span className="truncate text-xs text-fg-muted">{meta}</span>
-        </div>
-      </div>
+      {caption('px-0.5')}
       {menu}
     </li>
   );
@@ -900,38 +1096,21 @@ function FileTile({
 
 // ── The collection ──────────────────────────────────────────────────────────
 
-const CARD_GRID = 'grid grid-cols-[repeat(auto-fill,minmax(220px,1fr))] gap-4';
 const TILE_GRID = 'grid grid-cols-[repeat(auto-fill,minmax(188px,1fr))] gap-x-4 gap-y-6';
 
 /**
  * Files and folders of one list – as rows or as tiles, the same items either way: a click
  * opens a folder and shows a file's details (a double click or Enter opens it), ⌘/Shift-click
  * and a dragged box select, a right click opens the menu, dragging onto a
- * folder moves there. As tiles a folder's own list has its folders first, as cards.
+ * folder moves there. Folders come first (`sortNodes`), in the same grid or list as the files.
  */
-export function FileBrowser({
-  nodes,
-  mode,
-  view,
-  selection,
-  folderCards = false,
-  notes,
-}: BrowserProps) {
-  const folders = folderCards ? nodes.filter((node) => node.kind === 'folder') : [];
-  const rest = folderCards ? nodes.filter((node) => node.kind !== 'folder') : nodes;
+export function FileBrowser({ nodes, mode, view, selection, notes, aside }: BrowserProps) {
   return (
     <div className="flex flex-col gap-5">
-      {folders.length > 0 && (
-        <ul aria-label="Ordner" className={CARD_GRID}>
-          {folders.map((node) => (
-            <FolderCard key={node.id} node={node} nodes={nodes} selection={selection} />
-          ))}
-        </ul>
-      )}
-      {rest.length > 0 &&
+      {nodes.length > 0 &&
         (view === 'tiles' ? (
           <ul aria-label="Dateien" className={TILE_GRID}>
-            {rest.map((node) => (
+            {nodes.map((node) => (
               <FileTile key={node.id} node={node} nodes={nodes} mode={mode} selection={selection} />
             ))}
           </ul>
@@ -940,7 +1119,7 @@ export function FileBrowser({
           <div className="@container">
             <ColumnHeads mode={mode} />
             <ul aria-label="Dateien" className="flex flex-col">
-              {rest.map((node) => (
+              {nodes.map((node) => (
                 <FileRow
                   key={node.id}
                   node={node}
@@ -948,6 +1127,7 @@ export function FileBrowser({
                   mode={mode}
                   selection={selection}
                   note={notes?.[node.id] || undefined}
+                  aside={aside?.(node)}
                 />
               ))}
             </ul>

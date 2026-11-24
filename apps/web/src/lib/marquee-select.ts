@@ -53,6 +53,28 @@ export const GRIP = 'data-grip';
 export const isOnControl = (target: EventTarget) =>
   (target as Element).closest('a, button, input, textarea, select, [role="menu"]') !== null;
 
+/** Whether the page means this to be marked (`select-text`) – Safari knows only the prefixed name. */
+function markable(target: Element) {
+  const style = getComputedStyle(target);
+  return (style.userSelect || style.webkitUserSelect) === 'text';
+}
+
+/**
+ * Whether a character stands under the point – not the blank beside a line, which the browser's
+ * caret lookup snaps to the nearest text. Fields and buttons are sorted out before.
+ */
+function onText(x: number, y: number) {
+  const node =
+    document.caretPositionFromPoint?.(x, y)?.offsetNode ??
+    document.caretRangeFromPoint?.(x, y)?.startContainer;
+  if (!node || node.nodeType !== Node.TEXT_NODE || !node.textContent?.trim()) return false;
+  const range = document.createRange();
+  range.selectNodeContents(node);
+  return [...range.getClientRects()].some(
+    (line) => x >= line.left && x <= line.right && y >= line.top && y <= line.bottom,
+  );
+}
+
 /**
  * Click and drag on empty space draws a selection box (Finder-style) over the items inside
  * `containerRef` – which must be positioned, the box is drawn in its coordinates. Scrolls the
@@ -108,7 +130,17 @@ export function useMarqueeSelect(
       });
       const inGrip = grips.some((grip) => grip.contains(target));
       if (onGrip || (!inGrip && target.closest(NOT_EMPTY_SPACE))) return;
-    } else if (item || target.closest(NOT_EMPTY_SPACE)) return;
+    } else if (
+      item ||
+      target.closest(NOT_EMPTY_SPACE) ||
+      markable(target) ||
+      onText(event.clientX, event.clientY)
+    ) {
+      // A press on text (a heading, a card's words) or in what is meant to be marked (`select-text`:
+      // a chat, beside its words too) marks it for copying, as anywhere on the web – the box starts
+      // only from the empty space between.
+      return;
+    }
     if (ignore && target.closest(ignore)) return;
     const scroller = latest.current.scroller?.current ?? null;
     const container = containerRef.current;

@@ -57,7 +57,7 @@ export function CallVoiceSection({ onNotify }: { onNotify: ShowToast }) {
     const loading = [{ value: '', label: 'Wird geladen …' }];
     const speakers = (language?.speakers ?? []).map((each) => ({
       value: each.key,
-      label: [each.name, genderLabel(each.gender)].filter(Boolean).join(' · '),
+      label: [each.name, genderLabel(each.gender)].filter(Boolean).join(' | '),
     }));
     // One column: the voice's field and its button (12 + 0.5 + 7 rem) as wide as the others.
     rows = (

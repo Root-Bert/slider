@@ -1,4 +1,4 @@
-import type { Material, MaterialChatDto } from '@slider/shared';
+import type { Attachment, Material, MaterialChatDto } from '@slider/shared';
 import { useQueryClient } from '@tanstack/react-query';
 import { useSyncExternalStore } from 'react';
 import { boardKeys, chatMaterial, getMaterialChat, type BoardRef } from '@/lib/api';
@@ -47,6 +47,7 @@ const entriesOf = (chat: MaterialChatDto): ChatEntry[] =>
     id: message.id,
     role: message.role,
     text: message.text,
+    ...(message.attachments?.length ? { attachments: message.attachments } : {}),
     ...(message.state ? { state: message.state } : {}),
     error: message.error,
   }));
@@ -61,11 +62,16 @@ export function useMaterialChat(owner: BoardRef, refused: (message: string) => v
     void queryClient.invalidateQueries({ queryKey: boardKeys.chats(owner) });
 
   /** Sends `text`; `false` when it was refused at once (the text then stays in the field). */
-  const send = async (text: string): Promise<boolean> => {
+  const send = async (text: string, attachments: Attachment[] = []): Promise<boolean> => {
     const message = text.trim();
-    if (!message || busy) return false;
+    if ((!message && attachments.length === 0) || busy) return false;
     const before = current(deckId);
-    const asked: ChatEntry = { id: crypto.randomUUID(), role: 'user', text: message };
+    const asked: ChatEntry = {
+      id: crypto.randomUUID(),
+      role: 'user',
+      text: message,
+      ...(attachments.length ? { attachments } : {}),
+    };
     const answer: ChatEntry = {
       id: crypto.randomUUID(),
       role: 'assistant',
@@ -80,7 +86,7 @@ export function useMaterialChat(owner: BoardRef, refused: (message: string) => v
     try {
       await chatMaterial(
         owner,
-        { chatId: before.chatId, text: message },
+        { chatId: before.chatId, text: message, attachments: attachments.map((one) => one.id) },
         (event) => {
           heard = true;
           if (event.type === 'chat') {

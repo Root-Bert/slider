@@ -9,6 +9,7 @@ import { ViewSearch } from '@/features/workspaces';
 import { AvatarStack, Button, Icon, Menu, type MenuAction } from '@/ui';
 import { AreaViews } from './components/AreaViews';
 import { AreaMark } from './components/AreaMark';
+import { useChatFileFiling } from './components/ChatFileFiling';
 import { CloudPage, type Crumb } from './components/CloudPage';
 import { ColumnBrowser, type BrowserColumn } from './components/ColumnBrowser';
 import { Empty, LoadFailed } from './components/Empty';
@@ -19,6 +20,7 @@ import { ScopeTabs } from './components/ScopeTabs';
 import { OWN_FILES, useCloud, type CloudTarget } from './hooks/useCloud';
 import { areaTrail, areasUnder, canHaveAreasUnder, isWorkspaceOwn } from './lib/areas';
 import { useStoredChoice } from './hooks/useStoredChoice';
+import { useOpenedFrom } from './hooks/useOpenedFrom';
 import { CLOUD_SORTS, CLOUD_VIEWS, filterNodes, sortNodes, type TypeFilter } from './lib/kinds';
 import { ALL_SCOPE, OWN_SCOPE, scopeTabs, useScope, WORKSPACE_SCOPE } from './lib/scopes';
 
@@ -103,6 +105,8 @@ function Place({
     (!data && areaId && !folderId ? areas.find((each) => each.id === areaId) : null) ??
     null;
   const folder = data?.folder ?? null;
+  // In an area's „Chat-Dateien“: where the AI would rather put each file, one click away.
+  const filing = useChatFileFiling(folder);
   // While its files load, an area's top says it from the area: „Hochladen“ stands at once and the
   // head does not shift when they come.
   const editable = cloudAccessAtLeast(data?.access ?? (area && !data ? area.access : null), 'edit');
@@ -135,12 +139,21 @@ function Place({
       : null;
 
   const under = atAreaTop && area ? areasUnder(areas, area) : [];
+  // A folder opened from „Dateien“ (any of its tabs) stays there: „Dateien › … › <Ordner>“, that
+  // row lit – from its area it goes through the area.
+  const folders = routes.cloudFolder(workspace.id, '');
+  const from = useOpenedFrom(folderId ? [routes.cloudFiles(workspace.id)] : [], (path) =>
+    path.startsWith(folders),
+  );
   const crumbs: Crumb[] = [];
   if (overview) {
-    // „Dateien“ itself, as „Agenten“: the workspace's name over it.
-    crumbs.push({ label: workspace.name }, { label: 'Dateien' });
+    // „Dateien“ itself, as „Agenten“: its row's name alone – not under the workspace, whose
+    // name stands for its own area.
+    crumbs.push({ label: 'Dateien' });
   } else if (data) {
-    if (data.sharedBy) {
+    if (from) {
+      crumbs.push({ label: 'Dateien', to: from });
+    } else if (data.sharedBy) {
       crumbs.push({ label: 'Geteilt', to: routes.cloudShared(workspace.id) });
     } else if (area) {
       // The workspace first, never „Bereiche“ (one of its tabs); the area itself where a folder
@@ -148,19 +161,35 @@ function Place({
       const trail = areaTrail(workspace.id, areas, area);
       crumbs.push(...(folder ? trail : trail.slice(0, -1)));
     } else if (folder) {
-      crumbs.push({ label: 'Meine Dateien', to: routes.cloudOwn(workspace.id) });
-    } else {
-      // „Meine Dateien“ itself, as Entwürfe and Mail: the workspace's name over it.
-      crumbs.push({ label: workspace.name });
+      crumbs.push({ label: 'Meine Dateien', to: routes.cloudOwn(workspace.id), into: OWN_FILES });
     }
     for (const each of data.path.slice(0, -1)) {
-      crumbs.push({ label: each.name, to: routes.cloudFolder(workspace.id, each.id) });
+      crumbs.push({
+        label: each.name,
+        to: routes.cloudFolder(workspace.id, each.id),
+        // Dragged onto it, files go into that folder – as onto a folder in the list.
+        into: editable ? { parentId: each.id, name: each.name } : undefined,
+      });
     }
     crumbs.push({ label: name });
   } else if (atAreaTop && area) {
     // Its files still on their way: the path stands already, as it will.
     crumbs.push(...areaTrail(workspace.id, areas, area).slice(0, -1), { label: name });
   }
+
+  // The side bar lights where it lies, as the path starts: an area's folder its area, one's own
+  // „Dateien“, a shared one „Geteilt“ – on „Dateien“ itself its address says it.
+  const barRow = overview
+    ? undefined
+    : from
+      ? routes.cloudFiles(workspace.id)
+      : data?.sharedBy
+        ? routes.cloudShared(workspace.id)
+        : area
+          ? routes.cloudArea(workspace.id, area.id)
+          : folder
+            ? routes.cloudFiles(workspace.id)
+            : undefined;
 
   const all = data?.nodes ?? [];
   const named = needle ? all.filter((node) => searchFold(node.name).includes(needle)) : all;
@@ -271,6 +300,7 @@ function Place({
         ) : null
       }
       crumbs={crumbs}
+      barRow={barRow}
       subtitle={subtitle}
       nodes={pickable}
       target={target}
@@ -377,7 +407,7 @@ function Place({
               mode={across ? 'across' : 'folder'}
               view={view}
               selection={selection}
-              folderCards={!across && filter === 'all' && view === 'tiles'}
+              aside={filing}
             />
           )}
         </>

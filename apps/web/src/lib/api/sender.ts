@@ -7,6 +7,7 @@ import {
   type SenderCreateGroup,
   type SenderEvent,
   type SenderHome,
+  type Attachment,
   type SenderMessage,
   type SenderMessagePage,
   type SenderPin,
@@ -23,7 +24,7 @@ import {
   type QueryClient,
 } from '@tanstack/react-query';
 import { useCallback, useEffect } from 'react';
-import { api } from '../api-client';
+import { api, apiRequest } from '../api-client';
 import { cloudAgentKeys } from './cloud-agents';
 import { mailChanged, mailKeys } from './mail';
 import { todosChanged } from './todos';
@@ -118,15 +119,26 @@ export const isPending = (message: SenderMessage) => message.id.startsWith(PENDI
 export function usePostSenderMessage(workspaceId: string, channelId: string, me: AccountAuthor) {
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: ({ text }: { text: string; pendingId: string }) =>
-      api.post<SenderMessage>(`/sender/channels/${channelId}/messages`, { text }),
-    onMutate: ({ text, pendingId }) => {
+    mutationFn: ({
+      text,
+      attachments = [],
+    }: {
+      text: string;
+      attachments?: Attachment[];
+      pendingId: string;
+    }) =>
+      api.post<SenderMessage>(`/sender/channels/${channelId}/messages`, {
+        text,
+        attachments: attachments.map((one) => one.id),
+      }),
+    onMutate: ({ text, attachments, pendingId }) => {
       placeMessage(queryClient, workspaceId, channelId, {
         id: pendingId,
         seq: Number.MAX_SAFE_INTEGER,
         author: me,
         agent: null,
         text,
+        attachments,
         createdAt: new Date().toISOString(),
         editedAt: null,
         deleted: false,
@@ -273,25 +285,71 @@ export const useOpenSenderDirect = (workspaceId: string) =>
 export function useUpdateSenderChannel(workspaceId: string, channelId: string) {
   const queryClient = useQueryClient();
   return useMutation({
-    // `agent`: the agent as shown at once – picked from the list, or `null` taken away.
-    mutationFn: ({
-      agent: _shown,
-      ...input
-    }: SenderUpdateChannel & { agent?: SenderChannelAgent | null }) =>
+    mutationFn: (input: SenderUpdateChannel) =>
       api.patch<SenderChannel>(`/sender/channels/${channelId}`, input),
     onMutate: (input) =>
       patchChannel(queryClient, workspaceId, channelId, (channel) => ({
         ...channel,
         ...(input.name !== undefined ? { name: input.name } : {}),
         ...(input.topic !== undefined ? { topic: input.topic } : {}),
-        ...(input.agent !== undefined ? { agent: input.agent } : {}),
       })),
-    onSuccess: (channel) => {
-      patchChannel(queryClient, workspaceId, channelId, () => channel);
-      queryClient.setQueryData<Pages>(senderKeys.messages(workspaceId, channelId), (data) =>
-        data ? { ...data, pages: data.pages.map((page) => ({ ...page, channel })) } : data,
-      );
+    onSuccess: (channel) => channelCame(queryClient, workspaceId, channel),
+    onError: () => queryClient.invalidateQueries({ queryKey: senderKeys.all(workspaceId) }),
+  });
+}
+
+/** The server's copy of a conversation, into the side bar and its page. */
+function channelCame(queryClient: QueryClient, workspaceId: string, channel: SenderChannel) {
+  patchChannel(queryClient, workspaceId, channel.id, () => channel);
+  queryClient.setQueryData<Pages>(senderKeys.messages(workspaceId, channel.id), (data) =>
+    data ? { ...data, pages: data.pages.map((page) => ({ ...page, channel })) } : data,
+  );
+}
+
+/**
+ * „Agent hinzufügen“: one picked stands there at once; none picked (`agent` left out), a new one
+ * is made – it stands there once the server made it, and the agents list learns of it.
+ */
+export function useAddSenderAgent(workspaceId: string, channelId: string) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({ agent }: { agent?: SenderChannelAgent }) =>
+      api.post<SenderChannel>(
+        `/sender/channels/${channelId}/agents`,
+        agent ? { agentId: agent.id } : {},
+      ),
+    onMutate: ({ agent }) => {
+      if (agent)
+        patchChannel(queryClient, workspaceId, channelId, (channel) => ({
+          ...channel,
+          agents: channel.agents.some((each) => each.id === agent.id)
+            ? channel.agents
+            : [...channel.agents, agent],
+        }));
     },
+    onSuccess: (channel, { agent }) => {
+      channelCame(queryClient, workspaceId, channel);
+      if (!agent)
+        void queryClient.invalidateQueries({ queryKey: cloudAgentKeys.list(workspaceId) });
+    },
+    onError: () => queryClient.invalidateQueries({ queryKey: senderKeys.all(workspaceId) }),
+  });
+}
+
+/** „Entfernen“: an added agent goes out of the conversation at once – it stays. */
+export function useRemoveSenderAgent(workspaceId: string, channelId: string) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (agentId: string) =>
+      apiRequest<SenderChannel>(`/sender/channels/${channelId}/agents/${agentId}`, {
+        method: 'DELETE',
+      }),
+    onMutate: (agentId) =>
+      patchChannel(queryClient, workspaceId, channelId, (channel) => ({
+        ...channel,
+        agents: channel.agents.filter((each) => each.id !== agentId),
+      })),
+    onSuccess: (channel) => channelCame(queryClient, workspaceId, channel),
     onError: () => queryClient.invalidateQueries({ queryKey: senderKeys.all(workspaceId) }),
   });
 }

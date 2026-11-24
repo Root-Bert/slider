@@ -1184,6 +1184,48 @@
       "when": 1799323200000,
       "tag": "0168_mail_spam_symbols",
       "breakpoints": true
+    },
+    {
+      "idx": 169,
+      "version": "7",
+      "when": 1799409600000,
+      "tag": "0169_todo_milestones",
+      "breakpoints": true
+    },
+    {
+      "idx": 170,
+      "version": "7",
+      "when": 1799496000000,
+      "tag": "0170_sender_channel_agents",
+      "breakpoints": true
+    },
+    {
+      "idx": 171,
+      "version": "7",
+      "when": 1799582400000,
+      "tag": "0171_attachments",
+      "breakpoints": true
+    },
+    {
+      "idx": 172,
+      "version": "7",
+      "when": 1799668800000,
+      "tag": "0172_sender_files",
+      "breakpoints": true
+    },
+    {
+      "idx": 173,
+      "version": "7",
+      "when": 1799755200000,
+      "tag": "0173_repair_skipped",
+      "breakpoints": true
+    },
+    {
+      "idx": 174,
+      "version": "7",
+      "when": 1799841600000,
+      "tag": "0174_sender_file_references",
+      "breakpoints": true
     }
   ]
 }

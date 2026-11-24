@@ -1,8 +1,11 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { useNavigate, useParams } from 'react-router';
+import { Link, useNavigate, useParams } from 'react-router';
 import {
   CONVERSATION_AGENT_TAG,
+  callableHere,
   MAX_SENDER_NAME,
+  type Attachment,
+  type CloudAgentSummary,
   type SenderChannel,
   type SenderChannelAgent,
   type SenderMessage,
@@ -20,11 +23,13 @@ import {
   useReadSenderChannel,
   useSenderMessages,
   useCloudAgents,
+  useAddSenderAgent,
+  useRemoveSenderAgent,
   useUpdateSenderChannel,
 } from '@/lib/api';
 import { routes } from '@/lib/routes';
 import { CallBoxes, CallButtons, useChannelCall } from '@/features/calls';
-import { AreaDot, useAgentAside } from '@/features/cloud';
+import { AgentAvatar, AreaDot, AsideToggle, useAgentAside } from '@/features/cloud';
 import { useAgentAvatars, ViewSearch, WorkspaceMark } from '@/features/workspaces';
 import {
   Avatar,
@@ -38,12 +43,16 @@ import {
   useMediaQuery,
 } from '@/ui';
 import { AddPeople } from './components/AddPeople';
-import { Composer } from './components/Composer';
+import { Composer, type TagAgent } from './components/Composer';
+import { useAttachments } from '@/features/attachments';
 import { MessageList } from './components/MessageList';
+import { ChatFiles } from './components/ChatFiles';
+import { ChatTitle, useChatView } from './components/ChatTitle';
+import { ChatAgents, useChatAside } from './components/ChatAside';
 import { TypingLine } from './components/TypingLine';
 import { MenuButton } from './components/MenuButton';
 import { useSender } from './hooks/useSender';
-import { PAGE_HEADER, PAGE_TITLE } from './lib/title';
+import { PAGE_HEADER } from './lib/title';
 
 /** A field in the header in place of the name: Enter keeps it, Esc leaves it. */
 function InlineField({
@@ -113,12 +122,11 @@ function Intro({ channel }: { channel: SenderChannel }) {
         : channel.kind === 'area'
           ? `Der Anfang des Kanals. Alle, die den Bereich ${channel.name} sehen, lesen mit.`
           : `Der Anfang von #${channel.name}. Alle, die den Bereich sehen, lesen mit.`;
-  // Who calls the agent with @ shows it what was said before – as said, no order.
-  const agent = inArea(channel)
-    ? ' Mit @Agent rufst du den Agenten des Bereichs – er liest dann mit, was zuvor hier stand.'
-    : channel.agent
-      ? ` ${channel.agent.title} ist dabei: wer ihn hinzugefügt hat, ruft ihn mit @ – er liest dann mit, was zuvor hier stand.`
-      : '';
+  // Who calls an agent with @ shows it what was said before – as said, no order.
+  const agent =
+    channel.kind === 'area' || channel.kind === 'channel'
+      ? ' Mit @Agent rufst du den Agenten des Bereichs, mit @ und seinem Namen jeden Agenten des Bereichs oder einen eigenen – er liest dann mit, was zuvor hier stand.'
+      : ' Mit @ und seinem Namen rufst du einen eigenen Agenten oder einen aus deinen Bereichen – er liest dann mit, was zuvor hier stand.';
   return (
     <div className="flex flex-col items-start gap-3 px-3 pt-6 pb-4">
       <Mark channel={channel} />
@@ -159,9 +167,18 @@ export function Conversation({
   const workspaceId = ui.workspace.id;
   const query = useSenderMessages(workspaceId, channelId);
   const post = usePostSenderMessage(workspaceId, channelId, ui.me);
+  // Files put on the message being written – kept per conversation, as its words.
+  const attach = useAttachments({
+    workspaceId,
+    keep: `sender:${channelId}`,
+    onError: (text) => ui.notify(text, 'danger'),
+  });
   const edit = useEditSenderMessage(workspaceId, channelId);
   const remove = useDeleteSenderMessage(workspaceId, channelId);
   const update = useUpdateSenderChannel(workspaceId, channelId);
+  const addAgent = useAddSenderAgent(workspaceId, channelId);
+  const removeAgent = useRemoveSenderAgent(workspaceId, channelId);
+  const cloudAgents = useCloudAgents(workspaceId);
   const deleteChannel = useDeleteSenderChannel(workspaceId);
   const leave = useLeaveSenderGroup(workspaceId);
   const read = useReadSenderChannel(workspaceId);
@@ -174,7 +191,11 @@ export function Conversation({
   // back); where there is no room for both, the dock as always.
   const inCall = useChannelCall(channelId);
   const asideRef = useRef<HTMLDivElement>(null);
-  const aside = useAgentAside(useMediaQuery('(min-width: 1024px)') && !!inCall, 360, asideRef);
+  const wide = useMediaQuery('(min-width: 1024px)');
+  // „KI zum Chat“: its agents beside the messages, as the AI beside a mail – where there is room.
+  const [aiOpen, setAiOpen] = useChatAside();
+  const ai = wide && aiOpen;
+  const aside = useAgentAside(wide && (!!inCall || ai), 360, asideRef);
 
   const messages = useMemo(() => messagesOf(query.data), [query.data]);
   const page = query.data?.pages[0];
@@ -185,6 +206,9 @@ export function Conversation({
   // Where the „Neu“ line stands: what was read when it opened, not what is read now.
   const [readAt, setReadAt] = useState<{ id: string; seq: number } | null>(null);
   if (page && readAt?.id !== channelId) setReadAt({ id: channelId, seq: page.readSeq });
+  // The chat or its „Dateien“, beside its name (in the address). Under an area's title none: its
+  // files lie in the area's „Chat-Dateien“ in Cloud.
+  const { view: tab, href: viewHref } = useChatView(!compact);
   // Another conversation: nothing of the last one stays open.
   const [shown, setShown] = useState(channelId);
   if (shown !== channelId) {
@@ -235,9 +259,54 @@ export function Conversation({
   if (!channel) return null;
 
   const people = (ui.home?.people ?? []).filter((person) => person.id !== ui.me.id);
+  const root = Boolean(ui.home?.areas.find((area) => area.id === channel.areaId)?.root);
+  // The agents one may call here – or add: the area's and one's own, elsewhere those one sees.
+  const callable = (cloudAgents.data ?? []).filter((agent) =>
+    callableHere(
+      { userId: agent.owner.id, shared: agent.shared, areaId: agent.areaId },
+      { kind: channel.kind, areaId: channel.areaId, root },
+      ui.me.id,
+    ),
+  );
   const fail = (error: Error) => ui.notify(error.message, 'danger');
-  const send = (text: string) =>
-    post.mutate({ text, pendingId: newPendingId() }, { onError: fail });
+  // Gone from the head and the AI's column: no toast.
+  const dropAgent = (agent: SenderChannelAgent) => removeAgent.mutate(agent.id, { onError: fail });
+  // An agent into the conversation (`undefined`: a new one) – its name, once there; `null`: refused.
+  const bringAgent = (agent?: SenderChannelAgent) =>
+    addAgent.mutateAsync({ agent }).then(
+      (added) => {
+        const title =
+          agent?.title ??
+          added.agents.find((each) => !channel.agents.some((was) => was.id === each.id))?.title ??
+          'Agent';
+        return title;
+      },
+      (error: Error) => {
+        fail(error);
+        return null;
+      },
+    );
+  const addAgentMenu = (icon?: 'add') =>
+    channel.canWrite && (
+      <AddAgent
+        workspaceId={workspaceId}
+        callable={callable}
+        here={channel.agents}
+        icon={icon}
+        onPick={(agent) => void bringAgent(agent)}
+      />
+    );
+  const send = (text: string, attachments: Attachment[]) =>
+    post.mutate(
+      { text, attachments, pendingId: newPendingId() },
+      {
+        onError: (error) => {
+          // Refused: the files go back on the field.
+          attach.restore(attachments);
+          fail(error);
+        },
+      },
+    );
   const lastOwn = [...messages]
     .reverse()
     .find(
@@ -268,14 +337,18 @@ export function Conversation({
           } satisfies MenuAction,
         ]
       : []),
-    ...(channel.agent && !inArea(channel)
-      ? [
-          {
-            label: 'Agent entfernen',
-            icon: 'close',
-            onSelect: () => update.mutate({ agentId: null, agent: null }, { onError: fail }),
-          } satisfies MenuAction,
-        ]
+    ...(channel.canWrite
+      ? channel.agents
+          .filter((agent) => !agent.own)
+          .map(
+            (agent) =>
+              ({
+                label: `${agent.title} entfernen`,
+                key: `remove:${agent.id}`,
+                icon: 'close',
+                onSelect: () => dropAgent(agent),
+              }) satisfies MenuAction,
+          )
       : []),
     ...(channel.kind === 'group'
       ? [
@@ -318,28 +391,34 @@ export function Conversation({
               }}
             />
           ) : (
-            <h1 className={PAGE_TITLE}>{shownName}</h1>
+            <ChatTitle name={shownName} view={tab} href={viewHref} />
           )}
         </div>
         <ViewSearch
-          label="Chat durchsuchen"
+          label={tab === 'files' ? 'Dateien durchsuchen' : 'Chat durchsuchen'}
           value={search}
           onChange={setSearch}
           // On a phone on a line of its own, under the name.
           className="w-64 max-sm:order-last max-sm:w-full"
         />
         <CallButtons channel={channel} />
-        {!inArea(channel) && !channel.agent && channel.canWrite && (
-          <AddAgent
-            workspaceId={workspaceId}
-            onPick={(agent) => update.mutate({ agentId: agent.id, agent }, { onError: fail })}
-          />
-        )}
+        {/* The AI's column open, its agents stand there and are added there. */}
+        {!ai && <AgentsHere channel={channel} />}
+        {!ai && addAgentMenu()}
         {channel.kind !== 'direct' && channel.members.length > 0 && (
           <AvatarStack authors={channel.members} max={4} size={24} interactive />
         )}
         {actions.length > 0 && (
           <Menu label={`Aktionen für ${shownName}`} actions={actions} triggerVariant="subtle" />
+        )}
+        {wide && (
+          <AsideToggle
+            bare
+            shown={ai}
+            onToggle={() => setAiOpen(!ai)}
+            label="KI zum Chat"
+            title="KI zum Chat – die Agenten dieser Unterhaltung"
+          />
         )}
       </header>
       {adding && channel.kind === 'group' && (
@@ -347,55 +426,70 @@ export function Conversation({
       )}
       <div className={cn('flex min-h-0 flex-1', !aside.handle && 'gap-5')}>
         <div className="flex min-h-0 min-w-0 flex-1 flex-col gap-3">
-          <div className="flex min-h-0 flex-1 flex-col">
-            <MessageList
-              conversationId={channelId}
-              messages={messages}
-              readSeq={readAt?.id === channelId ? readAt.seq : (page?.readSeq ?? 0)}
-              me={ui.me}
-              people={ui.home?.people ?? []}
-              editing={editing}
-              older={{
-                more: query.hasNextPage,
-                loading: query.isFetchingNextPage,
-                load: () => void query.fetchNextPage(),
-              }}
-              intro={<Intro channel={channel} />}
-              onEditing={setEditing}
-              onSave={(message, text) =>
-                edit.mutate({ id: message.id, text, before: message }, { onError: fail })
-              }
-              onDelete={(message) => setAsking({ kind: 'message', message })}
-              callHref={
-                callHref ?? ((callId) => routes.messagesChannelCall(workspaceId, channelId, callId))
-              }
-              search={{ query: search, clear: () => setSearch('') }}
-            />
-          </div>
-          <TypingLine people={typing} />
-          {channel.canWrite ? (
-            <Composer
-              conversationId={channelId}
-              target={{ kind: 'conversation', workspaceId }}
-              placeholder={`Nachricht an ${shownName}`}
-              people={people}
-              agent={agentToTag(channel, ui.me.id)}
-              onSend={send}
-              onTyping={() => tellTypingInSender(channelId)}
-              onEditLast={lastOwn ? () => setEditing(lastOwn.id) : undefined}
+          {tab === 'files' ? (
+            <ChatFiles
+              channelId={channelId}
+              workspaceId={workspaceId}
+              search={search}
+              notify={ui.notify}
             />
           ) : (
-            <p className="shrink-0 text-xs text-fg-subtle">Du liest in diesem Bereich mit.</p>
+            <>
+              <div className="flex min-h-0 flex-1 flex-col">
+                <MessageList
+                  conversationId={channelId}
+                  messages={messages}
+                  readSeq={readAt?.id === channelId ? readAt.seq : (page?.readSeq ?? 0)}
+                  me={ui.me}
+                  people={ui.home?.people ?? []}
+                  editing={editing}
+                  older={{
+                    more: query.hasNextPage,
+                    loading: query.isFetchingNextPage,
+                    load: () => void query.fetchNextPage(),
+                  }}
+                  intro={<Intro channel={channel} />}
+                  onEditing={setEditing}
+                  onSave={(message, text) =>
+                    edit.mutate({ id: message.id, text, before: message }, { onError: fail })
+                  }
+                  onDelete={(message) => setAsking({ kind: 'message', message })}
+                  callHref={
+                    callHref ??
+                    ((callId) => routes.messagesChannelCall(workspaceId, channelId, callId))
+                  }
+                  search={{ query: search, clear: () => setSearch('') }}
+                />
+              </div>
+              <TypingLine people={typing} />
+              {channel.canWrite ? (
+                <Composer
+                  conversationId={channelId}
+                  target={{ kind: 'conversation', workspaceId }}
+                  placeholder={`Nachricht an ${shownName}`}
+                  people={people}
+                  agents={agentsToTag(channel, callable)}
+                  onNewAgent={() => bringAgent()}
+                  onSend={send}
+                  attach={attach}
+                  onTyping={() => tellTypingInSender(channelId)}
+                  onEditLast={lastOwn ? () => setEditing(lastOwn.id) : undefined}
+                />
+              ) : (
+                <p className="shrink-0 text-xs text-fg-subtle">Du liest in diesem Bereich mit.</p>
+              )}
+            </>
           )}
         </div>
         {aside.handle}
-        {aside.handle && inCall && (
+        {aside.handle && (
           <div
             ref={asideRef}
             style={aside.style}
-            className="flex min-h-0 shrink-0 flex-col overflow-y-auto overscroll-contain"
+            className="flex min-h-0 shrink-0 flex-col gap-8 overflow-y-auto overscroll-contain px-1 pt-1"
           >
-            <CallBoxes call={inCall} className="flex flex-col gap-5" />
+            {inCall && <CallBoxes call={inCall} className="flex flex-col gap-5" />}
+            {ai && <ChatAgents channel={channel} add={addAgentMenu('add')} onRemove={dropAgent} />}
           </div>
         )}
       </div>
@@ -460,66 +554,102 @@ export function Conversation({
 const inArea = (channel: SenderChannel) => channel.kind === 'area' || channel.kind === 'channel';
 
 /**
- * The agent one calls here with @: in an area's channels its own (made by the first `@Agent`),
- * in a group or a direct conversation the one added there – only by its owner.
+ * Whom one calls here with @: the conversation's agents first (an area's own – `@Agent`, made
+ * when first tagged – and those added), then the others one may call here; in an area's channels
+ * „Agent“ is the area's own, no one else's of that name.
  */
-function agentToTag(
-  channel: SenderChannel,
-  me: string,
-): { id: string | null; name: string } | null {
-  if (inArea(channel))
-    return { id: channel.agent?.id ?? null, name: channel.agent?.title ?? CONVERSATION_AGENT_TAG };
-  return channel.agent && channel.agent.userId === me
-    ? { id: channel.agent.id, name: channel.agent.title }
-    : null;
+function agentsToTag(channel: SenderChannel, callable: readonly CloudAgentSummary[]): TagAgent[] {
+  const may = new Set(callable.map((agent) => agent.id));
+  const own = channel.agents.find((agent) => agent.own);
+  const here: TagAgent[] = [
+    ...(inArea(channel) && !own ? [{ id: null, name: CONVERSATION_AGENT_TAG, here: true }] : []),
+    ...channel.agents
+      .filter((agent) => agent.own || may.has(agent.id))
+      .map((agent) => ({ id: agent.id, name: agent.title, here: true })),
+  ];
+  const named = new Set(here.map((agent) => agent.id));
+  return [
+    ...here,
+    ...callable
+      .filter(
+        (agent) =>
+          !named.has(agent.id) &&
+          !(
+            inArea(channel) &&
+            agent.title.trim().toLowerCase() === CONVERSATION_AGENT_TAG.toLowerCase()
+          ),
+      )
+      .map((agent) => ({ id: agent.id, name: agent.title })),
+  ];
+}
+
+/** The agents in the conversation, beside its call: their faces, each opening its page. */
+function AgentsHere({ channel }: { channel: SenderChannel }) {
+  const ui = useSender();
+  if (channel.agents.length === 0) return null;
+  return (
+    <div className="flex items-center -space-x-1.5">
+      {channel.agents.slice(0, 4).map((agent) => (
+        <Link
+          key={agent.id}
+          to={ui.agentPath(agent.id)}
+          title={agent.title}
+          aria-label={agent.title}
+          className="rounded-mark ring-2 ring-bg focus-visible:outline-none focus-visible:ring-focus"
+        >
+          <AgentAvatar id={agent.id} size={24} className="rounded-mark" />
+        </Link>
+      ))}
+    </div>
+  );
 }
 
 /**
- * „Agent hinzufügen“ to a group or a direct conversation: one of one's own private agents – a
- * shared one would let everyone it is shared with read along. Only who added it calls it here.
+ * „Agent hinzufügen“: a new one („Neuer Agent“ – shared with the area in its channels, one's own
+ * elsewhere), or one of those one may call here and that is not here yet.
  */
 function AddAgent({
   workspaceId,
+  callable,
+  here,
+  icon = 'autoAwesome',
   onPick,
 }: {
   workspaceId: string;
-  onPick: (agent: SenderChannelAgent) => void;
+  callable: readonly CloudAgentSummary[];
+  here: readonly SenderChannelAgent[];
+  /** In the AI's column beside its heading: a plus. */
+  icon?: 'autoAwesome' | 'add';
+  /** `undefined`: a new one. */
+  onPick: (agent?: SenderChannelAgent) => void;
 }) {
-  const agents = useCloudAgents(workspaceId);
   const avatarOf = useAgentAvatars(workspaceId);
-  const mine = (agents.data ?? []).filter((agent) => agent.mine && !agent.shared).slice(0, 10);
+  const there = new Set(here.map((agent) => agent.id));
+  const more = callable.filter((agent) => !there.has(agent.id)).slice(0, 12);
   return (
     <Menu
       label="Agent hinzufügen"
-      triggerIcon="autoAwesome"
+      triggerIcon={icon}
       triggerVariant="subtle"
-      actions={
-        mine.length > 0
-          ? mine.map((agent) => ({
-              label: agent.title,
-              key: agent.id,
-              icon: (
-                <img
-                  src={avatarOf(agent.id)}
-                  alt=""
-                  className="size-5 rounded-control object-cover"
-                />
-              ),
-              onSelect: () =>
-                onPick({ id: agent.id, title: agent.title, userId: agent.owner.id, shared: false }),
-            }))
-          : [
-              {
-                label: agents.isPending
-                  ? 'Agenten werden geladen …'
-                  : 'Noch keine privaten Agenten',
-                icon: 'autoAwesome',
-                onSelect: () => {},
-                disabled: true,
-                title: 'Agenten legst du in Cloud an.',
-              },
-            ]
-      }
+      actions={[
+        { label: 'Neuer Agent', key: 'new', icon: 'add', onSelect: () => onPick() },
+        ...more.map((agent, index) => ({
+          label: agent.title,
+          key: agent.id,
+          divider: index === 0,
+          icon: (
+            <img src={avatarOf(agent.id)} alt="" className="size-5 rounded-control object-cover" />
+          ),
+          onSelect: () =>
+            onPick({
+              id: agent.id,
+              title: agent.title,
+              userId: agent.owner.id,
+              shared: agent.shared,
+              areaId: agent.areaId,
+            }),
+        })),
+      ]}
     />
   );
 }

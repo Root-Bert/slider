@@ -10,6 +10,8 @@ import type { ShowToast } from '@/ui';
  * same board, with its outbox, uploads, questions and chat, lies beside either.
  */
 export interface BoardOwner extends BoardRef {
+  /** Where files put on what is written here go up (`useAttachments`). */
+  workspaceId: string;
   /** Put things down, write notes, ask the AI; without it the board is only looked at. */
   canComment: boolean;
   /** Delete what others put down. */

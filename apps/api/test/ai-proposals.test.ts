@@ -1684,12 +1684,39 @@ describe('AI proposals', { timeout: 60_000 }, () => {
         .request(`/api/decks/${deckId}/slides`)
         .then(async (r) => slideSchema.array().parse(await r.json()));
     const original = await slides();
+    // A picture put on the field (pasted or by the clip): the AI sees it, it becomes one of the
+    // deck's edit pictures, the attachment is gone; a file it cannot look at is refused.
+    const upload = async (file: File) => {
+      const form = new FormData();
+      form.append('file', file);
+      const res = await ctx.request(`/api/workspaces/${ctx.workspaceId}/attachments`, {
+        method: 'POST',
+        body: form,
+      });
+      expect(res.status).toBe(201);
+      return ((await res.json()) as { id: string }).id;
+    };
+    const picture = await upload(
+      new File([new Uint8Array(await createCanvas(40, 30).encode('png'))], 'Logo.png', {
+        type: 'image/png',
+      }),
+    );
+    const words = await upload(new File(['Agenda'], 'Agenda.txt', { type: 'text/plain' }));
+    const refused = await ctx.request(`/api/decks/${deckId}/ai/proposals`, {
+      method: 'POST',
+      json: { variantOf: original[2]!.id, prompt: 'so', attachments: [words] },
+    });
+    expect(refused.status).toBe(400);
+    // Refused, it stays waiting – the field puts it back.
+    expect((await ctx.request(`/api/attachments/${words}`)).status).toBe(200);
 
     // „Variante erstellen“ with words: the copy is made first, the AI changes it – only it.
     anthropic.steps = [
       (body) => {
         const first = JSON.stringify(body.messages[0]);
         expect(first).toContain('dunkler, mit Bild rechts');
+        expect(first).toContain('Pictures attached to the request');
+        expect(first).toContain('40 × 30 px');
         expect(first).toContain('Slide 4 is a new variant of slide 3');
         expect(first).toContain('4. Umsatz nach Region (variant of slide 3, hidden in the show)');
         // Written without its mark: it stays the slide's variant, hidden.
@@ -1703,9 +1730,14 @@ describe('AI proposals', { timeout: 60_000 }, () => {
     ];
     const res = await ctx.request(`/api/decks/${deckId}/ai/proposals`, {
       method: 'POST',
-      json: { variantOf: original[2]!.id, prompt: 'dunkler, mit Bild rechts' },
+      json: {
+        variantOf: original[2]!.id,
+        prompt: 'dunkler, mit Bild rechts',
+        attachments: [picture],
+      },
     });
     expect(res.status).toBe(202);
+    expect((await ctx.request(`/api/attachments/${picture}`)).status).toBe(404);
     expect(await settled(ctx, deckId)).toMatchObject({
       status: 'applied',
       commentId: null,

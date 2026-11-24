@@ -41,8 +41,9 @@ export function MailboxHelper() {
           top
           placeholder="Wo liegt dein Postfach? Etwa: bei Strato, info@firma.de"
           busy={order.isPending}
-          onSend={(text) => {
-            return order.mutateAsync(helpOrder(text)).then(
+          workspaceId={ui.workspace.id}
+          onSend={(text, attachments) => {
+            return order.mutateAsync({ text: helpOrder(text), attachments }).then(
               (agent) => {
                 setParams(
                   (now) => {
@@ -122,7 +123,7 @@ function Helper({ agentId, onClose }: { agentId: string; onClose: () => void }) 
             onRetry={() => void found.refetch()}
           />
         ) : (
-          <AgentChat agent={agent} chat={agent.chats[0] ?? null} onOpened={() => {}} />
+          <AgentChat agent={agent} chat={agent.chats[0] ?? null} />
         )}
       </div>
     </section>

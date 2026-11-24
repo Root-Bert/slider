@@ -1024,10 +1024,20 @@ describe('editing an ODP deck', () => {
       return new Uint8Array(await createCanvas(4, 2).encode('png'));
     })();
     const aiFetch = async (url: string, init?: RequestInit) => {
-      const body = typeof init?.body === 'string' ? (JSON.parse(init.body) as unknown) : null;
+      const body =
+        typeof init?.body === 'string'
+          ? (JSON.parse(init.body) as unknown)
+          : init?.body instanceof FormData
+            ? Object.fromEntries(
+                [...init.body.keys()].map((key) => [
+                  key,
+                  init.body instanceof FormData ? init.body.getAll(key).length : 0,
+                ]),
+              )
+            : null;
       asked.push({ url, body });
       if (url.endsWith('/models')) return Response.json({ data: [{ id: 'gpt-image-2' }] });
-      if (url.endsWith('/images/generations')) {
+      if (url.endsWith('/images/generations') || url.endsWith('/images/edits')) {
         return Response.json({ data: [{ b64_json: Buffer.from(png).toString('base64') }] });
       }
       if (url.endsWith('/openapi.json')) {
@@ -1093,6 +1103,37 @@ describe('editing an ODP deck', () => {
     expect(square).toMatchObject({ width: 2, height: 2 });
     expect(asked.at(-1)?.body).toMatchObject({ size: '1024x1024' });
 
+    // Pictures to go after (pasted into the description): gpt-image takes them through its edits,
+    // as a form; used, they are gone – refused, still waiting for the field to take them back.
+    expect((await stateOf(ctx, deck.id)).imageReferences).toBe(true);
+    const upload = async (file: File) => {
+      const form = new FormData();
+      form.append('file', file);
+      const res = await ctx!.request(`/api/workspaces/${ctx!.workspaceId}/attachments`, {
+        method: 'POST',
+        body: form,
+      });
+      expect(res.status).toBe(201);
+      return ((await res.json()) as { id: string }).id;
+    };
+    const after = (references: string[]) =>
+      ctx!.request(`/api/decks/${deck.id}/edit/images/generate`, {
+        method: 'POST',
+        json: { prompt: 'Der Leuchtturm im Stil davon', aspect: 1, references },
+      });
+    const look = await upload(new File([png], 'Stil.png', { type: 'image/png' }));
+    const notes = await upload(new File(['Text'], 'Notiz.txt', { type: 'text/plain' }));
+    const wrong = await after([notes]);
+    expect(wrong.status).toBe(400);
+    expect(JSON.stringify(await wrong.json())).toContain('geht nicht als Vorlage');
+    expect((await ctx.request(`/api/attachments/${notes}`)).status).toBe(200);
+    expect((await after([look])).status).toBe(201);
+    expect(asked.at(-1)).toMatchObject({
+      url: expect.stringContaining('/images/edits'),
+      body: { model: 1, prompt: 1, size: 1, 'image[]': 1 },
+    });
+    expect((await ctx.request(`/api/attachments/${look}`)).status).toBe(404);
+
     // The same image generated while building a deck belongs to creation usage.
     await generatePicture(
       ctx.deps,
@@ -1131,6 +1172,13 @@ describe('editing an ODP deck', () => {
       'https://delivery-eu.bfl.ai/t1.png',
     ]);
     expect(asked[0]?.body).toMatchObject({ width: 816, height: 1440 });
+    // FLUX 3 takes no pictures to go after: said so, and the picture stays waiting.
+    expect((await stateOf(ctx, deck.id)).imageReferences).toBe(false);
+    const kept = await upload(new File([png], 'Stil.png', { type: 'image/png' }));
+    const refused = await after([kept]);
+    expect(refused.status).toBe(400);
+    expect(JSON.stringify(await refused.json())).toContain('nimmt keine Bilder als Vorlage');
+    expect((await ctx.request(`/api/attachments/${kept}`)).status).toBe(200);
   });
 
   it('copies, hides, moves and deletes slides – each stays the slide it was, and comes back on undo', async () => {

@@ -18,9 +18,9 @@ const LINK =
   'rounded-chip px-1.5 py-0.5 font-semibold text-primary hover:bg-surface-2 focus-visible:outline-2 focus-visible:outline-primary';
 
 /**
- * A mail written here that is not out yet, under its sender: waiting („Im Postausgang · geht in
- * 8 Sek. raus · Rückgängig“), on its way, or refused („Nicht gesendet: … · Erneut senden ·
- * Bearbeiten“). Taken back, its words come back into the field.
+ * A mail written here that is not out yet, under its sender: waiting („Im Postausgang, geht in
+ * 8 Sek. raus“, „Rückgängig“), on its way, or refused („Nicht gesendet: …“, „Erneut senden“,
+ * „Bearbeiten“). Taken back, its words come back into the field.
  */
 export function MailOutboxLine({
   outbox,
@@ -57,7 +57,7 @@ export function MailOutboxLine({
       ) : (
         <>
           <span className="tabular-nums">
-            Im Postausgang · geht {whenItGoes(outbox.at, now)} raus
+            Im Postausgang, geht {whenItGoes(outbox.at, now)} raus
           </span>
           <button type="button" className={LINK} onClick={onTakeBack}>
             Rückgängig

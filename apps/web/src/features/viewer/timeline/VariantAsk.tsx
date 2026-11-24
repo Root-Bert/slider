@@ -1,4 +1,5 @@
 import { useRef, type CSSProperties } from 'react';
+import { AttachButton, AttachmentChips } from '@/features/attachments';
 import { AutosizeTextarea, Avatar, Button, cn, IconButton } from '@/ui';
 import { SwapImage } from '../stage/SwapImage';
 import { useViewerData } from '../state/viewer-data';
@@ -25,7 +26,7 @@ export function VariantComposer({
   ideas = true,
   panel = false,
 }: {
-  ask: Pick<ReturnType<typeof useVariantAsk>, 'prompt' | 'setPrompt' | 'typed'>;
+  ask: Pick<ReturnType<typeof useVariantAsk>, 'prompt' | 'setPrompt' | 'typed' | 'files'>;
   /** ↵ or the send button: words to the AI, none a copy. */
   onSubmit: () => void;
   onCopy: () => void;
@@ -36,7 +37,7 @@ export function VariantComposer({
 }) {
   const { aiAuthor } = useViewerData();
   const fieldRef = useRef<HTMLTextAreaElement>(null);
-  const { prompt, setPrompt, typed } = ask;
+  const { prompt, setPrompt, typed, files } = ask;
   const add = (idea: string) => {
     const words = prompt.trim();
     // Added to what is there, as one would go on writing.
@@ -65,6 +66,7 @@ export function VariantComposer({
           maxLength={4_000}
           value={prompt}
           onChange={(event) => setPrompt(event.target.value)}
+          onPaste={files.onPaste}
           onKeyDown={(event) => {
             // ↵ creates, ⇧↵ is a new line – as in the comments.
             if (event.key === 'Enter' && !event.shiftKey && !event.nativeEvent.isComposing) {
@@ -74,6 +76,7 @@ export function VariantComposer({
           }}
           className="min-w-0 flex-1 py-1.5 text-body leading-5 text-fg"
         />
+        <AttachButton files={files} />
         <IconButton
           icon="send"
           label="Mit KI erstellen"
@@ -83,6 +86,7 @@ export function VariantComposer({
           onClick={onSubmit}
         />
       </div>
+      <AttachmentChips files={files} className={cn(panel ? 'px-1' : 'px-1.5')} />
       {ideas && (
         <div
           role="group"

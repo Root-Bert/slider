@@ -1,9 +1,13 @@
 import { and, eq, inArray, isNull, or, sql } from 'drizzle-orm';
 import {
   isOpenTodo,
+  type MilestoneChange,
+  type MilestoneInput,
+  type Attachment,
   type Todo,
   type TodoChange,
   type TodoInput,
+  type TodoMilestone,
   type TodoStatus,
   type Viewer,
 } from '@slider/shared';
@@ -11,14 +15,22 @@ import {
   cloudAgents,
   mailAccounts,
   mailThreads,
+  todoMilestones,
   todos,
   workspaceMembers,
+  type TodoMilestoneRow,
   type TodoRow,
 } from '../db/schema';
 import type { AppDeps } from '../deps';
 import { badRequest, forbidden, isUniqueViolation, notFound } from '../http/errors';
 import { areaNotFound, authorsOf, cloudContext, type CloudCtx } from './cloud/context';
-import { agentFor, messageCloudAgent } from './cloud-agents';
+import {
+  claimAttachments,
+  copyAttachments,
+  deleteAttachments,
+  dropUnkeptCopies,
+} from './attachments';
+import { agentFor, createIdleCloudAgent, messageCloudAgent } from './cloud-agents';
 import { areaAudience, senderLive } from './sender';
 
 /*
@@ -36,7 +48,7 @@ interface By {
   viewer?: Viewer;
   agentId?: string;
 }
-const NO_SENDING = 'Ein Agent schickt keinen anderen Agenten los.';
+const NO_SENDING = 'Ein Agent teilt keine Aufgabe einem anderen Agenten zu.';
 
 export const todoNotFound = () => notFound('Diese Aufgabe gibt es nicht (mehr).');
 
@@ -70,6 +82,13 @@ async function toTodos(deps: AppDeps, ctx: CloudCtx, rows: TodoRow[]): Promise<T
     : [];
   // A private agent's title comes from its private order: only who sees the agent reads it
   // (as `seesAgent` in `cloud-agents.ts`); the others read that an agent does it.
+  const milestoneIds = [...new Set(rows.map((row) => row.milestoneId).filter(Boolean))] as string[];
+  const milestones = milestoneIds.length
+    ? await deps.db
+        .select({ id: todoMilestones.id, name: todoMilestones.name, dueOn: todoMilestones.dueOn })
+        .from(todoMilestones)
+        .where(inArray(todoMilestones.id, milestoneIds))
+    : [];
   const agents = found.map((one) => ({
     id: one.id,
     title:
@@ -87,11 +106,14 @@ async function toTodos(deps: AppDeps, ctx: CloudCtx, rows: TodoRow[]): Promise<T
     number: row.number,
     title: row.title,
     description: row.description,
+    attachments: row.attachments,
     status: row.status,
     priority: row.priority,
     assignee: (row.assigneeId && people.get(row.assigneeId)) || null,
     assigneeAgent: agents.find((one) => one.id === row.assigneeAgentId) ?? null,
+    startOn: row.startOn,
     dueOn: row.dueOn,
+    milestone: milestones.find((one) => one.id === row.milestoneId) ?? null,
     source: row.source,
     createdBy: (row.createdBy && people.get(row.createdBy)) || null,
     agent: agents.find((one) => one.id === row.createdByAgent) ?? null,
@@ -231,7 +253,8 @@ export async function createTodo(
   const ctx = await cloudContext(deps.db, workspaceId, userId);
   const place = placeOf(ctx, input.areaId);
   await checkAssignee(deps, ctx, place.areaId, input.assigneeId);
-  if (input.assigneeAgentId) await sendable(deps, userId, place.areaId, input.assigneeAgentId);
+  if (input.assigneeAgentId) await sendable(deps, ctx, place.areaId, input.assigneeAgentId);
+  if (input.milestoneId) await milestoneHere(deps, ctx.workspaceId, place, input.milestoneId);
   // From a mail: one of the writer's own – nobody names another's thread as its source.
   if (input.source) {
     const [own] = await deps.db
@@ -258,7 +281,9 @@ export async function createTodo(
           priority: input.priority ?? 0,
           assigneeId: input.assigneeId ?? null,
           assigneeAgentId: input.assigneeAgentId ?? null,
+          startOn: input.startOn ?? null,
           dueOn: input.dueOn ?? null,
+          milestoneId: input.milestoneId ?? null,
           source: input.source ?? null,
           createdBy: userId,
           createdByAgent: agentId,
@@ -269,8 +294,6 @@ export async function createTodo(
         .returning();
       await tellTodos(deps, row!);
       const [todo] = await toTodos(deps, ctx, [row!]);
-      if (input.assigneeAgentId && by.viewer)
-        await sendOrTakeBack(deps, by.viewer, todo!, input.assigneeAgentId, null);
       return todo!;
     } catch (error) {
       // Two at once took the same number: the next one.
@@ -301,29 +324,53 @@ export async function updateTodo(
   } else if (change.assigneeId !== undefined) {
     await checkAssignee(deps, ctx, place.areaId, assigneeId);
   }
-  // An agent stays on it only where it may work on it; one newly sent starts at once.
+  // An agent stays on it only where it may work on it; given it, it waits to be sent
+  // (`sendTodoAgent`).
   let assigneeAgentId =
     change.assigneeAgentId !== undefined ? change.assigneeAgentId : row.assigneeAgentId;
-  const sent = !!change.assigneeAgentId && change.assigneeAgentId !== row.assigneeAgentId;
-  if (sent && !by.viewer) throw badRequest(NO_SENDING);
-  if (sent) await sendable(deps, userId, place.areaId, change.assigneeAgentId!);
+  const given = !!change.assigneeAgentId && change.assigneeAgentId !== row.assigneeAgentId;
+  if (given && !by.viewer) throw badRequest(NO_SENDING);
+  if (given) await sendable(deps, ctx, place.areaId, change.assigneeAgentId!);
   else if (moved && assigneeAgentId) {
-    const kept = await sendable(deps, userId, place.areaId, assigneeAgentId).then(
+    const kept = await sendable(deps, ctx, place.areaId, assigneeAgentId).then(
       () => true,
       () => false,
     );
     if (!kept) assigneeAgentId = null;
   }
+  // A milestone is its place's: moved, it leaves it (unless one of the new place's is named).
+  let milestoneId = change.milestoneId !== undefined ? change.milestoneId : row.milestoneId;
+  if (change.milestoneId) await milestoneHere(deps, ctx.workspaceId, place, change.milestoneId);
+  else if (moved && change.milestoneId === undefined) milestoneId = null;
   const status = change.status ?? row.status;
   const now = deps.clock.now();
+  // Its files as asked: the new ones taken (one's own, waiting), the ones left out deleted after.
+  let files = row.attachments;
+  let gone: Attachment[] = [];
+  if (change.attachments !== undefined) {
+    const wanted = new Set(change.attachments);
+    const known = new Set(files.map((one) => one.id));
+    gone = files.filter((one) => !wanted.has(one.id));
+    const added = await claimAttachments(
+      deps.db,
+      now,
+      userId,
+      row.workspaceId,
+      change.attachments.filter((id) => !known.has(id)),
+    );
+    files = [...files.filter((one) => wanted.has(one.id)), ...added];
+  }
   const [updated] = await deps.db
     .update(todos)
     .set({
       ...place,
       ...(change.title !== undefined ? { title: change.title.trim() } : {}),
       ...(change.description !== undefined ? { description: change.description } : {}),
+      ...(change.attachments !== undefined ? { attachments: files } : {}),
       ...(change.priority !== undefined ? { priority: change.priority } : {}),
+      ...(change.startOn !== undefined ? { startOn: change.startOn } : {}),
       ...(change.dueOn !== undefined ? { dueOn: change.dueOn } : {}),
+      milestoneId,
       assigneeId,
       assigneeAgentId,
       status,
@@ -332,11 +379,45 @@ export async function updateTodo(
     })
     .where(eq(todos.id, row.id))
     .returning();
+  await deleteAttachments(deps, gone);
   await tellTodos(deps, row);
   if (moved) await tellTodos(deps, updated!);
   const [todo] = await toTodos(deps, ctx, [updated!]);
-  if (sent && by.viewer)
-    await sendOrTakeBack(deps, by.viewer, todo!, assigneeAgentId!, row.assigneeAgentId);
+  return todo!;
+}
+
+/**
+ * „Losschicken“: the agent given the to-do starts on it, as the one who sends it – given
+ * (`assigneeAgentId`) and sent are two steps, so one can plan who does what first.
+ */
+export async function sendTodoAgent(deps: AppDeps, viewer: Viewer, todoId: string): Promise<Todo> {
+  const userId = viewer.author.id;
+  const { row, ctx, access } = await loadTodo(deps, userId, todoId);
+  if (access !== 'edit') throw forbidden('In diesem Bereich darfst du nur ansehen.');
+  if (!row.assigneeAgentId) throw badRequest('Dieser Aufgabe ist kein Agent zugeteilt.');
+  await sendable(deps, ctx, row.areaId, row.assigneeAgentId);
+  const [todo] = await toTodos(deps, ctx, [row]);
+  await sendAgentOnTodo(deps, viewer, todo!, row.assigneeAgentId);
+  return todo!;
+}
+
+/**
+ * „Neuer Agent“ for a to-do: one of one's own, plainly „Agent“ (the to-do's title beside its
+ * own read as a second title), in its area – given it, not yet sent; nothing runs until
+ * „Losschicken“.
+ */
+export async function newTodoAgent(deps: AppDeps, viewer: Viewer, todoId: string): Promise<Todo> {
+  const userId = viewer.author.id;
+  const { row, ctx, access } = await loadTodo(deps, userId, todoId);
+  if (access !== 'edit') throw forbidden('In diesem Bereich darfst du nur ansehen.');
+  const agent = await createIdleCloudAgent(deps, viewer, row.workspaceId, 'Agent', row.areaId);
+  const [updated] = await deps.db
+    .update(todos)
+    .set({ assigneeAgentId: agent.id, updatedAt: deps.clock.now() })
+    .where(eq(todos.id, row.id))
+    .returning();
+  await tellTodos(deps, row);
+  const [todo] = await toTodos(deps, ctx, [updated!]);
   return todo!;
 }
 
@@ -345,9 +426,13 @@ export async function updateTodo(
  * with, so the to-do's words go only where they are seen anyway: one's own to-do to one's own
  * agent alone; an area's to one's own or to one shared in that area.
  */
-async function sendable(deps: AppDeps, userId: string, areaId: string | null, agentId: string) {
+async function sendable(deps: AppDeps, ctx: CloudCtx, areaId: string | null, agentId: string) {
+  const userId = ctx.userId;
   const agent = await agentFor(deps, userId, agentId);
-  const fits = agent.shared ? !!areaId && agent.areaId === areaId : agent.userId === userId;
+  // Only an agent of the to-do's workspace: one of another would work on that one's to-dos.
+  const fits =
+    agent.workspaceId === ctx.workspaceId &&
+    (agent.shared ? !!areaId && agent.areaId === areaId : agent.userId === userId);
   if (!fits)
     throw badRequest(
       areaId
@@ -358,11 +443,18 @@ async function sendable(deps: AppDeps, userId: string, areaId: string | null, ag
 }
 
 /** What an agent sent on a to-do is told: the to-do, and to keep it up to date as it works. */
-export function todoOrder(todo: Pick<Todo, 'number' | 'title' | 'description' | 'dueOn'>) {
+export function todoOrder(
+  todo: Pick<Todo, 'number' | 'title' | 'description' | 'dueOn'> & Partial<Pick<Todo, 'milestone'>>,
+) {
   return [
     `Bearbeite die Aufgabe #${todo.number}: ${todo.title}`,
     ...(todo.description ? ['', todo.description] : []),
     ...(todo.dueOn ? ['', `Fällig: ${todo.dueOn}`] : []),
+    ...(todo.milestone
+      ? [
+          `Meilenstein: ${todo.milestone.name}${todo.milestone.dueOn ? ` (${todo.milestone.dueOn})` : ''}`,
+        ]
+      : []),
   ].join('\n');
 }
 
@@ -372,6 +464,9 @@ const TODO_PROMPT = (number: number) =>
 /** Starts the agent on the to-do, as the one who sent it – its chat shows the order. */
 export async function sendAgentOnTodo(deps: AppDeps, viewer: Viewer, todo: Todo, agentId: string) {
   const order = todoOrder(todo);
+  // Its files go along – as copies the agent's chat keeps: the to-do's can go without them.
+  const since = deps.clock.now();
+  const files = await copyAttachments(deps, todo.attachments ?? []);
   await messageCloudAgent(
     deps,
     viewer,
@@ -385,34 +480,20 @@ export async function sendAgentOnTodo(deps: AppDeps, viewer: Viewer, todo: Todo,
     undefined,
     // Its words are the to-do's – others may have written them, a mail may have brought them.
     true,
-  );
-}
-
-/** Sends the agent; where it cannot start (no AI, busy), the to-do keeps the one before. */
-async function sendOrTakeBack(
-  deps: AppDeps,
-  viewer: Viewer,
-  todo: Todo,
-  agentId: string,
-  before: string | null,
-) {
-  try {
-    await sendAgentOnTodo(deps, viewer, todo, agentId);
-  } catch (error) {
-    await deps.db.update(todos).set({ assigneeAgentId: before }).where(eq(todos.id, todo.id));
-    await tellTodos(deps, {
-      workspaceId: todo.workspaceId,
-      areaId: todo.areaId,
-      ownerId: todo.areaId ? null : viewer.author.id,
-    });
+    [],
+    // The agent looks at them or reads them, as a message's.
+    files,
+  ).catch(async (error: unknown) => {
+    await dropUnkeptCopies(deps, agentId, since, files);
     throw error;
-  }
+  });
 }
 
 export async function deleteTodo(deps: AppDeps, userId: string, todoId: string): Promise<void> {
   const { row, access } = await loadTodo(deps, userId, todoId);
   if (access !== 'edit') throw forbidden('In diesem Bereich darfst du nur ansehen.');
   await deps.db.delete(todos).where(eq(todos.id, row.id));
+  await deleteAttachments(deps, row.attachments);
   await tellTodos(deps, row);
 }
 
@@ -451,5 +532,169 @@ export function todoLine(todo: Todo, areaName: (areaId: string) => string | unde
   const place = todo.areaId
     ? `area „${areaName(todo.areaId) ?? 'Bereich'}“ (${todo.areaId})`
     : 'own';
-  return `${todo.id} #${todo.number} [${todo.status}${todo.priority ? `, priority ${todo.priority}` : ''}] ${todo.title} – ${place}${todo.assignee ? `, ${todo.assignee.name} (${todo.assignee.id})` : ''}${todo.assigneeAgent ? `, agent ${todo.assigneeAgent.title}` : ''}${todo.dueOn ? `, due ${todo.dueOn}` : ''}`;
+  return `${todo.id} #${todo.number} [${todo.status}${todo.priority ? `, priority ${todo.priority}` : ''}] ${todo.title} – ${place}${todo.assignee ? `, ${todo.assignee.name} (${todo.assignee.id})` : ''}${todo.assigneeAgent ? `, agent ${todo.assigneeAgent.title}` : ''}${todo.startOn ? `, starts ${todo.startOn}` : ''}${todo.dueOn ? `, due ${todo.dueOn}` : ''}${todo.milestone ? `, milestone „${todo.milestone.name}“${todo.milestone.dueOn ? ` (${todo.milestone.dueOn})` : ''}` : ''}`;
+}
+
+/*
+ * Milestones: points a place's to-dos lead to, by a date – one's own or an area's, seen and
+ * changed as that place's to-dos are. Deleting one leaves its to-dos without it.
+ */
+
+const milestoneNotFound = () => notFound('Diesen Meilenstein gibt es nicht (mehr).');
+
+function toMilestone(ctx: CloudCtx, row: TodoMilestoneRow): TodoMilestone {
+  return {
+    id: row.id,
+    workspaceId: row.workspaceId,
+    areaId: row.areaId,
+    name: row.name,
+    dueOn: row.dueOn,
+    canEdit: accessTo(ctx, row) === 'edit',
+    createdAt: row.createdAt.toISOString(),
+  };
+}
+
+/** By date (none last), then the oldest first – the order they are reached in. */
+const byDate = (a: TodoMilestone, b: TodoMilestone) =>
+  (a.dueOn ?? '9999').localeCompare(b.dueOn ?? '9999') || a.createdAt.localeCompare(b.createdAt);
+
+/** That a milestone is of this very place – a to-do takes only its own place's. */
+async function milestoneHere(
+  deps: AppDeps,
+  workspaceId: string,
+  place: { areaId: string | null; ownerId: string | null },
+  milestoneId: string,
+) {
+  const [row] = await deps.db
+    .select({
+      workspaceId: todoMilestones.workspaceId,
+      areaId: todoMilestones.areaId,
+      ownerId: todoMilestones.ownerId,
+    })
+    .from(todoMilestones)
+    .where(eq(todoMilestones.id, milestoneId));
+  const fits =
+    row &&
+    row.workspaceId === workspaceId &&
+    (place.areaId ? row.areaId === place.areaId : !row.areaId && row.ownerId === place.ownerId);
+  if (!fits) throw badRequest('Dieser Meilenstein gehört nicht hierher.');
+}
+
+/** The caller's milestones: one area's (`areaId`), or their own and every area's they see. */
+export async function listMilestones(
+  deps: AppDeps,
+  userId: string,
+  workspaceId: string,
+  options: { areaId?: string } = {},
+): Promise<TodoMilestone[]> {
+  const ctx = await cloudContext(deps.db, workspaceId, userId);
+  let where;
+  if (options.areaId) {
+    if (!ctx.areas.get(options.areaId)?.access) throw areaNotFound();
+    where = and(
+      eq(todoMilestones.workspaceId, workspaceId),
+      eq(todoMilestones.areaId, options.areaId),
+    );
+  } else {
+    const seen = [...ctx.areas.entries()].filter(([, one]) => one.access).map(([id]) => id);
+    where = and(
+      eq(todoMilestones.workspaceId, workspaceId),
+      or(
+        and(isNull(todoMilestones.areaId), eq(todoMilestones.ownerId, userId)),
+        seen.length ? inArray(todoMilestones.areaId, seen) : sql`false`,
+      ),
+    );
+  }
+  const rows = await deps.db.select().from(todoMilestones).where(where).limit(MAX_LISTED);
+  return rows.map((row) => toMilestone(ctx, row)).sort(byDate);
+}
+
+export async function createMilestone(
+  deps: AppDeps,
+  userId: string,
+  workspaceId: string,
+  input: MilestoneInput,
+): Promise<TodoMilestone> {
+  const ctx = await cloudContext(deps.db, workspaceId, userId);
+  const place = placeOf(ctx, input.areaId);
+  const now = deps.clock.now();
+  const [row] = await deps.db
+    .insert(todoMilestones)
+    .values({
+      id: crypto.randomUUID(),
+      workspaceId,
+      ...place,
+      name: input.name.trim(),
+      dueOn: input.dueOn ?? null,
+      createdAt: now,
+      updatedAt: now,
+    })
+    .returning();
+  await tellTodos(deps, row!);
+  return toMilestone(ctx, row!);
+}
+
+async function loadMilestone(deps: AppDeps, userId: string, milestoneId: string) {
+  const [row] = await deps.db
+    .select()
+    .from(todoMilestones)
+    .where(eq(todoMilestones.id, milestoneId));
+  if (!row) throw milestoneNotFound();
+  const ctx = await cloudContext(deps.db, row.workspaceId, userId).catch(() => {
+    throw milestoneNotFound();
+  });
+  const access = accessTo(ctx, row);
+  if (!access) throw milestoneNotFound();
+  if (access !== 'edit') throw forbidden('In diesem Bereich darfst du nur ansehen.');
+  return { row, ctx };
+}
+
+export async function updateMilestone(
+  deps: AppDeps,
+  userId: string,
+  milestoneId: string,
+  change: MilestoneChange,
+): Promise<TodoMilestone> {
+  const { row, ctx } = await loadMilestone(deps, userId, milestoneId);
+  const [updated] = await deps.db
+    .update(todoMilestones)
+    .set({
+      ...(change.name !== undefined ? { name: change.name.trim() } : {}),
+      ...(change.dueOn !== undefined ? { dueOn: change.dueOn } : {}),
+      updatedAt: deps.clock.now(),
+    })
+    .where(eq(todoMilestones.id, row.id))
+    .returning();
+  await tellTodos(deps, row);
+  return toMilestone(ctx, updated!);
+}
+
+export async function deleteMilestone(
+  deps: AppDeps,
+  userId: string,
+  milestoneId: string,
+): Promise<void> {
+  const { row } = await loadMilestone(deps, userId, milestoneId);
+  await deps.db.delete(todoMilestones).where(eq(todoMilestones.id, row.id));
+  await tellTodos(deps, row);
+}
+
+/**
+ * A milestone named by an agent or an app, in a to-do's place: the one of that name there (case
+ * and spaces aside), or a new one – they plan by names, not ids.
+ */
+export async function milestoneNamed(
+  deps: AppDeps,
+  userId: string,
+  workspaceId: string,
+  areaId: string | null,
+  name: string,
+): Promise<string> {
+  const fold = (text: string) => text.trim().toLowerCase().replace(/\s+/g, ' ');
+  const here = (
+    await listMilestones(deps, userId, workspaceId, { areaId: areaId ?? undefined })
+  ).filter((one) => one.areaId === areaId);
+  const found = here.find((one) => fold(one.name) === fold(name));
+  if (found) return found.id;
+  return (await createMilestone(deps, userId, workspaceId, { name, areaId })).id;
 }

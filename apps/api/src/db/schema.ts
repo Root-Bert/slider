@@ -17,6 +17,8 @@ import {
 } from 'drizzle-orm/pg-core';
 import { sql } from 'drizzle-orm';
 import type {
+  Attachment,
+  SenderFileFiling,
   CloudAreaColor,
   ReaderAnchor,
   ReaderMarkBody,
@@ -1644,6 +1646,10 @@ export const materialChatMessages = pgTable(
     seq: integer('seq').notNull(),
     role: text('role').$type<'user' | 'assistant'>().notNull(),
     text: encryptedText('material_chat_messages', 'text').notNull(),
+    /** Files put on it (`services/attachments.ts`), in their order. */
+    attachments: encryptedJsonList<Attachment>('material_chat_messages', 'attachments')
+      .notNull()
+      .default([]),
     /** How the AI's answer ended; `null` for the person's message. */
     state: text('state').$type<MaterialChatAnswerState>(),
     error: text('error'),
@@ -2203,6 +2209,10 @@ export const cloudAgentMessages = pgTable(
     seq: integer('seq').notNull(),
     role: text('role').$type<'user' | 'assistant'>().notNull(),
     text: encryptedText('cloud_agent_messages', 'text').notNull(),
+    /** Files put on it (`services/attachments.ts`), in their order. */
+    attachments: encryptedJsonList<Attachment>('cloud_agent_messages', 'attachments')
+      .notNull()
+      .default([]),
     /** How the agent's answer ended; `null` for the person's message. */
     state: text('state').$type<MaterialChatAnswerState>(),
     error: text('error'),
@@ -2379,6 +2389,10 @@ export const documentComments = pgTable(
     }),
     authorId: text('author_id').references(() => users.id, { onDelete: 'set null' }),
     body: encryptedText('document_comments', 'body').notNull(),
+    /** Files put on it (`services/attachments.ts`), in their order. */
+    attachments: encryptedJsonList<Attachment>('document_comments', 'attachments')
+      .notNull()
+      .default([]),
     /** Where it points; `null` on an answer. */
     anchor: encryptedJson<WriterAnchor>('document_comments', 'anchor'),
     status: text('status').$type<'open' | 'done'>().notNull().default('open'),
@@ -2473,6 +2487,8 @@ export const pdfComments = pgTable(
     }),
     authorId: text('author_id').references(() => users.id, { onDelete: 'set null' }),
     body: encryptedText('pdf_comments', 'body').notNull(),
+    /** Files put on it (`services/attachments.ts`), in their order. */
+    attachments: encryptedJsonList<Attachment>('pdf_comments', 'attachments').notNull().default([]),
     /** Where it points; `null` on an answer. */
     anchor: encryptedJson<ReaderAnchor>('pdf_comments', 'anchor'),
     status: text('status').$type<'open' | 'done'>().notNull().default('open'),
@@ -2554,8 +2570,8 @@ export const senderChannels = pgTable(
     /** A direct conversation's two people, sorted and joined: one per pair. */
     directKey: text('direct_key'),
     /**
-     * The agent tagged here with `@Agent`: an area's own (made when first tagged), or the one
-     * added to a group or direct conversation. It reads along only when tagged.
+     * An area's own agent, tagged with `@Agent` in its channels (made when first tagged); `null`
+     * in groups and direct ones – the agents added anywhere are `sender_channel_agents`.
      */
     agentId: text('agent_id').references(() => cloudAgents.id, { onDelete: 'set null' }),
     /** The seq of its latest message. */
@@ -2608,6 +2624,10 @@ export const senderMessages = pgTable(
     userId: text('user_id').references(() => users.id, { onDelete: 'set null' }),
     agentId: text('agent_id').references(() => cloudAgents.id, { onDelete: 'set null' }),
     text: encryptedText('sender_messages', 'text').notNull(),
+    /** Files put on it (`services/attachments.ts`), in their order. */
+    attachments: encryptedJsonList<Attachment>('sender_messages', 'attachments')
+      .notNull()
+      .default([]),
     /** It came as a colleague's mail to a mailbox here (`mail_messages`): its subject. */
     mail: encryptedJson<SenderMessageMail>('sender_messages', 'mail'),
     /** Those whose name it carries („@Anna“): their unread count says so. */
@@ -2636,6 +2656,29 @@ export const senderAgentReads = pgTable(
     readSeq: integer('read_seq').notNull().default(0),
   },
   (t) => [primaryKey({ columns: [t.agentId, t.userId] })],
+);
+
+/**
+ * The agents added to a conversation („Agent hinzufügen“, migration 0170): shown in its head and
+ * first under @. Who calls one with @ is the same rule as for any agent (`callableHere`): who
+ * sees it, where it may be called – added or not.
+ */
+export const senderChannelAgents = pgTable(
+  'sender_channel_agents',
+  {
+    channelId: text('channel_id')
+      .notNull()
+      .references(() => senderChannels.id, { onDelete: 'cascade' }),
+    agentId: text('agent_id')
+      .notNull()
+      .references(() => cloudAgents.id, { onDelete: 'cascade' }),
+    addedBy: text('added_by').references(() => users.id, { onDelete: 'set null' }),
+    createdAt: createdAt(),
+  },
+  (t) => [
+    primaryKey({ columns: [t.channelId, t.agentId] }),
+    index('sender_channel_agents_agent_idx').on(t.agentId),
+  ],
 );
 
 // ── Mail: a person's mailboxes, woven into Sender ───────────────────────────
@@ -2934,6 +2977,65 @@ export const mailUploads = pgTable(
 );
 
 /**
+ * A file put on something written – a message, an order to an agent, a question to the AI, a
+ * comment, a to-do, an event (`services/attachments.ts`). Up at once, it waits as its writer's
+ * own (`taken_at` null) until what it is on is sent and takes it; never taken, gone after seven
+ * days. What took it keeps its name, type and size beside its words (`attachments` there); the
+ * bytes lie under the workspace (`workspaces/<id>/attachments/<id>`) and go with it.
+ */
+export const attachments = pgTable(
+  'attachments',
+  {
+    id: text('id').primaryKey(),
+    workspaceId: text('workspace_id')
+      .notNull()
+      .references(() => workspaces.id, { onDelete: 'cascade' }),
+    userId: text('user_id').references(() => users.id, { onDelete: 'set null' }),
+    name: encryptedText('attachments', 'name').notNull(),
+    type: text('type').notNull(),
+    size: integer('size').notNull(),
+    key: text('key').notNull(),
+    takenAt: timestamptz('taken_at'),
+    createdAt: createdAt(),
+  },
+  (t) => [index('attachments_waiting_idx').on(t.takenAt, t.createdAt)],
+);
+export type AttachmentRow = typeof attachments.$inferSelect;
+
+/**
+ * A file sent in a conversation (`services/sender-files.ts`): its conversation's „Dateien“, where
+ * it lies in Cloud – an area's chat puts it into the area's „Chat-Dateien“ at once, elsewhere it
+ * lies there once filed (`node_id`) – and where the AI would put it (`filing`). Gone with its
+ * message, its conversation, its attachment.
+ */
+export const senderFiles = pgTable(
+  'sender_files',
+  {
+    /** The upload's id – or, for a Cloud file or folder a message points to, the node's id. */
+    attachmentId: text('attachment_id').notNull(),
+    workspaceId: text('workspace_id')
+      .notNull()
+      .references(() => workspaces.id, { onDelete: 'cascade' }),
+    channelId: text('channel_id')
+      .notNull()
+      .references(() => senderChannels.id, { onDelete: 'cascade' }),
+    messageId: text('message_id')
+      .notNull()
+      .references(() => senderMessages.id, { onDelete: 'cascade' }),
+    userId: text('user_id').references(() => users.id, { onDelete: 'set null' }),
+    nodeId: text('node_id').references(() => cloudNodes.id, { onDelete: 'set null' }),
+    filing: encryptedJson<SenderFileFiling>('sender_files', 'filing'),
+    createdAt: createdAt(),
+  },
+  (t) => [
+    primaryKey({ columns: [t.messageId, t.attachmentId] }),
+    index('sender_files_channel_idx').on(t.channelId, t.createdAt),
+    index('sender_files_node_idx').on(t.nodeId),
+  ],
+);
+export type SenderFileRow = typeof senderFiles.$inferSelect;
+
+/**
  * What a person wrote and did not send – in a conversation, to an agent, as a mail – kept for
  * their account, so it waits on every device (`services/drafts.ts`). Theirs alone: no one else
  * reads it, not even the workspace's admins. `key`: the client's (a conversation's id, `mail:…`,
@@ -2990,6 +3092,32 @@ export const senderPins = pgTable(
 );
 
 /**
+ * A milestone (`@slider/shared` todos): a point a place's to-dos lead to, by a date – an area's
+ * (whoever may edit there changes it) or, without an area, its owner's alone, as to-dos are.
+ */
+export const todoMilestones = pgTable(
+  'todo_milestones',
+  {
+    id: text('id').primaryKey(),
+    workspaceId: text('workspace_id')
+      .notNull()
+      .references(() => workspaces.id, { onDelete: 'cascade' }),
+    areaId: text('area_id').references(() => cloudAreas.id, { onDelete: 'cascade' }),
+    ownerId: text('owner_id').references(() => users.id, { onDelete: 'cascade' }),
+    name: encryptedText('todo_milestones', 'name').notNull(),
+    /** `YYYY-MM-DD`. */
+    dueOn: text('due_on'),
+    createdAt: createdAt(),
+    updatedAt: timestamptz('updated_at').notNull().defaultNow(),
+  },
+  (t) => [
+    index('todo_milestones_area_idx').on(t.areaId),
+    index('todo_milestones_owner_idx').on(t.ownerId),
+  ],
+);
+export type TodoMilestoneRow = typeof todoMilestones.$inferSelect;
+
+/**
  * A to-do (`@slider/shared` todos): an area's – whoever sees the area sees and, editing there,
  * changes it – or, without an area, its owner's alone. Title, words and where it came from are
  * encrypted at rest; numbered per workspace („#12“).
@@ -3007,6 +3135,8 @@ export const todos = pgTable(
     number: integer('number').notNull(),
     title: encryptedText('todos', 'title').notNull(),
     description: encryptedText('todos', 'description').notNull(),
+    /** Files put on it (`services/attachments.ts`), in their order. */
+    attachments: encryptedJsonList<Attachment>('todos', 'attachments').notNull().default([]),
     status: text('status').$type<TodoStatus>().notNull().default('todo'),
     priority: integer('priority').$type<TodoPriority>().notNull().default(0),
     assigneeId: text('assignee_id').references(() => users.id, { onDelete: 'set null' }),
@@ -3014,8 +3144,13 @@ export const todos = pgTable(
     assigneeAgentId: text('assignee_agent_id').references(() => cloudAgents.id, {
       onDelete: 'set null',
     }),
+    /** `YYYY-MM-DD`: work on it begins (its bar's start on the timeline). */
+    startOn: text('start_on'),
     /** `YYYY-MM-DD`. */
     dueOn: text('due_on'),
+    milestoneId: text('milestone_id').references(() => todoMilestones.id, {
+      onDelete: 'set null',
+    }),
     source: encryptedJson<TodoSource>('todos', 'source'),
     createdBy: text('created_by').references(() => users.id, { onDelete: 'set null' }),
     createdByAgent: text('created_by_agent').references(() => cloudAgents.id, {
@@ -3030,6 +3165,7 @@ export const todos = pgTable(
     index('todos_area_idx').on(t.areaId),
     index('todos_owner_idx').on(t.ownerId),
     index('todos_assignee_idx').on(t.assigneeId),
+    index('todos_milestone_idx').on(t.milestoneId),
   ],
 );
 export type TodoRow = typeof todos.$inferSelect;
@@ -3114,6 +3250,10 @@ export const calendarEvents = pgTable(
     title: encryptedText('calendar_events', 'title').notNull(),
     location: encryptedText('calendar_events', 'location').notNull(),
     notes: encryptedText('calendar_events', 'notes').notNull(),
+    /** Files put on it (`services/attachments.ts`), in their order. */
+    attachments: encryptedJsonList<Attachment>('calendar_events', 'attachments')
+      .notNull()
+      .default([]),
     allDay: boolean('all_day').notNull().default(false),
     /** All-day: the days' midnights in UTC (the end exclusive), so ranges compare alike. */
     startsAt: timestamptz('starts_at').notNull(),

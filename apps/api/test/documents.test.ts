@@ -227,6 +227,7 @@ describe('Writer – text documents', () => {
       stockPhotos: false,
       photoSource: null,
       imageGeneration: false,
+      imageReferences: false,
     });
     const generated = await ctx.request(`/api/documents/${document.id}/pictures/generate`, {
       method: 'POST',

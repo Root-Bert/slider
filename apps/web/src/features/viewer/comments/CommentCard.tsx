@@ -17,6 +17,7 @@ import {
   AvatarStack,
   Button,
   cn,
+  ErrorText,
   IconButton,
   ToolbarDivider,
   selectedOutlineClass,
@@ -24,6 +25,7 @@ import {
 import { isRemovedInSource, type Thread } from './lib/comment-selectors';
 import { MediaReplyButtons } from './MediaTabs';
 import { VoiceMemoBar } from '../media/VoiceMemoBar';
+import { AttachedImages, AttachImageButton } from '../media/AttachedImages';
 import { useKeepThreadListed } from './hooks/useKeepThreadListed';
 import { useMentions } from './hooks/useMentions';
 import { useReplyDraft } from './hooks/useReplyDraft';
@@ -384,7 +386,7 @@ function ReplyBar({
   onCancel: (() => void) | undefined;
 }) {
   const formRef = useRef<HTMLFormElement>(null);
-  const { body, setBody, canSend, submit, onKeyDown, textareaRef, voice, uploading } =
+  const { body, setBody, canSend, submit, onKeyDown, textareaRef, voice, uploading, images } =
     useReplyDraft(root, deckId, {
       onCancel: () => {
         setBody('');
@@ -393,7 +395,7 @@ function ReplyBar({
       },
     });
   const mentions = useMentions(body, setBody, textareaRef);
-  const hasDraft = body.length > 0 || voice.on;
+  const hasDraft = body.length > 0 || voice.on || images.attachments.length > 0;
   useKeepThreadListed(root.id, hasDraft);
 
   // Each sent reply pushes the field down; keep it in view while it has focus.
@@ -437,6 +439,7 @@ function ReplyBar({
             aria-label={`Antwort an ${root.author.name}`}
             maxLength={MAX_COMMENT_BODY_LENGTH}
             placeholder="Antworten mit …"
+            onPaste={images.onPaste}
             value={body}
             maxHeight={120}
             onChange={(event) => {
@@ -448,6 +451,12 @@ function ReplyBar({
             }}
             className="text-body leading-4.5 text-fg placeholder:text-fg-subtle"
           />
+        )}
+        <AttachedImages attachments={images.attachments} onRemove={images.remove} />
+        {images.error && (
+          <ErrorText role="alert" size="xs">
+            {images.error}
+          </ErrorText>
         )}
       </div>
       {hasDraft && !voice.running && (
@@ -466,6 +475,12 @@ function ReplyBar({
           back once it is sent or dropped. */}
       {!voice.on && (
         <>
+          <AttachImageButton
+            onPick={(files) => void images.attach(files)}
+            busy={images.busy}
+            disabled={uploading || images.room === 0}
+            size="compact"
+          />
           <MediaReplyButtons root={root} voice={voice} />
           <ToolbarDivider size="sm" className="mb-1.5" />
           <ResolveButton comment={root} deckId={deckId} />

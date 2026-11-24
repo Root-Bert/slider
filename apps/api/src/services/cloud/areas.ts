@@ -1,9 +1,12 @@
 import { and, asc, eq, inArray, isNull, max, sql } from 'drizzle-orm';
 import { CLOUD_AREA_MAX_DEPTH, type CloudArea, type CloudAreaMember } from '@slider/shared';
 import {
+  calendars,
   cloudAreaMembers,
   cloudAreas,
   cloudNodes,
+  senderChannels,
+  todos,
   users,
   workspaceMembers,
   type CloudAreaRow,
@@ -264,9 +267,41 @@ export async function deleteArea(deps: AppDeps, userId: string, areaId: string):
   );
   // Loaded here: the agents' module reaches the files' (this one) as it loads.
   const { releaseAreaAgents } = await import('../cloud-agents');
+  const { attachmentsOf, attachmentsOn } = await import('../purge-attachments');
+  const { deleteAttachments } = await import('../attachments');
   await releaseAreaAgents(deps, row);
+  // The files put on what goes with it (comments and AI chats of its files, its channels'
+  // messages, its to-dos, its calendars' events): the rows go by cascade, the files would stay.
+  const [channels, areaTodos, areaCalendars] = await Promise.all([
+    deps.db
+      .select({ id: senderChannels.id })
+      .from(senderChannels)
+      .where(eq(senderChannels.areaId, areaId)),
+    deps.db.select({ id: todos.id }).from(todos).where(eq(todos.areaId, areaId)),
+    deps.db.select({ id: calendars.id }).from(calendars).where(eq(calendars.areaId, areaId)),
+  ]);
+  const subCalendars = areaCalendars.length
+    ? await deps.db
+        .select({ id: calendars.id })
+        .from(calendars)
+        .where(
+          inArray(
+            calendars.parentId,
+            areaCalendars.map((each) => each.id),
+          ),
+        )
+    : [];
+  const attached = [
+    ...(await attachmentsOn(deps.db, { nodeIds: files.map((file) => file.id) })),
+    ...(await attachmentsOf(deps.db, {
+      channelIds: channels.map((each) => each.id),
+      todoIds: areaTodos.map((each) => each.id),
+      calendarIds: [...areaCalendars, ...subCalendars].map((each) => each.id),
+    })),
+  ];
   await deps.db.delete(cloudAreas).where(eq(cloudAreas.id, areaId));
   await deleteBlobs(deps, blobs);
+  await deleteAttachments(deps, attached);
 }
 
 /** The area's people, all of them at once; only members of the workspace can be named. */

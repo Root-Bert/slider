@@ -3,6 +3,7 @@ import { eq, sql } from 'drizzle-orm';
 import JSZip from 'jszip';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import type {
+  Attachment,
   Calendar,
   CalendarEvent,
   CloudArea,
@@ -319,7 +320,37 @@ describe('Calendars', () => {
       .where(eq(calendarEvents.id, doctor.id));
     expect(stored?.raw.startsWith(SEALED_PREFIX)).toBe(true);
 
-    // Deleting a sub-calendar takes its events; deleting an event, it alone.
+    // Files on an event (Slider's own calendars): up first, taken when it is made or changed,
+    // deleted when left out – or with the event, or with its calendar.
+    const upload = async (name: string) => {
+      const form = new FormData();
+      form.append('file', new File(['Agenda'], name, { type: 'text/plain' }));
+      return ok<Attachment>(
+        ctx.request(`/api/workspaces/${ctx.workspaceId}/attachments`, {
+          method: 'POST',
+          body: form,
+        }),
+        201,
+      );
+    };
+    const agenda = await upload('Agenda.txt');
+    const plan = await upload('Plan.txt');
+    expect(
+      (
+        await ok<CalendarEvent>(
+          send('PATCH', `/calendar-events/${doctor.id}`, { attachments: [agenda.id, plan.id] }),
+        )
+      ).attachments?.map((one) => one.name),
+    ).toEqual(['Agenda.txt', 'Plan.txt']);
+    expect(
+      (await ok<CalendarEvent>(send('GET', `/calendar-events/${doctor.id}`))).attachments,
+    ).toHaveLength(2);
+    await ok(send('PATCH', `/calendar-events/${doctor.id}`, { attachments: [plan.id] }));
+    expect((await send('GET', `/attachments/${agenda.id}`)).status).toBe(404);
+    expect(await (await send('GET', `/attachments/${plan.id}`)).text()).toBe('Agenda');
+
+    // Deleting a sub-calendar takes its events (and their files); deleting an event, it alone.
+    const brief = await upload('Briefing.txt');
     const second = await ok<CalendarEvent>(
       send('POST', '/calendar-events', {
         calendarId: trips.id,
@@ -327,12 +358,16 @@ describe('Calendars', () => {
         allDay: true,
         start: '2027-04-20',
         end: '2027-04-21',
+        attachments: [brief.id],
       }),
       201,
     );
+    expect(second.attachments).toMatchObject([{ id: brief.id, name: 'Briefing.txt' }]);
     await ok(send('DELETE', `/calendars/${trips.id}`), 204);
     expect((await send('GET', `/calendar-events/${second.id}`)).status).toBe(404);
+    expect((await send('GET', `/attachments/${brief.id}`)).status).toBe(404);
     await ok(send('DELETE', `/calendar-events/${doctor.id}`), 204);
+    expect((await send('GET', `/attachments/${plan.id}`)).status).toBe(404);
     expect(
       (await eventsOf('2027-04-01T00:00:00Z', '2027-05-01T00:00:00Z')).map((one) => one.title),
     ).toEqual(['Hannover Messe']);
@@ -553,6 +588,14 @@ describe('Calendars', () => {
     );
     expect(back.id.startsWith(`mail:${withMail[0]!.id}:`)).toBe(true);
     expect((await send('GET', `/calendar-events/${ownCall.id}`)).status).toBe(404);
+    // A mail calendar's events live at the provider: no files go on them.
+    expect(
+      (
+        await send('PATCH', `/calendar-events/${encodeURIComponent(back.id)}`, {
+          attachments: ['some-file'],
+        })
+      ).status,
+    ).toBe(400);
     await ok(send('DELETE', `/calendar-events/${encodeURIComponent(back.id)}`), 204);
     expect(writes.at(-1)).toMatch(/^remove new-\d+ /);
     // Someone else's calendar at the provider: nothing goes in, it only comes off one's list.

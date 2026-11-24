@@ -1,9 +1,15 @@
 import type Anthropic from '@anthropic-ai/sdk';
 import { eq, sql } from 'drizzle-orm';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import type { CloudArea, SenderEvent, Todo, WorkspaceRole } from '@slider/shared';
+import type { CloudArea, SenderEvent, Todo, TodoMilestone, WorkspaceRole } from '@slider/shared';
 import JSZip from 'jszip';
-import { cloudAgentChats, cloudAgents, todos, workspaceMembers } from '../src/db/schema';
+import {
+  cloudAgentChats,
+  cloudAgents,
+  todoMilestones,
+  todos,
+  workspaceMembers,
+} from '../src/db/schema';
 import { SEALED_PREFIX } from '../src/crypto/content-crypto';
 import { runAppTool } from '../src/services/mcp-cloud';
 import { senderLive } from '../src/services/sender';
@@ -209,6 +215,7 @@ describe('To-dos', () => {
     expect((await send('GET', `/todos/${offer.id}`, undefined, anna.cookie)).status).toBe(404);
 
     // Agents: one's own to-do only to one's own private agent; an area's also to one shared there.
+    // Given and sent are two steps: giving it starts nothing, „Losschicken“ (`/send`) does.
     const agent = async (userId: string, shared: boolean, areaId: string | null) => {
       const agentId = crypto.randomUUID();
       await ctx.deps.db.insert(cloudAgents).values({
@@ -227,9 +234,13 @@ describe('To-dos', () => {
     expect((await send('PATCH', `/todos/${mine.id}`, { assigneeAgentId: salesAgent })).status).toBe(
       400,
     );
-    // Without the workspace's AI it cannot start: the to-do keeps nobody.
-    expect((await send('PATCH', `/todos/${mine.id}`, { assigneeAgentId: own })).status).toBe(409);
-    expect((await ok<Todo>(send('GET', `/todos/${mine.id}`))).assigneeAgent).toBeNull();
+    expect((await send('POST', `/todos/${mine.id}/send`)).status).toBe(400);
+    // Without the workspace's AI it cannot start (nor a new one be made): it stays given.
+    await ok(send('PATCH', `/todos/${mine.id}`, { assigneeAgentId: own }));
+    expect((await send('POST', `/todos/${mine.id}/send`)).status).toBe(409);
+    expect((await send('POST', `/todos/${mine.id}/agent`)).status).toBe(409);
+    expect((await ok<Todo>(send('GET', `/todos/${mine.id}`))).assigneeAgent?.id).toBe(own);
+    expect(told).toHaveLength(0);
     await ok(
       send('POST', `/workspaces/${ctx.workspaceId}/integrations/keys`, {
         kind: 'ai',
@@ -237,7 +248,7 @@ describe('To-dos', () => {
         apiKey: 'sk-ant-api03-todos-test-key-00000000000',
       }),
     );
-    await ok(send('PATCH', `/todos/${mine.id}`, { assigneeAgentId: own }));
+    await ok(send('POST', `/todos/${mine.id}/send`));
     await expect.poll(() => told.length).toBe(1);
     // Sent on an area's to-do, the agent is told it and, with its tools, sets it done.
     const plan2 = await make({
@@ -247,10 +258,16 @@ describe('To-dos', () => {
     });
     plan = [{ name: 'update_todo', input: { todo: String(plan2.number), status: 'done' } }];
     told.length = 0;
-    const sent = await ok<Todo>(
+    const given = await ok<Todo>(
       send('PATCH', `/todos/${plan2.id}`, { assigneeAgentId: salesAgent }),
     );
-    expect(sent.assigneeAgent).toEqual({ id: salesAgent, title: 'Vertriebsagent' });
+    expect(given.assigneeAgent).toEqual({ id: salesAgent, title: 'Vertriebsagent' });
+    expect(told).toHaveLength(0);
+    // Who only views the area sends nobody.
+    expect((await send('POST', `/todos/${plan2.id}/send`, undefined, vera.cookie)).status).toBe(
+      403,
+    );
+    await ok(send('POST', `/todos/${plan2.id}/send`));
     await expect
       .poll(async () => (await ok<Todo>(send('GET', `/todos/${plan2.id}`))).status)
       .toBe('done');
@@ -258,6 +275,16 @@ describe('To-dos', () => {
     expect(told.join('\n')).toContain('Für Acme.');
     const [byAgent] = await ctx.deps.db.select().from(todos).where(eq(todos.id, plan2.id));
     expect(byAgent?.assigneeAgentId).toBe(salesAgent);
+    // „Neuer Agent“: one's own, plainly „Agent“, in its area, given it – nothing runs.
+    told.length = 0;
+    const fresh = await ok<Todo>(send('POST', `/todos/${plan2.id}/agent`), 201);
+    expect(fresh.assigneeAgent).toMatchObject({ title: 'Agent' });
+    const [made] = await ctx.deps.db
+      .select()
+      .from(cloudAgents)
+      .where(eq(cloudAgents.id, fresh.assigneeAgent!.id));
+    expect(made).toMatchObject({ userId: ctx.ownerId, areaId: sales.id, shared: false });
+    expect(told).toHaveLength(0);
 
     // An app (MCP) works as the person: makes one in an area for someone named, changes it by number.
     const app = async (name: string, args: Record<string, unknown>) => {
@@ -291,6 +318,76 @@ describe('To-dos', () => {
       error: true,
     });
     expect((await app('read_todo', { todo: '#999' })).error).toBe(true);
+
+    // Milestones: a place's own – a to-do takes only one of its place's, moved it leaves it; who
+    // views changes none; deleted, its to-dos stay without it. Apps name them, start and milestone
+    // stand in their lines.
+    const milestones = (cookie?: string) =>
+      ok<TodoMilestone[]>(
+        send('GET', `/workspaces/${ctx.workspaceId}/todo-milestones`, undefined, cookie),
+      );
+    const beta = await ok<TodoMilestone>(
+      send('POST', `/workspaces/${ctx.workspaceId}/todo-milestones`, {
+        name: ' Beta ',
+        areaId: sales.id,
+        dueOn: '2026-12-20',
+      }),
+      201,
+    );
+    const taxYear = await ok<TodoMilestone>(
+      send('POST', `/workspaces/${ctx.workspaceId}/todo-milestones`, { name: 'Steuerjahr' }),
+      201,
+    );
+    const [sealedName] = await ctx.deps.db
+      .select({ raw: sql<string>`${todoMilestones.name}` })
+      .from(todoMilestones)
+      .where(eq(todoMilestones.id, beta.id));
+    expect(sealedName?.raw.startsWith(SEALED_PREFIX)).toBe(true);
+    expect((await send('PATCH', `/todos/${mine.id}`, { milestoneId: beta.id })).status).toBe(400);
+    expect(
+      await ok<Todo>(
+        send('PATCH', `/todos/${plan2.id}`, {
+          milestoneId: beta.id,
+          startOn: '2026-12-01',
+          dueOn: '2026-12-10',
+        }),
+      ),
+    ).toMatchObject({
+      startOn: '2026-12-01',
+      dueOn: '2026-12-10',
+      milestone: { id: beta.id, name: 'Beta', dueOn: '2026-12-20' },
+    });
+    expect((await milestones(anna.cookie)).map((one) => one.name)).toEqual(['Beta']);
+    expect(
+      (await send('PATCH', `/todo-milestones/${beta.id}`, { name: 'X' }, vera.cookie)).status,
+    ).toBe(403);
+    const stand = await app('create_todo', {
+      title: 'Stand bauen',
+      area: sales.id,
+      start: '2026-12-05',
+      due: '2026-12-08',
+      milestone: ' beta ',
+    });
+    expect(stand.text).toContain(
+      'starts 2026-12-05, due 2026-12-08, milestone „Beta“ (2026-12-20)',
+    );
+    const standNumber = /#(\d+)/.exec(stand.text)?.[1];
+    expect((await app('update_todo', { todo: standNumber, milestone: 'Launch' })).text).toContain(
+      'milestone „Launch“',
+    );
+    expect((await milestones()).map((one) => one.name)).toEqual(['Beta', 'Steuerjahr', 'Launch']);
+    expect(
+      (await ok<Todo>(send('PATCH', `/todos/${plan2.id}`, { areaId: null }))).milestone,
+    ).toBeNull();
+    await ok(send('PATCH', `/todos/${plan2.id}`, { milestoneId: taxYear.id }));
+    const launch = (await milestones()).find((one) => one.name === 'Launch')!;
+    expect(
+      await ok<TodoMilestone>(
+        send('PATCH', `/todo-milestones/${launch.id}`, { dueOn: '2027-01-15' }),
+      ),
+    ).toMatchObject({ name: 'Launch', dueOn: '2027-01-15', canEdit: true });
+    await ok(send('DELETE', `/todo-milestones/${launch.id}`), 204);
+    expect((await app('read_todo', { todo: standNumber })).text).not.toContain('milestone');
 
     // The person's own beyond the files: settings (only what is on the server), Sender, mail, agents.
     expect((await app('read_settings', {})).text).toMatch(
@@ -329,6 +426,9 @@ describe('To-dos', () => {
         .map((one) => one.title)
         .sort(),
     ).toEqual(['Angebot Acme', 'Steuer machen']);
+    expect(
+      JSON.parse((await zip.file('meilensteine.json')?.async('string')) ?? '[]'),
+    ).toMatchObject([{ name: 'Steuerjahr' }]);
     leave();
   });
 });

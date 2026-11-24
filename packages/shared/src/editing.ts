@@ -1298,6 +1298,8 @@ export const deckEditStateSchema = z.object({
   photoSource: photoProviderSchema.nullable().default(null),
   /** Pictures can be generated: the workspace or the instance has a key for it. */
   imageGeneration: z.boolean().default(false),
+  /** Its image model takes pictures to go after (`references`). */
+  imageReferences: z.boolean().default(false),
   /** Pictures can be cut out of their background: the server has rembg (REMBG_URL). */
   cutOut: z.boolean().default(false),
   /** The server sends mail: „Exportieren“ can send the file to someone (`…/edit/send`). */
@@ -1469,6 +1471,11 @@ export const generateEditImageInputSchema = z.object({
     .max(IMAGE_PROMPT_MAX),
   /** The frame's width / height: the picture is generated roughly so and cut to it. */
   aspect: z.number().min(0.01).max(100).nullable().default(null),
+  /**
+   * Pictures up already (`/attachments`) that it goes after – its look, a person, a product;
+   * only where the image model takes them (`imageReferences`).
+   */
+  references: z.array(z.string().min(1).max(100)).max(4).optional(),
 });
 export type GenerateEditImageInput = z.infer<typeof generateEditImageInputSchema>;
 
@@ -1552,7 +1559,12 @@ export type AiProposalStatus = z.infer<typeof aiProposalStatusSchema>;
  */
 export const createAiProposalInputSchema = z.union([
   z.object({ commentId: z.string().min(1) }),
-  z.object({ variantOf: z.string().min(1), prompt: z.string().trim().min(1).max(4_000) }),
+  z.object({
+    variantOf: z.string().min(1),
+    prompt: z.string().trim().min(1).max(4_000),
+    /** Pictures up already (`/attachments`), for the AI to look at or put on the variant. */
+    attachments: z.array(z.string().min(1).max(100)).max(6).optional(),
+  }),
 ]);
 export type CreateAiProposalInput = z.infer<typeof createAiProposalInputSchema>;
 

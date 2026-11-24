@@ -781,9 +781,9 @@ function Open({
         }}
         comments={comments}
         onDraftCancel={() => setDraft(null)}
-        onDraftSent={(body, anchor, toAi) => {
+        onDraftSent={(body, anchor, toAi, attachments) => {
           setDraft(null);
-          setActive(comments.add(body, anchor, null, toAi));
+          setActive(comments.add(body, anchor, null, toAi, attachments));
         }}
       />
     );

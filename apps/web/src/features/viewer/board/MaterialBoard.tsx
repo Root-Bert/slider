@@ -894,8 +894,11 @@ function Board({ w, h, onLeave }: { w: number; h: number; onLeave: () => void })
   };
 
   const onPaste = (event: ClipboardEvent<HTMLDivElement>) => {
-    if (!canComment || isTextTarget(event.target)) return;
     const files = [...event.clipboardData.files];
+    // Typing in a note or a question, a pasted file still lies down on the board as material.
+    const inNode =
+      event.target instanceof Element && event.target.closest('.react-flow__node') !== null;
+    if (!canComment || (isTextTarget(event.target) && !(inNode && files.length > 0))) return;
     const text = event.clipboardData.getData('text/plain');
     if (files.length === 0 && !text.trim()) return;
     event.preventDefault();

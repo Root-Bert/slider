@@ -1215,6 +1215,27 @@
   animation-duration: 420ms;
   animation-timing-function: var(--ease-emphasized);
 }
+/* Cloud, things moved out of the list shown (lib/fly.ts `leaveList`): the page stands still, the
+   rest slide up into the gap, what went shrinks and fades from its place. */
+:root[data-transition='cloud-leave']::view-transition-old(root) {
+  display: none;
+}
+:root[data-transition='cloud-leave']::view-transition-new(root) {
+  animation: none;
+}
+::view-transition-group(.cloud-leave) {
+  animation-duration: 340ms;
+  animation-timing-function: var(--ease-emphasized);
+}
+::view-transition-old(.cloud-leave):only-child {
+  animation: cloud-leave 260ms var(--ease-exit) both;
+}
+@keyframes cloud-leave {
+  to {
+    opacity: 0;
+    scale: 0.85;
+  }
+}
 /* The header (logo, switcher, avatar) stays as it is (it is WorkspaceLayout's): taken out of the
    crossfade too, so the fade doesn't run over it. */
 :root[data-transition='workspace-view'] [data-app-header] {
@@ -2376,5 +2397,184 @@
 
   .skeleton {
     background-image: linear-gradient(90deg, #e9e9eb 0%, #f4f4f5 50%, #e9e9eb 100%);
+  }
+}
+
+/* The picture of an empty list at work (`EmptyScene`): a page rises into the cloud and the cloud
+   gulps, a page drops into the folder, to-dos tick off one by one, the agent's sparks twinkle,
+   the glass looks about. Still (reduced motion), each is its plain symbol. */
+.empty-scene * {
+  transform-box: fill-box;
+  transform-origin: center;
+}
+.empty-scene-rise,
+.empty-scene-drop {
+  opacity: 0;
+}
+.empty-scene-tick {
+  stroke-dasharray: 1;
+}
+@media (prefers-reduced-motion: no-preference) {
+  .empty-scene-rise {
+    opacity: 1;
+    animation: empty-rise 2.8s cubic-bezier(0.45, 0, 0.55, 1) infinite;
+  }
+  .empty-scene-gulp {
+    transform-origin: 50% 100%;
+    animation: empty-gulp 2.8s ease-in-out infinite;
+  }
+  .empty-scene-drop {
+    animation: empty-drop 3s infinite;
+  }
+  .empty-scene-catch {
+    transform-origin: 50% 100%;
+    animation: empty-catch 3s ease-out infinite;
+  }
+  .empty-scene-tick {
+    animation: empty-tick 4.2s var(--ease-symmetric) infinite both;
+  }
+  .empty-scene-line {
+    animation: empty-done 4.2s ease-out infinite both;
+  }
+  .empty-scene-todo:nth-child(2) > * {
+    animation-delay: 0.7s;
+  }
+  .empty-scene-todo:nth-child(3) > * {
+    animation-delay: 1.4s;
+  }
+  .empty-scene-spark {
+    animation: empty-spark 2.6s ease-in-out infinite;
+  }
+  .empty-scene-twinkle {
+    animation: empty-twinkle 2.6s ease-in-out infinite;
+  }
+  .empty-scene-twinkle + .empty-scene-twinkle {
+    animation-delay: -1.3s;
+  }
+  .empty-scene-look {
+    animation: empty-look 4.4s ease-in-out infinite;
+  }
+}
+@keyframes empty-rise {
+  from {
+    transform: translateY(10px);
+  }
+  55%,
+  to {
+    transform: translateY(-9px);
+  }
+}
+@keyframes empty-gulp {
+  0%,
+  42%,
+  80%,
+  100% {
+    transform: none;
+  }
+  54% {
+    transform: scale(1.06, 0.93);
+  }
+  67% {
+    transform: scale(0.98, 1.03);
+  }
+}
+@keyframes empty-drop {
+  from {
+    opacity: 1;
+    transform: translateY(-20px);
+    animation-timing-function: cubic-bezier(0.5, 0, 1, 1);
+  }
+  32% {
+    transform: none;
+    animation-timing-function: ease-out;
+  }
+  40% {
+    transform: translateY(-2px);
+    animation-timing-function: ease-in;
+  }
+  47% {
+    transform: none;
+  }
+  75% {
+    opacity: 1;
+  }
+  90%,
+  to {
+    opacity: 0;
+    transform: none;
+  }
+}
+@keyframes empty-catch {
+  0%,
+  31%,
+  52%,
+  100% {
+    transform: none;
+  }
+  38% {
+    transform: scale(1.05, 0.94);
+  }
+}
+@keyframes empty-tick {
+  from {
+    stroke-dashoffset: 1;
+  }
+  12%,
+  70% {
+    opacity: 1;
+    stroke-dashoffset: 0;
+  }
+  80%,
+  to {
+    opacity: 0;
+    stroke-dashoffset: 0;
+  }
+}
+@keyframes empty-done {
+  0%,
+  10%,
+  80%,
+  100% {
+    opacity: 1;
+  }
+  18%,
+  70% {
+    opacity: 0.35;
+  }
+}
+@keyframes empty-spark {
+  0%,
+  100% {
+    transform: none;
+  }
+  50% {
+    transform: scale(0.8) rotate(15deg);
+  }
+}
+@keyframes empty-twinkle {
+  0%,
+  100% {
+    opacity: 1;
+    transform: none;
+  }
+  50% {
+    opacity: 0.35;
+    transform: scale(0.35) rotate(90deg);
+  }
+}
+@keyframes empty-look {
+  0%,
+  14%,
+  90%,
+  100% {
+    transform: none;
+  }
+  30%,
+  44% {
+    transform: translate(2.5px, -1.5px) rotate(8deg);
+  }
+  60%,
+  74% {
+    transform: translate(-2.5px, 1px) rotate(-6deg);
   }
 }

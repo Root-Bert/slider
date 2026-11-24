@@ -5,6 +5,8 @@ import { createTransport } from 'nodemailer';
 import type Anthropic from '@anthropic-ai/sdk';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type {
+  Attachment,
+  SenderFile,
   Calendar,
   CalendarConnection,
   CloudArea,
@@ -29,16 +31,21 @@ import type {
 } from '@slider/shared';
 import {
   MAX_DRAFT_TEXT,
+  agentsTagged,
+  callableHere,
+  newAgentTitle,
   mailHostOfDomain,
   mailProviderOf,
   mailServersToCheck,
   mailThreadKind,
   mentionsIn,
 } from '@slider/shared';
-import { eq, inArray, sql } from 'drizzle-orm';
+import { and, eq, inArray, sql } from 'drizzle-orm';
 import {
+  attachments,
   cloudAgentChats,
   cloudAgents,
+  cloudNodes,
   integrationKeys,
   mailAccounts,
   mailInsights,
@@ -53,6 +60,7 @@ import {
 import type {
   FetchedMail,
   MailLogin,
+  MailMove,
   MailServers,
   OutgoingMail,
   SeenFlag,
@@ -131,6 +139,8 @@ let listed: MailFolderEntry[] | undefined;
 /** Read or unread meanwhile on the server – told on the next read; what was set read there. */
 const flagChanges: SeenFlag[] = [];
 const marked: SeenMark[] = [];
+/** What was moved on the server (to another folder), each given a new UID. */
+const movedOnServer: MailMove[] = [];
 /** The header fields the server gives when asked again, by UID (any folder). */
 const serverHeaders = new Map<number, string>();
 const servers: MailServers = {
@@ -154,6 +164,10 @@ const servers: MailServers = {
   mark: async (_login, marks) => {
     marked.push(...marks);
     return [...marks];
+  },
+  move: async (_login, moves) => {
+    movedOnServer.push(...moves);
+    return moves.map((one) => ({ ...one, newUid: one.uid + 50_000 }));
   },
   headers: async (_login, wanted) =>
     wanted.flatMap((one) => {
@@ -553,6 +567,27 @@ describe('Sender – the workspace’s messages', () => {
       'Anna Lenz',
       'Ben Krüger',
     ]);
+    // Called by name, the longest first; a bare „@Agent“ left over is the conversation's own.
+    const titled = [{ title: 'Agent' }, { title: 'Agent Recherche' }, { title: 'Ablage' }];
+    expect(agentsTagged('@Agent Recherche und @ablage, bitte', titled)).toEqual({
+      tagged: [{ title: 'Agent Recherche' }, { title: 'Ablage' }],
+      bare: false,
+    });
+    expect(agentsTagged('@Agent?', [{ title: 'Ablage' }])).toEqual({ tagged: [], bare: true });
+    expect(agentsTagged('info@ablage.de', titled).tagged).toEqual([]);
+    expect(newAgentTitle(['Agent', 'agent 2', 'Ablage'])).toBe('Agent 3');
+    // Callable: an area's shared ones there (the workspace's in its own area), one's own anywhere,
+    // in groups and direct ones all one sees.
+    const area = { kind: 'channel' as const, areaId: 'a', root: false };
+    const others = (shared: boolean, areaId: string | null) => ({ userId: 'x', shared, areaId });
+    expect([
+      callableHere(others(true, 'a'), area, 'me'),
+      callableHere(others(true, 'b'), area, 'me'),
+      callableHere(others(true, null), area, 'me'),
+      callableHere(others(true, null), { ...area, root: true }, 'me'),
+      callableHere({ userId: 'me', shared: false, areaId: null }, area, 'me'),
+      callableHere(others(true, 'b'), { kind: 'group', areaId: null, root: false }, 'me'),
+    ]).toEqual([true, false, false, true, true, true]);
     // Ben's own agent there goes out with him.
     const bensAgent = crypto.randomUUID();
     await ctx.deps.db.insert(cloudAgents).values({
@@ -564,13 +599,13 @@ describe('Sender – the workspace’s messages', () => {
     expect(
       (
         await ok<SenderChannel>(
-          send('PATCH', `/sender/channels/${lunch.id}`, { agentId: bensAgent }, ben.cookie),
+          send('POST', `/sender/channels/${lunch.id}/agents`, { agentId: bensAgent }, ben.cookie),
         )
-      ).agent?.id,
-    ).toBe(bensAgent);
+      ).agents.map((agent) => agent.id),
+    ).toEqual([bensAgent]);
     await ok(send('DELETE', `/sender/channels/${lunch.id}/members/me`, undefined, ben.cookie), 204);
     expect((await home(ben.cookie)).groups).toHaveLength(0);
-    expect((await page(lunch.id, anna.cookie)).channel.agent).toBeNull();
+    expect((await page(lunch.id, anna.cookie)).channel.agents).toEqual([]);
 
     // Direct: one conversation per pair, from either side.
     const toAnna = await ok<SenderChannel>(
@@ -732,6 +767,161 @@ describe('Sender – the workspace’s messages', () => {
       .where(eq(integrationKeys.workspaceId, ctx.workspaceId));
     await ok(send('DELETE', `/cloud/agents/${offers}`), 204);
     expect(heard.get(vera.user.id)?.at(-1)).toEqual({ type: 'agent', agentId: offers });
+
+    // Files: up at once, waiting as one's own; sent, a message may be a file alone. Another's
+    // waiting file is no one else's to send, a sent one not twice.
+    const form = new FormData();
+    form.append('file', new File(['Zahlen 2026'], 'Plan.txt', { type: 'text/plain' }));
+    const up = await ok<Attachment>(
+      ctx.request(`/api/workspaces/${ctx.workspaceId}/attachments`, { method: 'POST', body: form }),
+      201,
+    );
+    expect(up).toMatchObject({ name: 'Plan.txt', type: 'text/plain', size: 11 });
+    const sendFile = (text: string, cookie?: string) =>
+      send(
+        'POST',
+        `/sender/channels/${secretChannel.id}/messages`,
+        { text, attachments: [up.id] },
+        cookie,
+      );
+    expect(
+      (
+        await send(
+          'POST',
+          `/sender/channels/${salesChannel.id}/messages`,
+          { text: 'Meins', attachments: [up.id] },
+          anna.cookie,
+        )
+      ).status,
+    ).toBe(400);
+    const withFile = await ok<SenderMessage>(sendFile(''), 201);
+    expect(withFile).toMatchObject({ text: '', attachments: [{ id: up.id, name: 'Plan.txt' }] });
+    expect((await page(secretChannel.id)).messages.at(-1)?.attachments?.[0]?.id).toBe(up.id);
+    expect((await sendFile('Noch mal')).status).toBe(400);
+    expect(await (await ctx.request(`/api/attachments/${up.id}`)).text()).toBe('Zahlen 2026');
+    // Anything but a picture is a download – never a page of its own under the app's address.
+    const htmlForm = new FormData();
+    htmlForm.append('file', new File(['<script>1</script>'], 'x.html', { type: 'text/html' }));
+    const html = await ok<Attachment>(
+      ctx.request(`/api/workspaces/${ctx.workspaceId}/attachments`, {
+        method: 'POST',
+        body: htmlForm,
+      }),
+      201,
+    );
+    const served = await ctx.request(`/api/attachments/${html.id}`);
+    expect([
+      served.headers.get('content-type'),
+      served.headers.get('content-disposition')?.split(';')[0],
+    ]).toEqual(['application/octet-stream', 'attachment']);
+    // Sent in an area's chat, it lies in Cloud too – in the area's „Chat-Dateien“; the
+    // conversation's „Dateien“ say where. Anna does not see that area: neither.
+    const [chatFile] = await ok<SenderFile[]>(
+      send('GET', `/sender/channels/${secretChannel.id}/files`),
+    );
+    expect(chatFile).toMatchObject({
+      attachment: { id: up.id, name: 'Plan.txt' },
+      author: { name: 'Robert Hofmann' },
+      node: { name: 'Plan.txt', place: 'Geheim / Chat-Dateien' },
+      filing: null,
+    });
+    expect(
+      (await send('GET', `/sender/channels/${secretChannel.id}/files`, undefined, anna.cookie))
+        .status,
+    ).toBe(404);
+    expect(await ok(send('GET', `/cloud/folders/${chatFile!.node!.parentId}/filing`))).toEqual({});
+    // „Verschieben“: to the area's top – no suggestion without the AI, so a place is named.
+    expect((await send('POST', `/sender/files/${up.id}/place`, {})).status).toBe(400);
+    expect(
+      await ok(
+        send('POST', `/sender/files/${up.id}/place`, {
+          areaId: secretChannel.areaId,
+          parentId: null,
+        }),
+      ),
+    ).toMatchObject({ nodeId: chatFile!.node!.id, place: 'Geheim' });
+    expect(
+      (await ok<SenderFile[]>(send('GET', `/sender/channels/${secretChannel.id}/files`)))[0]?.node
+        ?.place,
+    ).toBe('Geheim');
+    // A Cloud file dragged into the chat: the message points to it – twice is fine, nothing is
+    // copied, the „Dateien“ list it where it lies. Anna, who does not see it, cannot point to it.
+    const lying = chatFile!.node!.id;
+    const cloudFiles = () =>
+      ctx.deps.db
+        .select({ id: cloudNodes.id })
+        .from(cloudNodes)
+        .where(eq(cloudNodes.workspaceId, ctx.workspaceId));
+    const before = (await cloudFiles()).length;
+    const pointing = { text: 'Hier', attachments: [lying] };
+    expect(
+      await ok<SenderMessage>(
+        send('POST', `/sender/channels/${secretChannel.id}/messages`, pointing),
+        201,
+      ),
+    ).toMatchObject({ attachments: [{ id: lying, nodeId: lying, name: 'Plan.txt', size: 11 }] });
+    await ok(send('POST', `/sender/channels/${secretChannel.id}/messages`, pointing), 201);
+    expect(
+      (
+        await send(
+          'POST',
+          `/sender/channels/${salesChannel.id}/messages`,
+          { text: '', attachments: [lying] },
+          anna.cookie,
+        )
+      ).status,
+    ).toBe(400);
+    expect(await cloudFiles()).toHaveLength(before);
+    const chatFiles = await ok<SenderFile[]>(
+      send('GET', `/sender/channels/${secretChannel.id}/files`),
+    );
+    expect(chatFiles.filter((one) => one.attachment.nodeId === lying)).toEqual([
+      expect.objectContaining({ node: expect.objectContaining({ place: 'Geheim' }), filing: null }),
+      expect.objectContaining({ node: expect.objectContaining({ place: 'Geheim' }), filing: null }),
+    ]);
+    // Sent between people, it stays in the chat until one files a copy („Ablegen“) – into
+    // one's own place, which the other does not see.
+    const memo = new FormData();
+    memo.append('file', new File(['Notiz'], 'Notiz.txt', { type: 'text/plain' }));
+    const annasFile = await ok<Attachment>(
+      ctx.request(`/api/workspaces/${ctx.workspaceId}/attachments`, {
+        method: 'POST',
+        body: memo,
+        cookie: anna.cookie,
+      }),
+      201,
+    );
+    await ok(
+      send(
+        'POST',
+        `/sender/channels/${toAnna.id}/messages`,
+        { text: '', attachments: [annasFile.id] },
+        anna.cookie,
+      ),
+      201,
+    );
+    expect(
+      (await ok<SenderFile[]>(send('GET', `/sender/channels/${toAnna.id}/files`)))[0],
+    ).toMatchObject({
+      attachment: { name: 'Notiz.txt' },
+      author: { name: 'Anna Lenz' },
+      node: null,
+    });
+    expect(
+      await ok(
+        send('POST', `/sender/files/${annasFile.id}/place`, { areaId: null, parentId: null }),
+      ),
+    ).toMatchObject({ name: 'Notiz.txt', place: 'Meine Dateien' });
+    expect(
+      (await ok<SenderFile[]>(send('GET', `/sender/channels/${toAnna.id}/files`)))[0]?.node?.place,
+    ).toBe('Meine Dateien');
+    expect(
+      (
+        await ok<SenderFile[]>(
+          send('GET', `/sender/channels/${toAnna.id}/files`, undefined, anna.cookie),
+        )
+      )[0]?.node,
+    ).toBeNull();
     for (const leave of leaves) leave();
     // Left and back: the first stream's leave, run once more, keeps the new one's room.
     const back = listen(anna.user.id);
@@ -1207,10 +1397,16 @@ describe('Sender – the workspace’s messages', () => {
     expect(pdf).toMatchObject({ name: 'Plan.pdf', type: 'application/pdf' });
     const bytes = await send('GET', `/mail/threads/${offer.id}/attachments/${pdf?.id}`);
     expect(new TextDecoder().decode(await bytes.arrayBuffer())).toBe('%PDF-1.4\n');
-    // The kept attachment counts toward the workspace's storage.
+    // The kept attachment counts toward the workspace's storage – as the files put on messages do.
+    const uploaded = (
+      await ctx.deps.db
+        .select({ size: attachments.size })
+        .from(attachments)
+        .where(eq(attachments.workspaceId, ctx.workspaceId))
+    ).reduce((sum, one) => sum + one.size, 0);
     expect(
       (await workspaceStorage(ctx.deps.db, [ctx.workspaceId])).get(ctx.workspaceId)?.other,
-    ).toBe(9);
+    ).toBe(9 + uploaded);
     // The server's read state is mirrored each round: read in another mail program – read here,
     // marked unread there – unread here. Read here: set read on the server (`\Seen` by UID), in
     // the background.
@@ -1908,6 +2104,19 @@ describe('Sender – the workspace’s messages', () => {
       await ok<MailThreadSummary[]>(send('GET', `/workspaces/${ctx.workspaceId}/mail/threads`))
     )[1];
     expect([byHand?.spam, byHand?.spamBy]).toEqual([true, 'person']);
+    // On the server too: its mails that came in go to the provider's spam folder, their new UIDs
+    // kept.
+    await ctx.deps.background?.idle();
+    expect(movedOnServer.length).toBeGreaterThan(0);
+    expect(movedOnServer.every((one) => one.path === 'INBOX' && one.to === '[Gmail]/Spam')).toBe(
+      true,
+    );
+    const onServer = await ctx.deps.db
+      .select({ folder: mailMessages.folder, uid: mailMessages.uid })
+      .from(mailMessages)
+      .where(and(eq(mailMessages.threadId, byHand!.id), eq(mailMessages.outgoing, false)));
+    expect(onServer.every((one) => one.folder === 'spam' && one.uid! > 50_000)).toBe(true);
+    movedOnServer.splice(0);
     // The AI's verdict: spam from someone never answered goes out of the way; the provider's spam
     // comes back where the AI finds it fine and the domain vouched – both marked `ai`; its
     // person's word stands.
@@ -2349,6 +2558,9 @@ describe('Sender – the workspace’s messages', () => {
       201,
     );
     expect([blocked.rule.value, blocked.moved]).toEqual(['vertrieb@shop.example', 1]);
+    // A rule is its person's say: moved on the server too, as a mail program's rule does it.
+    await ctx.deps.background?.idle();
+    expect(movedOnServer.splice(0)).toEqual([{ path: 'INBOX', uid: 7779, to: '[Gmail]/Spam' }]);
     // The menu offers what the server takes: the latest incoming sender, a firm's domain only.
     expect(
       (
@@ -2389,6 +2601,12 @@ describe('Sender – the workspace’s messages', () => {
       201,
     );
     expect(trusted.moved).toBe(1);
+    // Out of the provider's spam on the server too; the blocked sender's later mail goes with it.
+    await ctx.deps.background?.idle();
+    expect(movedOnServer.splice(0)).toEqual([
+      { path: 'INBOX', uid: 7780, to: '[Gmail]/Spam' },
+      { path: '[Gmail]/Spam', uid: 7781, to: 'INBOX' },
+    ]);
     expect(await ok<MailThread>(send('GET', `/mail/threads/${bill}`))).toMatchObject({
       spam: false,
       spamBy: 'rule',
@@ -2533,6 +2751,8 @@ describe('Sender – the workspace’s messages', () => {
       ['http://rspamd.test:11334/learnham', 'rspamd-passwort'],
     ]);
     expect(learned[0]?.body).toContain('Kredit ohne Schufa.');
+    // What the filter placed stays here only (the provider's spam folder deletes by itself).
+    expect(movedOnServer).toEqual([]);
     rspamd.mockRestore();
     ctx.deps.config.rspamdUrl = null;
     ctx.deps.config.rspamdPassword = null;

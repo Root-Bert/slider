@@ -22,7 +22,6 @@ import {
   getCloudAgent,
   listCloudAgents,
   messageCloudAgent,
-  openCloudAgentChat,
   readCloudAgentFile,
   repeatCloudAgent,
   setCloudAgentFileAside,
@@ -53,7 +52,10 @@ export function cloudAgentRoutes(deps: AppDeps) {
     })
     .post('/workspaces/:id/cloud/agents', viewer, async (c) => {
       requireOwner(c.var.viewer);
-      const { text, areaId, zone, mailThreadId } = await readJson(c, cloudAgentOrderSchema);
+      const { text, attachments, areaId, shared, zone, mailThreadId } = await readJson(
+        c,
+        cloudAgentOrderSchema,
+      );
       assertWithinLimit(c, asks.hit(c.var.viewer.author.id), TOO_MANY);
       return c.json(
         await createCloudAgent(
@@ -65,6 +67,9 @@ export function cloudAgentRoutes(deps: AppDeps) {
           zone,
           undefined,
           mailThreadId,
+          false,
+          attachments,
+          shared,
         ),
         201,
       );
@@ -75,7 +80,10 @@ export function cloudAgentRoutes(deps: AppDeps) {
     })
     .post('/cloud/agents/:agentId/messages', viewer, async (c) => {
       requireOwner(c.var.viewer);
-      const { text, chatId, zone, mailThreadId } = await readJson(c, cloudAgentInputSchema);
+      const { text, attachments, chatId, zone, mailThreadId } = await readJson(
+        c,
+        cloudAgentInputSchema,
+      );
       assertWithinLimit(c, asks.hit(c.var.viewer.author.id), TOO_MANY);
       return c.json(
         await messageCloudAgent(
@@ -89,16 +97,9 @@ export function cloudAgentRoutes(deps: AppDeps) {
           undefined,
           undefined,
           mailThreadId,
+          false,
+          attachments,
         ),
-      );
-    })
-    .post('/cloud/agents/:agentId/chats', viewer, async (c) => {
-      requireOwner(c.var.viewer);
-      const { text } = await readJson(c, cloudAgentInputSchema);
-      assertWithinLimit(c, asks.hit(c.var.viewer.author.id), TOO_MANY);
-      return c.json(
-        await openCloudAgentChat(deps, c.var.viewer, c.req.param('agentId'), text),
-        201,
       );
     })
     .post('/cloud/agents/:agentId/typing', viewer, async (c) => {

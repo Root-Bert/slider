@@ -14,7 +14,7 @@ const INNER = 40;
 const HUB = 96;
 /** Room between two areas' clouds. */
 const GAP = 72;
-/** The golden angle: dots on a spiral fill a disc evenly. */
+/** The golden angle: clouds on the same spot move apart in different directions. */
 const GOLDEN = Math.PI * (3 - Math.sqrt(5));
 
 export interface GraphAreaInput {
@@ -50,8 +50,55 @@ export interface PeopleGraph {
   bounds: { left: number; top: number; right: number; bottom: number };
 }
 
-/** How far the `index`th dot of a cloud lies from its middle. */
-const ringOf = (index: number) => Math.sqrt((index * DOT * DOT * 1.25) / Math.PI);
+/**
+ * Where an area's `count` people stand around its middle: evenly on rings. Up to seven share one
+ * ring round an empty middle (two side by side, three a triangle, four a square …), up to eleven
+ * one in the middle and the rest round it; more: on as few rings as hold them, each its share by
+ * its length.
+ */
+export function cloudOf(count: number): { x: number; y: number }[] {
+  if (count <= 0) return [];
+  if (count === 1) return [{ x: 0, y: 0 }];
+  const rings: number[] = [];
+  if (count <= 7) rings.push(count);
+  else if (count <= 11) rings.push(count - 1);
+  else {
+    const rest = count - 1;
+    let depth = 0;
+    for (let room = 0; room < rest; room += Math.ceil(2 * Math.PI * depth)) depth += 1;
+    const weight = (depth * (depth + 1)) / 2;
+    let left = rest;
+    for (let ring = 1; ring <= depth; ring += 1) {
+      const share =
+        ring === depth
+          ? left
+          : Math.min(Math.ceil(2 * Math.PI * ring), Math.round((rest * ring) / weight));
+      rings.push(share);
+      left -= share;
+    }
+  }
+  const spots = count > 7 ? [{ x: 0, y: 0 }] : [];
+  // Nothing in the middle of a single ring to keep clear of.
+  let inner = count > 7 ? 0 : -Infinity;
+  rings.forEach((many, index) => {
+    // Never closer than a dot to the next on the ring, nor to the ring inside.
+    const far = Math.max(
+      DOT * 0.6,
+      DOT / (2 * Math.sin(Math.PI / Math.max(many, 2))),
+      inner + DOT * 0.9,
+    );
+    inner = far;
+    // One ring: odd counts point up, even ones stand flat. Several: every other ring turns by
+    // half a step, so its dots stand between those of the ring inside.
+    const turn = rings.length === 1 ? (many % 2 === 0 ? 1 : 0) : index % 2;
+    const start = -Math.PI / 2 + (turn * Math.PI) / many;
+    for (let i = 0; i < many; i += 1) {
+      const angle = start + (i * 2 * Math.PI) / many;
+      spots.push({ x: Math.cos(angle) * far, y: Math.sin(angle) * far });
+    }
+  });
+  return spots;
+}
 
 export function layoutPeopleGraph(input: readonly GraphAreaInput[]): PeopleGraph {
   const known = new Set(input.map((area) => area.id));
@@ -80,7 +127,10 @@ export function layoutPeopleGraph(input: readonly GraphAreaInput[]): PeopleGraph
       id: area.id,
       x: 0,
       y: 0,
-      radius: Math.max(INNER, ringOf(Math.max(0, count - 1)) + DOT / 2 + 10),
+      radius: Math.max(
+        INNER,
+        Math.max(0, ...cloudOf(count).map((spot) => Math.hypot(spot.x, spot.y))) + DOT / 2 + 10,
+      ),
       parentId: parentOf(area),
     });
   }
@@ -150,17 +200,18 @@ export function layoutPeopleGraph(input: readonly GraphAreaInput[]): PeopleGraph
     if (!moved) break;
   }
 
-  // An area's own people: a spiral around it.
+  // An area's own people: evenly on rings around it.
   const people: GraphPerson[] = [];
   for (const area of list) {
-    (own.get(area.id) ?? []).forEach((id, index) => {
-      const far = ringOf(index);
-      const angle = index * GOLDEN;
+    const ids = own.get(area.id) ?? [];
+    const spots = cloudOf(ids.length);
+    ids.forEach((id, index) => {
+      const spot = spots[index] ?? { x: 0, y: 0 };
       people.push({
         key: `${area.id}:${id}`,
         id,
-        x: area.x + Math.cos(angle) * far,
-        y: area.y + Math.sin(angle) * far,
+        x: area.x + spot.x,
+        y: area.y + spot.y,
         areaIds: areasOf.get(id) ?? [area.id],
       });
     });

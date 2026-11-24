@@ -1,7 +1,11 @@
 import type { ReactNode } from 'react';
-import { EmptyState, Icon, IconTile, type IconName } from '@/ui';
+import { EmptyState, IconTile, type IconName } from '@/ui';
+import { EmptyScene } from './EmptyScene';
 
-/** „Nothing here“ in a list of Cloud: a symbol, what it means, what to do about it. */
+/**
+ * „Nothing here“ in a list of Cloud: a symbol (a little at work where it has a scene, see
+ * `EmptyScene`), what it means, what to do about it.
+ */
 export function Empty({
   icon,
   title,
@@ -17,7 +21,7 @@ export function Empty({
     <EmptyState
       illustration={
         <IconTile size={56}>
-          <Icon name={icon} size={28} />
+          <EmptyScene icon={icon} />
         </IconTile>
       }
       title={title}

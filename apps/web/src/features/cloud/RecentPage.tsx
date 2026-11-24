@@ -1,18 +1,21 @@
+import { useSyncExternalStore } from 'react';
 import { Link, useNavigate } from 'react-router';
-import type { CloudAgentSummary, CloudNode, Deck } from '@slider/shared';
-import { UnreadRow, useUnreadNow } from '@/features/sender';
+import { cloudFileType, type CloudAgentSummary, type CloudNode, type Deck } from '@slider/shared';
+import { SummaryAside, UnreadRow, useUnreadNow, type FileSummaryPart } from '@/features/sender';
 import { canCreateDecks, WorkspaceViews } from '@/features/workspaces';
 import {
   useCloudActivity,
   useCloudAgents,
   useCloudList,
+  useCloudSummary,
   useDecks,
   useOrderCloudAgent,
 } from '@/lib/api';
 import { draftKeys } from '@/lib/drafts';
 import { formatRelativeTime } from '@/lib/format';
+import { lastVisitsStore, openedIn } from '@/lib/last-visits';
 import { routes } from '@/lib/routes';
-import { Button, cn, LogoMark, RowList, TextLink } from '@/ui';
+import { Button, cn, Icon, LogoMark, RowList, TextLink } from '@/ui';
 import { ActivityFeed } from './components/ActivityFeed';
 import { AgentAvatar } from './components/AgentAvatar';
 import { AgentComposer } from './components/AgentComposer';
@@ -28,6 +31,7 @@ import { FileIcon } from './components/FileIcon';
 import { MyTodos } from './components/todos/TodoList';
 import { UpcomingEvents } from './components/calendar/UpcomingEvents';
 import { useCloud } from './hooks/useCloud';
+import { useLastVisit } from './lib/last-visit';
 
 type Work =
   | { at: string; file: CloudNode }
@@ -125,6 +129,43 @@ function WorkCard({ work }: { work: Work }) {
   );
 }
 
+/** A file's part of „Seit deinem letzten Besuch“: its mark, its name – opened while still there. */
+function FilePart({ part }: { part: FileSummaryPart }) {
+  const ui = useCloud();
+  const { id, nodeKind } = part;
+  return (
+    <>
+      <span className="flex size-5 shrink-0 items-center justify-center text-fg-muted">
+        {nodeKind ? (
+          <FileIcon
+            kind={nodeKind}
+            type={nodeKind === 'file' ? cloudFileType(part.name) : null}
+            size={20}
+          />
+        ) : (
+          <Icon name="cloud" size={16} />
+        )}
+      </span>
+      <span className="flex min-w-0 flex-col gap-0.5">
+        {id && nodeKind ? (
+          <button
+            type="button"
+            className="truncate text-left text-body font-medium text-fg hover:underline focus-visible:underline focus-visible:outline-none"
+            onClick={() =>
+              nodeKind === 'folder' ? ui.open({ id, kind: 'folder' } as never) : ui.openFile(id)
+            }
+          >
+            {part.name}
+          </button>
+        ) : (
+          <span className="truncate text-body font-medium text-fg">{part.name}</span>
+        )}
+        <span className="text-body text-fg-muted">{part.text}</span>
+      </span>
+    </>
+  );
+}
+
 /** How many unread conversations „Zuletzt“ shows – the rest stand bold in the side bar. */
 const UNREAD_SHOWN = 5;
 
@@ -143,32 +184,51 @@ export function Component() {
   const order = useOrderCloudAgent(workspace.id);
   const navigate = useNavigate();
   // As Sender's „Aktuell“: asked anew when something comes in or is read, so a read one goes.
-  const unread = (useUnreadNow().unread.data?.items ?? []).slice(0, UNREAD_SHOWN);
+  const unreadNow = useUnreadNow();
+  const unread = (unreadNow.unread.data?.items ?? []).slice(0, UNREAD_SHOWN);
+  // „Seit deinem letzten Besuch“: asked anew when something comes in, is read, or others did
+  // something with the files (one's own doings are no news to oneself).
+  const since = useLastVisit(ui.userId, workspace.id);
+  const othersLast = activity.data?.find((event) => event.actor.id !== ui.userId);
+  const summary = useCloudSummary(
+    workspace.id,
+    since,
+    unreadNow.stamp === null || !activity.data
+      ? null
+      : `${unreadNow.stamp}|${othersLast ? `${othersLast.id}:${othersLast.more}` : ''}`,
+  );
   const nodes = listing.data?.nodes ?? [];
 
   // A presentation's file is the presentation: shown once, as that.
   const standIns = new Set((decks.data ?? []).map((deck) => deck.cloudNodeId));
+  // What one opened counts as much as what changed: a file by when the server says (changed or
+  // opened, as it sorts them), a presentation also by when this browser last showed it.
+  const opened = openedIn(
+    useSyncExternalStore(lastVisitsStore.subscribe, lastVisitsStore.getSnapshot),
+    ui.userId,
+  );
+  const latest = (iso: string, ms: number | undefined) =>
+    ms !== undefined && ms > Date.parse(iso) ? new Date(ms).toISOString() : iso;
   const work: Work[] = [
     ...nodes
       .filter((file) => !standIns.has(file.id))
       .slice(0, 5)
-      .map((file) => ({ at: file.updatedAt, file })),
+      .map((file) => ({ at: file.recentAt ?? file.updatedAt, file })),
     ...(decks.data ?? [])
       .filter((deck) => !deck.archivedAt)
-      .map((deck) => ({ at: deck.updatedAt, deck })),
+      .map((deck) => ({ at: latest(deck.updatedAt, opened[deck.id]), deck })),
     ...(agents.data ?? []).map((agent) => ({ at: agent.updatedAt, agent })),
   ]
     .sort((a, b) => b.at.localeCompare(a.at))
     .slice(0, 5);
   const target = { name: 'Meine Dateien' };
-  const beside = unread.length > 0 && work.length > 0;
 
   return (
     <CloudPage
       docTitle="Zuletzt"
       // Beside it the library, as in Slider: one click across.
       title={<WorkspaceViews workspaceId={workspace.id} current="reviews" app="cloud" />}
-      crumbs={[{ label: workspace.name }, { label: 'Zuletzt' }]}
+      crumbs={[{ label: 'Zuletzt' }]}
       nodes={nodes}
       target={target}
       fill
@@ -190,8 +250,9 @@ export function Component() {
                 target: { kind: 'agent-new', workspaceId: workspace.id },
               }}
               busy={order.isPending}
-              onSend={(text) =>
-                order.mutateAsync(text).then(
+              workspaceId={workspace.id}
+              onSend={(text, attachments) =>
+                order.mutateAsync({ text, attachments }).then(
                   (agent) => {
                     void navigate(routes.cloudAgent(workspace.id, agent.id));
                     return true;
@@ -205,22 +266,29 @@ export function Component() {
             />
           )}
 
-          {/* What waits for an answer and what to go on with – each only while there is some.
-              Both there: side by side in the columns of the lists below (the unread over
-              „Aktivität“), stacked the unread first. No „all“ links: the side bar has every chat
-              bold with its count and „Post“; the files of every app stand right below. */}
-          {(unread.length > 0 || work.length > 0) && (
-            <div
-              className={cn(
-                'grid shrink-0 grid-cols-1 gap-x-6 gap-y-3 pt-3',
-                beside && 'lg:grid-cols-[minmax(0,1fr)_368px]',
-              )}
-            >
+          {/* What happened since the last visit and what waits for an answer (as Sender's
+              „Aktuell“), beside it what to go on with, while there is some: side by side in the
+              columns of the lists below (over „Aktivität“), stacked the summary first. No „all“
+              links: the side bar has every chat bold with its count and „Post“; the files of
+              every app stand right below. */}
+          <div
+            className={cn(
+              'grid shrink-0 grid-cols-1 items-start gap-x-6 gap-y-6 pt-3',
+              work.length > 0 && 'lg:grid-cols-[minmax(0,1fr)_368px]',
+            )}
+          >
+            <div className="flex min-w-0 flex-col gap-y-6 lg:col-start-2 lg:row-start-1">
+              <SummaryAside
+                summary={summary.data}
+                pending={summary.isPending}
+                fetching={summary.isFetching}
+                error={summary.isError && !summary.data ? summary.error.message : null}
+                onRetry={() => void summary.refetch()}
+                filePart={(part) => <FilePart part={part} />}
+                sinceLabel="Neu seit"
+              />
               {unread.length > 0 && (
-                <section
-                  aria-labelledby="cloud-unread"
-                  className="flex min-w-0 flex-col gap-2 lg:col-start-2 lg:row-start-1"
-                >
+                <section aria-labelledby="cloud-unread" className="flex min-w-0 flex-col gap-2">
                   <h2 id="cloud-unread" className="text-base font-semibold text-fg">
                     Ungelesen
                   </h2>
@@ -231,40 +299,36 @@ export function Component() {
                   </RowList>
                 </section>
               )}
-              {work.length > 0 && (
-                <section
-                  aria-labelledby="cloud-continue"
-                  className="flex min-w-0 flex-col gap-3.5 lg:col-start-1 lg:row-start-1"
-                >
-                  <h2 id="cloud-continue" className="text-base font-semibold text-fg">
-                    Weiterarbeiten
-                  </h2>
-                  <div
-                    className={cn(
-                      'grid grid-cols-2 gap-4 md:grid-cols-3',
-                      // Beside the unread one row of cards, as many as fit.
-                      beside
-                        ? 'lg:grid-cols-3 lg:[&>*:nth-child(n+4)]:hidden 2xl:grid-cols-4 2xl:[&>*:nth-child(4)]:flex'
-                        : 'xl:grid-cols-5',
-                    )}
-                  >
-                    {work.map((each) => (
-                      <WorkCard
-                        key={
-                          'agent' in each
-                            ? each.agent.id
-                            : 'deck' in each
-                              ? each.deck.id
-                              : each.file.id
-                        }
-                        work={each}
-                      />
-                    ))}
-                  </div>
-                </section>
-              )}
             </div>
-          )}
+            {work.length > 0 && (
+              <section
+                aria-labelledby="cloud-continue"
+                className="flex min-w-0 flex-col gap-3.5 lg:col-start-1 lg:row-start-1"
+              >
+                <h2 id="cloud-continue" className="text-base font-semibold text-fg">
+                  Weiterarbeiten
+                </h2>
+                <div
+                  // One row of cards, as many as fit – never one left alone below (the ranges apart: one
+                  // rule each).
+                  className="grid grid-cols-2 gap-4 max-md:[&>*:nth-child(n+3)]:hidden md:grid-cols-3 md:max-2xl:[&>*:nth-child(n+4)]:hidden 2xl:grid-cols-4 2xl:[&>*:nth-child(n+5)]:hidden"
+                >
+                  {work.map((each) => (
+                    <WorkCard
+                      key={
+                        'agent' in each
+                          ? each.agent.id
+                          : 'deck' in each
+                            ? each.deck.id
+                            : each.file.id
+                      }
+                      work={each}
+                    />
+                  ))}
+                </div>
+              </section>
+            )}
+          </div>
 
           {/* What is one's to do – one's own and those given to one, the most pressing first –
               and what comes up in one's calendars; side by side where there is room. */}

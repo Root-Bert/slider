@@ -41,3 +41,4 @@ export * from './sender-start';
 export * from './mail';
 export * from './todos';
 export * from './calendar';
+export * from './attachments';

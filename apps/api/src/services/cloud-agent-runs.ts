@@ -2,7 +2,7 @@
  * The agents at work right now – in memory only: a server that starts anew has none running.
  * Apart from `cloud-agents.ts`, so the files can ask who is at work without knowing the agents.
  */
-import type { Viewer } from '@slider/shared';
+import type { Attachment, Viewer } from '@slider/shared';
 
 /** A message written while the agent worked: kept in the chat at once, taken up by it next. */
 export interface Waiting {
@@ -38,6 +38,9 @@ export interface Waiting {
    * where, how to answer, the lines before) – the chat keeps only `text`, their own words.
    */
   prompt?: string;
+  /** Files the person put on it: taken as it is kept (`attachments`), read by the agent. */
+  attachmentIds?: readonly string[];
+  attachments?: Attachment[];
 }
 
 export interface Run {

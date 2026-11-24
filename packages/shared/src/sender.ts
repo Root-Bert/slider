@@ -3,6 +3,7 @@ import type { AccountAuthor, Author } from './model';
 import type { CloudAreaColor } from './cloud';
 import { MAX_MAIL_UPLOADS, mailUploadSchema, type SenderMessageMail } from './mail';
 import type { CallBrief } from './calls';
+import { attachmentIdsSchema, type Attachment } from './attachments';
 
 /*
  * „Sender“: the workspace's messages. People write to each other – in the channel every area
@@ -62,10 +63,10 @@ export interface SenderChannel {
   /** The caller may rename it, change its topic, delete it (who opened it; an area's admins). */
   canManage: boolean;
   /**
-   * The agent one tags here with `@`: an area's own (`null` until first tagged – `@Agent` makes
-   * it), or the one added to a group or direct conversation, which only its owner calls.
+   * The agents here: an area's own first (`own`, there once first tagged – `@Agent` makes it),
+   * then those added („Agent hinzufügen“). Who calls which with `@`: {@link callableHere}.
    */
-  agent: SenderChannelAgent | null;
+  agents: SenderChannelAgent[];
   /** When something was last written; the side bar's order within a section. */
   updatedAt: string;
   /** When the caller pinned it („Anpinnen“): it stands above the rest, the latest pinned first. */
@@ -78,10 +79,40 @@ export interface SenderChannelAgent {
   /** Its owner. */
   userId: string;
   shared: boolean;
+  /** The area it stands in; `null`: none. */
+  areaId: string | null;
+  /** The area's own agent (`@Agent` in its channels), not one added. */
+  own?: boolean;
 }
 
 /** What an area's own agent is called – and the tag that calls the agent of any conversation. */
 export const CONVERSATION_AGENT_TAG = 'Agent';
+
+/** Agents one message sets to work at most. */
+export const MAX_AGENTS_CALLED = 3;
+
+/**
+ * Whether one may call this agent here with `@` (or add it) – of the agents one sees: in an
+ * area's channels that area's shared ones (in the workspace's own area, the workspace's), in a
+ * group or a direct conversation those of every area one is in; one's own everywhere.
+ */
+export const callableHere = (
+  agent: { userId: string; shared: boolean; areaId: string | null },
+  here: { kind: SenderChannelKind; areaId: string | null; root: boolean },
+  me: string,
+): boolean =>
+  agent.userId === me ||
+  here.kind === 'group' ||
+  here.kind === 'direct' ||
+  (agent.shared && (agent.areaId === here.areaId || (here.root && agent.areaId === null)));
+
+/** A new agent's name here: „Agent“, or „Agent 2“, … where that is taken. */
+export function newAgentTitle(taken: Iterable<string>): string {
+  const names = new Set([...taken].map((name) => name.trim().toLowerCase()));
+  let title = CONVERSATION_AGENT_TAG;
+  for (let n = 2; names.has(title.toLowerCase()); n++) title = `${CONVERSATION_AGENT_TAG} ${n}`;
+  return title;
+}
 
 /** An area in Sender's side bar, its channels under it. */
 export interface SenderArea {
@@ -101,6 +132,9 @@ export interface SenderAgent {
   id: string;
   title: string;
   owner: Author;
+  /** Where it belongs, as `CloudAgentSummary`'s: its area, and whether it is given to others. */
+  areaId: string | null;
+  shared: boolean;
   running: boolean;
   /** Answers the caller has not read. */
   unread: number;
@@ -131,6 +165,8 @@ export interface SenderMessage {
   /** It came as a mail (a colleague's, to a mailbox here): its subject. */
   mail?: SenderMessageMail | null;
   text: string;
+  /** Files put on it, under its words. */
+  attachments?: Attachment[];
   createdAt: string;
   editedAt: string | null;
   deleted: boolean;
@@ -206,11 +242,15 @@ export interface SenderSummary {
   reason: string | null;
 }
 
-export const senderPostSchema = z.object({
+export const senderEditSchema = z.object({
   text: z.string().trim().min(1, 'Schreib etwas.').max(MAX_SENDER_MESSAGE),
 });
 
-export const senderEditSchema = senderPostSchema;
+/** A message: words, files put on it (`attachments`) – or both; one of them at least. */
+export const senderPostSchema = senderEditSchema.extend({
+  text: z.string().trim().max(MAX_SENDER_MESSAGE),
+  attachments: attachmentIdsSchema,
+});
 
 export const senderCreateChannelSchema = z.object({
   areaId: z.string().min(1),
@@ -230,10 +270,12 @@ export const senderCreateDirectSchema = z.object({ userId: z.string().min(1) });
 export const senderUpdateChannelSchema = z.object({
   name: z.string().max(MAX_SENDER_NAME).optional(),
   topic: z.string().trim().max(MAX_SENDER_TOPIC).optional(),
-  /** A group's or direct conversation's agent: one's own private one, or none (`null`). */
-  agentId: z.string().min(1).max(100).nullable().optional(),
 });
 export type SenderUpdateChannel = z.input<typeof senderUpdateChannelSchema>;
+
+/** „Agent hinzufügen“: one of the agents one may call here, or (none named) a new one. */
+export const senderAddAgentSchema = z.object({ agentId: z.string().min(1).max(100).optional() });
+export type SenderAddAgent = z.input<typeof senderAddAgentSchema>;
 
 export const senderReadSchema = z.object({ seq: z.number().int().min(0) });
 
@@ -271,27 +313,46 @@ export const MENTION_NOT_AFTER = String.raw`\p{L}\p{N}._+-`;
 const NOT_AFTER = new RegExp(`[${MENTION_NOT_AFTER}]`, 'u');
 
 /** `@name` in `lower` (lower case), not in a mail address nor as the start of a longer word. */
-function named(lower: string, name: string): boolean {
-  if (!name) return false;
+const named = (lower: string, name: string): boolean => namedAt(lower, name) !== -1;
+
+/** Where `@name` stands in `lower` (as {@link named}); -1: nowhere. */
+function namedAt(lower: string, name: string): number {
+  if (!name) return -1;
   const at = `@${name}`;
   let from = lower.indexOf(at);
   while (from !== -1) {
     const before = lower.charAt(from - 1);
     const after = lower.charAt(from + at.length);
     if ((!before || !NOT_AFTER.test(before)) && (!after || !/[\p{L}\p{N}]/u.test(after)))
-      return true;
+      return from;
     from = lower.indexOf(at, from + 1);
   }
-  return false;
+  return -1;
 }
 
-/** Whether a message tags the conversation's agent: `@Agent`, or `@` and its name. */
-export const tagsAgent = (text: string, title: string | null): boolean => {
-  const lower = text.toLowerCase();
-  return [CONVERSATION_AGENT_TAG, title ?? ''].some((name) =>
-    named(lower, name.trim().toLowerCase()),
-  );
-};
+/**
+ * The agents a message calls by `@` and their name – the longest name first, so „@Agent Recherche“
+ * is that one and not „Agent“; of two with one name the first given – and whether a bare
+ * `@Agent` is left over (the conversation's own: an area's, or those added).
+ */
+export function agentsTagged<T extends { title: string }>(
+  text: string,
+  agents: readonly T[],
+): { tagged: T[]; bare: boolean } {
+  let lower = text.toLowerCase();
+  const tagged: T[] = [];
+  const longestFirst = [...agents].sort((a, b) => b.title.trim().length - a.title.trim().length);
+  for (const agent of longestFirst) {
+    const name = agent.title.trim().toLowerCase();
+    let at = namedAt(lower, name);
+    if (at === -1) continue;
+    tagged.push(agent);
+    // Taken: neither a shorter name in it nor a second agent of that name calls on it.
+    for (; at !== -1; at = namedAt(lower, name))
+      lower = `${lower.slice(0, at)}${' '.repeat(name.length + 1)}${lower.slice(at + name.length + 1)}`;
+  }
+  return { tagged, bare: named(lower, CONVERSATION_AGENT_TAG.toLowerCase()) };
+}
 
 // ── Drafts: what one wrote and did not send, kept for one's account on every device ─────────
 

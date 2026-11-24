@@ -46,6 +46,7 @@ import {
   senderDrafts,
   senderMembers,
   senderMessages,
+  todoMilestones,
   todos,
   calendars,
   calendarEvents,
@@ -82,6 +83,7 @@ import { audienceOf } from './sender';
  * they were in: their words and the notes after), `dokumente.json` (Writer
  * and Reader: comments, reactions, AI requests, their entries on PDFs, signatures in
  * `unterschriften/`), `todos.json` (their own to-dos and those they wrote in areas),
+ * `meilensteine.json` (their own milestones),
  * `kalender.json` (their own calendars and the events in them or that they made elsewhere),
  * `mail.json` (their mailboxes and mail, attachments in `mail/`), `mail-regeln.json` (their rules
  * for senders),
@@ -814,9 +816,31 @@ async function buildExport(
         description: row.description,
         status: row.status,
         priority: row.priority,
+        startOn: row.startOn,
         dueOn: row.dueOn,
+        milestoneId: row.milestoneId,
         source: row.source,
         completedAt: row.completedAt?.toISOString() ?? null,
+        createdAt: row.createdAt.toISOString(),
+        updatedAt: row.updatedAt.toISOString(),
+      })),
+    ),
+  );
+
+  // Milestones: their own (an area's are the area's, as its to-dos' plan).
+  const milestoneRows = await db
+    .select()
+    .from(todoMilestones)
+    .where(eq(todoMilestones.ownerId, userId))
+    .orderBy(asc(todoMilestones.createdAt));
+  zip.file(
+    'meilensteine.json',
+    json(
+      milestoneRows.map((row) => ({
+        id: row.id,
+        workspaceId: row.workspaceId,
+        name: row.name,
+        dueOn: row.dueOn,
         createdAt: row.createdAt.toISOString(),
         updatedAt: row.updatedAt.toISOString(),
       })),
@@ -1290,6 +1314,7 @@ entwuerfe.json        Was du geschrieben und noch nicht abgeschickt hast – in 
 anrufe.json           Anrufe, in denen du warst: wann, mit wem, was du gesagt hast, und die Notizen danach
 dokumente.json        Deine Kommentare in Textdokumenten und PDFs, deine Reaktionen, KI-Aufträge dort, was du in PDFs ausgefüllt hast; Unterschriften in unterschriften/
 todos.json            Deine eigenen Aufgaben und die, die du in Bereichen angelegt hast
+meilensteine.json     Deine eigenen Meilensteine
 kalender.json         Deine eigenen Kalender (privat, Unterkalender, die Namen der Kalender deiner Postfächer) mit ihren Terminen und die Termine, die du in Kalendern von Bereichen angelegt hast; Termine aus Postfächern bleiben beim Anbieter
 mail.json             Deine Postfächer (Adresse, Server – ohne Anmeldedaten), die hier gelesenen und geschriebenen Mails (Text und gestaltete Fassung, Empfänger mit Bcc, was noch im Postausgang liegt) mit dem, was die KI dazu notiert hat; Anhänge und Bilder der Mails und Dateien, die an noch nicht gesendeten Mails hängen, in mail/
 mail-regeln.json      Deine Regeln für Absender: blockiert (landet in Spam) oder vertraut (nie in Spam)

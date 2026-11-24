@@ -21,7 +21,7 @@ import { DeckRunDialog } from './DeckRunDialog';
 import { DeckStorageDialog } from './DeckStorageDialog';
 import { DeleteDeckDialog } from './DeleteDeckDialog';
 import { MoveDecksDialog } from './MoveDecksDialog';
-import { movedMessage } from '../lib/bulk-messages';
+import { movedFailure } from '../lib/bulk-messages';
 import type { DeckPanelSlot } from '../lib/deck-panel';
 
 interface DeckActionsProps {
@@ -283,10 +283,10 @@ export function DeckActions({
           decks={[deck]}
           workspaceId={deck.workspaceId}
           onClose={() => setMoving(false)}
-          onMoved={(result, placeName) => {
+          onMoved={(result) => {
             setMoving(false);
-            const message = movedMessage(result, placeName);
-            onNotify(message.text, message.tone);
+            const failure = movedFailure(result);
+            if (failure) onNotify(failure, 'danger');
           }}
         />
       )}

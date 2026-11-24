@@ -146,6 +146,8 @@ function Panel({
     <ChatPanel
       title={aiNameOf(workspace.aiName)}
       chat={chat}
+      workspaceId={workspace.id}
+      keep={`cloud:${workspace.id}`}
       panel={{ 'data-cloud-panel': true }}
       intro={`${aiInSentence(workspace.aiName, true)} findet Dateien, liest hinein, benennt sie passend und räumt Ordner auf, baut und ändert Präsentationen in Slider, sieht und ändert dabei nur, was du darfst. Gelöschtes liegt ${CLOUD_TRASH_DAYS} Tage unter „Gelöscht“.`}
       starters={starters}

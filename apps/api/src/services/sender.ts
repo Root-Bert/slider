@@ -19,7 +19,11 @@ import {
   SENDER_PAGE,
   channelName,
   mentionsIn,
-  tagsAgent,
+  CONVERSATION_AGENT_TAG,
+  agentsTagged,
+  callableHere,
+  MAX_AGENTS_CALLED,
+  newAgentTitle,
   type AccountAuthor,
   type CallBrief,
   type SenderAgent,
@@ -42,7 +46,9 @@ import {
   cloudAreaMembers,
   cloudAreas,
   senderAgentReads,
+  senderChannelAgents,
   senderChannels,
+  senderFiles,
   senderMembers,
   senderMessages,
   users,
@@ -54,13 +60,28 @@ import {
 } from '../db/schema';
 import type { AppDeps } from '../deps';
 import { badRequest, forbidden, notFound } from '../http/errors';
+import {
+  claimAttachments,
+  copyAttachments,
+  deleteAttachments,
+  dropUnkeptCopies,
+  withFileNames,
+} from './attachments';
+import { attachmentsOf } from './purge-attachments';
+import { keepSenderFiles } from './sender-files';
 import { ownerAuthor } from '../authors';
 import { cloudAccessAtLeast } from '@slider/shared';
 import { areaAccess, cloudContext, requireArea, type CloudCtx } from './cloud/context';
 import { audienceShrank } from './call-audience';
 import { TAG_CHATS } from './cloud-agent-runs';
 import { callBriefs } from './call-records';
-import { listCloudAgents, makeAreaAgent, messageCloudAgent } from './cloud-agents';
+import {
+  agentFor,
+  listCloudAgents,
+  makeAreaAgent,
+  makeConversationAgent,
+  messageCloudAgent,
+} from './cloud-agents';
 import { pinnedAtOf } from './sender-pins';
 
 type Deps = Pick<AppDeps, 'db' | 'clock' | 'log'>;
@@ -328,8 +349,8 @@ interface Lookup {
   people: Map<string, AccountAuthor>;
   members: Map<string, string[]>;
   unread: Map<string, Unread>;
-  /** By conversation: the agent tagged there (`agentsOf`). */
-  agents: Map<string, SenderChannelAgent>;
+  /** By conversation: its agents (`agentsOf`). */
+  agents: Map<string, SenderChannelAgent[]>;
   /** By conversation: when the caller pinned it. */
   pins: Map<string, string>;
 }
@@ -345,11 +366,14 @@ async function conversationAgentId(db: Executor, row: SenderChannelRow): Promise
   return sibling?.agentId ?? null;
 }
 
-/** The agents of these conversations – an area's channels share their area's. */
+/**
+ * The agents of these conversations: an area's own first (its channels share it), then those
+ * added there, the first added first.
+ */
 async function agentsOf(
   db: Executor,
   rows: readonly SenderChannelRow[],
-): Promise<Map<string, SenderChannelAgent>> {
+): Promise<Map<string, SenderChannelAgent[]>> {
   const areaIds = [
     ...new Set(
       rows.flatMap((row) => (inArea(row) && row.areaId && !row.agentId ? [row.areaId] : [])),
@@ -365,7 +389,28 @@ async function agentsOf(
   const ofArea = new Map(siblings.map((each) => [each.areaId, each.agentId]));
   const idOf = (row: SenderChannelRow) =>
     row.agentId ?? (inArea(row) && row.areaId ? (ofArea.get(row.areaId) ?? null) : null);
-  const ids = [...new Set(rows.map(idOf).filter((id): id is string => !!id))];
+  const added =
+    rows.length === 0
+      ? []
+      : await db
+          .select({
+            channelId: senderChannelAgents.channelId,
+            agentId: senderChannelAgents.agentId,
+          })
+          .from(senderChannelAgents)
+          .where(
+            inArray(
+              senderChannelAgents.channelId,
+              rows.map((row) => row.id),
+            ),
+          )
+          .orderBy(asc(senderChannelAgents.createdAt));
+  const ids = [
+    ...new Set([
+      ...rows.map(idOf).filter((id): id is string => !!id),
+      ...added.map((each) => each.agentId),
+    ]),
+  ];
   const agents =
     ids.length === 0
       ? []
@@ -375,14 +420,21 @@ async function agentsOf(
             title: cloudAgents.title,
             userId: cloudAgents.userId,
             shared: cloudAgents.shared,
+            areaId: cloudAgents.areaId,
           })
           .from(cloudAgents)
           .where(inArray(cloudAgents.id, ids));
   const byId = new Map(agents.map((agent) => [agent.id, agent]));
-  const result = new Map<string, SenderChannelAgent>();
+  const result = new Map<string, SenderChannelAgent[]>();
   for (const row of rows) {
-    const agent = byId.get(idOf(row) ?? '');
-    if (agent) result.set(row.id, agent);
+    const own = byId.get(idOf(row) ?? '');
+    const list: SenderChannelAgent[] = own ? [{ ...own, own: true }] : [];
+    for (const each of added)
+      if (each.channelId === row.id && each.agentId !== own?.id) {
+        const agent = byId.get(each.agentId);
+        if (agent) list.push(agent);
+      }
+    result.set(row.id, list);
   }
   return result;
 }
@@ -425,7 +477,7 @@ function channelDto(
     // direct ones are theirs to write in too.
     canWrite: inArea(row) ? ctx.role !== 'viewer' : row.kind !== 'direct' || Boolean(other),
     canManage: manages(ctx, userId, row),
-    agent: look.agents.get(row.id) ?? null,
+    agents: look.agents.get(row.id) ?? [],
     updatedAt: row.updatedAt.toISOString(),
     pinnedAt: look.pins.get(row.id) ?? null,
   };
@@ -612,6 +664,8 @@ export async function senderHome(
     id: agent.id,
     title: agent.title,
     owner: agent.owner,
+    areaId: agent.areaId,
+    shared: agent.shared,
     running: agent.running,
     unread: agentUnreads.get(agent.id) ?? othersUnread.get(agent.id) ?? 0,
     updatedAt: agent.updatedAt,
@@ -674,6 +728,7 @@ function messageDto(
     agent: row.agentId ? { id: row.agentId, title: agents.get(row.agentId) ?? 'Agent' } : null,
     mail: row.mail && !row.deletedAt ? row.mail : null,
     text: row.deletedAt ? '' : row.text,
+    attachments: row.deletedAt ? [] : row.attachments,
     createdAt: row.createdAt.toISOString(),
     editedAt: row.editedAt?.toISOString() ?? null,
     deleted: Boolean(row.deletedAt),
@@ -748,6 +803,8 @@ async function append(
   text: string,
   mail: SenderMessageMail | null = null,
   callId: string | null = null,
+  /** Files its writer put on it (`claimAttachments`). */
+  attachmentIds: readonly string[] = [],
 ): Promise<{ message: SenderMessageRow; people: Map<string, AccountAuthor> }> {
   const people = await peopleOf(deps.db, row.workspaceId);
   const mentions = mentionsIn(text, people.values());
@@ -759,6 +816,10 @@ async function append(
       .where(eq(senderChannels.id, row.id))
       .returning({ seq: senderChannels.lastSeq });
     if (!bumped) throw channelNotFound();
+    const files =
+      author.userId && attachmentIds.length > 0
+        ? await claimAttachments(tx, now, author.userId, row.workspaceId, attachmentIds)
+        : [];
     const [inserted] = await tx
       .insert(senderMessages)
       .values({
@@ -768,6 +829,7 @@ async function append(
         userId: author.userId,
         agentId: author.agentId,
         text,
+        attachments: files,
         mail,
         mentions,
         callId,
@@ -802,81 +864,182 @@ export async function postMessage(
   text: string,
   /** Who writes, to set the agent tagged there to work as them. */
   viewer?: Viewer,
+  /** Files put on it – words or files, one of them at least. */
+  attachmentIds: readonly string[] = [],
 ): Promise<SenderMessage> {
+  if (!text.trim() && attachmentIds.length === 0) throw badRequest('Schreib etwas.');
   const { row, ctx } = await seen(deps, userId, channelId);
   if (inArea(row) && ctx.role === 'viewer') throw forbidden(READS_ALONG);
   if (row.kind === 'direct') {
     const ids = await memberIds(deps.db, row.id);
     if (ids.length < 2) throw forbidden('Diese Person ist nicht mehr im Workspace.');
   }
-  const { message, people } = await append(deps, row, { userId, agentId: null }, text);
+  const { message, people } = await append(
+    deps,
+    row,
+    { userId, agentId: null },
+    text,
+    null,
+    null,
+    attachmentIds,
+  );
   const dto = messageDto(message, people, new Map());
   await announce(deps, row, { type: 'message', channelId: row.id, message: dto });
-  if (viewer && viewer.author.id === userId) {
-    const agent = (await agentsOf(deps.db, [row])).get(row.id);
-    if (tagsAgent(text, agent?.title ?? null))
-      void callAgent(deps, viewer, ctx, row, dto).catch((error: unknown) =>
-        deps.log.warn(`Agent tagged in ${row.id}: ${String(error)}`),
-      );
-  }
+  // Its files in the conversation's „Dateien“ – in an area's chat in Cloud too.
+  await keepSenderFiles(deps, row, message, userId, message.attachments ?? []);
+  if (viewer && viewer.author.id === userId)
+    void callAgents(deps, viewer, ctx, row, dto).catch((error: unknown) =>
+      deps.log.warn(`Agent tagged in ${row.id}: ${String(error)}`),
+    );
   return dto;
 }
 
-/** What the agent is shown of a conversation before the message that called it. */
-const AGENT_SEES = 20;
+/** Where a conversation is, for {@link callableHere}. */
+const hereOf = (ctx: CloudCtx, row: SenderChannelRow) => ({
+  kind: row.kind,
+  areaId: row.areaId,
+  root: Boolean(row.areaId && ctx.areas.get(row.areaId)?.row.root),
+});
 
 /**
- * A message that tags the conversation's agent (`@Agent`) sets it to work – as who wrote it,
- * with their rights: in an area's channels the area's own (made when first tagged), in a group
- * or a direct conversation only one's own private agent added there (a shared one would let
- * everyone who sees it read what is said there). It answers there; what others wrote goes along
- * as said, no order to it.
+ * The agents one may call in a conversation with `@` (or add there), in the order a name shared
+ * by two is given to: the area's own, those added, the rest by name – of those one sees
+ * (`listCloudAgents`), where {@link callableHere} says.
  */
-async function callAgent(
+async function callableAgents(
+  deps: AppDeps,
+  ctx: CloudCtx,
+  userId: string,
+  row: SenderChannelRow,
+): Promise<{ here: SenderChannelAgent[]; seen: { id: string; title: string }[] }> {
+  const [here, seen] = await Promise.all([
+    agentsOf(deps.db, [row]).then((all) => all.get(row.id) ?? []),
+    listCloudAgents(deps, userId, row.workspaceId),
+  ]);
+  const at = hereOf(ctx, row);
+  const order = new Map(here.map((agent, index) => [agent.id, index]));
+  return {
+    here,
+    seen: seen
+      .filter((agent) =>
+        callableHere(
+          { userId: agent.owner.id, shared: agent.shared, areaId: agent.areaId },
+          at,
+          userId,
+        ),
+      )
+      .sort(
+        (a, b) =>
+          (order.get(a.id) ?? Infinity) - (order.get(b.id) ?? Infinity) ||
+          a.title.localeCompare(b.title),
+      ),
+  };
+}
+
+/**
+ * A message's tags set the agents named to work (`@` and a name, at most
+ * {@link MAX_AGENTS_CALLED}) – of those its writer may call there; a bare `@Agent` the
+ * conversation's own: in an area's channels the area's (made when first tagged), elsewhere those
+ * added that the writer may call.
+ */
+async function callAgents(
   deps: AppDeps,
   viewer: Viewer,
   ctx: CloudCtx,
   row: SenderChannelRow,
   message: SenderMessage,
 ): Promise<void> {
-  const userId = viewer.author.id;
-  let agentId = await conversationAgentId(deps.db, row);
-  if (inArea(row) && row.areaId) {
-    const [agent] = agentId
-      ? await deps.db.select().from(cloudAgents).where(eq(cloudAgents.id, agentId))
-      : [];
-    // The area's own only while shared there: one moved away or kept to its owner is none of
-    // the area's – a new one takes its place.
-    if (!agent || !agent.shared || agent.areaId !== row.areaId) {
-      const stale = agentId;
-      const made = await makeAreaAgent(deps, viewer, row.workspaceId, row.areaId);
-      await deps.db
-        .update(senderChannels)
-        .set({ agentId: made.id })
-        .where(
-          and(
-            eq(senderChannels.areaId, row.areaId),
-            stale
-              ? or(isNull(senderChannels.agentId), eq(senderChannels.agentId, stale))
-              : isNull(senderChannels.agentId),
-          ),
-        );
-      agentId = await conversationAgentId(deps.db, { ...row, agentId: null });
-      // Tagged twice at once: the one kept first stays.
-      if (agentId !== made.id) await deps.db.delete(cloudAgents).where(eq(cloudAgents.id, made.id));
-      else await channelsChanged(deps, row);
+  if (!message.text.includes('@')) return;
+  const { here, seen: callable } = await callableAgents(deps, ctx, viewer.author.id, row);
+  // In an area's channels „@Agent“ is the area's own – not someone's own one of that name.
+  const ownId = here.find((agent) => agent.own)?.id;
+  const seen = inArea(row)
+    ? callable.filter(
+        (agent) =>
+          agent.id === ownId ||
+          agent.title.trim().toLowerCase() !== CONVERSATION_AGENT_TAG.toLowerCase(),
+      )
+    : callable;
+  const { tagged, bare } = agentsTagged(message.text, seen);
+  const ids = tagged.map((agent) => agent.id);
+  if (bare) {
+    if (inArea(row) && row.areaId) {
+      const own = await areaOwnAgent(deps, viewer, row);
+      if (own) ids.push(own);
+    } else {
+      const callable = new Set(seen.map((agent) => agent.id));
+      ids.push(...here.filter((agent) => callable.has(agent.id)).map((agent) => agent.id));
     }
-  } else {
-    const [agent] = agentId
-      ? await deps.db.select().from(cloudAgents).where(eq(cloudAgents.id, agentId))
-      : [];
-    if (!agent || agent.shared || agent.userId !== userId) return;
   }
-  if (!agentId) return;
+  const called = [...new Set(ids)].slice(0, MAX_AGENTS_CALLED);
+  if (called.length === 0) return;
   const [where, page] = await Promise.all([
-    oneChannel(deps, ctx, userId, row),
-    listMessages(deps, userId, row.id),
+    oneChannel(deps, ctx, viewer.author.id, row),
+    listMessages(deps, viewer.author.id, row.id),
   ]);
+  const titles = new Map([...here, ...seen].map((agent) => [agent.id, agent.title]));
+  for (const agentId of called) {
+    const others = called.filter((id) => id !== agentId).map((id) => titles.get(id) ?? 'Agent');
+    await callAgent(deps, viewer, row, message, agentId, where, page, others).catch(
+      (error: unknown) => deps.log.warn(`Agent ${agentId} tagged in ${row.id}: ${String(error)}`),
+    );
+  }
+}
+
+/**
+ * An area's own agent (`@Agent` in its channels): only while shared there – one moved away or
+ * kept to its owner is none of the area's, a new one takes its place.
+ */
+async function areaOwnAgent(
+  deps: AppDeps,
+  viewer: Viewer,
+  row: SenderChannelRow,
+): Promise<string | null> {
+  if (!row.areaId) return null;
+  let agentId = await conversationAgentId(deps.db, row);
+  const [agent] = agentId
+    ? await deps.db.select().from(cloudAgents).where(eq(cloudAgents.id, agentId))
+    : [];
+  if (agent && agent.shared && agent.areaId === row.areaId) return agentId;
+  const stale = agentId;
+  const made = await makeAreaAgent(deps, viewer, row.workspaceId, row.areaId);
+  await deps.db
+    .update(senderChannels)
+    .set({ agentId: made.id })
+    .where(
+      and(
+        eq(senderChannels.areaId, row.areaId),
+        stale
+          ? or(isNull(senderChannels.agentId), eq(senderChannels.agentId, stale))
+          : isNull(senderChannels.agentId),
+      ),
+    );
+  agentId = await conversationAgentId(deps.db, { ...row, agentId: null });
+  // Tagged twice at once: the one kept first stays.
+  if (agentId !== made.id) await deps.db.delete(cloudAgents).where(eq(cloudAgents.id, made.id));
+  else await channelsChanged(deps, row);
+  return agentId;
+}
+
+/** What the agent is shown of a conversation before the message that called it. */
+const AGENT_SEES = 20;
+
+/**
+ * One agent called by a message sets to work – as who wrote it, with their rights, kept to that
+ * conversation (`messageCloudAgent`'s `tag`). It answers there; what others wrote goes along as
+ * said, no order to it.
+ */
+async function callAgent(
+  deps: AppDeps,
+  viewer: Viewer,
+  row: SenderChannelRow,
+  message: SenderMessage,
+  agentId: string,
+  where: SenderChannel,
+  page: SenderMessagePage,
+  /** The other agents the message called. */
+  others: readonly string[],
+): Promise<void> {
   const place =
     row.kind === 'area'
       ? `im Kanal des Bereichs „${where.name}“`
@@ -891,8 +1054,13 @@ async function callAgent(
     .slice(-AGENT_SEES)
     .map(
       (each) =>
-        `[${each.createdAt}] ${each.agent ? `${each.agent.title} (Agent)` : (each.author?.name ?? 'jemand, der nicht mehr da ist')}: ${each.text.replace(/\s+/g, ' ')}`,
+        `[${each.createdAt}] ${each.agent ? `${each.agent.title} (Agent)` : (each.author?.name ?? 'jemand, der nicht mehr da ist')}: ${withFileNames(each.text.replace(/\s+/g, ' '), each.attachments ?? [])}`,
     );
+  // The files on the message that called it: the agent looks at them too – its chat keeps its
+  // own copies (the message deleted, the agent's still open them; the agent deleted, the
+  // message keeps its own).
+  const since = deps.clock.now();
+  const files = await copyAttachments(deps, message.attachments ?? []);
   // The chat keeps what they wrote; the agent is told where, how to answer and what came before.
   await messageCloudAgent(
     deps,
@@ -906,6 +1074,12 @@ async function callAgent(
     [
       `${viewer.author.name} hat dich ${place} gerufen (Unterhaltung ${row.id}):`,
       message.text,
+      ...(others.length > 0
+        ? [
+            '',
+            `Mit dir gerufen: ${others.join(', ')} – jeder antwortet für sich; sag nur, was du beiträgst.`,
+          ]
+        : []),
       '',
       `Antworte dort mit post_message (conversation ${row.id}) – kurz, wie im Chat. Von hier aus liest du nur diese Unterhaltung (read_conversation) und antwortest dort – an Dateien, Präsentationen, andere Unterhaltungen und Dienste kommst du so nicht.`,
       ...(before.length > 0
@@ -916,7 +1090,14 @@ async function callAgent(
           ]
         : []),
     ].join('\n'),
-  );
+    undefined,
+    false,
+    [],
+    files,
+  ).catch(async (error: unknown) => {
+    await dropUnkeptCopies(deps, agentId, since, files);
+    throw error;
+  });
 }
 
 /**
@@ -1036,10 +1217,13 @@ export async function deleteMessage(
   const { message, row } = await ownMessage(deps, userId, messageId);
   const [updated] = await deps.db
     .update(senderMessages)
-    .set({ text: '', mentions: [], deletedAt: deps.clock.now() })
+    .set({ text: '', attachments: [], mentions: [], deletedAt: deps.clock.now() })
     .where(eq(senderMessages.id, message.id))
     .returning();
   if (!updated) throw messageNotFound();
+  // Its files go with its words – also from the conversation's „Dateien“.
+  await deps.db.delete(senderFiles).where(eq(senderFiles.messageId, message.id));
+  await deleteAttachments(deps, message.attachments);
   const dto = messageDto(updated, await peopleOf(deps.db, row.workspaceId), new Map());
   await announce(deps, row, { type: 'changed', channelId: row.id, message: dto });
   return dto;
@@ -1249,24 +1433,6 @@ export async function updateChannel(
 ): Promise<SenderChannel> {
   const { row, ctx } = await seen(deps, userId, channelId);
   const set: Partial<SenderChannelRow> = {};
-  if (input.agentId !== undefined) {
-    // An area's channels have the area's own; a group's or direct conversation's people add one.
-    if (inArea(row))
-      throw badRequest('In einem Bereich ist sein eigener Agent – mit @Agent rufst du ihn.');
-    if (input.agentId) {
-      const [agent] = await deps.db
-        .select()
-        .from(cloudAgents)
-        .where(eq(cloudAgents.id, input.agentId));
-      if (!agent || agent.workspaceId !== row.workspaceId || agent.userId !== userId)
-        throw notFound('Diesen Agenten gibt es nicht.');
-      if (agent.shared)
-        throw badRequest(
-          'Hierher holst du nur einen privaten Agenten – einen geteilten lesen alle mit, mit denen er geteilt ist.',
-        );
-    }
-    set.agentId = input.agentId;
-  }
   const isMember = row.kind === 'group';
   // A group's people name it together; elsewhere who opened it, or the area's admins.
   if (
@@ -1297,6 +1463,72 @@ export async function updateChannel(
   return oneChannel(deps, ctx, userId, updated);
 }
 
+/**
+ * „Agent hinzufügen“: one the caller may call here ({@link callableHere}), or – none named – a
+ * new one: in an area's channels its own while it has none, else one more shared with that area
+ * (the workspace's own area: the workspace); in a group or a direct conversation the caller's own
+ * private one.
+ */
+export async function addChannelAgent(
+  deps: AppDeps,
+  viewer: Viewer,
+  channelId: string,
+  agentId?: string,
+): Promise<SenderChannel> {
+  const userId = viewer.author.id;
+  const { row, ctx } = await seen(deps, userId, channelId);
+  if (inArea(row) && ctx.role === 'viewer') throw forbidden(READS_ALONG);
+  let id = agentId;
+  if (id) {
+    const agent = await agentFor(deps, userId, id);
+    // Only an agent of this workspace: another's is never called here.
+    if (agent.workspaceId !== row.workspaceId || !callableHere(agent, hereOf(ctx, row), userId))
+      throw badRequest(
+        'Diesen Agenten holst du hier nicht dazu – nur die dieses Bereichs und deine eigenen.',
+      );
+  } else {
+    const { here, seen: callable } = await callableAgents(deps, ctx, userId, row);
+    // In an area's channels without its own yet, the new one is that (`@Agent` calls it).
+    if (inArea(row) && !here.some((agent) => agent.own)) {
+      await areaOwnAgent(deps, viewer, row);
+      return oneChannel(deps, ctx, userId, row);
+    }
+    const at = hereOf(ctx, row);
+    // One more for the area's people: only by who may work in the area (as „Agenten“ orders).
+    if (inArea(row) && row.areaId) requireArea(ctx, row.areaId, 'edit');
+    const made = await makeConversationAgent(deps, viewer, row.workspaceId, {
+      title: newAgentTitle([...here, ...callable].map((agent) => agent.title)),
+      shared: inArea(row),
+      areaId: inArea(row) && !at.root ? row.areaId : null,
+    });
+    id = made.id;
+  }
+  await deps.db
+    .insert(senderChannelAgents)
+    .values({ channelId: row.id, agentId: id, addedBy: userId, createdAt: deps.clock.now() })
+    .onConflictDoNothing();
+  await channelsChanged(deps, row);
+  return oneChannel(deps, ctx, userId, row);
+}
+
+/** „Entfernen“: an added agent goes out of the conversation (it stays) – anyone who writes there. */
+export async function removeChannelAgent(
+  deps: AppDeps,
+  userId: string,
+  channelId: string,
+  agentId: string,
+): Promise<SenderChannel> {
+  const { row, ctx } = await seen(deps, userId, channelId);
+  if (inArea(row) && ctx.role === 'viewer') throw forbidden(READS_ALONG);
+  await deps.db
+    .delete(senderChannelAgents)
+    .where(
+      and(eq(senderChannelAgents.channelId, row.id), eq(senderChannelAgents.agentId, agentId)),
+    );
+  await channelsChanged(deps, row);
+  return oneChannel(deps, ctx, userId, row);
+}
+
 /** Deletes a channel or group with all it says – who opened it, or the area's admins. */
 export async function deleteChannel(
   deps: AppDeps,
@@ -1308,7 +1540,10 @@ export async function deleteChannel(
   if (row.kind === 'direct') throw badRequest('Eine Unterhaltung lässt sich nicht löschen.');
   if (!manages(ctx, userId, row)) throw forbidden();
   const audience = await audienceOf(deps.db, row);
+  // The files on its messages go with them (the rows go by cascade, the files would stay).
+  const files = await attachmentsOf(deps.db, { channelIds: [row.id] });
   await deps.db.delete(senderChannels).where(eq(senderChannels.id, row.id));
+  await deleteAttachments(deps, files);
   if (senderLive.open(row.workspaceId))
     senderLive.publish(row.workspaceId, audience, { type: 'channels' });
 }
@@ -1345,26 +1580,25 @@ export async function leaveGroup(deps: AppDeps, userId: string, channelId: strin
   await deps.db
     .delete(senderMembers)
     .where(and(eq(senderMembers.channelId, row.id), eq(senderMembers.userId, userId)));
-  // Their own agent goes out with them: nobody else may call it, and while it is there they
-  // could not share it (`shareCloudAgent`).
-  await deps.db
-    .update(senderChannels)
-    .set({ agentId: null })
-    .where(
-      and(
-        eq(senderChannels.id, row.id),
-        inArray(
-          senderChannels.agentId,
-          deps.db
-            .select({ id: cloudAgents.id })
-            .from(cloudAgents)
-            .where(eq(cloudAgents.userId, userId)),
-        ),
+  // Their own private agents go out with them: nobody else may call those.
+  await deps.db.delete(senderChannelAgents).where(
+    and(
+      eq(senderChannelAgents.channelId, row.id),
+      inArray(
+        senderChannelAgents.agentId,
+        deps.db
+          .select({ id: cloudAgents.id })
+          .from(cloudAgents)
+          .where(and(eq(cloudAgents.userId, userId), eq(cloudAgents.shared, false))),
       ),
-    );
+    ),
+  );
   const left = await memberIds(deps.db, row.id);
-  if (left.length === 0) await deps.db.delete(senderChannels).where(eq(senderChannels.id, row.id));
-  else await channelsChanged(deps, row, [userId]);
+  if (left.length === 0) {
+    const files = await attachmentsOf(deps.db, { channelIds: [row.id] });
+    await deps.db.delete(senderChannels).where(eq(senderChannels.id, row.id));
+    await deleteAttachments(deps, files);
+  } else await channelsChanged(deps, row, [userId]);
   // Out of its call too, quiet as it may be.
   audienceShrank(row.workspaceId);
 }

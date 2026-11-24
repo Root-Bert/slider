@@ -81,14 +81,14 @@ const span = (first: Date, last: Date) =>
       ? `${first.getDate()}.–${short(last)}`
       : `${shortDay.format(first)} – ${short(last)}`;
 
-/** What the head says: „November 2026“, „KW 47 · 16.–22. Nov.“, „Samstag, 21. Nov.“ (another year's with it). */
+/** What the head says: „November 2026“, „KW 47 | 16.–22. Nov.“, „Samstag, 21. Nov.“ (another year's with it). */
 export function viewTitle(view: CalendarView, anchor: Date): string {
   const days = viewDays(view, anchor);
   switch (view) {
     case 'tag':
       return `${weekdayFormat.format(anchor)}, ${short(anchor)}`;
     case 'woche':
-      return `KW ${weekNumber(anchor)} · ${span(days[0]!, days[6]!)}`;
+      return `KW ${weekNumber(anchor)} | ${span(days[0]!, days[6]!)}`;
     case 'monat':
       return monthFormat.format(anchor);
     case 'jahr':

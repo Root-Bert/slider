@@ -1,5 +1,6 @@
 import type { ImageCredit, StockPhoto } from '@slider/shared';
 import { useState } from 'react';
+import { useAttachments } from '@/features/attachments';
 import { ImagePrompt, PhotoGrid, usePhotoTerm } from '@/features/viewer';
 import {
   generateDocumentPicture,
@@ -25,6 +26,12 @@ export function NewPicture({ onFile }: { onFile: () => void }) {
   const toggle = (what: 'search' | 'generate') => setChosen(open === what ? null : what);
   const [prompt, setPrompt] = useState('');
   const [making, setMaking] = useState(false);
+  // Pictures it goes after – only where the workspace's image model takes them.
+  const references = useAttachments({
+    workspaceId: tools?.imageReferences ? file.workspaceId : null,
+    accept: 'pictures',
+    onError: (message) => notify(message, 'danger'),
+  });
 
   const insert = ({
     path,
@@ -49,7 +56,8 @@ export function NewPicture({ onFile }: { onFile: () => void }) {
   const make = async (text: string) => {
     setMaking(true);
     try {
-      insert(await generateDocumentPicture(file.id, text));
+      insert(await generateDocumentPicture(file.id, text, references.ids));
+      references.clear();
     } catch (error) {
       notify(error instanceof Error ? error.message : 'Das Bild ging nicht.', 'danger');
     } finally {
@@ -104,6 +112,7 @@ export function NewPicture({ onFile }: { onFile: () => void }) {
           onPrompt={setPrompt}
           pending={making}
           onSubmit={(text) => void make(text)}
+          files={references}
         />
       )}
     </>

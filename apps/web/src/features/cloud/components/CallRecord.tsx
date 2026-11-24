@@ -29,7 +29,7 @@ export function CallEntry({ call, to }: { call: CallBrief; to: string }) {
         <span className="flex min-w-0 flex-1 flex-col">
           <span className="text-body font-medium text-fg">Anruf</span>
           <span className="text-caption text-fg-muted" title={formatDateTime(call.startedAt)}>
-            {callWhen(call.startedAt)} · {callMinutes(call)}
+            {callWhen(call.startedAt)} | {callMinutes(call)}
           </span>
         </span>
         <AvatarStack authors={call.people} size={24} max={3} />
@@ -239,7 +239,7 @@ export function CallMeta({ record }: { record: CallRecord }) {
         <time dateTime={record.startedAt} title={formatDateTime(record.startedAt)}>
           {callWhen(record.startedAt)}
         </time>{' '}
-        · {callMinutes(record)} · {record.people.map((each) => each.name).join(', ')}
+        | {callMinutes(record)} | {record.people.map((each) => each.name).join(', ')}
       </span>
     </span>
   );

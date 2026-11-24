@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { attachmentIdsSchema, attachmentSchema } from './attachments';
 import { authorSchema } from './model';
 import { writerAiStateSchema } from './writer-ai';
 
@@ -169,6 +170,8 @@ export const readerCommentSchema = z.object({
   parentId: z.string().nullable(),
   author: authorSchema,
   body: z.string(),
+  /** Files put on it. */
+  attachments: z.array(attachmentSchema).optional(),
   /** `null` on an answer: it stands where its comment stands. */
   anchor: readerAnchorSchema.nullable(),
   status: z.enum(['open', 'done']),
@@ -183,10 +186,13 @@ export const createReaderCommentInputSchema = z.object({
   /** Made in the browser, so a comment written offline is sent once. */
   id: z.string().uuid(),
   parentId: z.string().nullable(),
-  body: z.string().trim().min(1).max(MAX_READER_COMMENT),
+  /** May stay empty where files are put on it. */
+  body: z.string().trim().max(MAX_READER_COMMENT),
+  /** Files put on it (`attachments`). */
+  attachments: attachmentIdsSchema,
   anchor: readerAnchorSchema.nullable(),
 });
-export type CreateReaderCommentInput = z.infer<typeof createReaderCommentInputSchema>;
+export type CreateReaderCommentInput = z.input<typeof createReaderCommentInputSchema>;
 
 export const updateReaderCommentInputSchema = z
   .object({

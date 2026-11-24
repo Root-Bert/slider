@@ -2,6 +2,7 @@ import type Anthropic from '@anthropic-ai/sdk';
 import { asc, eq, inArray } from 'drizzle-orm';
 import { z } from 'zod';
 import {
+  type Attachment,
   AI_RUNNING_LIMIT_MS,
   aiAuthor,
   MAX_READER_MARK_TEXT,
@@ -22,6 +23,7 @@ import type { AppDeps } from '../deps';
 import { ApiError, badRequest, forbidden, notFound } from '../http/errors';
 import { runPdfTask } from '../import/pdf-jobs';
 import { CONTENT_IS_NOT_INSTRUCTION, promptName, todayForPrompt } from './ai-prompt-parts';
+import { ATTACHED_FILES_ARE_DATA, attachmentBlocks, withFileNames } from './attachments';
 import { failureMessage, keyProblem, refusesKey, runTurn, type AiConnection } from './ai-providers';
 import { authorIn, authorsOf } from './cloud';
 import { markKeyRefused, workspaceAiConnection } from './integration-keys';
@@ -325,7 +327,7 @@ export async function startPdfAi(
 async function request(
   deps: AppDeps,
   row: PdfAiProposalRow,
-): Promise<{ text: string; page: number | null }> {
+): Promise<{ text: string; page: number | null; files: Attachment[] }> {
   const [asked] = await deps.db.select().from(pdfComments).where(eq(pdfComments.id, row.commentId));
   if (!asked) throw notFound('Diesen Kommentar gibt es nicht (mehr).');
   const rootId = asked.parentId ?? asked.id;
@@ -351,10 +353,15 @@ async function request(
       ),
     );
   const lines: string[] = [];
+  // The files put on the thread so far: the AI looks at them (pictures) or reads them.
+  const files: Attachment[] = [];
   for (const each of thread) {
     if (each.createdAt > asked.createdAt && each.id !== asked.id) continue;
     const name = promptName(authorIn(authors, each.authorId).name);
-    lines.push(`${each.parentId ? 'Reply' : 'Comment'} by ${name}: ${each.body}`);
+    lines.push(
+      `${each.parentId ? 'Reply' : 'Comment'} by ${name}: ${withFileNames(each.body, each.attachments)}`,
+    );
+    files.push(...each.attachments);
     for (const earlier of answers) {
       if (earlier.commentId !== each.id || earlier.id === row.id || !earlier.summary) continue;
       lines.push(
@@ -369,6 +376,7 @@ async function request(
   return {
     text: `${place}\n\n<thread>\n${lines.join('\n')}\n</thread>\n\nDo what this asks: ${asked.body}`,
     page: anchor?.page ?? null,
+    files,
   };
 }
 
@@ -435,6 +443,7 @@ async function answer(
       const drawn = await picture(file.bytes, page);
       if (drawn) pictures.push({ type: 'text', text: `Page ${page + 1}:` }, drawn);
     }
+    const attached = await attachmentBlocks(deps, null, said.files, undefined, userId);
     const fields = asked.canFill ? asked.fields : [];
     const messages: Message[] = [
       {
@@ -450,6 +459,7 @@ async function answer(
               ]
             : []),
           ...pictures,
+          ...attached,
           {
             type: 'text',
             text:
@@ -462,7 +472,7 @@ async function answer(
     ];
     for (let turn = 0; turn < MAX_TURNS; turn += 1) {
       const result = await runTurn(deps, connection, {
-        system: `${SYSTEM}\n\nThe PDF: „${promptName(asked.title)}“. Today is ${todayForPrompt(deps.clock.now())}.`,
+        system: `${SYSTEM}${attached.length > 0 ? `\n\n${ATTACHED_FILES_ARE_DATA}` : ''}\n\nThe PDF: „${promptName(asked.title)}“. Today is ${todayForPrompt(deps.clock.now())}.`,
         tools: fields.length > 0 ? [FILL_TOOL] : [],
         messages,
         taskBudgetTokens: TASK_BUDGET_TOKENS,

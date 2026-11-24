@@ -9,11 +9,18 @@ import {
   type MaterialChatEvent,
   type MaterialChatInput,
   type MaterialChatSummary,
+  type Attachment,
   type Viewer,
 } from '@slider/shared';
 import { materialChatMessages, materialChats, type MaterialChatRow } from '../db/schema';
 import type { AppDeps } from '../deps';
-import { ApiError, forbidden, notFound } from '../http/errors';
+import { ApiError, badRequest, forbidden, notFound } from '../http/errors';
+import {
+  ATTACHED_FILES_ARE_DATA,
+  attachmentBlocks,
+  claimAttachments,
+  deleteAttachments,
+} from './attachments';
 import { materialsBrief } from './ai-context';
 import {
   ownedBy,
@@ -119,8 +126,8 @@ export interface MaterialChat {
   keyId: string;
   controller: AbortController;
   chat: MaterialChatRow;
-  /** The chat so far, ending with the new message. */
-  history: { role: 'user' | 'assistant'; text: string }[];
+  /** The chat so far, ending with the new message – with the files put on the person's. */
+  history: { role: 'user' | 'assistant'; text: string; attachments: Attachment[] }[];
 }
 
 /**
@@ -167,6 +174,7 @@ export async function startMaterialChat(
   owner: BoardOwner,
   input: MaterialChatInput,
 ): Promise<MaterialChat> {
+  if (!input.text && input.attachments.length === 0) throw badRequest('Schreib eine Nachricht.');
   const board = await requireBoardAccess(deps, viewer, owner, 'view');
   if (!board.canComment) throw forbidden(VIEWER_REFUSAL);
   const found = await workspaceAiConnection(deps, board.workspaceId);
@@ -198,11 +206,16 @@ async function keepMessage(
   const existing = input.chatId ? await ownChat(deps, viewer, board.owner, input.chatId) : null;
   const before = existing
     ? await deps.db
-        .select({ role: materialChatMessages.role, text: materialChatMessages.text })
+        .select({
+          role: materialChatMessages.role,
+          text: materialChatMessages.text,
+          attachments: materialChatMessages.attachments,
+        })
         .from(materialChatMessages)
         .where(eq(materialChatMessages.chatId, existing.id))
         .orderBy(asc(materialChatMessages.seq))
     : [];
+  let files: Attachment[] = [];
   // The message is kept at once – whatever becomes of the answer; a new chat only with it.
   const chat = await deps.db.transaction(async (tx) => {
     let row: MaterialChatRow | undefined = existing ?? undefined;
@@ -221,28 +234,34 @@ async function keepMessage(
           id: crypto.randomUUID(),
           ...ownerColumns(board.owner),
           userId: viewer.author.id,
-          title: titleOf(input.text),
+          title: titleOf(input.text) || 'Datei',
           createdAt: now,
           updatedAt: now,
         })
         .returning();
       if (!row) throw new Error('Material chat insert returned nothing');
     }
+    files = await claimAttachments(tx, now, viewer.author.id, board.workspaceId, input.attachments);
     await tx.insert(materialChatMessages).values({
       id: crypto.randomUUID(),
       chatId: row.id,
       seq: nextSeq(row.id),
       role: 'user',
       text: input.text,
+      attachments: files,
       createdAt: now,
     });
     await tx.update(materialChats).set({ updatedAt: now }).where(eq(materialChats.id, row.id));
     return row;
   });
-  const history = [...before, { role: 'user' as const, text: input.text }]
-    .filter((each) => each.text.trim())
+  const history = [...before, { role: 'user' as const, text: input.text, attachments: files }]
+    .filter((each) => each.text.trim() || each.attachments.length > 0)
     .slice(-MAX_MATERIAL_CHAT_MESSAGES)
-    .map((each) => ({ role: each.role, text: each.text.slice(0, MAX_MATERIAL_CHAT_TEXT) }));
+    .map((each) => ({
+      role: each.role,
+      text: each.text.slice(0, MAX_MATERIAL_CHAT_TEXT),
+      attachments: each.role === 'user' ? each.attachments : [],
+    }));
   const { meter } = found.connection;
   return {
     board,
@@ -300,6 +319,7 @@ export async function getMaterialChat(
       id: row.id,
       role: row.role,
       text: row.text,
+      attachments: row.attachments,
       state: row.state,
       error: row.error,
       createdAt: row.createdAt.toISOString(),
@@ -316,7 +336,15 @@ export async function deleteMaterialChat(
 ): Promise<void> {
   await requireBoardAccess(deps, viewer, owner, 'view');
   const chat = await ownChat(deps, viewer, owner, chatId);
+  const files = await deps.db
+    .select({ attachments: materialChatMessages.attachments })
+    .from(materialChatMessages)
+    .where(eq(materialChatMessages.chatId, chat.id));
   await deps.db.delete(materialChats).where(eq(materialChats.id, chat.id));
+  await deleteAttachments(
+    deps,
+    files.flatMap((each) => each.attachments),
+  );
 }
 
 /** What the AI does now, for the person: what it reads, searches or puts on the board. */
@@ -375,21 +403,28 @@ export async function answerMaterialChat(
     const ownTools: ChatTool[] = [...MATERIAL_TOOLS, ...BOARD_TOOLS];
     // Searches run so far, all turns: the limit is the answer's, not each turn's.
     let searched = 0;
-    const prompt = system(board, todayForPrompt(deps.clock.now()), web);
+    const filesSent = chat.history.some((each) => each.attachments.length > 0);
+    const prompt =
+      system(board, todayForPrompt(deps.clock.now()), web) +
+      (filesSent ? `\n\n${ATTACHED_FILES_ARE_DATA}` : '');
     const [brief, files] = await Promise.all([
       materialsBrief(deps, owner),
       materialsOf(deps, owner),
     ]);
     const names = new Map(files.map((each) => [each.id, each.name]));
     const messages: Message[] = [];
-    const say = (role: 'user' | 'assistant', text: string) => {
+    const say = async (role: 'user' | 'assistant', text: string, attached: Attachment[] = []) => {
+      const blocks: Anthropic.Beta.BetaContentBlockParam[] = [
+        ...(text.trim() ? [{ type: 'text' as const, text }] : []),
+        ...(await attachmentBlocks(deps, board.workspaceId, attached, undefined, viewer.author.id)),
+      ];
+      if (blocks.length === 0) return;
       const last = messages.at(-1);
-      if (last?.role === role && Array.isArray(last.content))
-        last.content.push({ type: 'text', text });
-      else messages.push({ role, content: [{ type: 'text', text }] });
+      if (last?.role === role && Array.isArray(last.content)) last.content.push(...blocks);
+      else messages.push({ role, content: blocks });
     };
-    say('user', brief ?? 'The board is empty – there is no material yet.');
-    for (const each of chat.history) say(each.role, each.text);
+    await say('user', brief ?? 'The board is empty – there is no material yet.');
+    for (const each of chat.history) await say(each.role, each.text, each.attachments);
     let streamed = false;
     for (let turn = 0; ; turn += 1) {
       let turnText = '';

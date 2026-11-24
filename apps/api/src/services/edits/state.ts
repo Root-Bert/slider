@@ -8,6 +8,7 @@ import { notFound } from '../../http/errors';
 import { cutOutSource } from '../cut-outs';
 import { photoSource } from '../stock-photos';
 import { workspaceAiConnection, workspaceImageConnection } from '../integration-keys';
+import { takesImageReferences } from '../ai-providers';
 import { drawingFonts, workspaceFontsOf } from '../workspace-fonts';
 import { templateFile } from '../workspace-masters';
 import { fileSlides } from './file-slides';
@@ -32,6 +33,7 @@ export async function getEditState(
       aiReason: null,
       stockPhotos: false,
       imageGeneration: false,
+      imageReferences: false,
       cutOut: false,
       mail: false,
       photoSource: null,
@@ -57,6 +59,7 @@ export async function getEditState(
     stockPhotos: photos !== null,
     photoSource: photos?.provider ?? null,
     imageGeneration: images.connection !== null,
+    imageReferences: !!images.connection && takesImageReferences(images.connection),
     cutOut: cutOutSource(deps) !== null,
     mail: deps.mailer.configured,
     fonts,

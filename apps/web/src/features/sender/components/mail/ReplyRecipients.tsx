@@ -8,7 +8,7 @@ const named = (addresses: string[], names: ReadonlyMap<string, string>) =>
   addresses.map((one) => names.get(one.toLowerCase()) || one).join(', ');
 
 /**
- * Whom a reply goes to, over its field: one line („An Eva · Cc Tom, Mia“) – clicked, the fields
+ * Whom a reply goes to, over its field: one line („An Eva | Cc Tom, Mia“) – clicked, the fields
  * An, Cc, Bcc open to add or take away, as in a new mail. `aside` stands at the line's end
  * („Allen antworten“).
  */
@@ -56,13 +56,13 @@ export function ReplyRecipients({
             )}
             {cc.length > 0 && (
               <>
-                <span className="text-fg-subtle"> · Cc </span>
+                <span className="text-fg-subtle"> | Cc </span>
                 {named(cc, names)}
               </>
             )}
             {bcc.length > 0 && (
               <>
-                <span className="text-fg-subtle"> · Bcc </span>
+                <span className="text-fg-subtle"> | Bcc </span>
                 {named(bcc, names)}
               </>
             )}

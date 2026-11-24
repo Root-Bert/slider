@@ -1,4 +1,4 @@
-import { and, asc, eq, inArray, sql } from 'drizzle-orm';
+import { and, asc, eq, inArray, or, sql } from 'drizzle-orm';
 import {
   cloudAccessAtLeast,
   cloudExtension,
@@ -35,6 +35,7 @@ import {
   type PdfMarkRow,
 } from '../db/schema';
 import { ApiError, badRequest, fileTooLarge, forbidden, notFound } from '../http/errors';
+import { claimAttachments, deleteAttachments } from './attachments';
 import { isDeckKey } from './cloud/blobs';
 import {
   authorIn,
@@ -546,6 +547,7 @@ async function toComments(deps: PdfDeps, rows: readonly PdfCommentRow[]): Promis
     parentId: row.parentId,
     author: authorIn(authors, row.authorId),
     body: row.body,
+    attachments: row.attachments,
     anchor: row.anchor,
     status: row.status,
     resolvedBy: row.resolvedBy ? authorIn(authors, row.resolvedBy) : null,
@@ -605,10 +607,19 @@ export async function createPdfComment(
   } else if (!input.anchor) {
     throw badRequest('Ein Kommentar steht an einer Stelle des PDFs.');
   }
+  if (!input.body && !input.attachments?.length) throw badRequest('Schreib etwas.');
   const now = deps.clock.now();
+  const files = await claimAttachments(
+    deps.db,
+    now,
+    userId,
+    loaded.node.workspaceId,
+    input.attachments ?? [],
+  );
   const [row] = await deps.db
     .insert(pdfComments)
     .values({
+      attachments: files,
       id: input.id,
       pdfId: loaded.node.id,
       parentId: input.parentId,
@@ -675,6 +686,14 @@ export async function deletePdfComment(
   if (comment.authorId !== userId && !cloudAccessAtLeast(loaded.access, 'manage')) {
     throw forbidden('Löschen kann einen Kommentar, wer ihn schrieb.');
   }
-  await deps.db.delete(pdfComments).where(eq(pdfComments.id, comment.id));
+  // Its files go with it – and its replies' (they go with a thread's first comment).
+  const gone = await deps.db
+    .delete(pdfComments)
+    .where(or(eq(pdfComments.id, comment.id), eq(pdfComments.parentId, comment.id)))
+    .returning({ attachments: pdfComments.attachments });
+  await deleteAttachments(
+    deps,
+    gone.flatMap((each) => each.attachments),
+  );
   live.publish(comment.pdfId, { type: 'comments' });
 }

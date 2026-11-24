@@ -12,6 +12,7 @@ import {
   cloudShareRoleSchema,
   isOpenTodo,
   MAX_CLOUD_AGENT_FILE_CHARS,
+  MAX_MILESTONE_NAME,
   MAX_TODO_DESCRIPTION,
   MAX_TODO_TITLE,
   searchFold,
@@ -55,7 +56,7 @@ import {
   updateArea,
 } from './cloud';
 import { runTool, target, TEXT_EXTENSIONS, TOOLS as CLOUD_TOOLS } from './cloud-chat';
-import { createTodo, listTodos, todoByRef, todoLine, updateTodo } from './todos';
+import { createTodo, listTodos, milestoneNamed, todoByRef, todoLine, updateTodo } from './todos';
 import { deckPlaces, followArea, followMoved, followShares } from './deck-places';
 import {
   changeSchema,
@@ -205,11 +206,17 @@ const todoInput = {
   status: z.enum(TODO_STATUSES).optional(),
   priority: z.number().int().min(0).max(4).optional(),
   assignee: z.string().trim().min(1).max(200).nullable().optional(),
+  start: z
+    .string()
+    .regex(/^\d{4}-\d{2}-\d{2}$/)
+    .nullable()
+    .optional(),
   due: z
     .string()
     .regex(/^\d{4}-\d{2}-\d{2}$/)
     .nullable()
     .optional(),
+  milestone: z.string().trim().min(1).max(MAX_MILESTONE_NAME).nullable().optional(),
 };
 const todoProperties = {
   description: {
@@ -224,7 +231,17 @@ const todoProperties = {
     description:
       'Who does it: a person of the workspace by name, e-mail address or id – on one’s own to-do only the person; null: nobody.',
   },
+  start: {
+    type: ['string', 'null'],
+    description:
+      'When work on it begins, YYYY-MM-DD (its bar on the timeline runs to due); null: none.',
+  },
   due: { type: ['string', 'null'], description: 'Due date YYYY-MM-DD; null: none.' },
+  milestone: {
+    type: ['string', 'null'],
+    description:
+      'The milestone it leads to, by name: one of its place’s (made if there is none of that name yet); null: none.',
+  },
 } as const;
 
 const INPUTS = {
@@ -786,7 +803,11 @@ async function runTodoTool(
           status: input.status,
           priority: input.priority as TodoPriority | undefined,
           assigneeId: await who(input.assignee),
+          startOn: input.start,
           dueOn: input.due,
+          milestoneId: input.milestone
+            ? await milestoneNamed(deps, userId, workspaceId, input.area ?? null, input.milestone)
+            : undefined,
         },
         {},
       );
@@ -806,7 +827,17 @@ async function runTodoTool(
           status: input.status,
           priority: input.priority as TodoPriority | undefined,
           assigneeId: await who(input.assignee),
+          startOn: input.start,
           dueOn: input.due,
+          milestoneId: input.milestone
+            ? await milestoneNamed(
+                deps,
+                userId,
+                workspaceId,
+                input.area !== undefined ? input.area : todo.areaId,
+                input.milestone,
+              )
+            : input.milestone,
         },
         {},
       );

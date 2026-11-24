@@ -8,7 +8,7 @@ import { AgentComposer } from './components/AgentComposer';
 import {
   AgentList,
   AgentListSkeleton,
-  agentsNone,
+  AgentsNoHits,
   agentsSaying,
   AgentViewToggle,
   useAgentView,
@@ -22,19 +22,28 @@ import { ALL_SCOPE, OWN_SCOPE, scopeTabs, useScope, WORKSPACE_SCOPE } from './li
 /**
  * „Agenten“: orders to the AI that it works on in the server, across as many files as it takes.
  * Tabs as the title, as Post's mailboxes: all, one's own, the workspace's, then each area's.
- * A new one starts with what is to be done, as one's own.
+ * A new one starts with what is to be done – one's own under „Alle“ and „Meine“, under
+ * „Workspace“ or an area's tab given to its people, as one written in the area itself.
  */
 export function Component() {
   const ui = useCloud();
   const navigate = useNavigate();
   const agents = useCloudAgents(ui.workspace.id);
-  const order = useOrderCloudAgent(ui.workspace.id);
   const list = agents.data ?? [];
   const areas = ui.home?.areas ?? [];
   const { tabs, current } = scopeTabs(areas, useScope(), {
     own: 'Nur du siehst sie',
     workspace: 'Alle im Workspace lesen mit',
   });
+  // An order goes where the tab stands: under „Alle“ and „Meine“ one's own, under „Workspace“
+  // the workspace's, under an area's that area's – as in the area itself.
+  const place = current === ALL_SCOPE || current === OWN_SCOPE ? null : current;
+  const order = useOrderCloudAgent(
+    ui.workspace.id,
+    place === WORKSPACE_SCOPE ? null : place,
+    undefined,
+    place !== null,
+  );
   // One's own wherever they stand; the workspace's are given to it and stand in no area.
   const shown =
     current === ALL_SCOPE
@@ -61,7 +70,7 @@ export function Component() {
     <CloudPage
       docTitle="Agenten"
       title={<ScopeTabs tabs={tabs} current={current} />}
-      crumbs={[{ label: ui.workspace.name }, { label: 'Agenten' }]}
+      crumbs={[{ label: 'Agenten' }]}
       nodes={[]}
     >
       {() => (
@@ -76,15 +85,20 @@ export function Component() {
                 <div className="min-w-48 flex-1">
                   <AgentComposer
                     top
-                    placeholder="Was soll erledigt werden?"
+                    placeholder={
+                      place === null
+                        ? 'Was soll erledigt werden?'
+                        : `Was soll in „${place === WORKSPACE_SCOPE ? ui.workspace.name : (tab?.label ?? '')}“ erledigt werden?`
+                    }
                     autoFocus
                     keep={{
                       key: draftKeys.newAgent(ui.workspace.id),
                       target: { kind: 'agent-new', workspaceId: ui.workspace.id },
                     }}
                     busy={order.isPending}
-                    onSend={(text) =>
-                      order.mutateAsync(text).then(
+                    workspaceId={ui.workspace.id}
+                    onSend={(text, attachments) =>
+                      order.mutateAsync({ text, attachments }).then(
                         (agent) => {
                           void navigate(routes.cloudAgent(ui.workspace.id, agent.id));
                           return true;
@@ -131,9 +145,9 @@ export function Component() {
               className="flex flex-col gap-3"
             >
               {shown.length === 0 ? (
-                <p className="text-body text-fg-muted">{none}</p>
+                <Empty icon="autoAwesome" title="Noch kein Agent" message={none} />
               ) : found.length === 0 ? (
-                <p className="text-body text-fg-muted">{agentsNone(query)}</p>
+                <AgentsNoHits query={query} />
               ) : (
                 <AgentList
                   label={tab?.label ?? 'Agenten'}

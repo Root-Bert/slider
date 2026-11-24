@@ -1,5 +1,18 @@
 import { createHash, createHmac, timingSafeEqual } from 'node:crypto';
-import { and, desc, eq, inArray, isNotNull, isNull, lt, lte, ne, sql, type SQL } from 'drizzle-orm';
+import {
+  and,
+  desc,
+  eq,
+  inArray,
+  isNotNull,
+  isNull,
+  lt,
+  lte,
+  ne,
+  or,
+  sql,
+  type SQL,
+} from 'drizzle-orm';
 import { simpleParser, type AddressObject, type ParsedMail } from 'mailparser';
 import {
   API_PREFIX,
@@ -609,6 +622,7 @@ export async function syncMailAccount(deps: AppDeps, accountId: string): Promise
     // Read or unread on the server meanwhile – so here too; and what was read here goes there.
     const flagged = await mirrorSeen(deps, accountId, fetched.flags ?? []);
     await pushSeen(deps, accountId);
+    await pushMoves(deps, accountId);
     if (row.state !== 'ok' || foldersChanged || fetched.mails.length > 0 || flagged.size > 0)
       tell(row, null);
     for (const threadId of touched) {
@@ -801,6 +815,82 @@ export async function pushSeen(deps: AppDeps, accountId: string): Promise<void> 
       deps.log.warn('Mail: the read state did not get to the server', { accountId, error });
   } finally {
     marking.delete(accountId);
+  }
+}
+
+const moving = new Set<string>();
+/** Mails moved on the server per mailbox and round at most (a rule on years of mail: in parts). */
+const MOVES_PER_ROUND = 200;
+
+/**
+ * Spam or not as its person said (by hand, by a rule for the sender) → so on the server too, as a
+ * mail program does it: the mails that came in moved between the inbox and the provider's spam
+ * folder. What the filter or the AI placed stays here only – the provider's spam folder deletes
+ * by itself after some days, and other mail programs show no mark to check. The wanted place is
+ * the conversation's, so what does not get there (the server away) goes with the next round.
+ */
+export async function pushMoves(deps: AppDeps, accountId: string): Promise<void> {
+  const servers = mailServersOf(deps);
+  if (!servers.move || moving.has(accountId)) return;
+  moving.add(accountId);
+  try {
+    const [row] = await deps.db.select().from(mailAccounts).where(eq(mailAccounts.id, accountId));
+    if (!row || row.state === 'signin' || row.calendarOnly) return;
+    const pathOf = new Map(row.folders.map((one) => [one.key, one.path]));
+    if (!pathOf.has('inbox')) pathOf.set('inbox', 'INBOX');
+    // A mailbox without a spam folder: nothing to move to.
+    if (!pathOf.has('spam')) return;
+    const misplaced = await deps.db
+      .select({
+        id: mailMessages.id,
+        folder: mailMessages.folder,
+        folders: mailMessages.folders,
+        uid: mailMessages.uid,
+        spam: mailThreads.spam,
+      })
+      .from(mailMessages)
+      .innerJoin(mailThreads, eq(mailThreads.id, mailMessages.threadId))
+      .where(
+        and(
+          eq(mailMessages.accountId, accountId),
+          eq(mailMessages.outgoing, false),
+          isNotNull(mailMessages.uid),
+          inArray(mailThreads.spamBy, ['person', 'rule']),
+          or(
+            and(eq(mailThreads.spam, true), eq(mailMessages.folder, 'inbox')),
+            and(eq(mailThreads.spam, false), eq(mailMessages.folder, 'spam')),
+          ),
+        ),
+      )
+      .limit(MOVES_PER_ROUND);
+    if (misplaced.length === 0) return;
+    const moves = misplaced.map((one) => {
+      const to = one.spam ? 'spam' : 'inbox';
+      return { ...one, to, path: pathOf.get(one.folder)!, toPath: pathOf.get(to)!, uid: one.uid! };
+    });
+    const moved = await servers.move(
+      await loginFor(deps, row),
+      moves.map(({ path, uid, toPath }) => ({ path, uid, to: toPath })),
+    );
+    const newUid = new Map(moved.map((one) => [`${one.path}\n${one.uid}`, one.newUid]));
+    for (const one of moves) {
+      const key = `${one.path}\n${one.uid}`;
+      if (!newUid.has(key)) continue;
+      // Its new UID where the server told it; else none until the next read finds it there.
+      await deps.db
+        .update(mailMessages)
+        .set({
+          folder: one.to,
+          folders: [...new Set(one.folders.map((each) => (each === one.folder ? one.to : each)))],
+          uid: newUid.get(key) ?? null,
+        })
+        .where(and(eq(mailMessages.id, one.id), eq(mailMessages.folder, one.folder)));
+    }
+  } catch (error) {
+    if (!(error instanceof MailSignInNeeded))
+      deps.log.warn('Mail: a move did not get to the server', { accountId, error });
+  } finally {
+    moving.delete(accountId);
   }
 }
 
@@ -1717,7 +1807,10 @@ async function markThreadSeen(deps: AppDeps, account: MailAccountRow, threadId: 
   if (marked.some((one) => one.uid !== null)) later(deps, () => pushSeen(deps, account.id));
 }
 
-/** Spam, or not after all – it moves out of the way (or back); the AI no longer moves it. */
+/**
+ * Spam, or not after all – it moves out of the way (or back), on the server too (`pushMoves`); the
+ * AI no longer moves it.
+ */
 export async function markMailSpam(deps: AppDeps, userId: string, threadId: string, spam: boolean) {
   const { thread, account } = await ownThread(deps, userId, threadId);
   await deps.db
@@ -1725,6 +1818,8 @@ export async function markMailSpam(deps: AppDeps, userId: string, threadId: stri
     .set({ spam, spamBy: 'person', spamSymbols: null })
     .where(eq(mailThreads.id, thread.id));
   tell(account, thread.id);
+  // On the server too (in the background), as a mail program moves it.
+  later(deps, () => pushMoves(deps, account.id));
   // What its person decided teaches the instance's filter (in the background).
   filterLearn(deps, await threadMessages(deps, thread.id), spam);
 }

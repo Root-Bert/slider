@@ -6,11 +6,11 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { and, eq, inArray, isNotNull } from 'drizzle-orm';
 import JSZip from 'jszip';
 import {
+  CHAT_FILES_FOLDER,
   CLOUD_TRASH_DAYS,
   CLOUD_TUS_PATH,
   CLOUD_VERSION_DAYS,
   cloudChangesSchema,
-  MAX_CLOUD_AGENT_CHATS,
   type CloudChanges,
   type CloudConnection,
   cloudHomeSchema,
@@ -20,6 +20,7 @@ import {
   cloudPublicSchema,
   type CloudArea,
   type CloudBatchResult,
+  type CloudSummary,
   type CloudAgentDetail,
   type CloudAgentSummary,
   type CloudChatEvent,
@@ -46,6 +47,8 @@ import {
   cloudNodes,
   cloudShares,
   cloudVersions,
+  attachments,
+  documentComments,
   deckAccessGrants,
   deckFolders,
   decks,
@@ -731,6 +734,112 @@ describe('Cloud – the workspace’s files', () => {
     expect(seen[3]).toMatch(/^ERROR Only text files/);
     expect(seen[4]).not.toMatch(/^ERROR/);
     expect(seen[5]).toContain('Bericht.md');
+    // What is sent to an agent lies in Cloud too – an area's agent's in the area's „Chat-Dateien“.
+    const chatArea = await area('Chatablage', { visibility: 'members' }, anna.cookie);
+    const form = new FormData();
+    form.append('file', new File(['Zahlen'], 'Zahlen.txt', { type: 'text/plain' }));
+    const toAgent = (await (
+      await ctx.request(`/api/workspaces/${ctx.workspaceId}/attachments`, {
+        method: 'POST',
+        body: form,
+        cookie: anna.cookie,
+      })
+    ).json()) as { id: string };
+    answers = [() => ({ stop_reason: 'end_turn', content: [{ type: 'text', text: 'Gelesen.' }] })];
+    const toldAgent = await post(
+      agentsUrl,
+      { text: 'Lies das', attachments: [toAgent.id], areaId: chatArea.id, shared: true },
+      anna.cookie,
+    );
+    expect(toldAgent.status, await toldAgent.clone().text()).toBe(201);
+    await vi.waitFor(async () => {
+      const inArea = await ctx.deps.db
+        .select({ id: cloudNodes.id, name: cloudNodes.name, parentId: cloudNodes.parentId })
+        .from(cloudNodes)
+        .where(eq(cloudNodes.areaId, chatArea.id));
+      const file = inArea.find((node) => node.name === 'Zahlen.txt');
+      expect(inArea.find((node) => node.id === file?.parentId)?.name).toBe(CHAT_FILES_FOLDER);
+    });
+    // One's own agent standing in the area: its files into one's own „Chat-Dateien“, never
+    // the area's (nobody else reads along).
+    const ownForm = new FormData();
+    ownForm.append('file', new File(['Privat'], 'Privat.txt', { type: 'text/plain' }));
+    const toOwn = (await (
+      await ctx.request(`/api/workspaces/${ctx.workspaceId}/attachments`, {
+        method: 'POST',
+        body: ownForm,
+        cookie: anna.cookie,
+      })
+    ).json()) as { id: string };
+    answers = [() => ({ stop_reason: 'end_turn', content: [{ type: 'text', text: 'Gelesen.' }] })];
+    expect(
+      (
+        await post(
+          agentsUrl,
+          { text: 'Lies das', attachments: [toOwn.id], areaId: chatArea.id },
+          anna.cookie,
+        )
+      ).status,
+    ).toBe(201);
+    await vi.waitFor(
+      async () => {
+        const own = await ctx.deps.db
+          .select({ name: cloudNodes.name, areaId: cloudNodes.areaId })
+          .from(cloudNodes)
+          .where(eq(cloudNodes.workspaceId, ctx.workspaceId));
+        expect(own.filter((node) => node.name === 'Privat.txt')).toEqual([
+          { name: 'Privat.txt', areaId: null },
+        ]);
+        // Its run done before the next answers are set.
+        expect(runs.size).toBe(0);
+      },
+      { timeout: 10_000 },
+    );
+    // Out of her files again: what follows counts them.
+    const ownChatFiles = (
+      await ctx.deps.db
+        .select({ id: cloudNodes.id, name: cloudNodes.name, areaId: cloudNodes.areaId })
+        .from(cloudNodes)
+        .where(eq(cloudNodes.workspaceId, ctx.workspaceId))
+    ).filter(
+      (node) => !node.areaId && (node.name === 'Privat.txt' || node.name === CHAT_FILES_FOLDER),
+    );
+    await ctx.deps.db.delete(cloudNodes).where(
+      inArray(
+        cloudNodes.id,
+        ownChatFiles.map((node) => node.id),
+      ),
+    );
+    // A Cloud file dragged onto the field: pointed to – the AI reads it as it is, no copy.
+    await ctx.deps.background?.idle();
+    const inChatArea = () =>
+      ctx.deps.db
+        .select({ id: cloudNodes.id, name: cloudNodes.name })
+        .from(cloudNodes)
+        .where(eq(cloudNodes.areaId, chatArea.id));
+    const filed = (await inChatArea()).find((node) => node.name === 'Zahlen.txt')!;
+    let pointedRead = '';
+    answers = [
+      (body) => {
+        pointedRead = JSON.stringify(body);
+        return { stop_reason: 'end_turn', content: [{ type: 'text', text: 'Gelesen.' }] };
+      },
+    ];
+    const chatAgent = ((await toldAgent.clone().json()) as CloudAgentDetail).id;
+    const pointed = await post(
+      `/cloud/agents/${chatAgent}/messages`,
+      { text: 'Lies die', attachments: [filed.id], chatId: chatAgent },
+      anna.cookie,
+    );
+    expect(pointed.status, await pointed.clone().text()).toBe(200);
+    await vi.waitFor(() => expect(pointedRead).toContain(`cloud=\\"${filed.id}\\"`));
+    await ctx.deps.background?.idle();
+    expect(pointedRead).toContain('Zahlen');
+    expect(await inChatArea()).toHaveLength(2);
+    // A minute on: the orders that follow are not one too many.
+    ctx.clock.advance(60_000);
+    await ctx.request(`/api/cloud/agents/${chatAgent}`, { method: 'DELETE', cookie: anna.cookie });
+    await ctx.request(`/api/cloud/areas/${chatArea.id}`, { method: 'DELETE', cookie: anna.cookie });
     // Its owner's alone until shared – with one call, by them only; then everyone reads along.
     const agentUrl = `/api/cloud/agents/${agentId}`;
     const shareAgent = (shared: boolean, cookie: string) =>
@@ -773,6 +882,21 @@ describe('Cloud – the workspace’s files', () => {
     });
     expect(await agentOf(agentId, anna.cookie)).toMatchObject({ areaId: sales.id, shared: false });
     expect((await ctx.request(agentUrl, { cookie: vera.cookie })).status).toBe(404);
+    // Ordered in an area (or the workspace): its people's from the start.
+    answers = [() => ({ stop_reason: 'end_turn', content: [{ type: 'text', text: 'Erledigt.' }] })];
+    const given = await post(
+      agentsUrl,
+      { text: 'Fass zusammen', areaId: sales.id, shared: true },
+      anna.cookie,
+    );
+    expect(given.status).toBe(201);
+    const givenId = ((await given.json()) as CloudAgentDetail).id;
+    expect(await agentOf(givenId, vera.cookie)).toMatchObject({
+      areaId: sales.id,
+      shared: true,
+      mine: false,
+    });
+    await ctx.request(`/api/cloud/agents/${givenId}`, { method: 'DELETE', cookie: anna.cookie });
     expect((await shareAgent(true, anna.cookie)).status).toBe(204);
     expect((await agentOf(agentId, anna.cookie)).areaId).toBeNull();
     expect((await shareAgent(false, vera.cookie)).status).toBe(403);
@@ -860,8 +984,8 @@ describe('Cloud – the workspace’s files', () => {
       ['user', 'Schreib einen Bericht', null, 'Anna'],
       ['assistant', 'Fertig.', 'done', undefined],
     ]);
-    // A further chat beside the first, on the same thing: its agent sees the other and leaves it
-    // a note. Who is there and who is writing shows to the others. It writes in Sender, too.
+    // Who is there and who is writing shows to the others. It writes in Sender, too – and there
+    // is no further chat beside its one, nor tools for one.
     const sender = (await (
       await ctx.request(`/api/workspaces/${ctx.workspaceId}/sender`, { cookie: anna.cookie })
     ).json()) as SenderHome;
@@ -871,8 +995,6 @@ describe('Cloud – the workspace’s files', () => {
         stop_reason: 'tool_use',
         content: [
           call('list_chats', {}),
-          call('tell_chat', { chat: agentId, text: 'Der Bericht ist geprüft.' }),
-          call('read_chat', { chat: 'nope' }),
           call('list_conversations', {}),
           call('post_message', { conversation: channelId, text: 'Bericht liegt bereit.' }),
         ],
@@ -882,17 +1004,18 @@ describe('Cloud – the workspace’s files', () => {
         return { stop_reason: 'end_turn', content: [{ type: 'text', text: 'Gesagt.' }] };
       },
     ];
-    const chatsUrl = `/cloud/agents/${agentId}/chats`;
-    expect((await post(chatsUrl, { text: 'Prüf den Bericht' }, vera.cookie)).status).toBe(403);
-    const opened = await post(chatsUrl, { text: 'Prüf den Bericht' }, anna.cookie);
-    expect(opened.status).toBe(201);
-    const { chatId } = (await opened.json()) as { chatId: string };
+    expect(
+      (await post(`/cloud/agents/${agentId}/chats`, { text: 'Prüf den Bericht' }, anna.cookie))
+        .status,
+    ).toBe(404);
+    expect(
+      (await post(`/cloud/agents/${agentId}/messages`, { text: 'Prüf den Bericht' }, anna.cookie))
+        .status,
+    ).toBe(200);
     await ctx.deps.background?.idle();
-    expect(seen[0]).toContain(`${agentId} „Schreib einen Bericht“ – started by Anna, idle`);
-    expect(seen[1]).toBe('Left in „Schreib einen Bericht“.');
-    expect(seen[2]).toMatch(/^ERROR No other chat/);
-    expect(seen[3]).toContain(`${channelId} channel of the area`);
-    expect(seen[4]).toBe('Posted.');
+    expect(seen[0]).toMatch(/^ERROR No tool "list_chats"/);
+    expect(seen[1]).toContain(`${channelId} channel of the area`);
+    expect(seen[2]).toBe('Posted.');
     const posted = (await (
       await ctx.request(`/api/sender/channels/${channelId}/messages`, { cookie: anna.cookie })
     ).json()) as SenderMessagePage;
@@ -905,7 +1028,7 @@ describe('Cloud – the workspace’s files', () => {
       (
         await ctx.request(`/api/cloud/agents/${agentId}/typing`, {
           method: 'POST',
-          json: { chatId },
+          json: { chatId: agentId },
           cookie: vera.cookie,
         })
       ).status,
@@ -913,15 +1036,9 @@ describe('Cloud – the workspace’s files', () => {
     const both = await agentOf(agentId, anna.cookie);
     expect(both.here.map((each) => each.name)).toEqual(['Vera']);
     expect(both.chats.map((each) => [each.title, each.typing.length])).toEqual([
-      ['Schreib einen Bericht', 0],
-      ['Prüf den Bericht', 1],
+      ['Schreib einen Bericht', 1],
     ]);
-    expect(both.chats[0]?.messages.at(-1)).toMatchObject({
-      role: 'assistant',
-      text: 'Der Bericht ist geprüft.',
-      fromChat: 'Prüf den Bericht',
-    });
-    expect(both.chats[1]?.messages.map((each) => each.text)).toEqual([
+    expect(both.chats[0]?.messages.slice(-2).map((each) => each.text)).toEqual([
       'Prüf den Bericht',
       'Gesagt.',
     ]);
@@ -1268,7 +1385,6 @@ describe('Cloud – the workspace’s files', () => {
     const keptToHer = await agentOf(agentId, anna.cookie);
     expect(keptToHer.chats.map((each) => [each.id, each.messages.length > 0])).toEqual([
       [agentId, false],
-      [chatId, true],
     ]);
     expect(keptToHer.files.map((each) => each.id)).toEqual(
       onDesk.files.flatMap((each) => (each.id === 'bens-desk' ? [] : [each.id])),
@@ -1377,16 +1493,26 @@ describe('Cloud – the workspace’s files', () => {
     ]);
     expect(byItself[2]).not.toMatch(/^ERROR/);
     {
-      // Tagged in a conversation (`@Agent`): a group's or direct one's people add an agent – one's
-      // own private one – and only its owner calls it there; it works as who wrote, and answers there.
-      const patch = (id: string, json: unknown, cookie: string) =>
-        ctx.request(`/api/sender/channels/${id}`, { method: 'PATCH', json, cookie });
-      expect((await patch(benAnna.id, { agentId }, ben.cookie)).status).toBe(404);
-      expect((await patch(channelId, { agentId }, anna.cookie)).status).toBe(400);
+      // Tagged in a conversation (`@` and its name): who writes calls the agents they see that
+      // may be called there (`callableHere`) – added or not; one adds them to show them there.
+      // Someone's private one only they call; it works as who wrote, and answers there.
+      const addAgent = (id: string, json: unknown, cookie: string) =>
+        ctx.request(`/api/sender/channels/${id}/agents`, { method: 'POST', json, cookie });
+      const removeAgent = async (id: string, agent: string, cookie: string) =>
+        (await (
+          await ctx.request(`/api/sender/channels/${id}/agents/${agent}`, {
+            method: 'DELETE',
+            cookie,
+          })
+        ).json()) as SenderChannel;
+      expect((await addAgent(benAnna.id, { agentId }, ben.cookie)).status).toBe(404);
+      expect((await addAgent(annaVera.id, { agentId }, vera.cookie)).status).toBe(404);
       const added = (await (
-        await patch(annaVera.id, { agentId }, anna.cookie)
+        await addAgent(annaVera.id, { agentId }, anna.cookie)
       ).json()) as SenderChannel;
-      expect(added.agent).toMatchObject({ id: agentId, userId: anna.user.id, shared: false });
+      expect(added.agents).toEqual([
+        expect.objectContaining({ id: agentId, userId: anna.user.id, shared: false }),
+      ]);
       const asked: string[] = [];
       const answerThere = (conversation: string) => [
         (body: Sent) => {
@@ -1483,7 +1609,7 @@ describe('Cloud – the workspace’s files', () => {
       const home = (await (
         await ctx.request(`/api/workspaces/${ctx.workspaceId}/sender`, { cookie: anna.cookie })
       ).json()) as SenderHome;
-      const areaAgent = home.areas[0]?.channels[0]?.agent;
+      const areaAgent = home.areas[0]?.channels[0]?.agents.find((each) => each.own);
       expect(areaAgent).toMatchObject({ title: 'Agent', userId: ben.user.id, shared: true });
       const inArea = (await (
         await ctx.request(`/api/sender/channels/${channelId}/messages`, { cookie: anna.cookie })
@@ -1592,24 +1718,6 @@ describe('Cloud – the workspace’s files', () => {
         state: 'nothing',
         parts: [],
       });
-      // However many channels call it there, a chat of its own still opens beside them.
-      const busy = Array.from({ length: MAX_CLOUD_AGENT_CHATS }, (_, at) => ({
-        id: `${areaAgent?.id}:busy-${at}`,
-        agentId: areaAgent?.id ?? '',
-        userId: ben.user.id,
-      }));
-      await ctx.deps.db.insert(cloudAgentChats).values(busy);
-      answers = [() => ({ stop_reason: 'end_turn', content: [{ type: 'text', text: 'Da.' }] })];
-      expect(
-        (await post(`/cloud/agents/${areaAgent?.id}/chats`, { text: 'Hallo' }, anna.cookie)).status,
-      ).toBe(201);
-      await ctx.deps.background?.idle();
-      await ctx.deps.db.delete(cloudAgentChats).where(
-        inArray(
-          cloudAgentChats.id,
-          busy.map((each) => each.id),
-        ),
-      );
       // It stays the area's: not shared with the workspace, not kept to its owner.
       const moveAgent = (id: string | undefined, json: unknown, cookie: string) =>
         ctx.request(`/api/cloud/agents/${id}`, { method: 'PATCH', json, cookie });
@@ -1638,7 +1746,7 @@ describe('Cloud – the workspace’s files', () => {
       await say(roundChannel, '@Agent was steht an?', ben.cookie);
       await vi.waitFor(() => expect(asked).toHaveLength(3));
       await ctx.deps.background?.idle();
-      const bensRound = (await roundAgent())?.agent;
+      const bensRound = (await roundAgent())?.agents.find((each) => each.own);
       expect(bensRound).toMatchObject({ userId: ben.user.id, shared: true });
       expect((await roundMembers([anna.user.id])).status).toBe(200);
       expect(
@@ -1690,7 +1798,7 @@ describe('Cloud – the workspace’s files', () => {
       await say(roundChannel, '@Agent und jetzt?', anna.cookie);
       await vi.waitFor(() => expect(asked).toHaveLength(4));
       await ctx.deps.background?.idle();
-      const annasRound = (await roundAgent())?.agent;
+      const annasRound = (await roundAgent())?.agents.find((each) => each.own);
       expect(annasRound).toMatchObject({ userId: anna.user.id, shared: true });
       expect(annasRound?.id).not.toBe(bensRound?.id);
       expect(
@@ -1728,12 +1836,8 @@ describe('Cloud – the workspace’s files', () => {
         (await ctx.request(`/api/cloud/agents/${bensOwn}`, { cookie: ben.cookie })).status,
       ).toBe(200);
       await ctx.deps.db.delete(cloudAgents).where(eq(cloudAgents.id, bensOwn));
-      // Shared, it is not one to add to a group or a direct conversation – nor shared while in one.
-      expect((await shareAgent(true, anna.cookie)).status).toBe(400);
-      expect(
-        ((await (await patch(annaVera.id, { agentId: null }, vera.cookie)).json()) as SenderChannel)
-          .agent,
-      ).toBeNull();
+      // Anyone there takes an added one out again – it stays.
+      expect((await removeAgent(annaVera.id, agentId, vera.cookie)).agents).toEqual([]);
       // Moved, kept to her, it keeps what it was told there; shared, that goes.
       expect(
         (await moveAgent(agentId, { shared: false, areaId: home.areas[0]?.id }, anna.cookie))
@@ -1741,7 +1845,41 @@ describe('Cloud – the workspace’s files', () => {
       ).toBe(204);
       expect(said(await agentOf(agentId, anna.cookie), tagChat)).toContain('fass bitte zusammen');
       expect((await shareAgent(true, anna.cookie)).status).toBe(204);
-      expect((await patch(annaVera.id, { agentId }, anna.cookie)).status).toBe(400);
+      // Shared in an area, it may come into a direct conversation too; called there it reads that
+      // conversation and answers there, as any (its tag chat only that conversation's people read).
+      expect((await addAgent(annaVera.id, { agentId }, anna.cookie)).status).toBe(200);
+      // „Agent hinzufügen“ without one: a new one, the caller's own there, named apart. One message
+      // calls both, each told of the other.
+      const fresh = (await (await addAgent(annaVera.id, {}, anna.cookie)).json()) as SenderChannel;
+      expect(fresh.agents.map((each) => [each.title, each.shared]).sort()).toEqual([
+        ['Ablage ordnen', true],
+        [expect.stringMatching(/^Agent( \d)?$/), false],
+      ]);
+      const freshTitle = fresh.agents.find((each) => !each.shared)?.title ?? '';
+      const posted: string[] = [];
+      // Both run at once: each turn answers by where its run stands.
+      const turn = (body: Sent) => {
+        const last = body.messages.at(-1)?.content;
+        if (
+          Array.isArray(last) &&
+          (last[0] as { type?: string } | undefined)?.type === 'tool_result'
+        ) {
+          posted.push(...results(body));
+          return { stop_reason: 'end_turn', content: [{ type: 'text', text: 'Ok.' }] };
+        }
+        asked.push(JSON.stringify(body.messages));
+        return {
+          stop_reason: 'tool_use',
+          content: [call('post_message', { conversation: annaVera.id, text: 'Hier.' })],
+        };
+      };
+      answers = [turn, turn, turn, turn];
+      await say(annaVera.id, `@${freshTitle} und @Ablage ordnen, wer ist da?`, anna.cookie);
+      await vi.waitFor(() => expect(posted).toHaveLength(2));
+      await ctx.deps.background?.idle();
+      expect(posted).toEqual(['Posted.', 'Posted.']);
+      expect(asked.slice(-2).join()).toContain(`Mit dir gerufen: ${freshTitle} –`);
+      expect(asked.slice(-2).join()).toContain('Mit dir gerufen: Ablage ordnen');
       // Shared, what it was told and did there is not read by those it is shared with.
       expect(said(await agentOf(agentId, ben.cookie))).not.toContain('fass bitte zusammen');
       expect(said(await agentOf(agentId, anna.cookie))).not.toContain('fass bitte zusammen');
@@ -2398,6 +2536,54 @@ describe('Cloud – the workspace’s files', () => {
       await sharingIn(`area=${sales.id}`, vera.cookie),
       await sharingIn('', vera.cookie),
     ]).toEqual([true, false, false]);
+    // „Seit deinem letzten Besuch“ on the start: what others did with the files she sees, in the
+    // AI's words, opened from the file it names (beside the conversations' part); kept while
+    // nothing else happened; nothing of what came before the visit.
+    let filesAsked: string[] = [];
+    const byTool = (body: Sent) => {
+      const tool = (body as Sent & { tool_choice: { name: string } }).tool_choice.name;
+      const shown = JSON.stringify(body.messages);
+      if (tool === 'cloud_news') filesAsked.push(shown);
+      return {
+        stop_reason: 'tool_use',
+        content: [
+          call(
+            tool,
+            tool === 'cloud_news'
+              ? { parts: [{ ref: 'e1', text: 'Robert hat Notiz.txt in Vertrieb abgelegt.' }] }
+              : { parts: [] },
+          ),
+        ],
+      };
+    };
+    answers = Array.from({ length: 6 }, () => byTool);
+    const startSummary = async (query = '') =>
+      (await (
+        await ctx.request(`/api/workspaces/${ctx.workspaceId}/cloud/summary${query}`, {
+          cookie: vera.cookie,
+        })
+      ).json()) as CloudSummary;
+    const files = (summary: CloudSummary) => summary.parts.filter((part) => part.kind === 'file');
+    expect(files(await startSummary())).toEqual([
+      {
+        kind: 'file',
+        id: memo.node.id,
+        nodeKind: 'file',
+        areaId: sales.id,
+        name: 'Notiz.txt',
+        text: 'Robert hat Notiz.txt in Vertrieb abgelegt.',
+      },
+    ]);
+    expect([filesAsked.length, filesAsked[0]]).toEqual([1, expect.stringContaining('Notiz.txt')]);
+    expect(files(await startSummary())).toHaveLength(1);
+    expect(
+      files(
+        await startSummary(`?since=${new Date(ctx.clock.now().getTime() + 60_000).toISOString()}`),
+      ),
+    ).toEqual([]);
+    expect(filesAsked).toHaveLength(1);
+    filesAsked = [];
+    answers = [];
     // Moved where she does not look, its history goes along: not in the area it left, nor in all.
     const memoIn = async (query: string) =>
       (
@@ -3052,8 +3238,25 @@ describe('Cloud – the workspace’s files', () => {
     expect((await content(old.node.id)).status).toBe(200);
 
     // A file whose folder is gone for good comes back at the top of its area.
+    // A file put on a comment on it goes when it does for good – in „Gelöscht“ it stays.
+    const onComment = { id: crypto.randomUUID(), name: 'Notiz.txt', type: 'text/plain', size: 5 };
+    const commentKey = `workspaces/${ctx.workspaceId}/attachments/${onComment.id}`;
+    await ctx.deps.storage.put(commentKey, new TextEncoder().encode('notiz'));
+    await ctx.deps.db.insert(attachments).values({
+      ...onComment,
+      workspaceId: ctx.workspaceId,
+      key: commentKey,
+      takenAt: new Date(),
+    });
+    await ctx.deps.db.insert(documentComments).values({
+      id: crypto.randomUUID(),
+      documentId: old.node.id,
+      body: 'Siehe Notiz',
+      attachments: [onComment],
+    });
     await post('/cloud/nodes/trash', { ids: [old.node.id] });
     await post('/cloud/nodes/trash', { ids: [offers.id] });
+    expect(await ctx.deps.storage.size(commentKey)).toBe(5);
     const gone = (await (await post('/cloud/nodes/purge', { ids: [offers.id] })).json()) as {
       purged: string[];
     };
@@ -3064,6 +3267,10 @@ describe('Cloud – the workspace’s files', () => {
     expect((await changes(afterTrash.cursor)).removed.has(mine.node.id)).toBe(true);
     // … which took the file along: purging a folder purges what was deleted before in it too.
     expect(await ctx.deps.storage.size(version?.storageKey ?? '')).toBeNull();
+    expect(await ctx.deps.storage.size(commentKey)).toBeNull();
+    expect(
+      await ctx.deps.db.select().from(attachments).where(eq(attachments.id, onComment.id)),
+    ).toEqual([]);
     expect((await list({ scope: 'trash' })).nodes).toEqual([]);
 
     // After 30 days the sweep clears „Gelöscht“; earlier versions without a name go after 180.

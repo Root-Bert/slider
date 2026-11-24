@@ -464,7 +464,7 @@ export function MailCompose() {
               }}
               options={accounts.map((account) => ({
                 value: account.id,
-                label: `${view.labels.get(account.id) ?? account.address} · ${account.address}`,
+                label: `${view.labels.get(account.id) ?? account.address} | ${account.address}`,
               }))}
               size="sm"
               className="max-w-full"

@@ -203,10 +203,15 @@ export const useDocumentTools = (documentId: string, enabled: boolean) =>
   });
 
 /** A picture made by the AI from a description: put into the file, its path and size. */
-export const generateDocumentPicture = (documentId: string, prompt: string) =>
+export const generateDocumentPicture = (
+  documentId: string,
+  prompt: string,
+  /** Pictures up already that it goes after. */
+  references: readonly string[] = [],
+) =>
   api.post<{ path: string; width: number; height: number }>(
     `${documentPath(documentId)}/pictures/generate`,
-    { prompt, aspect: null },
+    { prompt, aspect: null, ...(references.length > 0 && { references }) },
   );
 
 /** A photo picked: put into the file, its path and size for `insertPicture`. */

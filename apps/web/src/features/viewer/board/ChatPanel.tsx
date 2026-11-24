@@ -1,7 +1,19 @@
-import { aiInSentence, MAX_MATERIAL_CHAT_MESSAGE, markdownToRich } from '@slider/shared';
+import {
+  aiInSentence,
+  MAX_MATERIAL_CHAT_MESSAGE,
+  markdownToRich,
+  type Attachment,
+} from '@slider/shared';
 import { useEffect, useId, useMemo, useRef, useState, type ReactNode } from 'react';
+import {
+  AttachButton,
+  AttachmentChips,
+  SentAttachments,
+  useAttachments,
+  useCloudDrop,
+} from '@/features/attachments';
 import { useMe } from '@/lib/api';
-import { AutosizeTextarea, Avatar, Icon, IconButton, LogoMark, useFocusLoop } from '@/ui';
+import { AutosizeTextarea, Avatar, cn, Icon, IconButton, LogoMark, useFocusLoop } from '@/ui';
 import { SidePanel, SidePanelHeader } from '../components/SidePanel';
 import { useRestoreFocus } from '../hooks/useRestoreFocus';
 import { RichText } from './rich-text';
@@ -16,6 +28,8 @@ export interface ChatEntry {
   id: string;
   role: 'user' | 'assistant';
   text: string;
+  /** The person's: the files put on it. */
+  attachments?: Attachment[];
   /** The AI's: `answering` while it is written. */
   state?: 'answering' | 'done' | 'failed' | 'stopped';
   /** What it does right now („Sucht im Web …“). */
@@ -29,8 +43,8 @@ export interface ChatEntry {
 export interface Chat {
   entries: readonly ChatEntry[];
   busy: boolean;
-  /** `false`: refused at once – the text goes back into the field. */
-  send: (text: string) => Promise<boolean>;
+  /** `false`: refused at once – the text and the files go back into the field. */
+  send: (text: string, attachments?: Attachment[]) => Promise<boolean>;
   stop: () => void;
   clear: () => void;
 }
@@ -52,6 +66,10 @@ interface ChatPanelProps {
   onClose: () => void;
   /** Hooks of the place (`data-*`) on the panel. */
   panel?: Record<`data-${string}`, string | boolean>;
+  /** Where files put on a message go up – with it, the clip and pasting files are there. */
+  workspaceId?: string;
+  /** Kept by this key while the panel is closed (the chat's place). */
+  keep?: string;
 }
 
 export function ChatPanel({
@@ -65,6 +83,8 @@ export function ChatPanel({
   toast,
   onClose,
   panel,
+  workspaceId,
+  keep,
 }: ChatPanelProps) {
   const panelRef = useRef<HTMLElement>(null);
   const listRef = useRef<HTMLOListElement>(null);
@@ -72,6 +92,13 @@ export function ChatPanel({
   const titleId = useId();
   const me = useMe().data?.viewer.author;
   const [body, setBody] = useState('');
+  const attach = useAttachments({
+    workspaceId,
+    keep: keep && `chat:${keep}`,
+    onError: (text) => toast(text, 'danger'),
+  });
+  // Cloud files and folders dropped on the field: pointed to, not copied.
+  const drop = useCloudDrop(attach);
   useRestoreFocus();
   useFocusLoop(panelRef);
   useEffect(() => fieldRef.current?.focus({ preventScroll: true }), []);
@@ -91,13 +118,20 @@ export function ChatPanel({
   // focus on the page: it goes back to the field, so typing and Esc go on working.
   const toField = () => fieldRef.current?.focus({ preventScroll: true });
 
-  const send = (text: string) => {
-    if (!text.trim() || chat.busy) return;
+  const files = attach.ready;
+  const sendable = (!!body.trim() || files.length > 0) && !attach.busy;
+  /** A starter goes alone; the field goes with the files put on it. */
+  const send = (text: string, withFiles = false) => {
+    const sent = withFiles ? files : [];
+    if ((!text.trim() && sent.length === 0) || chat.busy || (withFiles && attach.busy)) return;
     setBody('');
+    if (withFiles) attach.clear();
     pinned.current = true;
     toField();
-    void chat.send(text).then((sent) => {
-      if (!sent) setBody((now) => now || text);
+    void chat.send(text, sent).then((ok) => {
+      if (ok) return;
+      setBody((now) => now || text);
+      attach.restore(sent);
     });
   };
 
@@ -167,6 +201,7 @@ export function ChatPanel({
               {entry.role === 'user' ? (
                 <ChatMessage
                   text={entry.text}
+                  attachments={entry.attachments}
                   above={me && <Avatar author={me} size={20} nativeTitle={false} />}
                   onCopied={(ok) =>
                     toast(ok ? 'Nachricht kopiert' : 'Nicht kopiert', ok ? undefined : 'danger')
@@ -197,12 +232,24 @@ export function ChatPanel({
         aria-label={`Nachricht an ${aiInSentence(title)}`}
         onSubmit={(event) => {
           event.preventDefault();
-          send(body);
+          send(body, true);
         }}
+        {...drop.props}
         className="shrink-0 border-t border-hairline p-3"
       >
-        <div className="glass-elevated flex items-end gap-0.5 rounded-control py-1 pr-1 pl-3">
-          <div className="flex min-w-0 flex-1 flex-col py-[5px]">
+        <div
+          className={cn(
+            'glass-elevated flex items-end gap-0.5 rounded-control py-1 pr-1 pl-3',
+            attach.items.length > 0 && 'flex-wrap justify-end',
+            drop.over && 'ring-2 ring-focus',
+          )}
+        >
+          <div
+            className={cn(
+              'flex min-w-0 flex-1 flex-col py-[5px]',
+              attach.items.length > 0 && 'basis-full pr-2',
+            )}
+          >
             <AutosizeTextarea
               ref={fieldRef}
               aria-label="Nachricht"
@@ -210,6 +257,7 @@ export function ChatPanel({
               maxLength={MAX_MATERIAL_CHAT_MESSAGE}
               maxHeight={160}
               value={body}
+              onPaste={attach.onPaste}
               onChange={(event) => setBody(event.target.value)}
               onKeyDown={(event) => {
                 event.stopPropagation();
@@ -222,11 +270,13 @@ export function ChatPanel({
                 if (event.key !== 'Enter' || event.shiftKey || event.nativeEvent.isComposing)
                   return;
                 event.preventDefault();
-                send(body);
+                send(body, true);
               }}
               className="text-body leading-4.5 text-fg placeholder:text-fg-subtle"
             />
+            <AttachmentChips files={attach} className="pt-2 pb-0.5" />
           </div>
+          <AttachButton files={attach} />
           {chat.busy ? (
             <IconButton
               icon="stop"
@@ -244,8 +294,8 @@ export function ChatPanel({
               label="Senden"
               title="Senden (Enter)"
               size="compact"
-              iconTone={body.trim() ? 'success' : undefined}
-              disabled={!body.trim()}
+              iconTone={sendable ? 'success' : undefined}
+              disabled={!sendable}
             />
           )}
         </div>
@@ -290,22 +340,28 @@ function CopyButton({
  */
 export function ChatMessage({
   text,
+  attachments,
   above,
   onCopied,
 }: {
   text: string;
+  /** The files put on it, under its words. */
+  attachments?: readonly Attachment[];
   above?: ReactNode;
   onCopied: (ok: boolean) => void;
 }) {
   return (
     <div className="group/message ml-8 flex flex-col items-end gap-1 self-end [--roll-from:100%_0] *:roll-away">
       <div className="flex min-h-6 items-center gap-1.5 text-xs text-fg-subtle">
-        <CopyButton label="Nachricht kopieren" text={() => text} onCopied={onCopied} />
+        {text && <CopyButton label="Nachricht kopieren" text={() => text} onCopied={onCopied} />}
         {above}
       </div>
-      <p className="rounded-panel bg-surface-2 px-3 py-2 text-body leading-[1.45] break-words whitespace-pre-wrap text-fg">
-        {text}
-      </p>
+      {(text || !attachments?.length) && (
+        <p className="rounded-panel bg-surface-2 px-3 py-2 text-body leading-[1.45] break-words whitespace-pre-wrap text-fg">
+          {text}
+        </p>
+      )}
+      <SentAttachments attachments={attachments} className="items-end" />
     </div>
   );
 }

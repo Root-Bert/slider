@@ -5,11 +5,13 @@ import {
   useState,
   type PointerEvent as ReactPointerEvent,
 } from 'react';
-import { Link } from 'react-router';
+import { Link, useNavigate } from 'react-router';
 import type { CloudArea, CloudAreaMember } from '@slider/shared';
+import { useOpenSenderDirect } from '@/lib/api';
 import { pluralize } from '@/lib/format';
 import { routes } from '@/lib/routes';
 import { Avatar, Badge, Button, cn, Icon, IconButton, Menu, type MenuAction } from '@/ui';
+import { useSenderOrNull } from '@/features/sender';
 import { WorkspaceMark } from '@/features/workspaces';
 import { useCloud } from '../hooks/useCloud';
 
@@ -26,10 +28,6 @@ interface Camera {
 }
 const MIN_ZOOM = 0.15;
 const MAX_ZOOM = 3;
-/** Up to this many people every dot has its name under it; beyond that, names come by pointing. */
-const NAMED = 24;
-/** From this zoom on every dot has its name under it. */
-const NAME_ZOOM = 0.7;
 const clamp = (zoom: number) => Math.min(MAX_ZOOM, Math.max(MIN_ZOOM, zoom));
 
 /**
@@ -165,11 +163,25 @@ export function PeopleGraph({
   const pickedArea = picked ? areaOf.get(picked) : undefined;
 
   const pointedMember = overPerson ? memberOf.get(overPerson) : undefined;
-  const named = memberOf.size <= NAMED;
+
+  // A click on someone's picture opens the chat with them – one already there straight away.
+  const sender = useSenderOrNull();
+  const navigate = useNavigate();
+  const openDirect = useOpenSenderDirect(ui.workspace.id);
+  const chatWith = (personId: string) => {
+    if (!sender || openDirect.isPending) return;
+    const known = sender.home?.direct.find((each) => each.person?.id === personId);
+    if (known) {
+      void navigate(sender.pathOf(known));
+      return;
+    }
+    openDirect.mutate(personId, {
+      onSuccess: (channel) => void navigate(sender.pathOf(channel)),
+      onError: (error) => sender.notify(error.message, 'danger'),
+    });
+  };
   // Zoomed far out, the names of the areas and of the workspace stay readable.
   const label = Math.min(2.2, Math.max(1, 1 / camera.k));
-  const firstName = (member: CloudAreaMember) =>
-    member.id === ui.userId ? 'Du' : (member.name.split(' ')[0] ?? member.name);
 
   return (
     // As tall as the page has room: the net scrolls and zooms in itself, the page stays put.
@@ -271,20 +283,24 @@ export function PeopleGraph({
                   onPointerEnter={() => setOverDot(person.key)}
                   onPointerLeave={() => setOverDot(null)}
                 >
-                  <span className="flex items-center justify-center" style={{ height: DOT }}>
-                    <Avatar author={member} size={32} nativeTitle={false} />
-                  </span>
-                  <span className="sr-only">
-                    {member.name}
-                    {member.title ? `, ${member.title}` : ''}
-                  </span>
-                  {(named || camera.k >= NAME_ZOOM || (on && someLit)) && (
-                    <span
-                      aria-hidden
-                      className="-mt-1.5 max-w-[60px] truncate rounded-mark bg-surface-1/80 px-1 text-tiny whitespace-nowrap text-fg"
-                    >
-                      {firstName(member)}
+                  {member.id === ui.userId || !sender ? (
+                    <span className="flex items-center justify-center" style={{ height: DOT }}>
+                      <Avatar author={member} size={32} nativeTitle={false} />
+                      <span className="sr-only">
+                        {member.name}
+                        {member.title ? `, ${member.title}` : ''}
+                      </span>
                     </span>
+                  ) : (
+                    <button
+                      type="button"
+                      onClick={() => chatWith(member.id)}
+                      aria-label={`Chat mit ${member.name}${member.title ? `, ${member.title}` : ''}`}
+                      className="flex cursor-pointer items-center justify-center rounded-full outline-none focus-visible:ring-2 focus-visible:ring-focus"
+                      style={{ height: DOT, width: DOT }}
+                    >
+                      <Avatar author={member} size={32} nativeTitle={false} />
+                    </button>
                   )}
                 </li>
               );

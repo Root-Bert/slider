@@ -2,6 +2,7 @@ import { and, eq, inArray, isNotNull, isNull, or, sql } from 'drizzle-orm';
 import type { StorageBreakdown } from '@slider/shared';
 import type { Executor } from '../db/client';
 import {
+  attachments,
   cloudNodes,
   decks,
   deckMaterials,
@@ -23,7 +24,8 @@ import { cloudBytes } from './cloud/overview';
  * after each import and prune (`decks.files_bytes`), recordings come from `media.size_bytes`;
  * both add up through `decks.workspace_id`, so the sums need no `stat` per file. Fonts count
  * by `workspace_fonts.size_bytes`, slide masters by `workspace_masters.size_bytes`, kept mail
- * attachments by `mail_messages.attachment_bytes` (through their mailbox's workspace).
+ * attachments by `mail_messages.attachment_bytes` (through their mailbox's workspace), files put
+ * on what one writes by `attachments.size`.
  *
  * A deck is measured only once its import ended, so the original of an import still under way
  * counts through its reservation (`revisions.reserved_bytes`) instead – as an original, the
@@ -67,6 +69,7 @@ export async function workspaceStorage(
     materialRows,
     documentMaterialRows,
     mailRows,
+    attachmentRows,
     cloud,
   ] = await Promise.all([
     db
@@ -146,6 +149,15 @@ export async function workspaceStorage(
       .innerJoin(mailAccounts, eq(mailAccounts.id, mailMessages.accountId))
       .where(inArray(mailAccounts.workspaceId, ids))
       .groupBy(mailAccounts.workspaceId),
+    // Files put on messages, comments, to-dos and events (`services/attachments.ts`).
+    db
+      .select({
+        id: attachments.workspaceId,
+        bytes: sql<string | number | null>`sum(${attachments.size})`,
+      })
+      .from(attachments)
+      .where(inArray(attachments.workspaceId, ids))
+      .groupBy(attachments.workspaceId),
     // Cloud: the workspace's own files, every stored version of them.
     cloudBytes(db, ids),
   ]);
@@ -172,6 +184,7 @@ export async function workspaceStorage(
     ...materialRows,
     ...documentMaterialRows,
     ...mailRows,
+    ...attachmentRows,
   ]) {
     const entry = result.get(row.id);
     if (entry) entry.other += Number(row.bytes ?? 0);

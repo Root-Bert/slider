@@ -1,5 +1,6 @@
 import {
   CLOUD_AREA_MAX_DEPTH,
+  cloudAccessAtLeast,
   type CloudArea,
   type CloudAreaColor,
   type CloudNode,
@@ -28,18 +29,65 @@ export function areaTree<A extends Pick<CloudArea, 'id' | 'parentId'>>(
 /**
  * The way to an area, as crumbs: the workspace first (its own area – the root of every trail,
  * never „Bereiche“, which is one of its tabs), the areas it lies under, then the area itself.
- * Each a link to its page; the workspace's own area alone is just itself.
+ * Each a link to its page; the workspace's own area alone is just itself. Files dragged onto one
+ * go into that area, where one may put them there.
  */
 export function areaTrail(
   workspaceId: string,
   areas: readonly CloudArea[],
   area: CloudArea,
-): { label: string; to: string }[] {
+): { label: string; to: string; into?: { areaId: string; name: string } }[] {
   const root = areas.find((each) => each.root);
   const chain = area.root
     ? [area]
     : [...(root ? [root] : []), ...areasAbove(areas, area).filter((each) => !each.root), area];
-  return chain.map((each) => ({ label: each.name, to: routes.cloudArea(workspaceId, each.id) }));
+  return chain.map((each) => ({
+    label: each.name,
+    to: routes.cloudArea(workspaceId, each.id),
+    ...(cloudAccessAtLeast(each.access, 'edit')
+      ? { into: { areaId: each.id, name: each.name } }
+      : {}),
+  }));
+}
+
+/**
+ * The area an agent lies in: its own, or – shared in none – the workspace's own (whose „Agenten“
+ * lists it); one's own private one without an area in none.
+ */
+export function agentArea(
+  areas: readonly CloudArea[],
+  agent: { areaId: string | null; shared: boolean } | undefined,
+): CloudArea | null {
+  if (!agent) return null;
+  if (agent.areaId) return areas.find((each) => each.id === agent.areaId) ?? null;
+  return agent.shared ? (areas.find((each) => each.root) ?? null) : null;
+}
+
+/**
+ * Where an agent lies – the start of its page's path and the side bar's row lit there. Opened
+ * from „Agenten“ it stays there: „Agenten › <Agent>“, that row lit. Else an area's
+ * (the workspace's own too) lies in that area: its way from the workspace, then the area's
+ * „Agenten“, the area's row lit – a step back is that tab, as one came. One's own, without an
+ * area, lies under „Agenten“, whose row the address lights already. `agents`: that list.
+ */
+export function agentHome(
+  workspaceId: string,
+  areas: readonly CloudArea[],
+  area: CloudArea | null,
+  /** Opened from „Agenten“ (`useOpenedFrom`): the path stays there, as one came. */
+  from: string | null = null,
+): { crumbs: { label: string; to: string }[]; agents: string; barRow?: string } {
+  if (from) return { crumbs: [{ label: 'Agenten', to: from }], agents: from };
+  if (!area) {
+    const agents = routes.cloudAgents(workspaceId);
+    return { crumbs: [{ label: 'Agenten', to: agents }], agents };
+  }
+  const agents = routes.cloudAreaAgents(workspaceId, area.id);
+  return {
+    crumbs: [...areaTrail(workspaceId, areas, area), { label: 'Agenten', to: agents }],
+    agents,
+    barRow: routes.cloudArea(workspaceId, area.id),
+  };
 }
 
 /** The areas an area lies under, outermost first. */

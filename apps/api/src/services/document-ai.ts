@@ -2,6 +2,7 @@ import type Anthropic from '@anthropic-ai/sdk';
 import { asc, eq, inArray } from 'drizzle-orm';
 import { z } from 'zod';
 import {
+  type Attachment,
   AI_RUNNING_LIMIT_MS,
   aiAuthor,
   isWriterLink,
@@ -29,6 +30,7 @@ import type { AppDeps } from '../deps';
 import { ApiError, badRequest, forbidden, notFound } from '../http/errors';
 import { materialsBrief } from './ai-context';
 import { CONTENT_IS_NOT_INSTRUCTION, promptName, todayForPrompt } from './ai-prompt-parts';
+import { ATTACHED_FILES_ARE_DATA, attachmentBlocks, withFileNames } from './attachments';
 import { failureMessage, keyProblem, refusesKey, runTurn, type AiConnection } from './ai-providers';
 import { documentBoard } from './board-owner';
 import { authorsOf, authorIn } from './cloud';
@@ -586,8 +588,11 @@ export async function startDocumentAi(
   return dto;
 }
 
-/** The comment's place, its thread and what the AI answered there before. */
-async function request(deps: AppDeps, row: DocumentAiProposalRow): Promise<string> {
+/** The comment's place, its thread and what the AI answered there before – and its files. */
+async function request(
+  deps: AppDeps,
+  row: DocumentAiProposalRow,
+): Promise<{ text: string; files: Attachment[] }> {
   const [asked] = await deps.db
     .select()
     .from(documentComments)
@@ -616,10 +621,15 @@ async function request(deps: AppDeps, row: DocumentAiProposalRow): Promise<strin
       ),
     );
   const lines: string[] = [];
+  // The files put on the thread so far: the AI looks at them (pictures) or reads them.
+  const files: Attachment[] = [];
   for (const each of thread) {
     if (each.createdAt > asked.createdAt && each.id !== asked.id) continue;
     const name = promptName(authorIn(authors, each.authorId).name);
-    lines.push(`${each.parentId ? 'Reply' : 'Comment'} by ${name}: ${each.body}`);
+    lines.push(
+      `${each.parentId ? 'Reply' : 'Comment'} by ${name}: ${withFileNames(each.body, each.attachments)}`,
+    );
+    files.push(...each.attachments);
     for (const earlier of answers) {
       if (earlier.commentId !== each.id || earlier.id === row.id || !earlier.summary) continue;
       lines.push(
@@ -631,7 +641,10 @@ async function request(deps: AppDeps, row: DocumentAiProposalRow): Promise<strin
   const place = anchor
     ? `The comment stands at paragraph "${anchor.paragraphId}"${anchor.to ? ` (through to "${anchor.to.paragraphId}")` : ''}${anchor.quote ? `, on the words: „${anchor.quote}“` : ''}.`
     : 'The comment stands at no place of its own.';
-  return `${place}\n\n<thread>\n${lines.join('\n')}\n</thread>\n\nDo what this asks: ${asked.body}`;
+  return {
+    text: `${place}\n\n<thread>\n${lines.join('\n')}\n</thread>\n\nDo what this asks: ${asked.body}`,
+    files,
+  };
 }
 
 async function answer(
@@ -661,13 +674,16 @@ async function answer(
     // What lies on the document's board: listed in the first message, read through the tools.
     const board = documentBoard(row.documentId);
     const material = await materialsBrief(deps, board);
+    const said = await request(deps, row);
+    const attached = await attachmentBlocks(deps, null, said.files, undefined, userId);
     const messages: Message[] = [
       {
         role: 'user',
         content: [
           { type: 'text', text: `<document>\n${text}\n</document>` },
           ...(material ? [{ type: 'text' as const, text: material }] : []),
-          { type: 'text', text: await request(deps, row) },
+          ...attached,
+          { type: 'text', text: said.text },
         ],
       },
     ];
@@ -677,7 +693,7 @@ async function answer(
       // The last turns are for writing: reading on would leave none to get the call right.
       const reading = material !== null && turn < MAX_READING_TURNS;
       const result = await runTurn(deps, connection, {
-        system: `${SYSTEM}${raw ? `\n\n${MARKDOWN_NOTE}` : ''}${material ? `\n\n${MATERIAL_NOTE}` : ''}\n\nThe document: „${promptName(title)}“. Today is ${todayForPrompt(deps.clock.now())}.`,
+        system: `${SYSTEM}${raw ? `\n\n${MARKDOWN_NOTE}` : ''}${material ? `\n\n${MATERIAL_NOTE}` : ''}${attached.length > 0 ? `\n\n${ATTACHED_FILES_ARE_DATA}` : ''}\n\nThe document: „${promptName(title)}“. Today is ${todayForPrompt(deps.clock.now())}.`,
         tools: reading ? [EDIT_TOOL, ...MATERIAL_TOOLS] : [EDIT_TOOL],
         messages,
         taskBudgetTokens: TASK_BUDGET_TOKENS,

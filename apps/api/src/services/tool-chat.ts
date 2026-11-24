@@ -1,10 +1,11 @@
 import type Anthropic from '@anthropic-ai/sdk';
 import { ZodError } from 'zod';
-import type { CloudChatEvent, MaterialChatAnswerState } from '@slider/shared';
+import type { Attachment, CloudChatEvent, MaterialChatAnswerState } from '@slider/shared';
 import type { AppDeps } from '../deps';
 import { ApiError } from '../http/errors';
 import { failureMessage, keyProblem, refusesKey, runTurn, type AiConnection } from './ai-providers';
 import { markKeyRefused } from './integration-keys';
+import { ATTACHED_FILES_ARE_DATA, attachmentBlocks } from './attachments';
 
 /*
  * One person's chat with the workspace's AI that works with tools – beside the files in Cloud
@@ -31,9 +32,16 @@ export interface ToolChat {
   connection: AiConnection;
   keyId: string;
   controller: AbortController;
-  /** The talk so far, oldest first, and the new message. */
-  history: readonly { role: 'user' | 'assistant'; text: string }[];
+  /** The talk so far, oldest first, and the new message – with the files put on the person's. */
+  history: readonly { role: 'user' | 'assistant'; text: string; attachments?: Attachment[] }[];
   text: string;
+  attachments?: Attachment[];
+  /** Whose files they are: read from there (pictures as pictures, documents as their text). */
+  workspaceId?: string;
+  /** Only this person's files are read – a talk the page brings along names them itself. */
+  filesOwner?: string;
+  /** Who the AI works for: Cloud files pointed to are read only as far as they may see them. */
+  filesReader?: string;
   /** Asked once – and again whenever the tools changed (`tools` as a function). */
   system: () => string | Promise<string>;
   /** As a function asked each turn: what it may do can change while it works. */
@@ -77,28 +85,45 @@ export async function answerToolChat(
   let streamed = false;
   try {
     const messages: Message[] = [];
-    const say = (role: 'user' | 'assistant', text: string) => {
-      if (!text.trim()) return;
+    let filesSent = false;
+    const say = async (role: 'user' | 'assistant', text: string, files?: Attachment[]) => {
+      const blocks: Anthropic.Beta.BetaContentBlockParam[] = text.trim()
+        ? [{ type: 'text', text }]
+        : [];
+      if (role === 'user' && files?.length && chat.workspaceId) {
+        blocks.push(
+          ...(await attachmentBlocks(
+            deps,
+            chat.workspaceId,
+            files,
+            chat.filesOwner,
+            chat.filesReader,
+          )),
+        );
+        filesSent = true;
+      }
+      if (blocks.length === 0) return;
       const last = messages.at(-1);
-      if (last?.role === role && Array.isArray(last.content))
-        last.content.push({ type: 'text', text });
-      else messages.push({ role, content: [{ type: 'text', text }] });
+      if (last?.role === role && Array.isArray(last.content)) last.content.push(...blocks);
+      else messages.push({ role, content: blocks });
     };
-    for (const each of chat.history) say(each.role, each.text);
-    say('user', chat.text);
+    for (const each of chat.history) await say(each.role, each.text, each.attachments);
+    await say('user', chat.text, chat.attachments);
     // The talk begins with the person (a history cut at its start may not).
     while (messages[0]?.role === 'assistant') messages.shift();
     const toolsNow = () => (typeof chat.tools === 'function' ? chat.tools() : chat.tools);
     const namesOf = (list: readonly Anthropic.Beta.BetaTool[]) =>
       list.map((tool) => tool.name).join(' ');
     let tools = toolsNow();
-    let prompt = await chat.system();
+    const system = async () =>
+      filesSent ? `${await chat.system()}\n\n${ATTACHED_FILES_ARE_DATA}` : chat.system();
+    let prompt = await system();
     for (let turn = 0; ; turn += 1) {
       let turnText = '';
       const now = toolsNow();
       if (namesOf(now) !== namesOf(tools)) {
         tools = now;
-        prompt = await chat.system();
+        prompt = await system();
       }
       const result = await runTurn(deps, connection, {
         system: prompt,

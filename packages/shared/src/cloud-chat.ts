@@ -5,6 +5,7 @@ import {
   MAX_MATERIAL_CHAT_TEXT,
   type MaterialChatEvent,
 } from './material-chat';
+import { attachmentIdsSchema, attachmentSchema, MAX_ATTACHMENTS } from './attachments';
 
 /*
  * The AI in Cloud (✨ beside the files): one person's chat with the workspace's AI in a side
@@ -14,13 +15,17 @@ import {
  */
 
 export const cloudChatInputSchema = z.object({
-  text: z.string().trim().min(1).max(MAX_MATERIAL_CHAT_MESSAGE),
-  /** The chat so far, oldest first. */
+  /** May stay empty where files are put on it. */
+  text: z.string().trim().max(MAX_MATERIAL_CHAT_MESSAGE),
+  /** Files put on the message (`attachments`): the AI reads them. */
+  attachments: attachmentIdsSchema,
+  /** The chat so far, oldest first – with the files put on one's messages before. */
   history: z
     .array(
       z.object({
         role: z.enum(['user', 'assistant']),
         text: z.string().max(MAX_MATERIAL_CHAT_TEXT),
+        attachments: z.array(attachmentSchema).max(MAX_ATTACHMENTS).optional(),
       }),
     )
     .max(MAX_MATERIAL_CHAT_MESSAGES)

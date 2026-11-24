@@ -377,7 +377,7 @@ function TimedEntry({ entry, style }: { entry: Entry; style: CSSProperties }) {
       <span className="min-w-0 truncate font-medium">{entry.title}</span>
       <span className="min-w-0 truncate text-fg-muted tabular-nums">
         {clock(entry.start)}
-        {!short && entry.location ? ` · ${entry.location}` : ''}
+        {!short && entry.location ? ` | ${entry.location}` : ''}
       </span>
     </button>
   );

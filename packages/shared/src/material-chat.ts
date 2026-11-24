@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { attachmentIdsSchema, type Attachment } from './attachments';
 
 /*
  * The AI on the material page (✨ in its controls): a chat in a side panel, as Claude or ChatGPT
@@ -19,13 +20,12 @@ export const MAX_MATERIAL_CHAT_TITLE = 80;
 /** `POST /decks/:deckId/material-chat`: a message, in a chat of one's own or a new one (`null`). */
 export const materialChatInputSchema = z.object({
   chatId: z.string().min(1).max(100).nullable(),
-  text: z
-    .string()
-    .trim()
-    .min(1, 'Schreib eine Nachricht.')
-    .max(MAX_MATERIAL_CHAT_MESSAGE, 'Die Nachricht ist zu lang.'),
+  /** May stay empty where files are put on it. */
+  text: z.string().trim().max(MAX_MATERIAL_CHAT_MESSAGE, 'Die Nachricht ist zu lang.'),
+  /** Files put on it (`attachments`): the AI reads them. */
+  attachments: attachmentIdsSchema,
 });
-export type MaterialChatInput = z.infer<typeof materialChatInputSchema>;
+export type MaterialChatInput = z.output<typeof materialChatInputSchema>;
 
 /** How an answer of the AI ended (`stopped`: the person stopped it). */
 export type MaterialChatAnswerState = 'done' | 'failed' | 'stopped';
@@ -35,6 +35,8 @@ export interface MaterialChatMessage {
   id: string;
   role: 'user' | 'assistant';
   text: string;
+  /** Files the person put on it. */
+  attachments?: Attachment[];
   state: MaterialChatAnswerState | null;
   /** Why the answer failed (German). */
   error: string | null;

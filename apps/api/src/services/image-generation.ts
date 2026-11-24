@@ -8,10 +8,13 @@ import {
   generateImage,
   isProviderError,
   keyProblem,
+  MAX_IMAGE_REFERENCES,
   refusesKey,
+  type ImageReference,
   type ImageShape,
 } from './ai-providers';
-import { storeEditImage } from './edits/images';
+import { deleteAttachments, waitingFiles } from './attachments';
+import { imageMediaType, storeEditImage } from './edits/images';
 import { editTarget } from './edits/target';
 import { markKeyRefused, workspaceImageConnection } from './integration-keys';
 
@@ -56,6 +59,7 @@ export async function generatePicture(
   prompt: string,
   aspect: number | null,
   feature: 'image' | 'create' = 'image',
+  references: readonly ImageReference[] = [],
 ): Promise<Uint8Array> {
   const found = await workspaceImageConnection(deps, deck.workspaceId);
   if (!found.connection) throw badRequest(found.error);
@@ -71,7 +75,7 @@ export async function generatePicture(
       : base;
   let bytes: Uint8Array;
   try {
-    bytes = await generateImage(deps, connection, prompt, shapeOf(aspect));
+    bytes = await generateImage(deps, connection, prompt, shapeOf(aspect), { references });
   } catch (error) {
     if (error instanceof ApiError) throw error;
     const problem = keyProblem(error, connection);
@@ -91,7 +95,52 @@ export async function generateEditImage(
   input: GenerateEditImageInput,
 ): Promise<UploadedEditImage> {
   const { deck } = await editTarget(deps, viewer, deckId);
-  const bytes = await generatePicture(deps, deck, input.prompt, input.aspect);
+  const bytes = await withReferences(
+    deps,
+    viewer.author.id,
+    deck.workspaceId,
+    input.references,
+    (references) => generatePicture(deps, deck, input.prompt, input.aspect, 'image', references),
+  );
   const { imageId, width, height } = await storeEditImage(deps, deck.id, bytes);
   return { imageId, width, height };
+}
+
+/** Media types the image models take as pictures to go after. */
+const REFERENCE_TYPES = new Set(['image/png', 'image/jpeg', 'image/webp']);
+const MAX_REFERENCE_BYTES = 10_000_000;
+
+/**
+ * Generates with the pictures put on the description (pasted, by the clip) to go after: the
+ * writer's waiting ones, looked at first; gone once the picture is made, still waiting – put back
+ * into the field – when it was refused.
+ */
+export async function withReferences<T>(
+  deps: AppDeps,
+  userId: string,
+  workspaceId: string,
+  ids: readonly string[] | undefined,
+  generate: (references: ImageReference[]) => Promise<T>,
+): Promise<T> {
+  if (!ids?.length) return generate([]);
+  if (ids.length > MAX_IMAGE_REFERENCES) {
+    throw badRequest(`Höchstens ${MAX_IMAGE_REFERENCES} Bilder als Vorlage.`);
+  }
+  const files = await waitingFiles(deps, userId, workspaceId, ids);
+  const references = files.map((file): ImageReference => {
+    const mediaType = imageMediaType(file.bytes);
+    if (
+      !mediaType ||
+      !REFERENCE_TYPES.has(mediaType) ||
+      file.bytes.byteLength > MAX_REFERENCE_BYTES
+    ) {
+      throw badRequest(
+        `„${file.name}“ geht nicht als Vorlage – ein Bild als PNG, JPEG oder WebP bis 10 MB.`,
+      );
+    }
+    return { bytes: file.bytes, mediaType };
+  });
+  const made = await generate(references);
+  await deleteAttachments(deps, files, { waiting: true });
+  return made;
 }

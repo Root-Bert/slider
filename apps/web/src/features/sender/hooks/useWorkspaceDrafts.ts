@@ -58,7 +58,7 @@ export function useWorkspaceDrafts(): DraftEntry[] {
         key,
         draft,
         place: { kind: 'agent', agentId: target.agentId, chatId: target.chatId, agent },
-        name: target.chat ? `${agent.title} · ${target.chat}` : agent.title,
+        name: target.chat ? `${agent.title} | ${target.chat}` : agent.title,
       });
     } else if (target.kind === 'agent-new') {
       const areaId = target.areaId ?? null;
@@ -66,7 +66,7 @@ export function useWorkspaceDrafts(): DraftEntry[] {
         key,
         draft,
         place: { kind: 'agent-new', areaId },
-        name: areaId && target.area ? `Neuer Agent · ${target.area}` : 'Neuer Agent',
+        name: areaId && target.area ? `Neuer Agent | ${target.area}` : 'Neuer Agent',
       });
     } else if (target.kind === 'mail-new') {
       const subject = target.subject.trim();
@@ -74,7 +74,7 @@ export function useWorkspaceDrafts(): DraftEntry[] {
         key,
         draft,
         place: { kind: 'mail-new' },
-        name: subject ? `Neue Mail · ${subject}` : 'Neue Mail',
+        name: subject ? `Neue Mail | ${subject}` : 'Neue Mail',
       });
     }
   }

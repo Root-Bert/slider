@@ -1,5 +1,5 @@
 import { createHash } from 'node:crypto';
-import { and, asc, eq, inArray, isNotNull, lt, max } from 'drizzle-orm';
+import { and, asc, eq, inArray, isNotNull, lt, max, or } from 'drizzle-orm';
 import { blankOdt, MarkdownDocument, OdtDocument, OdtError } from '@slider/odt';
 import {
   cloudAccessAtLeast,
@@ -53,6 +53,7 @@ import {
 } from '../db/schema';
 import type { AppDeps } from '../deps';
 import { ApiError, badRequest, fileTooLarge, forbidden, notFound } from '../http/errors';
+import { claimAttachments, deleteAttachments } from './attachments';
 import type { TextDocumentKind } from '../import/libreoffice';
 import { blobKeys } from '../storage/blob-storage';
 import { deleteBlobs, storageBlobs } from './blob-deletions';
@@ -76,7 +77,8 @@ import {
   type LoadedNode,
 } from './cloud';
 import { imageMediaType } from './edits/images';
-import { generatePicture } from './image-generation';
+import { generatePicture, withReferences } from './image-generation';
+import { takesImageReferences } from './ai-providers';
 import { workspaceImageConnection } from './integration-keys';
 import { imageSize } from '../import/any-file';
 import { assertStorageFor } from './plans';
@@ -884,6 +886,7 @@ export async function documentTools(
     stockPhotos: photos !== null,
     photoSource: photos?.provider ?? null,
     imageGeneration: images.connection !== null,
+    imageReferences: !!images.connection && takesImageReferences(images.connection),
   };
 }
 
@@ -898,13 +901,19 @@ export async function generateDocumentPicture(
   documentId: string,
   prompt: string,
   aspect: number | null,
+  /** Pictures up already that it goes after (`withReferences`). */
+  references?: readonly string[],
 ): Promise<{ path: string; width: number; height: number }> {
   const { node } = await loadDocument(deps, userId, documentId, 'edit');
-  const bytes = await generatePicture(
-    deps,
-    { id: node.id, workspaceId: node.workspaceId },
-    prompt,
-    aspect,
+  const bytes = await withReferences(deps, userId, node.workspaceId, references, (given) =>
+    generatePicture(
+      deps,
+      { id: node.id, workspaceId: node.workspaceId },
+      prompt,
+      aspect,
+      'image',
+      given,
+    ),
   );
   const type = imageMediaType(bytes);
   const size = imageSize(bytes);
@@ -935,6 +944,7 @@ async function toComments(
     parentId: row.parentId,
     author: authorIn(authors, row.authorId),
     body: row.body,
+    attachments: row.attachments,
     anchor: row.anchor,
     status: row.status,
     resolvedBy: row.resolvedBy ? authorIn(authors, row.resolvedBy) : null,
@@ -1071,10 +1081,19 @@ export async function createDocumentComment(
   } else if (!input.anchor) {
     throw badRequest('Ein Kommentar steht an einer Stelle im Text.');
   }
+  if (!input.body && !input.attachments?.length) throw badRequest('Schreib etwas.');
   const now = deps.clock.now();
+  const files = await claimAttachments(
+    deps.db,
+    now,
+    userId,
+    loaded.node.workspaceId,
+    input.attachments ?? [],
+  );
   const [row] = await deps.db
     .insert(documentComments)
     .values({
+      attachments: files,
       id: input.id,
       documentId: loaded.node.id,
       parentId: input.parentId,
@@ -1152,6 +1171,14 @@ export async function deleteDocumentComment(
   if (comment.authorId !== userId && !cloudAccessAtLeast(loaded.access, 'manage')) {
     throw forbidden('Löschen kann einen Kommentar, wer ihn schrieb.');
   }
-  await deps.db.delete(documentComments).where(eq(documentComments.id, comment.id));
+  // Its files go with it – and its replies' (they go with a thread's first comment).
+  const gone = await deps.db
+    .delete(documentComments)
+    .where(or(eq(documentComments.id, comment.id), eq(documentComments.parentId, comment.id)))
+    .returning({ attachments: documentComments.attachments });
+  await deleteAttachments(
+    deps,
+    gone.flatMap((each) => each.attachments),
+  );
   live.publish(comment.documentId, { type: 'comments' });
 }

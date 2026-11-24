@@ -237,6 +237,7 @@ export function Component() {
       // A tab of the workspace's own area, beside its files and its chat: its name above, as there.
       title={root ? <AreaViews area={root} current="areas" /> : 'Bereiche'}
       crumbs={root ? [{ label: root.name }] : undefined}
+      barRow={root ? routes.cloudArea(ui.workspace.id, root.id) : undefined}
       lead={root ? <AreaMark area={root} size="lg" /> : null}
       nodes={[]}
       // The net takes the room the page has and moves in itself; the tree scrolls with the page.

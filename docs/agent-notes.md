@@ -124,6 +124,8 @@ Decrypt the deck's blob (`EncryptedBlobStorage` + `.data/data-key`), then from `
   Hand-written entries use future day steps (0130 = 1796040000000, +86400000 each); a generated
   entry gets the real clock and lands *before* them – tests (fresh DB) pass, existing databases
   silently skip it (0132/0133 did). After `drizzle-kit generate`, set `when` = previous + 86400000.
+  0126/0160/0171/0172 slipped so too; `0173_repair_skipped` adds what they missed where it is
+  missing (a DO block / IF NOT EXISTS). Check: `python3` over the journal, each `when` > the last.
 - The dev API (`bun --watch`) does not restart on `touch`; change a file's content. Check what an
   existing DB has: copy `apps/api/.data/db` to scratch, open the copy with PGlite (never the live one).
 
@@ -235,6 +237,11 @@ Decrypt the deck's blob (`EncryptedBlobStorage` + `.data/data-key`), then from `
   – a private agent's title comes from its private order. `todoByRef` keeps to the caller's
   workspace (an id from another is „No to-do“); a to-do's `source` is the writer's own mail
   thread, its url https only.
+- To-do milestones (`todo_milestones`, migration 0169): a place's (one's own or an area's), a
+  to-do only takes one of its own place's and drops it when moved. Agents/apps name them
+  (`milestone`, found or made). The timeline („Zeitplan“, `TodoTimeline.tsx`) draws a bar from
+  `startOn` to `dueOn` (either alone is one day); a drag counts from where it was grabbed
+  (`Drag.origin`) – from the moved span it ran away.
 - Settings (`services/agent-settings.ts`): only what the server keeps – name, colour (comments
   follow), call voice, mail check interval; mailbox settings are `update_mailbox`, an area's
   `update_area`. Look, notifications, how things open live in the browser – the tool says so.
@@ -511,8 +518,10 @@ Unsplash can revoke the key; production approval needs screenshots of credits.
 - An agent stands in an area (`cloud_agents.area_id`, migration 0121 written by hand) or in none,
   and is its owner's alone or shared (`cloud_agents.shared`): shared in an area means that
   area's people, in none the workspace. `PATCH /cloud/agents/:id` `{shared, areaId?}`, owner
-  only, into an area only with `edit` there; `POST …/cloud/agents` takes `areaId` (the new one
-  is its owner's). `seesAgent`/`agentFor`: owner always, a shared one by who sees its area (in
+  only, into an area only with `edit` there; `POST …/cloud/agents` takes `areaId` and `shared`
+  (an order written in an area or the workspace is theirs from its first run – `AreaAgents`,
+  „Agenten“'s Workspace/area tab; under „Alle“/„Meine“ and elsewhere its owner's alone; user's
+  call 2026-11-23). `seesAgent`/`agentFor`: owner always, a shared one by who sees its area (in
   none: the workspace) – 404 to everyone else, admins too. `deleteArea` sets its agents'
   `shared` false first (the FK only nulls `area_id`; left `shared` they would be the
   workspace's). One list from the server (`CloudAgentSummary.areaId`), split in the pages.
@@ -524,17 +533,22 @@ Unsplash can revoke the key; production approval needs screenshots of credits.
   search, tiles or rows; an area's are its second view beside its files under the same
   title – „TestBereich Agenten“, as Slider's „Präsentationen Bibliothek“ (`AreaViews` →
   `ViewTitles` from `WorkspaceViews`, the same morph; `/dateien/bereich/:id/agenten`,
-  `AreaAgentsPage` with `AreaAgents`: „Meine“ and „Bereich“; not for the workspace's own or folders).
-  `AgentShare` is the menu that picks who sees it: „Nur ich“ (it stays where it stands),
+  `AreaAgentsPage` with `AreaAgents`: no „Meine“/„Bereich“ switch – the agents standing in the
+  area that one sees, one's own private ones there with a lock; the workspace's own area only the
+  workspace's shared ones; not for folders).
+  `AgentShare` is the menu that picks who sees it: „Nur ich“ (it stays where it stands – a private
+  one still works in its area, only its owner sees it),
   „Workspace“, the areas one may change – „…“ on a tile, a named button on the agent's page; a
   toast says where it went. An agent out of an area and its owner's alone: no way in the menu
   yet. An area's agent is told its area in its prompt (`home` in `system`) and its crumbs lead
-  back to the area's agents. Each has its own picture: our own DiceBear style „Glaze
+  through its area to the area's agents. Each has its own picture: our own DiceBear style „Glaze
   Flowers“ (CC0), seeded by its id (`AgentAvatar`, `generatedAgentAvatar`).
-- An agent is a shared space with up to 8 chats (`cloud_agent_chats`, migration 0117; the first
-  chat's id is the agent's id, its title the agent's). Messages carry `chat_id`, the writer
-  (`user_id`) and `from_chat_id` (a note from another chat, `tell_chat`); the AI also has
-  `list_chats` and `read_chat`. Each chat runs by itself (`runs` keyed by chat id) with the
+- An agent is a shared space with **one chat** (`cloud_agent_chats`, migration 0117; its id is
+  the agent's id, its title the agent's) plus one tag chat per conversation it was called in.
+  Several chats side by side („Neuer Chat“, `POST …/chats`, `list_chats`/`read_chat`/`tell_chat`)
+  are gone since 2026-11-23 (user: a new topic is a new agent); older extra chats and their
+  `from_chat_id` notes stay in the data but no page shows them. Messages carry `chat_id` and the
+  writer (`user_id`). Each chat runs by itself (`runs` keyed by chat id) with the
   **writer's** rights; members and admins who see the agent write (`canWrite`), others read;
   taking the desk over stays the owner's. Who is there (`here`) and who types (`typing` per chat)
   is in memory only: reading the agent counts as being there (12 s), `POST …/typing` lasts 5 s.
@@ -812,8 +826,20 @@ Unsplash can revoke the key; production approval needs screenshots of credits.
   it. The page „Bereiche“ (its top tile is this area) is this area's third tab, where the others
   have „Agenten“: „<Workspace>  Chat  Bereiche“ (`AreaViews`; the user, 2026-11-19). Every
   area's crumbs start at the workspace, never at „Bereiche“ (`areaTrail` in `lib/areas.ts`); the
-  workspace's own tabs carry its name alone, „Zuletzt“ and „Übersicht“ „<Workspace> › <page>“ –
-  every Cloud page has a path (the user, 2026-11-23).
+  workspace's own tabs carry its name alone. Every Cloud page has a path, and it starts at the
+  side bar's row that is lit: the places of their own (Zuletzt, Dateien, Agenten, Aufgaben,
+  Kalender, Post, Entwürfe, Verbindungen, Übersicht) their name alone – never „<Workspace> ›
+  Agenten“, which read as the workspace area's agents (the user, 2026-11-23). An agent or folder
+  follows the way one came (the user, 2026-11-24, after trying home-only paths – „springt hin und
+  her“): opened from „Agenten“ „Agenten › <Agent>“ with „Agenten“ lit; from „Dateien“ (any tab)
+  „Dateien › … › <Ordner>“ with „Dateien“ lit; from anywhere else (its area, a link, the search)
+  through its home – an area's agent „<Workspace> › <Area> › Agenten › <Agent>“, the area's row
+  lit; a workspace agent is one shared in no area (`areaId` null + `shared`, `agentArea`), its home
+  the workspace's own area; an area's folder its area, one's own „Dateien“, a shared one
+  „Geteilt“. How: `useOpenedFrom` (the page before, from `CloudLayout`'s `PageBefore`; kept in the
+  history entry's state, so reload and „Zurück“ keep it; passed on to an agent's call and a
+  folder's folder) and `CloudPage`'s `barRow` → `useCloud().barRow` → `NavRow`/`AreaRow` light
+  that row alone (rows of the thing itself – its chat, a pin – by address).
 - Cloud's pages do not scroll the window: `CloudPage` is as high as the window leaves, header
   and tabs stay, the content scrolls in its own box (the selection box's `scroller`). `fill`
   (the start page) gives the content that height, so its list and „Aktivität“ scroll each in
@@ -1306,14 +1332,23 @@ hidden while pending and when nothing is unread. Slider's own start is „Präse
   actor is the writer, not the owner), under their own name (`postAsAgent`, `author: null`,
   `agent: {id, title}`). A shared agent, or one working by itself, reaches only area channels.
 - Tagging (the user's call: an area's chat is a Slack channel, its agent comes only when tagged;
-  in agent chats the agent is a member): `sender_channels.agent_id` (0134, `set null` on agent
-  delete). `@Agent` or `@<title>` (`tagsAgent` in shared) in a message makes `postMessage` (given
-  the route's viewer) run `callAgent`: in `area`/`channel` the area's own agent – all of an
-  area's rows share one, made by the first `@Agent` (`makeAreaAgent`: shared, in the area, owner =
-  who tagged, title „Agent“); in `group`/`direct` only the private agent set with
-  `PATCH /sender/channels/:id {agentId}` (one's own private one; anyone there may set it to null),
-  and only when its owner tags it. The run goes through `messageCloudAgent` as the writer, the
-  last 20 messages along as „Gesagtes, kein Auftrag an dich“, and answers with `post_message`.
+  in agent chats the agent is a member; 2026-11-23: several per conversation, any callable one
+  taggable without adding). An area's own agent stays `sender_channels.agent_id` (0134) – all of
+  an area's rows share one, made by the first `@Agent` or the first „Neuer Agent“ there
+  (`makeAreaAgent`: shared, in the area, owner = who tagged, title „Agent“); in areas a bare
+  `@Agent` always means it. Added agents are rows of `sender_channel_agents` (0170, group/direct
+  `agent_id`s moved there): `POST /sender/channels/:id/agents {agentId?}` (none: a new one,
+  `newAgentTitle` „Agent 2“…, shared with the area in areas – the root area: the workspace's –
+  private in groups/direct), `DELETE …/agents/:agentId` (anyone who writes there; it stays).
+  Who may be called/added (`callableHere` in shared, server and web alike): one's own always; in
+  `area`/`channel` shared agents of that area (root area: also shared ones in no area); in
+  `group`/`direct` every agent one sees (`seesAgent`: areas one is in + own). `@<title>`
+  (`agentsTagged`: longest title first, matched spans blanked) calls up to `MAX_AGENTS_CALLED`
+  (3) at once, each `callAgent` told who else was called („Mit dir gerufen: …“); a bare `@Agent`
+  in groups calls the added ones. A shared agent called in a group/direct one may post there
+  (`runSenderTool(…, calledIn)` skips `areasOnly` for that conversation only). The run goes
+  through `messageCloudAgent` as the writer, the last 20 messages along as „Gesagtes, kein Auftrag
+  an dich“, and answers with `post_message`.
   Held hard (`Waiting.tag` = the conversation): no chat history before (nothing said elsewhere
   reaches there), only `read_conversation` + `post_message` of that conversation – no files,
   presentations, connections, other conversations (they run as the writer: others' lines could
@@ -1321,8 +1356,7 @@ hidden while pending and when nothing is unread. Slider's own start is „Präse
   that run and stays held; a tag never joins another run (`joins`). Guards: a shared agent in an
   area is seen only by who sees the area, owner too; one's private one always (`seesAgent`) –
   repeats/watches run only while the owner still sees it (`ownerWorks`, else cleared); the area's own can't be moved or
-  unshared, and `callAgent` takes it only while `shared` in that area (else a new one); a
-  private agent can't be shared while a group/direct row points to it (`shareCloudAgent`).
+  unshared, and `callAgent` takes it only while `shared` in that area (else a new one).
   A tag runs in the agent's own chat for that conversation (`tagChatId` = `<agent>:<channel>` in
   `cloud-agent-runs.ts`, made on the first tag; other chats are bare UUIDs, `TAG_CHATS` matches
   them). The chat keeps only the caller's own words; the briefing (where, how to answer, the lines
@@ -1333,9 +1367,9 @@ hidden while pending and when nothing is unread. Slider's own start is „Präse
   writes there; the pages show them without a composer). They are deleted when others come to
   read the agent (`shareCloudAgent` sharing it) and with the area's channels (`deleteArea` →
   `releaseAreaAgents`, which hands its agents back to their owners – or deletes a shared one if
-  the owner no longer saw the area). Tag chats don't count toward `MAX_CLOUD_AGENT_CHATS`
-  (`isTagChat` in shared). Leaving a group/direct one or the workspace takes one's own agent out
-  of it (`agent_id` null). The data export (`account-export.ts`) keeps to the
+  the owner no longer saw the area). Tag chats (`isTagChat` in shared) are not shown on the
+  agent's pages – their answer stands in the conversation. Leaving a group/direct one or the
+  workspace takes one's own private agents out of it (`sender_channel_agents` rows). The data export (`account-export.ts`) keeps to the
   same: an owned area agent only while one sees the area (else just one's own lines,
   `areaLeft`), a tag chat only while one reads its conversation (`audienceOf`). A shared agent
   read by fewer (unshared, moved to another area, its area deleted) loses others' work
@@ -1345,8 +1379,9 @@ hidden while pending and when nothing is unread. Slider's own start is „Präse
   `running`/`interrupted` and the side bar's unread. Deleting an
   account deletes its agents (cascade), an area's own too – `agent_id` goes null and the next
   `@Agent` there makes a new one.
-  Web: `Composer` `agent` prop (first in the @ list), `ChannelPage` `AddAgent` menu and „Agent
-  entfernen“.
+  Web: `Composer` `agents` prop (`TagAgent`: those here first, then people, then the other
+  callable ones), `ChannelPage` header: faces of the agents here (links), the ✨ `AddAgent` menu
+  („Neuer Agent“, then callable ones not here; toast „X hinzugefügt“), „X entfernen“ in „…“.
 - UI: route `/w/:id/nachrichten` (`SenderLayout` = side bar + outlet). The side bar knows two
   sorts (the user's call 2026-11-19): channels under their area – from Cloud's side like a folder
   in it – and „Direkt“, one list of people, groups and agents, the latest first. „Neu“ has one
@@ -1508,7 +1543,12 @@ hidden while pending and when nothing is unread. Slider's own start is „Präse
   told the provider said spam, judges itself: `spamAfterLook` – not ok and never answered → spam
   `ai`; ok on `server` spam with the latest mail's `auth` pass → back to the inbox, `ai`; never over
   `person`. `SpamMark` shows `ai`/`filter` spam („Von KI/Vom Filter aussortiert“) and `ai` not spam
-  („Aus Spam geholt“) in the row and the head until its person decides. Server-side nothing moves.
+  („Aus Spam geholt“) in the row and the head until its person decides. On the server only its
+  person's say moves (`pushMoves`, IMAP MOVE, each round and right after the click/rule): a thread
+  `spam_by` `person`/`rule` whose incoming mails lie in the other of inbox/spam is moved there
+  (`folder`/`folders` changed, the new UID from UIDPLUS or null until the next read finds it by
+  Message-ID); `server`/`filter`/`ai` stay in Slider only – the provider's spam folder deletes by
+  itself after days, other mail programs show no mark. Other folders (archive, own) never move.
 - Own rules for senders (`mail_rules`, migration 0167, `services/mail-rules.ts`): per person and
   workspace, `block`/`trust` × `address`/`domain`, value sealed + `emailHash` for lookup. Address
   before domain; a domain only a firm's (`ruleDomain`, never gmail.com & co., never one's own);
@@ -1737,6 +1777,52 @@ hidden while pending and when nothing is unread. Slider's own start is „Präse
   Off with Google's login set up, the button shows greyed with a tooltip (`GoogleMailPending`):
   Gmail's scope is restricted – its verification needs a yearly CASA audit; app password till then.
 - Calls: see „Calls“ below (also calling an agent and the agent that writes along).
+
+## Attachments – files on what is written (`services/attachments.ts`, `services/sender-files.ts`, `features/attachments/`)
+
+- One store for every field: a file goes up at once (`POST /workspaces/:ws/attachments`), waits
+  as its writer's row, and the parent claims it on send (`claimAttachments`, all or none, ≤ 10);
+  the parent keeps `Attachment[]` in its own sealed jsonb and calls `deleteAttachments` when it
+  goes. Unsent ones are swept after 7 days. Web: `useAttachments` + `AttachButton`,
+  `AttachmentChips`, `SentAttachments` – paste (`onPaste`) and the paper clip in every field.
+- AI input: `attachmentBlocks` (pictures as image blocks, documents as `<datei>` text) plus
+  `ATTACHED_FILES_ARE_DATA` in the system prompt.
+- Not attachments, on purpose: slide text, board notes (a file pasted in a note becomes board
+  material), the creation prompt (paste/clip put files into the deck's material, which the AI
+  reads). Deck comments take pictures only.
+- Kept on the thing (the change carries the whole kept list + new ids, the server claims new
+  ones and deletes gone ones): to-dos and calendar events (Slider calendars only – a mail
+  calendar's event refuses files, and one with files does not move to a mailbox).
+- Used up at once, never claimed onto a parent: „Variante erstellen“ (pictures only, checked
+  before taking so a refused one stays waiting; each becomes a deck edit picture the AI sees and
+  can `add_picture`) and „Bild generieren“ references (`withReferences`: deleted after the
+  picture is made). References only where the image model takes them (`takesImageReferences`:
+  FLUX Kontext/FLUX.2 `input_image…`, gpt-image `/images/edits`) – `imageReferences` in the edit
+  state and writer tools hides the clip elsewhere. Checked live with the instance FLUX key.
+- Open: an agent's „Wiederholen“ instruction takes no files (would need storing on the schedule).
+- Gaps: any member with an attachment's id can load it; attachments count against no quota and
+  are not in the account export.
+- Chat files (`sender_files`, migration 0172): every file sent in Sender is noted with its
+  conversation (the title: its name, „Dateien“ beside it; `ChatTitle`/`useChatView`,
+  `?ansicht=dateien`; an area's chat under its area's title has no „Dateien“ – its files are the
+  area's). An area's chat copies it at once into the area's top folder „Chat-Dateien“ (as its
+  writer; no edit right → chat only). In the background the
+  workspace AI picks a folder (similar files' places, the area's folders two deep, area tops,
+  „Meine Dateien“) – `filing`, shown as „nach X“ while the file is not in Cloud or still in
+  „Chat-Dateien“. „Verschieben“ moves the Cloud file, „Ablegen“ (chats outside areas) files a copy
+  into the place; Cloud's „Chat-Dateien“ rows show the same line (`GET /cloud/folders/:id/filing`).
+  Bun loads the repo's `.env`, so a scratch API calls the real AI here.
+- Agent and Cloud-AI files (`services/chat-files.ts`): what is newly put on a message to an agent
+  (`keep` in `cloud-agents.ts`) or to Cloud's AI (`startCloudChat`) is copied into „Chat-Dateien“
+  – an area's agent: the area's, else (and where the area refuses) one's own. Files that came with
+  a Sender message are not copied again. Fails quietly (plan over its limit, storage full): the
+  file stays on the message. The agent's „Dateien“ tab lists its messages' files client-side
+  (`agentFiles`, no time, no „Ablegen“). Slider, Writer and Reader chats/comments keep theirs on
+  the message only. Tested: the end of `cloud.test.ts`'s area test runs over the plan's people
+  limit – Cloud refuses new files there.
+- Final delete of a presentation, a Writer document or a Reader PDF (`purgeRow`, `deleteDeck`)
+  takes the files on its comments and AI chats along (`services/purge-attachments.ts`): the rows
+  cascade, the `attachments` rows and blobs would stay orphaned. In „Gelöscht“ they stay.
 
 ## To-dos – „Aufgaben“ in the UI (`services/todos.ts`, `routes/todos.ts`, `features/cloud/components/todos/`)
 

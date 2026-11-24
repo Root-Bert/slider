@@ -9,7 +9,7 @@ export function IncomingCall({ call }: { call: CallState }) {
   const { snap, client } = useCalls();
   const joining = snap.joining === call.channelId;
   const kind = call.video ? 'Videoanruf' : 'Anruf';
-  const where = call.kind === 'direct' ? kind : `${kind} · ${callTitle(call, snap.me)}`;
+  const where = call.kind === 'direct' ? kind : `${kind} | ${callTitle(call, snap.me)}`;
   return (
     <section
       aria-label={`${call.startedBy.name} ruft an`}

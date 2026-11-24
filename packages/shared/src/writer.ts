@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { attachmentIdsSchema, attachmentSchema } from './attachments';
 import { authorSchema, commentReactionSchema } from './model';
 import { imageCreditSchema } from './editing';
 import { photoProviderSchema } from './integrations';
@@ -474,6 +475,8 @@ export const writerCommentSchema = z.object({
   parentId: z.string().nullable(),
   author: authorSchema,
   body: z.string(),
+  /** Files put on it. */
+  attachments: z.array(attachmentSchema).optional(),
   /** `null` on an answer: it stands where its comment stands. */
   anchor: writerAnchorSchema.nullable(),
   status: z.enum(['open', 'done']),
@@ -490,10 +493,13 @@ export const createWriterCommentInputSchema = z.object({
   /** Made in the browser, so a comment written offline is sent once. */
   id: z.string().uuid(),
   parentId: z.string().nullable(),
-  body: z.string().trim().min(1).max(MAX_WRITER_COMMENT),
+  /** May stay empty where files are put on it. */
+  body: z.string().trim().max(MAX_WRITER_COMMENT),
+  /** Files put on it (`attachments`). */
+  attachments: attachmentIdsSchema,
   anchor: writerAnchorSchema.nullable(),
 });
-export type CreateWriterCommentInput = z.infer<typeof createWriterCommentInputSchema>;
+export type CreateWriterCommentInput = z.input<typeof createWriterCommentInputSchema>;
 
 export const updateWriterCommentInputSchema = z
   .object({
@@ -612,6 +618,8 @@ export const writerToolsSchema = z.object({
   stockPhotos: z.boolean(),
   photoSource: photoProviderSchema.nullable(),
   imageGeneration: z.boolean(),
+  /** Its image model takes pictures to go after (`references`). */
+  imageReferences: z.boolean().default(false),
 });
 export type WriterTools = z.infer<typeof writerToolsSchema>;
 

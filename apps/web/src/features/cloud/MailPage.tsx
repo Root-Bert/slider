@@ -24,7 +24,7 @@ export function Component() {
     <CloudPage
       docTitle="Post"
       title={<MailboxTabs view={view} />}
-      crumbs={[{ label: ui.workspace.name }, { label: 'Post' }]}
+      crumbs={[{ label: 'Post' }]}
       // „Ungelesen“ beside „Postfächer“, as in Sender: on or off, for every mailbox.
       actions={
         <div className="flex items-center gap-2">

@@ -2,6 +2,7 @@ import { eq } from 'drizzle-orm';
 import { Hono, type Context } from 'hono';
 import {
   cloudActivityQuerySchema,
+  cloudSummaryQuerySchema,
   cloudAreaCreateSchema,
   cloudAreaMembersInputSchema,
   cloudAreaUpdateSchema,
@@ -41,6 +42,7 @@ import type { AppDeps } from '../deps';
 import { aiLimits } from '../http/ai-limits';
 import { ApiError, badRequest, fileTooLarge, notFound } from '../http/errors';
 import { createUploadedDeck, existingDeckDto } from './decks';
+import { cloudSummary } from '../services/cloud-news';
 import { parseRange } from '../http/range';
 import { rateLimit } from '../http/rate-limit';
 import { readJson } from '../http/validate';
@@ -310,6 +312,13 @@ export function cloudRoutes(deps: AppDeps) {
           ),
         ),
       )
+      .get('/workspaces/:id/cloud/summary', viewer, async (c) => {
+        const userId = user(c);
+        const { since } = cloudSummaryQuerySchema.parse(c.req.query());
+        return c.json(
+          await cloudSummary(deps, userId, c.req.param('id'), c.var.viewer.author.name, since),
+        );
+      })
       .get('/workspaces/:id/cloud/people', viewer, async (c) =>
         c.json(await listPeople(deps, user(c), c.req.param('id'))),
       )

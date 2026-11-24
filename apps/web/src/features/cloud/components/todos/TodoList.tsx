@@ -1,24 +1,42 @@
 import {
   isOpenTodo,
+  MAX_MILESTONE_NAME,
   searchFold,
   TODO_PRIORITIES,
   TODO_PRIORITY_LABELS,
   TODO_STATUS_LABELS,
   TODO_STATUSES,
+  type Attachment,
   type CloudAgentSummary,
   type CloudArea,
   type CloudPerson,
   type Todo,
   type TodoChange,
 } from '@slider/shared';
-import { useEffect, useEffectEvent, useState, type ReactNode } from 'react';
+import {
+  createContext,
+  useContext,
+  useEffect,
+  useEffectEvent,
+  useState,
+  type ReactNode,
+} from 'react';
 import { Link, useSearchParams } from 'react-router';
+import {
+  AttachButton,
+  AttachmentChips,
+  SentAttachments,
+  useAttachments,
+} from '@/features/attachments';
 import {
   useCloudAgents,
   useCloudPeople,
+  useCreateMilestone,
   useCreateTodo,
-  useDeleteTodo,
   useMe,
+  useMilestones,
+  useNewTodoAgent,
+  useSendTodoAgent,
   useTodos,
   useUpdateTodo,
 } from '@/lib/api';
@@ -30,7 +48,8 @@ import {
   CLOUD_TODO_PARAM,
   routes,
 } from '@/lib/routes';
-import { ViewSearch } from '@/features/workspaces';
+import { useDeckContextMenu } from '@/features/reviews';
+import { canCreateDecks, ViewSearch } from '@/features/workspaces';
 import {
   AutosizeTextarea,
   Avatar,
@@ -39,7 +58,6 @@ import {
   Icon,
   IconButton,
   LoadingState,
-  Menu,
   MenuDivider,
   MenuHeading,
   MenuItem,
@@ -47,6 +65,7 @@ import {
   SidePanel,
   TextField,
   TextLink,
+  Toolbar,
   cn,
   useMediaQuery,
   usePopover,
@@ -62,10 +81,13 @@ import {
   WORKSPACE_SCOPE,
 } from '../../lib/scopes';
 import { AgentAvatar } from '../AgentAvatar';
-import { AgentViewToggle, GRID } from '../AgentList';
+import { GRID } from '../AgentList';
 import { AreaDot } from '../AreaDot';
+import { Empty } from '../Empty';
 import { DueCalendar } from './DueCalendar';
+import { TodoActions } from './TodoActions';
 import { PriorityMark, StatusMark } from './TodoMarks';
+import { TodoTimeline } from './TodoTimeline';
 import { byUrgency, isMine } from './order';
 
 /**
@@ -76,6 +98,7 @@ export function TodoList({ area }: { area: CloudArea | null }) {
   const ui = useCloud();
   const workspaceId = ui.workspace.id;
   const todos = useTodos(workspaceId, area?.id ?? null);
+  const milestones = useMilestones(workspaceId, area?.id ?? null);
   const shown = useShownTodo();
   const [view, setView] = useStoredChoice('slider.cloud.todos-view', TODO_VIEWS, 'list');
   // The overview's open tab (the page's title); in an area all are the area's.
@@ -137,33 +160,67 @@ export function TodoList({ area }: { area: CloudArea | null }) {
     <div className="flex w-full flex-col gap-6 pb-16">
       {/* The new one's field, the search and tiles or rows: one line, as on „Agenten“. */}
       {(canAdd || all.length > 0) && (
-        <div className="flex items-center gap-3">
-          <div className="min-w-48 flex-1">{canAdd && <NewTodo areaId={target?.id ?? null} />}</div>
+        <div className="flex flex-wrap items-center gap-3">
+          {/* On a phone the new to-do takes its own row, search and view under it. */}
+          <div className="min-w-48 flex-1 max-sm:basis-full">
+            {canAdd && <NewTodo areaId={target?.id ?? null} />}
+          </div>
           {/* The search on the right, in the row – as Post's. */}
           {all.length > 0 && (
             <ViewSearch
               label="Aufgaben durchsuchen"
               value={query}
               onChange={setQuery}
-              className="min-w-36 shrink"
+              className="min-w-36 shrink max-sm:flex-1"
             />
           )}
-          {all.length > 0 && <AgentViewToggle view={view} onChange={setView} />}
+          {all.length > 0 && <TodoViewToggle view={view} onChange={setView} />}
         </div>
       )}
+      {/* Nothing to show: as on „Dateien“ and „Agenten“ – the picture, what it means, what to do. */}
       {(scope || mineOnly) && scoped.length === 0 ? (
-        <p className="px-3 text-sm text-fg-muted">{none}</p>
+        <Empty
+          icon="checklist"
+          title={mineOnly ? 'Nichts zugeteilt' : 'Noch keine Aufgabe'}
+          message={none}
+        />
       ) : scoped.length > 0 && list.length === 0 ? (
-        <p className="px-3 text-sm text-fg-muted">
-          Keine Treffer für „{query.trim()}“ – gesucht wird im Titel, in der Beschreibung und nach
-          wem sie gegeben ist.
-        </p>
+        <Empty
+          icon="search"
+          title={`Keine Treffer für „${query.trim()}“`}
+          message="Gesucht wird im Titel, in der Beschreibung und nach wem sie gegeben ist."
+        />
       ) : list.length === 0 ? (
-        <p className="px-3 text-sm text-fg-muted">
-          {area
-            ? 'Noch keine Aufgaben in diesem Bereich.'
-            : 'Noch keine Aufgaben – deine und die aus deinen Bereichen stehen hier.'}
-        </p>
+        <Empty
+          icon="checklist"
+          title="Noch keine Aufgabe"
+          message={
+            !area
+              ? 'Deine und die aus deinen Bereichen stehen hier.'
+              : canAdd
+                ? 'Schreib oben, was in diesem Bereich zu tun ist.'
+                : 'Hier stehen die Aufgaben dieses Bereichs.'
+          }
+        />
+      ) : view === 'timeline' ? (
+        // On a timeline, under their milestones – the place's (on „Alle“ every place's).
+        <TodoTimeline
+          todos={list}
+          milestones={(milestones.data ?? []).filter(
+            (milestone) => !scope || milestone.areaId === (target?.id ?? null),
+          )}
+          openId={shown.id}
+          onToggle={shown.toggle}
+          newIn={canAdd ? { areaId: target?.id ?? null } : undefined}
+          lead={
+            area || scope
+              ? undefined
+              : (areaId) => {
+                  const place = areas.find((each) => each.id === areaId);
+                  return place ? <AreaDot color={place.color} /> : <MeAvatar />;
+                }
+          }
+        />
       ) : area || scope ? (
         // One place – an area or a tab of the overview: by status, as a project's plan.
         BY_STATUS.map((status) => {
@@ -291,8 +348,39 @@ export function TodoPanel() {
   );
 }
 
-/** Rows (Linear's) or tiles (as agents'): remembered in this browser. */
-const TODO_VIEWS = ['list', 'tiles'] as const;
+/** Rows (Linear's), tiles (as agents') or a timeline („Zeitplan“): remembered in this browser. */
+const TODO_VIEWS = ['list', 'tiles', 'timeline'] as const;
+type TodoView = (typeof TODO_VIEWS)[number];
+
+/** As agents' toggle (`AgentViewToggle`), with the timeline beside rows and tiles. */
+function TodoViewToggle({
+  view,
+  onChange,
+}: {
+  view: TodoView;
+  onChange: (view: TodoView) => void;
+}) {
+  const views: [TodoView, 'gridView' | 'viewList' | 'viewTimeline', string][] = [
+    ['tiles', 'gridView', 'Kachelansicht'],
+    ['list', 'viewList', 'Listenansicht'],
+    ['timeline', 'viewTimeline', 'Zeitplan'],
+  ];
+  return (
+    <Toolbar role="group" label="Ansicht" className="ml-auto shrink-0">
+      {views.map(([key, icon, label]) => (
+        <IconButton
+          key={key}
+          icon={icon}
+          label={label}
+          size="sm"
+          iconSize={18}
+          active={view === key}
+          onClick={() => onChange(key)}
+        />
+      ))}
+    </Toolbar>
+  );
+}
 /**
  * „Mir zugeteilt“ on the right of „Aufgaben“'s title, as Post's „Ungelesen“: on, only those
  * given to oneself show – on every tab.
@@ -479,8 +567,11 @@ function TodoRow({
   const ui = useCloud();
   const area = showPlace ? ui.home?.areas.find((each) => each.id === todo.areaId) : undefined;
   const overdue = todo.dueOn !== null && isOpenTodo(todo.status) && todo.dueOn < today();
+  // A right click opens its menu at the pointer, as on an agent – where it has one.
+  const { onContextMenu, ...contextMenu } = useDeckContextMenu();
   return (
-    <li>
+    <li onContextMenu={todo.canEdit ? onContextMenu : undefined}>
+      <TodoActions todo={todo} {...contextMenu} />
       <div
         className={cn(
           'group flex h-10 items-center gap-2 rounded-control px-3 hover:bg-hover',
@@ -506,8 +597,26 @@ function TodoRow({
             <span className="truncate">{area.name}</span>
           </span>
         )}
-        {todo.description && <Icon name="notes" size="sm" className="text-fg-faint" />}
-        {todo.source && <Icon name="mail" size="sm" className="text-fg-faint" />}
+        {/* What it carries beyond its title, named on hover. */}
+        {todo.description && (
+          <span title="Hat eine Beschreibung" className="flex">
+            <Icon name="notes" size="sm" className="text-fg-faint" />
+          </span>
+        )}
+        {todo.source && (
+          <span title="Aus einer Mail" className="flex">
+            <Icon name="mail" size="sm" className="text-fg-faint" />
+          </span>
+        )}
+        {todo.milestone && (
+          <span
+            title={`Meilenstein: ${todo.milestone.name}`}
+            className="hidden max-w-36 shrink-0 items-center gap-1 text-xs text-fg-muted md:flex"
+          >
+            <Icon name="flag" size="xs" className="shrink-0 text-fg-faint" />
+            <span className="truncate">{todo.milestone.name}</span>
+          </span>
+        )}
         {todo.dueOn && (
           <span
             className={cn(
@@ -528,6 +637,7 @@ function TodoRow({
         >
           <PriorityPicker todo={todo} onChange={change} />
         </span>
+        <SendAgentButton todo={todo} />
         <WhoPicker todo={todo} onChange={change} />
       </div>
     </li>
@@ -541,8 +651,10 @@ function TodoRow({
 function TodoCard({ todo, open, onToggle }: { todo: Todo; open: boolean; onToggle: () => void }) {
   const change = useChange(todo);
   const overdue = todo.dueOn !== null && isOpenTodo(todo.status) && todo.dueOn < today();
+  const { onContextMenu, ...contextMenu } = useDeckContextMenu();
   return (
     <li
+      onContextMenu={todo.canEdit ? onContextMenu : undefined}
       className={cn(
         'group glass relative flex h-[148px] flex-col gap-2 rounded-panel p-4 transition-colors hover:bg-glass-hover',
         // A picker open on it stands over the tiles after it.
@@ -566,6 +678,7 @@ function TodoCard({ todo, open, onToggle }: { todo: Todo; open: boolean; onToggl
           </span>
         )}
         <PriorityPicker todo={todo} onChange={change} />
+        <SendAgentButton todo={todo} />
         <WhoPicker todo={todo} onChange={change} />
       </div>
       <button
@@ -583,6 +696,7 @@ function TodoCard({ todo, open, onToggle }: { todo: Todo; open: boolean; onToggl
       {todo.description && (
         <p className="line-clamp-2 text-xs leading-[17px] text-fg-muted">{todo.description}</p>
       )}
+      <TodoActions todo={todo} {...contextMenu} />
     </li>
   );
 }
@@ -591,13 +705,21 @@ function TodoCard({ todo, open, onToggle }: { todo: Todo; open: boolean; onToggl
 function useChange(todo: Todo | null) {
   const ui = useCloud();
   const update = useUpdateTodo(ui.workspace.id);
-  return (change: TodoChange) =>
+  return (change: TodoChange, files?: Attachment[]) =>
     todo &&
     update.mutate(
-      { id: todo.id, change },
+      { id: todo.id, change, files },
       { onError: (error) => ui.notify(error.message, 'danger') },
     );
 }
+
+/**
+ * How pickers look in a to-do's panel: `chip` – a hairline round them (its state under the title);
+ * `row` – a line across, its mark in front (its details); `card` – the agent docked at its foot,
+ * its panel opening upwards. Elsewhere (`plain`) they sit small in a row of the list.
+ */
+type PickerLookKind = 'plain' | 'chip' | 'row' | 'card';
+const PickerLook = createContext<PickerLookKind>('plain');
 
 /** A property's choice in a small panel beside it, closed on pick – Linear's pickers. */
 export function Picker({
@@ -606,6 +728,7 @@ export function Picker({
   disabled,
   wide = false,
   calendar = false,
+  fluid = false,
   className,
   children,
 }: {
@@ -613,6 +736,8 @@ export function Picker({
   trigger: ReactNode;
   disabled: boolean;
   wide?: boolean;
+  /** Narrows with its line, its words cut short („…“) – a long agent's name. */
+  fluid?: boolean;
   /** A month to pick a day from: a dialog, wide enough for a week. */
   calendar?: boolean;
   className?: string;
@@ -621,8 +746,13 @@ export function Picker({
   const { open, close, wrapperRef, panelId, triggerProps } = usePopover({
     hasPopup: calendar ? 'dialog' : 'menu',
   });
+  const look = useContext(PickerLook);
+  const across = look === 'row' || look === 'card';
   return (
-    <div ref={wrapperRef} className="relative flex shrink-0">
+    <div
+      ref={wrapperRef}
+      className={cn('relative flex', across ? 'w-full' : fluid ? 'min-w-0' : 'shrink-0')}
+    >
       <button
         type="button"
         {...triggerProps}
@@ -630,7 +760,14 @@ export function Picker({
         aria-label={label}
         title={label}
         className={cn(
-          'flex h-7 items-center gap-1.5 rounded-control-sm px-1 text-sm',
+          'flex items-center text-sm',
+          {
+            plain: 'h-7 gap-1.5 rounded-control-sm px-1',
+            chip: 'h-7 gap-1.5 rounded-full border border-hairline pr-2.5 pl-1.5',
+            row: 'h-9 w-full min-w-0 gap-2.5 rounded-control px-2',
+            card: 'min-h-12 w-full min-w-0 gap-3 rounded-control px-2 py-1.5 text-left',
+          }[look],
+          fluid && 'min-w-0',
           disabled ? 'cursor-default' : 'hover:bg-hover aria-expanded:bg-hover',
           className,
         )}
@@ -641,6 +778,7 @@ export function Picker({
         <PopoverPanel
           id={panelId}
           padding="md"
+          side={look === 'card' ? 'top' : 'bottom'}
           role={calendar ? 'dialog' : 'menu'}
           aria-label={calendar ? label : undefined}
           className={calendar ? 'w-72' : wide ? 'w-64' : 'w-52'}
@@ -757,93 +895,220 @@ const agentsFor = (todo: Todo, agents: readonly CloudAgentSummary[]) =>
     agent.shared ? todo.areaId !== null && agent.areaId === todo.areaId : agent.mine,
   );
 
-/** The one doing it – a person, an agent sent on it, or both; the agent's face pulses while it works. */
+/**
+ * Sends the agent given it on it (`useSendTodoAgent`) – given and sent are two steps, so who
+ * does what can be planned first; refused (no AI, busy), a toast says why.
+ */
+function useSendAgent(todo: Todo) {
+  const ui = useCloud();
+  const send = useSendTodoAgent(ui.workspace.id);
+  return () =>
+    send.mutate(todo.id, {
+      onSuccess: () =>
+        ui.notify(`${todo.assigneeAgent?.title ?? 'Agent'} arbeitet an #${todo.number}`),
+      onError: (error) => ui.notify(error.message, 'danger'),
+    });
+}
+
+/**
+ * The agent given it, as the agents' list knows it: whether it works now, and whether one may
+ * send it (`agentsFor`) and it is free to start.
+ */
+function useTodoAgent(todo: Todo) {
+  const ui = useCloud();
+  const agents = useCloudAgents(ui.workspace.id).data ?? [];
+  const agent = todo.assigneeAgent
+    ? agentsFor(todo, agents).find((each) => each.id === todo.assigneeAgent?.id)
+    : undefined;
+  const working = todo.assigneeAgent
+    ? (agents.find((each) => each.id === todo.assigneeAgent?.id)?.running ?? false)
+    : false;
+  return { working, sendable: todo.canEdit && !!agent && !working };
+}
+
+/** „Losschicken“ beside the agent in a row or tile – only while the agent given it waits. */
+function SendAgentButton({ todo }: { todo: Todo }) {
+  const { sendable } = useTodoAgent(todo);
+  const send = useSendAgent(todo);
+  if (!sendable) return null;
+  return (
+    <IconButton
+      icon="send"
+      label={`${todo.assigneeAgent?.title ?? 'Agent'} losschicken`}
+      size="compact"
+      iconSize={16}
+      onClick={send}
+    />
+  );
+}
+
+/**
+ * The one doing it – a person, an agent given it, or both; the agent's face pulses while it
+ * works. Picking an agent only gives it the to-do; „Losschicken“ starts it. `part`: only the
+ * person or only the agent, named – the to-do's panel has a line for each.
+ */
 function WhoPicker({
   todo,
   onChange,
-  labelled = false,
+  part,
 }: {
   todo: Todo;
   onChange: (change: TodoChange) => void;
-  labelled?: boolean;
+  part?: 'person' | 'agent';
 }) {
+  const showPerson = part !== 'agent';
+  const showAgent = part !== 'person';
   const ui = useCloud();
   const people = useCloudPeople(ui.workspace.id).data ?? [];
   const agents = useCloudAgents(ui.workspace.id).data ?? [];
   const area = ui.home?.areas.find((each) => each.id === todo.areaId);
-  const working = todo.assigneeAgent
-    ? (agents.find((agent) => agent.id === todo.assigneeAgent?.id)?.running ?? false)
-    : false;
+  const { working, sendable: canSend } = useTodoAgent(todo);
+  const send = useSendAgent(todo);
+  const newAgent = useNewTodoAgent(ui.workspace.id);
+  const makes = canCreateDecks(ui.workspace.role);
+  const look = useContext(PickerLook);
   const label = [
-    todo.assignee ? todo.assignee.name : null,
-    todo.assigneeAgent ? `${todo.assigneeAgent.title}${working ? ' arbeitet daran' : ''}` : null,
+    showPerson && todo.assignee ? todo.assignee.name : null,
+    showAgent && todo.assigneeAgent
+      ? `${todo.assigneeAgent.title}${working ? ' arbeitet daran' : ''}`
+      : null,
   ]
     .filter(Boolean)
-    .join(' · ');
+    .join(' | ');
   const candidates = peopleFor(todo, people, area, ui.userId);
   const sendable = agentsFor(todo, agents);
+  const agentLine = showAgent && (makes || sendable.length > 0);
+  if (part === 'agent' && !agentLine && !todo.assigneeAgent) return null;
+  const nobody = part === 'agent' ? 'Kein Agent' : 'Zuständig';
+  // Docked as a card: the agent's face larger, how it stands under its name.
+  const card = look === 'card' && part === 'agent';
+  const state = working
+    ? 'Arbeitet daran'
+    : todo.assigneeAgent
+      ? canSend
+        ? 'Wartet aufs Losschicken'
+        : 'Zugeteilt'
+      : 'Einen Agenten zuteilen';
   return (
     <Picker
       wide
-      label={label ? `Zuständig: ${label}` : 'Zuständig: niemand'}
+      fluid={!!part}
+      label={
+        label
+          ? `${part === 'agent' ? 'Agent' : 'Zuständig'}: ${label}`
+          : `${part === 'agent' ? 'Agent' : 'Zuständig'}: ${nobody.toLowerCase()}`
+      }
       disabled={!todo.canEdit}
+      className={part && !label && !card ? 'text-fg-muted' : undefined}
       trigger={
-        <>
-          <span className="flex items-center -space-x-1">
-            {todo.assigneeAgent && (
-              <span className="relative flex rounded-control">
-                <AgentAvatar id={todo.assigneeAgent.id} size={20} />
+        card ? (
+          <>
+            {todo.assigneeAgent ? (
+              <span className="relative flex shrink-0 rounded-control">
+                <AgentAvatar id={todo.assigneeAgent.id} size={32} />
                 {working && (
-                  <span className="absolute -right-0.5 -bottom-0.5 size-2 animate-pulse rounded-full bg-success ring-2 ring-canvas" />
+                  <span className="absolute -right-0.5 -bottom-0.5 size-2.5 animate-pulse rounded-full bg-success ring-2 ring-canvas" />
                 )}
               </span>
-            )}
-            {todo.assignee && <Avatar author={todo.assignee} size={20} nativeTitle={false} />}
-            {!todo.assignee && !todo.assigneeAgent && (
-              <span className="flex size-5 items-center justify-center rounded-full border border-dashed border-fg-faint text-fg-faint">
-                <Icon name="person" size={12} />
+            ) : (
+              <span className="flex size-8 shrink-0 items-center justify-center rounded-full border border-dashed border-fg-faint text-fg-faint">
+                <Icon name="autoAwesome" size="md" />
               </span>
             )}
-          </span>
-          {labelled && <span className="truncate">{label || 'Niemand'}</span>}
-        </>
+            <span className="flex min-w-0 flex-1 flex-col">
+              <span className={cn('truncate font-medium', !todo.assigneeAgent && 'text-fg-muted')}>
+                {todo.assigneeAgent?.title ?? nobody}
+              </span>
+              <span className={cn('truncate text-xs', working ? 'text-success' : 'text-fg-subtle')}>
+                {state}
+              </span>
+            </span>
+            {todo.canEdit && (
+              <Icon name="expandMore" size="md" className="shrink-0 text-fg-subtle" />
+            )}
+          </>
+        ) : (
+          <>
+            <span className="flex shrink-0 items-center -space-x-1">
+              {showAgent && todo.assigneeAgent && (
+                <span className="relative flex rounded-control">
+                  <AgentAvatar id={todo.assigneeAgent.id} size={20} />
+                  {working && (
+                    <span className="absolute -right-0.5 -bottom-0.5 size-2 animate-pulse rounded-full bg-success ring-2 ring-canvas" />
+                  )}
+                </span>
+              )}
+              {showPerson && todo.assignee && (
+                <Avatar author={todo.assignee} size={20} nativeTitle={false} />
+              )}
+              {!label && (
+                <span className="flex size-5 items-center justify-center rounded-full border border-dashed border-fg-faint text-fg-faint">
+                  <Icon name={part === 'agent' ? 'autoAwesome' : 'person'} size={12} />
+                </span>
+              )}
+            </span>
+            {part && <span className="truncate">{label || nobody}</span>}
+          </>
+        )
       }
     >
       {(close) => (
         <>
-          <MenuHeading>Person</MenuHeading>
-          <MenuItem
-            role="menuitemradio"
-            aria-checked={!todo.assignee}
-            selected={!todo.assignee}
-            icon="personRemove"
-            onClick={() => {
-              close();
-              if (todo.assignee) onChange({ assigneeId: null });
-            }}
-          >
-            Niemand
-          </MenuItem>
-          {candidates.map((person) => (
-            <MenuItem
-              key={person.id}
-              role="menuitemradio"
-              aria-checked={todo.assignee?.id === person.id}
-              selected={todo.assignee?.id === person.id}
-              icon={<Avatar author={person} size={18} nativeTitle={false} />}
-              truncate
-              onClick={() => {
-                close();
-                if (todo.assignee?.id !== person.id) onChange({ assigneeId: person.id });
-              }}
-            >
-              {person.id === ui.userId ? `${person.name} (du)` : person.name}
-            </MenuItem>
-          ))}
-          {sendable.length > 0 && (
+          {showPerson && (
             <>
-              <MenuDivider />
-              <MenuHeading>Agent losschicken</MenuHeading>
+              {!part && <MenuHeading>Person</MenuHeading>}
+              <MenuItem
+                role="menuitemradio"
+                aria-checked={!todo.assignee}
+                selected={!todo.assignee}
+                icon="personRemove"
+                onClick={() => {
+                  close();
+                  if (todo.assignee) onChange({ assigneeId: null });
+                }}
+              >
+                Niemand
+              </MenuItem>
+              {candidates.map((person) => (
+                <MenuItem
+                  key={person.id}
+                  role="menuitemradio"
+                  aria-checked={todo.assignee?.id === person.id}
+                  selected={todo.assignee?.id === person.id}
+                  icon={<Avatar author={person} size={18} nativeTitle={false} />}
+                  truncate
+                  onClick={() => {
+                    close();
+                    if (todo.assignee?.id !== person.id) onChange({ assigneeId: person.id });
+                  }}
+                >
+                  {person.id === ui.userId ? `${person.name} (du)` : person.name}
+                </MenuItem>
+              ))}
+            </>
+          )}
+          {agentLine && (
+            <>
+              {!part && (
+                <>
+                  <MenuDivider />
+                  <MenuHeading>Agent</MenuHeading>
+                </>
+              )}
+              {makes && (
+                <MenuItem
+                  role="menuitem"
+                  icon="autoAwesome"
+                  onClick={() => {
+                    close();
+                    newAgent.mutate(todo.id, {
+                      onError: (error) => ui.notify(error.message, 'danger'),
+                    });
+                  }}
+                >
+                  Neuer Agent
+                </MenuItem>
+              )}
               {todo.assigneeAgent && (
                 <MenuItem
                   role="menuitem"
@@ -873,6 +1138,21 @@ function WhoPicker({
                   {agent.title}
                 </MenuItem>
               ))}
+              {canSend && (
+                <>
+                  <MenuDivider />
+                  <MenuItem
+                    role="menuitem"
+                    icon="send"
+                    onClick={() => {
+                      close();
+                      send();
+                    }}
+                  >
+                    Losschicken
+                  </MenuItem>
+                </>
+              )}
             </>
           )}
         </>
@@ -892,7 +1172,9 @@ function DuePicker({ todo, onChange }: { todo: Todo; onChange: (change: TodoChan
       className={overdue ? 'text-danger' : todo.dueOn ? 'text-fg' : 'text-fg-muted'}
       trigger={
         <>
-          <Icon name="schedule" size="sm" />
+          <span className="flex size-5 shrink-0 items-center justify-center">
+            <Icon name="schedule" size="md" />
+          </span>
           {todo.dueOn ? dueLabel(todo.dueOn) : 'Fällig am'}
         </>
       }
@@ -905,6 +1187,138 @@ function DuePicker({ todo, onChange }: { todo: Todo; onChange: (change: TodoChan
             if (dueOn !== todo.dueOn) onChange({ dueOn });
           }}
         />
+      )}
+    </Picker>
+  );
+}
+
+/** When work on it begins – its bar's start on the timeline. */
+function StartPicker({ todo, onChange }: { todo: Todo; onChange: (change: TodoChange) => void }) {
+  return (
+    <Picker
+      calendar
+      label={todo.startOn ? `Beginn am ${dueLabel(todo.startOn)}` : 'Beginn'}
+      disabled={!todo.canEdit}
+      className={todo.startOn ? 'text-fg' : 'text-fg-muted'}
+      trigger={
+        <>
+          <span className="flex size-5 shrink-0 items-center justify-center">
+            <Icon name="event" size="md" />
+          </span>
+          {todo.startOn ? `Ab ${dueLabel(todo.startOn)}` : 'Beginn'}
+        </>
+      }
+    >
+      {(close) => (
+        <DueCalendar
+          value={todo.startOn}
+          onPick={(startOn) => {
+            close();
+            if (startOn !== todo.startOn) onChange({ startOn });
+          }}
+        />
+      )}
+    </Picker>
+  );
+}
+
+/**
+ * The milestone it leads to: one of its place's, or a new one typed where it stands at the foot
+ * of the choice – made and given at once.
+ */
+function MilestonePicker({
+  todo,
+  onChange,
+}: {
+  todo: Todo;
+  onChange: (change: TodoChange) => void;
+}) {
+  const ui = useCloud();
+  const here = (useMilestones(ui.workspace.id).data ?? []).filter(
+    (milestone) => milestone.areaId === todo.areaId,
+  );
+  const create = useCreateMilestone(ui.workspace.id);
+  const [name, setName] = useState('');
+  return (
+    <Picker
+      wide
+      label={todo.milestone ? `Meilenstein: ${todo.milestone.name}` : 'Meilenstein'}
+      disabled={!todo.canEdit}
+      className={todo.milestone ? 'text-fg' : 'text-fg-muted'}
+      trigger={
+        <>
+          <span className="flex size-5 shrink-0 items-center justify-center">
+            <Icon name="flag" size="md" />
+          </span>
+          <span className="truncate">{todo.milestone?.name ?? 'Meilenstein'}</span>
+          {todo.milestone?.dueOn && (
+            <span className="shrink-0 text-xs text-fg-subtle tabular-nums">
+              {dueLabel(todo.milestone.dueOn)}
+            </span>
+          )}
+        </>
+      }
+    >
+      {(close) => (
+        <>
+          {todo.milestone && (
+            <MenuItem
+              onClick={() => {
+                close();
+                onChange({ milestoneId: null });
+              }}
+            >
+              Kein Meilenstein
+            </MenuItem>
+          )}
+          {here.map((milestone) => (
+            <MenuItem
+              key={milestone.id}
+              role="menuitemradio"
+              aria-checked={todo.milestone?.id === milestone.id}
+              selected={todo.milestone?.id === milestone.id}
+              icon="flag"
+              truncate
+              trailing={
+                milestone.dueOn && (
+                  <span className="text-xs text-fg-subtle tabular-nums">
+                    {dueLabel(milestone.dueOn)}
+                  </span>
+                )
+              }
+              onClick={() => {
+                close();
+                if (todo.milestone?.id !== milestone.id) onChange({ milestoneId: milestone.id });
+              }}
+            >
+              {milestone.name}
+            </MenuItem>
+          ))}
+          {(todo.milestone || here.length > 0) && <MenuDivider />}
+          <label className="flex h-8 items-center gap-2 px-2 text-sm">
+            <Icon name="add" size="sm" className="shrink-0 text-fg-subtle" />
+            <input
+              value={name}
+              maxLength={MAX_MILESTONE_NAME}
+              placeholder="Neuer Meilenstein …"
+              aria-label="Neuer Meilenstein"
+              onChange={(event) => setName(event.target.value)}
+              onKeyDown={(event) => {
+                // Typed letters stay in the field; Esc closes the picker as anywhere in it.
+                if (event.key !== 'Escape') event.stopPropagation();
+                if (event.key !== 'Enter' || !name.trim()) return;
+                const text = name.trim();
+                setName('');
+                close();
+                create.mutateAsync({ name: text, areaId: todo.areaId }).then(
+                  (made) => onChange({ milestoneId: made.id }),
+                  (error: Error) => ui.notify(error.message, 'danger'),
+                );
+              }}
+              className="min-w-0 flex-1 bg-transparent text-fg outline-none placeholder:text-fg-faint"
+            />
+          </label>
+        </>
       )}
     </Picker>
   );
@@ -936,7 +1350,9 @@ function PlacePicker({ todo, onChange }: { todo: Todo; onChange: (change: TodoCh
       disabled={!todo.canEdit}
       trigger={
         <>
-          {here ? <AreaDot color={here.color} /> : <MeAvatar />}
+          <span className="flex size-5 shrink-0 items-center justify-center">
+            {here ? <AreaDot color={here.color} /> : <MeAvatar />}
+          </span>
           <span className="truncate">{here ? here.name : MINE}</span>
         </>
       }
@@ -977,21 +1393,30 @@ function PlacePicker({ todo, onChange }: { todo: Todo; onChange: (change: TodoCh
   );
 }
 
-/** In the side panel: its words typed in place, its properties under them, who made it. */
+/**
+ * In the side panel: its title with how it stands (status, priority) and its words; who does it,
+ * when and where as lines under them; the agent docked at its foot with „Losschicken“, who made
+ * it last.
+ */
 function TodoDetail({
   todo,
   onChange,
   onClose,
 }: {
   todo: Todo;
-  onChange: (change: TodoChange) => void;
+  onChange: (change: TodoChange, files?: Attachment[]) => void;
   onClose: () => void;
 }) {
   const ui = useCloud();
-  const remove = useDeleteTodo(ui.workspace.id);
+  const { sendable: canSend } = useTodoAgent(todo);
+  const send = useSendAgent(todo);
+  const agents = useCloudAgents(ui.workspace.id).data ?? [];
+  // A line for the agent where one may give it one, or one is given it.
+  const agentShown =
+    !!todo.assigneeAgent ||
+    (todo.canEdit && (canCreateDecks(ui.workspace.role) || agentsFor(todo, agents).length > 0));
   const [title, setTitle] = useState(todo.title);
   const [words, setWords] = useState(todo.description);
-  const [deleting, setDeleting] = useState(false);
   // Changed elsewhere (live, an agent): the fields follow.
   const [seen, setSeen] = useState(todo);
   if (seen !== todo) {
@@ -1007,38 +1432,28 @@ function TodoDetail({
   const saveWords = () => {
     if (words !== todo.description) onChange({ description: words });
   };
-  const area = ui.home?.areas.find((each) => each.id === todo.areaId);
+  // Files pasted into its words or picked with the clip: up, they are on it at once.
+  const [deletingFile, setDeletingFile] = useState<Attachment | null>(null);
+  const attach = useAttachments({
+    workspaceId: todo.canEdit ? ui.workspace.id : null,
+    onError: (message) => ui.notify(message, 'danger'),
+  });
+  const setFiles = (files: Attachment[]) =>
+    onChange({ attachments: files.map((one) => one.id) }, files);
+  const upCount = attach.busy ? 0 : attach.ready.length;
+  useEffect(() => {
+    if (upCount === 0) return;
+    const files = [...(todo.attachments ?? []), ...attach.ready];
+    attach.clear();
+    setFiles(files);
+    // Only once all are up; `todo` is the one shown now.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [upCount]);
   return (
     <>
       <header className="flex shrink-0 items-center gap-2 border-b border-hairline py-2.5 pr-2.5 pl-5">
-        <StatusMark status={todo.status} />
-        <span className="text-sm text-fg-muted tabular-nums">#{todo.number}</span>
-        <span className="flex min-w-0 flex-1 items-center gap-1.5 text-sm text-fg-muted">
-          {area ? (
-            <>
-              <AreaDot color={area.color} />
-              <span className="truncate">{area.name}</span>
-            </>
-          ) : (
-            <>
-              <MeAvatar />
-              {MINE}
-            </>
-          )}
-        </span>
-        {todo.canEdit && (
-          <Menu
-            label="Mehr zur Aufgabe"
-            actions={[
-              {
-                label: 'Löschen',
-                icon: 'delete',
-                tone: 'danger',
-                onSelect: () => setDeleting(true),
-              },
-            ]}
-          />
-        )}
+        <span className="flex-1 text-sm text-fg-muted tabular-nums">#{todo.number}</span>
+        <TodoActions todo={todo} button />
         <IconButton icon="close" label="Aufgabe schließen (Esc)" size="sm" onClick={onClose} />
       </header>
       <div
@@ -1068,70 +1483,112 @@ function TodoDetail({
           aria-label="Titel"
           className="text-lg leading-snug font-semibold text-fg"
         />
+        {/* How it stands, right with its title. */}
+        <PickerLook value="chip">
+          <div className="-mt-1 flex flex-wrap items-center gap-1.5">
+            <StatusPicker todo={todo} onChange={onChange} labelled />
+            <PriorityPicker todo={todo} onChange={onChange} labelled />
+          </div>
+        </PickerLook>
         <AutosizeTextarea
           value={words}
           readOnly={!todo.canEdit}
           onChange={(event) => setWords(event.target.value)}
           onBlur={saveWords}
-          maxHeight={480}
+          onPaste={attach.onPaste}
+          maxHeight={Infinity}
           placeholder={todo.canEdit ? 'Beschreibung hinzufügen …' : 'Keine Beschreibung'}
           aria-label="Beschreibung"
           className="resize-none bg-transparent text-sm text-fg outline-none placeholder:text-fg-faint"
         />
-        <div className="flex flex-wrap items-center gap-1">
-          <StatusPicker todo={todo} onChange={onChange} labelled />
-          <PriorityPicker todo={todo} onChange={onChange} labelled />
-          <WhoPicker todo={todo} onChange={onChange} labelled />
-          <DuePicker todo={todo} onChange={onChange} />
-          <PlacePicker todo={todo} onChange={onChange} />
-        </div>
-        <p className="flex flex-wrap items-center gap-x-3 text-xs text-fg-faint">
-          <span>
-            {todo.agent
-              ? `Angelegt von ${todo.agent.title}`
-              : todo.createdBy
-                ? `Angelegt von ${todo.createdBy.id === ui.userId ? 'dir' : todo.createdBy.name}`
-                : 'Angelegt'}
-            {' · '}
-            {new Date(todo.createdAt).toLocaleDateString('de-DE')}
-          </span>
-          {todo.source?.kind === 'mail' && (
-            <Link
-              to={`${routes.cloudMail(ui.workspace.id)}/${todo.source.threadId}`}
-              className="flex items-center gap-1 hover:text-fg"
-            >
-              <Icon name="mail" size="xs" />
-              Aus einer Mail
-            </Link>
-          )}
-          {todo.source?.url && (
-            <a
-              href={todo.source.url}
-              target="_blank"
-              rel="noreferrer noopener"
-              className="flex items-center gap-1 hover:text-fg"
-            >
-              <Icon name="openInNew" size="xs" />
-              {todo.source.label ?? 'Öffnen'}
-            </a>
-          )}
-        </p>
-        {deleting && (
+        {(todo.attachments?.length || attach.items.length > 0 || attach.enabled) && (
+          <div className="-mt-2 flex flex-col gap-1.5">
+            <SentAttachments
+              attachments={todo.attachments}
+              onDelete={todo.canEdit ? setDeletingFile : undefined}
+            />
+            <AttachmentChips files={attach} />
+            {attach.enabled && (
+              <div className="-ml-1.5 flex">
+                <AttachButton files={attach} />
+              </div>
+            )}
+          </div>
+        )}
+        {deletingFile && (
           <ConfirmDialog
-            onClose={() => setDeleting(false)}
-            title={`„${todo.title}“ löschen?`}
-            description="Die Aufgabe ist dann für alle weg."
+            title={`„${deletingFile.name}“ löschen?`}
+            description="Die Datei geht von der Aufgabe und wird gelöscht."
             confirmLabel="Löschen"
-            confirmIcon="delete"
+            onClose={() => setDeletingFile(null)}
             onConfirm={() => {
-              setDeleting(false);
-              remove.mutateAsync(todo.id).then(
-                () => ui.notify(`„${todo.title}“ gelöscht`),
-                (error: Error) => ui.notify(error.message, 'danger'),
-              );
+              const gone = deletingFile;
+              setDeletingFile(null);
+              setFiles((todo.attachments ?? []).filter((one) => one.id !== gone.id));
+              ui.notify(`„${gone.name}“ gelöscht`);
             }}
           />
         )}
+        {/* Who else does it, when, where: lines across, each with its mark in front. */}
+        <PickerLook value="row">
+          <div className="border-t border-hairline pt-3">
+            <div className="-mx-2 flex flex-col">
+              <WhoPicker todo={todo} onChange={onChange} part="person" />
+              <StartPicker todo={todo} onChange={onChange} />
+              <DuePicker todo={todo} onChange={onChange} />
+              <MilestonePicker todo={todo} onChange={onChange} />
+              <PlacePicker todo={todo} onChange={onChange} />
+            </div>
+          </div>
+        </PickerLook>
+        {/* At its foot, whatever the words' length: the agent that works on it, who made it. */}
+        <div className="mt-auto flex flex-col gap-3 pt-6">
+          {agentShown && (
+            <section
+              aria-label="Agent"
+              className="flex flex-col gap-2 rounded-panel border border-hairline p-2"
+            >
+              <PickerLook value="card">
+                <WhoPicker todo={todo} onChange={onChange} part="agent" />
+              </PickerLook>
+              {canSend && (
+                <Button icon="send" onClick={send} className="w-full">
+                  Losschicken
+                </Button>
+              )}
+            </section>
+          )}
+          <p className="flex flex-wrap items-center gap-x-3 border-t border-hairline pt-3 text-xs text-fg-faint">
+            <span>
+              {todo.agent
+                ? `Angelegt von ${todo.agent.title}`
+                : todo.createdBy
+                  ? `Angelegt von ${todo.createdBy.id === ui.userId ? 'dir' : todo.createdBy.name}`
+                  : 'Angelegt'}{' '}
+              am {new Date(todo.createdAt).toLocaleDateString('de-DE')}
+            </span>
+            {todo.source?.kind === 'mail' && (
+              <Link
+                to={`${routes.cloudMail(ui.workspace.id)}/${todo.source.threadId}`}
+                className="flex items-center gap-1 hover:text-fg"
+              >
+                <Icon name="mail" size="xs" />
+                Aus einer Mail
+              </Link>
+            )}
+            {todo.source?.url && (
+              <a
+                href={todo.source.url}
+                target="_blank"
+                rel="noreferrer noopener"
+                className="flex items-center gap-1 hover:text-fg"
+              >
+                <Icon name="openInNew" size="xs" />
+                {todo.source.label ?? 'Öffnen'}
+              </a>
+            )}
+          </p>
+        </div>
       </div>
     </>
   );

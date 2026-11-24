@@ -2,7 +2,7 @@ import type { CSSProperties } from 'react';
 import { Link, useSearchParams } from 'react-router';
 import { startViewSwitch, useViewSwitchTop, VIEW_LINK_CLASS } from '@/features/workspaces';
 import { cn } from '@/ui';
-import { ALL_SCOPE, SCOPE_PARAM, type ScopeTab } from '../lib/scopes';
+import { DEFAULT_SCOPE, SCOPE_PARAM, type ScopeTab } from '../lib/scopes';
 
 /**
  * Tabs as the page's title, as the mailboxes on „Post“ (`MailboxTabs`): the open one large, the
@@ -15,7 +15,7 @@ export function ScopeTabs({ tabs, current }: { tabs: readonly ScopeTab[]; curren
   const [params] = useSearchParams();
   const searchFor = (key: string) => {
     const next = new URLSearchParams(params);
-    if (key === ALL_SCOPE) next.delete(SCOPE_PARAM);
+    if (key === DEFAULT_SCOPE) next.delete(SCOPE_PARAM);
     else next.set(SCOPE_PARAM, key);
     const text = next.toString().replace(/=(?=&|$)/g, '');
     return text ? `?${text}` : '';

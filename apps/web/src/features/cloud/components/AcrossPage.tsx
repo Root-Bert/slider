@@ -49,8 +49,7 @@ export function AcrossPage({
     <CloudPage
       docTitle={title}
       title={title}
-      // A page of the workspace's, as Entwürfe and Mail: its name over it.
-      crumbs={[{ label: ui.workspace.name }, { label: title }]}
+      crumbs={[{ label: title }]}
       nodes={nodes}
       actions={actions?.(all)}
       toolbar={<ListToolbar lead={lead} search={search} view={view} onViewChange={setView} />}

@@ -73,12 +73,13 @@ export const TYPE_FILTERS = [
 }[];
 export type TypeFilter = (typeof TYPE_FILTERS)[number]['value'];
 
-export const CLOUD_SORTS = ['changed', 'name', 'size'] as const;
+export const CLOUD_SORTS = ['changed', 'name', 'size', 'type'] as const;
 export type CloudSort = (typeof CLOUD_SORTS)[number];
 export const SORT_LABELS: Record<CloudSort, string> = {
   changed: 'Zuletzt geändert',
   name: 'Name',
   size: 'Größe',
+  type: 'Typ',
 };
 
 /** `columns` only where there are folders to step into (a place); elsewhere it shows as the list. */
@@ -87,12 +88,18 @@ export type CloudView = (typeof CLOUD_VIEWS)[number];
 
 const collator = new Intl.Collator('de', { numeric: true, sensitivity: 'base' });
 
-/** Folders first (they are places), then by the chosen order. */
+/** The order of „Typ“ among files: the kinds as `FILE_KINDS` lists them (as the chips). */
+const KIND_ORDER = Object.keys(FILE_KINDS);
+const kindRank = (node: CloudNode) => KIND_ORDER.indexOf(node.fileType ?? 'other');
+
+/** Folders first (they are places), then by the chosen order; „Typ“ also puts each kind together. */
 export function sortNodes(nodes: readonly CloudNode[], sort: CloudSort): CloudNode[] {
+  const byName = (a: CloudNode, b: CloudNode) => collator.compare(a.name, b.name);
   const order = (a: CloudNode, b: CloudNode) => {
-    if (sort === 'name') return collator.compare(a.name, b.name);
-    if (sort === 'size') return b.sizeBytes - a.sizeBytes || collator.compare(a.name, b.name);
-    return b.updatedAt.localeCompare(a.updatedAt) || collator.compare(a.name, b.name);
+    if (sort === 'name') return byName(a, b);
+    if (sort === 'size') return b.sizeBytes - a.sizeBytes || byName(a, b);
+    if (sort === 'type') return kindRank(a) - kindRank(b) || byName(a, b);
+    return b.updatedAt.localeCompare(a.updatedAt) || byName(a, b);
   };
   return [...nodes].sort((a, b) =>
     a.kind === b.kind ? order(a, b) : a.kind === 'folder' ? -1 : 1,

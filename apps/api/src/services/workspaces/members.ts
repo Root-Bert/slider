@@ -1,5 +1,5 @@
 import { and, asc, count, eq, inArray, isNull, ne, notExists, or } from 'drizzle-orm';
-import type { WorkspaceMember, WorkspaceRole } from '@slider/shared';
+import type { Attachment, WorkspaceMember, WorkspaceRole } from '@slider/shared';
 import type { Executor } from '../../db/client';
 import {
   cloudAreaMembers,
@@ -8,6 +8,7 @@ import {
   cloudConnections,
   cloudShares,
   mailAccounts,
+  senderChannelAgents,
   senderChannels,
   senderDrafts,
   senderMembers,
@@ -24,6 +25,7 @@ import { badRequest, forbidden, notFound } from '../../http/errors';
 import { assertBillingOwnerMayGo, reassignBillingOwner } from '../billing-owner';
 import { audienceShrank } from '../call-audience';
 import { lockWorkspaceRow } from '../plans';
+import { attachmentsOf } from '../purge-attachments';
 import { departDecks } from './departure';
 import { maskEmail } from './invites';
 import { recordRemoval } from './domains';
@@ -180,6 +182,8 @@ export async function removeMember(
   deletedDeckIds: string[];
   deletedMailAccountIds: string[];
   deletedConnections: CloudConnectionRow[];
+  /** Files on their to-dos and the conversations left empty: removed after the commit. */
+  deletedAttachments: Attachment[];
 }> {
   const removal = await db.transaction(async (tx) => {
     await lockWorkspaceRow(tx, workspaceId);
@@ -291,28 +295,31 @@ export async function removeMember(
         ),
       )
       .returning({ channelId: senderMembers.channelId });
-    // Their own agents go out of those with them (`leaveGroup`).
-    await tx
-      .update(senderChannels)
-      .set({ agentId: null })
-      .where(
-        and(
-          eq(senderChannels.workspaceId, workspaceId),
-          inArray(senderChannels.kind, ['group', 'direct']),
-          inArray(
-            senderChannels.agentId,
-            tx
-              .select({ id: cloudAgents.id })
-              .from(cloudAgents)
-              .where(eq(cloudAgents.userId, targetId)),
+    // Their own private agents go out of the conversations with them (`leaveGroup`).
+    await tx.delete(senderChannelAgents).where(
+      inArray(
+        senderChannelAgents.agentId,
+        tx
+          .select({ id: cloudAgents.id })
+          .from(cloudAgents)
+          .where(
+            and(
+              eq(cloudAgents.workspaceId, workspaceId),
+              eq(cloudAgents.userId, targetId),
+              eq(cloudAgents.shared, false),
+            ),
           ),
-        ),
-      );
+      ),
+    );
     // Their own to-dos here go (nobody else sees them, they could no longer reach them); the
     // area's they were to do stay, without them.
-    await tx
+    const ownTodos = await tx
       .delete(todos)
-      .where(and(eq(todos.workspaceId, workspaceId), eq(todos.ownerId, targetId)));
+      .where(and(eq(todos.workspaceId, workspaceId), eq(todos.ownerId, targetId)))
+      .returning({ attachments: todos.attachments });
+    // The files on them go after the commit (`deleteAttachments`), as those of the conversations
+    // left empty below.
+    const files: Attachment[] = ownTodos.flatMap((each) => each.attachments ?? []);
     await tx
       .update(todos)
       .set({ assigneeId: null })
@@ -351,8 +358,9 @@ export async function removeMember(
         .update(senderChannels)
         .set({ directKey: null })
         .where(and(inArray(senderChannels.id, conversations), eq(senderChannels.kind, 'direct')));
-      await tx
-        .delete(senderChannels)
+      const empty = await tx
+        .select({ id: senderChannels.id })
+        .from(senderChannels)
         .where(
           and(
             inArray(senderChannels.id, conversations),
@@ -364,6 +372,11 @@ export async function removeMember(
             ),
           ),
         );
+      if (empty.length > 0) {
+        const ids = empty.map((each) => each.id);
+        files.push(...(await attachmentsOf(tx, { channelIds: ids })));
+        await tx.delete(senderChannels).where(inArray(senderChannels.id, ids));
+      }
     }
     // Removed by an admin: back only with an invitation, not by domain. Leaving blocks nothing.
     // Also by their address, which outlasts the account (`workspace_removals`).
@@ -383,6 +396,7 @@ export async function removeMember(
       deletedDeckIds: deleted,
       deletedMailAccountIds: mailboxes.map((row) => row.id),
       deletedConnections: connections,
+      deletedAttachments: files,
     };
   });
   // Out of the workspace's calls too, quiet as they may be.

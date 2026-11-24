@@ -33,7 +33,7 @@ export const MaterialChat = (props: MaterialChatProps) =>
 
 /** The chat itself, wherever it shows: on the material page (`MaterialChat`) or over the slides. */
 export function MaterialChatView({ ai, byId, openSource, onClose }: MaterialChatProps) {
-  const { kind, id, toast, wording } = useBoardOwner();
+  const { kind, id, workspaceId, toast, wording } = useBoardOwner();
   const owner = useMemo(() => ({ kind, id }), [kind, id]);
   const starters = useMemo(() => [...STARTERS, wording.outline], [wording.outline]);
   const chat = useMaterialChat(owner, (message) => toast(message, 'danger'));
@@ -41,6 +41,8 @@ export function MaterialChatView({ ai, byId, openSource, onClose }: MaterialChat
     <ChatPanel
       title={ai.name}
       chat={chat}
+      workspaceId={workspaceId}
+      keep={`${kind}:${id}`}
       panel={{ 'data-board-panel': true, 'data-material-chat': true }}
       earlier={
         <EarlierChats

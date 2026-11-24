@@ -1,6 +1,6 @@
 import { useEffect, useEffectEvent, useState, type ReactNode } from 'react';
-import type { CloudAgentDetail } from '@slider/shared';
-import { useCloudAgent, useMessageCloudAgent } from '@/lib/api';
+import type { Attachment, CloudAgentDetail } from '@slider/shared';
+import { useCloudAgent, useMessageCloudAgent, type AgentInput } from '@/lib/api';
 import { ApiError } from '@/lib/api-client';
 import { ButtonLink, cn, Icon, IconButton, type IconName } from '@/ui';
 import { AgentChat } from './AgentChat';
@@ -111,7 +111,7 @@ interface AsideAgentProps {
   agentId: string | null;
   onAgent: (agentId: string | null) => void;
   /** Orders a new agent of one's own with the first question (as „Neuer Agent“). */
-  order: { mutateAsync: (text: string) => Promise<CloudAgentDetail>; isPending: boolean };
+  order: { mutateAsync: (input: AgentInput) => Promise<CloudAgentDetail>; isPending: boolean };
   /** Each message written on is beside this mail, as the order was. */
   mailThreadId?: string;
   placeholder: string;
@@ -134,8 +134,8 @@ export function AsideAgent(props: AsideAgentProps) {
   const [fresh, setFresh] = useState(false);
   // A question its agent refused whose new agent could not be ordered either: back in the field.
   const [kept, setKept] = useState<{ text: string } | null>(null);
-  const ask = (text: string) =>
-    order.mutateAsync(text).then(
+  const ask = (text: string, attachments: Attachment[] = []) =>
+    order.mutateAsync({ text, attachments }).then(
       (agent) => {
         onAgent(agent.id);
         setFresh(true);
@@ -148,8 +148,8 @@ export function AsideAgent(props: AsideAgentProps) {
       },
     );
   // The refused agent's field is gone with it (forgotten): the words go into the fresh one.
-  const askAgain = (text: string) =>
-    ask(text).then((ok) => {
+  const askAgain = (text: string, attachments: Attachment[]) =>
+    ask(text, attachments).then((ok) => {
       if (!ok) {
         setKept({ text });
         onAgent(null);
@@ -191,6 +191,7 @@ export function AsideAgent(props: AsideAgentProps) {
           inline
           draft={kept}
           busy={order.isPending}
+          workspaceId={props.workspaceId}
           onSend={ask}
         />
       </div>
@@ -218,7 +219,7 @@ function AsideAgentThread({
 }: AsideAgentProps & {
   agentId: string;
   autoFocus: boolean;
-  onAsk: (text: string) => Promise<boolean>;
+  onAsk: (text: string, attachments: Attachment[]) => Promise<boolean>;
   onNew: () => void;
   onGone: () => void;
 }) {
@@ -235,11 +236,11 @@ function AsideAgentThread({
   useEffect(() => {
     if (gone) forget();
   }, [gone]);
-  const send = (text: string, chatId: string) =>
-    message.mutateAsync({ text, chatId, mailThreadId }).then(
+  const send = (text: string, chatId: string, attachments: Attachment[]) =>
+    message.mutateAsync({ text, attachments, chatId, mailThreadId }).then(
       () => true,
       (error: Error) => {
-        if (refused(error)) return onAsk(text);
+        if (refused(error)) return onAsk(text, attachments);
         notify(error.message, 'danger');
         return false;
       },
@@ -278,7 +279,6 @@ function AsideAgentThread({
           <AgentChat
             agent={agent}
             chat={agent.chats[0] ?? null}
-            onOpened={() => {}}
             inline
             autoFocus={autoFocus}
             onSend={send}

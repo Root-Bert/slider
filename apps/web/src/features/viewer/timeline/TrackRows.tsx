@@ -270,8 +270,8 @@ export const VariantGhost = memo(function VariantGhost({
   }, [prompted, working, setOpen]);
 
   const submit = () => {
-    close();
-    ask.submit();
+    // Pictures still on their way up: it stays open.
+    if (ask.submit() !== null) close();
   };
   /** As the badge the variant will carry (`VariantBadge`). */
   const name = `Variante ${(variantsOf.get(slideId)?.length ?? 0) + 1}`;

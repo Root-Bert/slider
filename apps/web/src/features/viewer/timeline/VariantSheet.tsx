@@ -34,7 +34,7 @@ function VariantSheetView({ slideId }: { slideId: string }) {
   const editing = useEditing();
   const toast = useViewerToast();
   const request = useVariantRequest(slideId);
-  const { prompt, setPrompt, typed, submit, pending } = useVariantAsk(slideId);
+  const { prompt, setPrompt, typed, files, submit, pending } = useVariantAsk(slideId);
   const copy = useVariantCopy();
   // The run this sheet asked for (or found at work on the slide when it opened).
   // Kept once the request is done (`useVariantFlow` drops it).
@@ -125,7 +125,7 @@ function VariantSheetView({ slideId }: { slideId: string }) {
         ) : (
           <>
             <VariantComposer
-              ask={{ prompt, setPrompt, typed }}
+              ask={{ prompt, setPrompt, typed, files }}
               onSubmit={send}
               onCopy={() => {
                 close();

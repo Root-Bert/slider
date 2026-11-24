@@ -1,4 +1,5 @@
 import { useEffect, useEffectEvent, useRef, useState } from 'react';
+import { useAttachments } from '@/features/attachments';
 import { useAiProposals, useCreateProposal } from '@/lib/api';
 import { useEditing } from '../../editing/editing-context';
 import { newEditId } from '../../editing/new-id';
@@ -48,28 +49,49 @@ export function useVariantAsk(slideId: string) {
   const create = useCreateProposal(deck.id);
   const copy = useVariantCopy();
   const [prompt, setPrompt] = useState('');
-  const submit = (): 'copy' | 'ai' => {
+  // Pictures pasted into the field or picked with the clip: the AI looks at them, puts them on
+  // the variant or takes their look.
+  const files = useAttachments({
+    workspaceId: deck.workspaceId,
+    accept: 'pictures',
+    onError: (message) => toast(message, 'danger'),
+  });
+  const submit = (): 'copy' | 'ai' | null => {
     const words = prompt.trim();
+    if (words && files.busy) {
+      toast('Die Bilder laden noch hoch.', 'danger');
+      return null;
+    }
     setPrompt('');
     if (!words) {
       copy(slideId);
       return 'copy';
     }
+    const sent = files.ready;
+    files.clear();
     create.mutate(
-      { variantOf: slideId, prompt: words },
+      { variantOf: slideId, prompt: words, ...(sent.length > 0 && { attachments: files.ids }) },
       {
         onSuccess: (proposal) =>
           setVariantRequest(slideId, { proposalId: proposal.id, prompt: words }),
         onError: (error) => {
           // Not lost: back in the field unless something new was typed meanwhile.
           setPrompt((current) => current || words);
+          files.restore(sent);
           toast(error.message, 'danger');
         },
       },
     );
     return 'ai';
   };
-  return { prompt, setPrompt, typed: prompt.trim().length > 0, submit, pending: create.isPending };
+  return {
+    prompt,
+    setPrompt,
+    typed: prompt.trim().length > 0,
+    files,
+    submit,
+    pending: create.isPending,
+  };
 }
 
 /**

@@ -1,13 +1,24 @@
 import { useEffect, useId, useLayoutEffect, useRef, useState } from 'react';
-import { MAX_SENDER_MESSAGE, searchFold, type AccountAuthor } from '@slider/shared';
+import {
+  MAX_SENDER_MESSAGE,
+  searchFold,
+  type AccountAuthor,
+  type Attachment,
+} from '@slider/shared';
+import {
+  AttachButton,
+  AttachmentChips,
+  useCloudDrop,
+  type Attachments,
+} from '@/features/attachments';
 import { AgentAvatar } from '@/features/cloud';
 import { isModEnter, isModKey } from '@/lib/keyboard';
 import { useTallField } from '@/lib/useTallField';
 import { useTypeInto } from '@/lib/useTypeInto';
 import { isApplePlatform } from '@/lib/platform';
-import { AutosizeTextarea, Avatar, cn, Icon, IconButton, Spinner } from '@/ui';
+import { AutosizeTextarea, Avatar, cn, Divider, Icon, IconButton, Spinner } from '@/ui';
 import { draftOf, setDraft, useDrafts, type DraftTarget } from '@/lib/drafts';
-const SUGGESTIONS = 6;
+const SUGGESTIONS = 8;
 
 /** The `@…` being typed just before the caret, if any. */
 function mentionAt(text: string, caret: number): { start: number; query: string } | null {
@@ -16,20 +27,30 @@ function mentionAt(text: string, caret: number): { start: number; query: string 
   return { start: caret - match[2]!.length - 1, query: match[2]! };
 }
 
-/** One to name with @: a person, or the conversation's agent (`id` null: made when tagged). */
+/** One to call with @ – an agent (`id` null: an area's own, made when tagged). */
+export interface TagAgent {
+  id: string | null;
+  name: string;
+  /** In the conversation („Agent hinzufügen“, an area's own): offered before the people. */
+  here?: boolean;
+}
+
+/** One to name with @: a person, or an agent – or „Neuer Agent“, made for the conversation. */
 type Named =
-  { kind: 'person'; person: AccountAuthor } | { kind: 'agent'; id: string | null; name: string };
+  { kind: 'person'; person: AccountAuthor } | ({ kind: 'agent' } & TagAgent) | { kind: 'new' };
+const NEW_AGENT = 'Neuer Agent';
 
 /**
  * The field a conversation is written in: Enter sends, Shift+Enter breaks the line (a mail's
- * reply: ⌘↵ sends, Enter breaks the line, as a new mail's), @ offers the people to name – and the agent to call, first – ↑ in an empty field changes one's last message.
+ * reply: ⌘↵ sends, Enter breaks the line, as a new mail's), @ offers the people to name and the agents to call – those in the conversation first – ↑ in an empty field changes one's last message.
  */
 export function Composer({
   conversationId,
   target,
   placeholder,
   people,
-  agent,
+  agents = [],
+  onNewAgent,
   onSend,
   onTyping,
   onEditLast,
@@ -38,6 +59,7 @@ export function Composer({
   sendKey = 'enter',
   assist,
   onFiles,
+  attach,
   flat = false,
   typeInto = true,
   signature,
@@ -49,9 +71,15 @@ export function Composer({
   placeholder: string;
   /** Who can be named with @. */
   people: readonly AccountAuthor[];
-  /** The agent one calls here with @ (`id` null: an area's, not made yet). */
-  agent?: { id: string | null; name: string } | null;
-  onSend: (text: string) => void;
+  /** The agents one may call here with @. */
+  agents?: readonly TagAgent[];
+  /**
+   * „Neuer Agent“ first in the @ list (as „Hinzufügen“ in a call): made and put in the
+   * conversation – its name, once it has one, in the field. `null`: refused (said by the caller).
+   */
+  onNewAgent?: () => Promise<string | null>;
+  /** The words – and the files put on them, where `attach` is. */
+  onSend: (text: string, attachments: Attachment[]) => void;
   onTyping?: () => void;
   onEditLast?: () => void;
   /** The caret in the field when the conversation opens (not beside a list stepped with ↑/↓). */
@@ -67,6 +95,11 @@ export function Composer({
   assist?: (notes: string, put: (text: string) => void) => Promise<void>;
   /** Files put on it (a mail's reply): the clip picks them, pasted ones come too. */
   onFiles?: (files: File[]) => void;
+  /**
+   * Files put on a message (a conversation's): pasted into the field or picked with the clip,
+   * shown under the words and sent along – a message may be files alone.
+   */
+  attach?: Attachments;
   /** In the page's flow (a mail's reply under it), not floating over it: its edge, no shadow. */
   flat?: boolean;
   /**
@@ -112,7 +145,10 @@ export function Composer({
   }, [conversationId, focusOnOpen]);
   useTypeInto(fieldRef, typeInto);
   // Written past one line: the buttons go below the words.
-  const tall = useTallField(fieldRef, body);
+  // Files on it too: they stand under the words, the buttons below them.
+  const tall = useTallField(fieldRef, body) || (attach?.items.length ?? 0) > 0;
+  // Cloud files and folders dropped on the field: pointed to, not copied.
+  const drop = useCloudDrop(attach);
   // Where the caret goes once a change of the text is on screen – before the next key.
   const caretAfter = useRef<number | null>(null);
   useLayoutEffect(() => {
@@ -129,17 +165,28 @@ export function Composer({
     searchFold(name)
       .split(/\s+/)
       .some((part) => part.startsWith(fold)) || searchFold(name).startsWith(fold);
-  const suggestions: Named[] = mention
+  const agentsFitting = (here: boolean): Named[] =>
+    agents
+      .filter((agent) => !!agent.here === here && (fits(agent.name) || fits('Agent')))
+      .map((agent) => ({ kind: 'agent' as const, ...agent }));
+  // As „Hinzufügen“ in a call: „Neuer Agent“ and the agents (those in the conversation first),
+  // a line, then the people.
+  const agentRows: Named[] = mention
     ? [
-        ...(agent && (fits(agent.name) || fits('Agent'))
-          ? [{ kind: 'agent' as const, ...agent }]
-          : []),
-        ...people
-          .filter((person) => fits(person.name))
-          .map((person) => ({ kind: 'person' as const, person })),
+        ...(onNewAgent && fits(NEW_AGENT) ? [{ kind: 'new' as const }] : []),
+        ...agentsFitting(true),
+        ...agentsFitting(false),
       ].slice(0, SUGGESTIONS)
     : [];
-  const nameOf = (named: Named) => (named.kind === 'person' ? named.person.name : named.name);
+  const personRows: Named[] = mention
+    ? people
+        .filter((person) => fits(person.name))
+        .map((person) => ({ kind: 'person' as const, person }))
+        .slice(0, SUGGESTIONS)
+    : [];
+  const suggestions = [...agentRows, ...personRows];
+  const nameOf = (named: Named) =>
+    named.kind === 'person' ? named.person.name : named.kind === 'new' ? NEW_AGENT : named.name;
 
   const change = (text: string) => {
     setBody(text);
@@ -155,18 +202,34 @@ export function Composer({
     const field = fieldRef.current;
     if (!field || !mention) return;
     const caret = field.selectionStart;
+    if (named.kind === 'new') {
+      // Made first: its name (`Agent 2`) takes the place of the `@…` once it is there.
+      const { start } = mention;
+      setMention(null);
+      void onNewAgent?.().then((name) => {
+        const now = fieldRef.current?.value ?? body;
+        if (!name || now.slice(start, caret) !== body.slice(start, caret)) return;
+        change(`${now.slice(0, start)}@${name} ${now.slice(caret)}`);
+        caretAfter.current = start + name.length + 2;
+      });
+      return;
+    }
     const name = nameOf(named);
     const text = `${body.slice(0, mention.start)}@${name} ${body.slice(caret)}`;
     change(text);
     setMention(null);
     caretAfter.current = mention.start + name.length + 2;
   };
+  const files = attach?.ready ?? [];
+  // Words or files – and nothing still on its way up.
+  const sendable = (!!body.trim() || files.length > 0) && !attach?.busy;
   const send = () => {
     const text = body.trim();
-    if (!text) return;
+    if (!sendable) return;
     change('');
     setMention(null);
-    onSend(text);
+    attach?.clear();
+    onSend(text, files);
   };
   const atSign = () => {
     const field = fieldRef.current;
@@ -213,24 +276,32 @@ export function Composer({
         event.preventDefault();
         send();
       }}
+      {...drop.props}
       className={cn(
         'glass-elevated relative flex shrink-0 items-end gap-0.5 rounded-control py-1 pr-1 pl-3',
         // More than a line: the words take the whole width, the buttons a row of their own below.
         tall && 'flex-wrap justify-end',
         flat && 'shadow-[inset_0_0_0_1px_var(--color-hairline-strong)]!',
+        drop.over && 'ring-2 ring-focus',
       )}
     >
       {open && (
         <ul
           id={listId}
           role="listbox"
-          aria-label="Personen und Agent"
+          aria-label="Personen und Agenten"
           data-popover-panel=""
-          className="glass-elevated absolute right-0 bottom-full left-0 mb-2 flex max-w-80 flex-col gap-0.5 rounded-control p-1.5"
+          className="glass-elevated absolute right-0 bottom-full left-0 mb-2 flex max-h-[min(28rem,60vh)] max-w-80 flex-col gap-0.5 overflow-y-auto rounded-control p-1.5"
         >
           {suggestions.map((named, index) => (
             <li
-              key={named.kind === 'person' ? named.person.id : 'agent'}
+              key={
+                named.kind === 'person'
+                  ? named.person.id
+                  : named.kind === 'new'
+                    ? 'new'
+                    : `agent:${named.id ?? ''}`
+              }
               id={`${listId}-${index}`}
               role="option"
               aria-selected={index === picked}
@@ -240,12 +311,21 @@ export function Composer({
               }}
               onPointerEnter={() => setPicked(index)}
               className={cn(
-                'flex h-8 cursor-pointer items-center gap-2.5 rounded-chip px-2 text-sm',
+                'flex h-8 shrink-0 cursor-pointer items-center gap-2.5 rounded-chip px-2 text-sm',
                 index === picked ? 'bg-selected text-fg' : 'text-fg-muted',
+                // The line between the agents and the people.
+                index === agentRows.length && index > 0 && 'relative mt-2.5',
               )}
             >
+              {index === agentRows.length && index > 0 && (
+                <Divider aria-hidden className="pointer-events-none absolute inset-x-2 -top-1.5" />
+              )}
               {named.kind === 'person' ? (
                 <Avatar author={named.person} size={20} nativeTitle={false} />
+              ) : named.kind === 'new' ? (
+                <span className="flex size-5 shrink-0 items-center justify-center">
+                  <Icon name="add" size={16} />
+                </span>
               ) : named.id ? (
                 <AgentAvatar id={named.id} size={20} className="rounded-mark" />
               ) : (
@@ -284,6 +364,7 @@ export function Composer({
           onSelect={look}
           onBlur={() => setMention(null)}
           onPaste={(event) => {
+            if (attach) return attach.onPaste(event);
             const files = [...event.clipboardData.files];
             if (!onFiles || files.length === 0) return;
             event.preventDefault();
@@ -333,7 +414,9 @@ export function Composer({
             {signature}
           </p>
         )}
+        {attach && <AttachmentChips files={attach} className="pt-2 pb-1" />}
       </div>
+      {attach && <AttachButton files={attach} />}
       {onFiles && (
         <>
           <input
@@ -372,7 +455,7 @@ export function Composer({
           />
         ))}
       {/* Only where someone can be named (a mail's reply has no one). */}
-      {(agent || people.length > 0) && (
+      {(agents.length > 0 || people.length > 0) && (
         <IconButton
           icon="at"
           label="Jemanden erwähnen"
@@ -391,8 +474,8 @@ export function Composer({
             : 'Senden (Enter)'
         }
         size="compact"
-        iconTone={body.trim() ? 'success' : undefined}
-        disabled={!body.trim()}
+        iconTone={sendable ? 'success' : undefined}
+        disabled={!sendable}
       />
     </form>
   );

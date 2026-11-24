@@ -84,8 +84,8 @@ export const routes = {
    * workspace's, each area's (`?von=`).
    */
   cloudFiles: (workspaceId: string) => `/w/${workspaceId}/dateien/meine`,
-  /** One's own files („Meine Dateien“): that tab of „Dateien“. */
-  cloudOwn: (workspaceId: string) => `/w/${workspaceId}/dateien/meine?von=meine`,
+  /** One's own files („Meine Dateien“): „Dateien“'s first tab. */
+  cloudOwn: (workspaceId: string) => `/w/${workspaceId}/dateien/meine`,
   /** An area's top. */
   cloudArea: (workspaceId: string, areaId: string) => `/w/${workspaceId}/dateien/bereich/${areaId}`,
   /** An area's agents: the view beside its files. */

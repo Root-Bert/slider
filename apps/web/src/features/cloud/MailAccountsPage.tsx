@@ -11,7 +11,6 @@ export function Component() {
       docTitle="Postfächer"
       title="Postfächer"
       crumbs={[
-        { label: ui.workspace.name },
         { label: 'Post', to: routes.cloudMail(ui.workspace.id) },
         { label: 'Postfächer' },
       ]}

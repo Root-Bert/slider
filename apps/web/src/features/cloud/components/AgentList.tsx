@@ -4,15 +4,15 @@ import { searchFold, type CloudAgentSummary } from '@slider/shared';
 import { formatRelativeTime } from '@/lib/format';
 import { routes } from '@/lib/routes';
 import { useDeckContextMenu } from '@/features/reviews';
-import { WorkspaceMark } from '@/features/workspaces';
 import { Avatar, cn, Icon, IconButton, Toolbar, Tooltip } from '@/ui';
 import { useCloud } from '../hooks/useCloud';
 import { useStoredChoice } from '../hooks/useStoredChoice';
 import { agentState, autoWords } from '../lib/kinds';
-import { AgentAvatar } from './AgentAvatar';
+import { AgentFace } from './AgentFace';
 import { AgentActions, AgentTitleInput, hasAgentActions } from './AgentActions';
 import { AreaDot } from './AreaDot';
 import { DeskSheet } from './DeskPicture';
+import { Empty } from './Empty';
 
 /*
  * Agents as a list – on „Agenten“ (one's own, the workspace's) and in an area (its own): the
@@ -29,9 +29,15 @@ export function agentsSaying(agents: readonly CloudAgentSummary[], query: string
   });
 }
 
-/** What a page's search says when no agent has it. */
-export function agentsNone(query: string) {
-  return `Keine Treffer für „${query.trim()}“ – gesucht wird im Auftrag, in der letzten Antwort und nach wem.`;
+/** What a page's search says when no agent has it – as „Dateien“ says it. */
+export function AgentsNoHits({ query }: { query: string }) {
+  return (
+    <Empty
+      icon="search"
+      title={`Keine Treffer für „${query.trim()}“`}
+      message="Gesucht wird im Auftrag, in der letzten Antwort und nach wem."
+    />
+  );
 }
 
 /** A card's height, the same for all – and for those not loaded yet. */
@@ -64,69 +70,6 @@ function Repeats({ agent }: { agent: CloudAgentSummary }) {
   );
 }
 
-/**
- * An agent's picture – with where it belongs at its corner: the workspace's mark, or its area's
- * dot. An area's dot also on one's own agent that stands in an area – but not inside that area,
- * where every agent is of it and the dot tells those given to its people. So a list of all of
- * them tells them apart at a glance, by the same marks they are picked by beside the order's
- * field.
- */
-function Face({
-  agent,
-  size,
-  showArea,
-}: {
-  agent: CloudAgentSummary;
-  size: 32 | 48;
-  /** The list is not one area's own: an agent's area is news. */
-  showArea: boolean;
-}) {
-  const ui = useCloud();
-  const area = agent.areaId ? ui.home?.areas.find((each) => each.id === agent.areaId) : null;
-  const inArea = agent.areaId ? `im Bereich „${area?.name ?? ''}“`.replace(' „“', '') : '';
-  const label = agent.areaId
-    ? agent.shared
-      ? `Agent des Bereichs${area ? ` „${area.name}“` : ''}`
-      : showArea
-        ? `Dein Agent ${inArea}`
-        : null
-    : agent.shared
-      ? 'Agent des Workspace'
-      : null;
-  return (
-    <span className="relative flex shrink-0">
-      {/* On a card the face floats over it, as the files it made do – those only a little. */}
-      <AgentAvatar id={agent.id} size={size} className={size === 48 ? 'shadow-soft' : undefined} />
-      {label && (
-        // The corner is this span's: the tooltip's own box stands where it is put – from the
-        // mark to the right, since the face stands at the list's left edge, which would cut it.
-        <span className="absolute -right-1.5 -bottom-1.5 z-(--z-raised) flex">
-          <Tooltip label={label} decorative align="start">
-            <span
-              role="img"
-              aria-label={label}
-              className="flex size-[18px] items-center justify-center overflow-hidden rounded-[6px] bg-surface-1 ring-2 ring-canvas"
-            >
-              {area ? (
-                <AreaDot color={area.color} />
-              ) : agent.areaId ? (
-                <Icon name="workspaces" size={12} className="text-fg-muted" />
-              ) : (
-                <WorkspaceMark
-                  name={ui.workspace.name}
-                  logoUrl={ui.workspace.logoUrl}
-                  size={24}
-                  className="size-full! rounded-none!"
-                />
-              )}
-            </span>
-          </Tooltip>
-        </span>
-      )}
-    </span>
-  );
-}
-
 /** An agent as a row, as the files' list has them: its picture, its order, whose, how far. */
 function AgentRow({
   agent,
@@ -146,7 +89,14 @@ function AgentRow({
       onContextMenu={hasAgentActions(agent) ? onContextMenu : undefined}
       className="group relative flex h-13 items-center gap-3.5 rounded-control px-3 transition-colors hover:bg-surface-1 has-[a:focus-visible]:ring-2 has-[a:focus-visible]:ring-focus"
     >
-      <Face agent={agent} size={32} showArea={showArea} />
+      <AgentFace
+        agent={agent}
+        size={32}
+        showArea={showArea}
+        areas={ui.home?.areas}
+        workspace={ui.workspace}
+        working={agent.running}
+      />
       {renaming ? (
         <span className="relative z-(--z-raised) flex min-w-0 flex-1">
           <AgentTitleInput
@@ -222,7 +172,15 @@ function AgentCard({
       )}
     >
       <div className="flex min-h-0 flex-1 items-start gap-3">
-        <Face agent={agent} size={48} showArea={showArea} />
+        <AgentFace
+          agent={agent}
+          size={48}
+          showArea={showArea}
+          areas={ui.home?.areas}
+          workspace={ui.workspace}
+          working={agent.running}
+          className="shadow-soft"
+        />
         <div className="flex min-w-0 flex-1 flex-col gap-1.5">
           <div className="flex items-start gap-2">
             {renaming ? (

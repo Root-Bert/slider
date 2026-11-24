@@ -48,8 +48,9 @@ function Agents() {
         busy={order.isPending}
         // Esc goes back, as from „Neu“'s other forms.
         onEscape={() => void navigate(-1)}
-        onSend={(text) =>
-          order.mutateAsync(text).then(
+        workspaceId={ui.workspace.id}
+        onSend={(text, attachments) =>
+          order.mutateAsync({ text, attachments }).then(
             (agent) => {
               void navigate(ui.agentPath(agent.id), { replace: true });
               return true;

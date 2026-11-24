@@ -17,7 +17,6 @@ export function Component() {
       docTitle="Kalenderkonten"
       title="Konten"
       crumbs={[
-        { label: ui.workspace.name },
         { label: 'Kalender', to: routes.cloudCalendar(ui.workspace.id) },
         { label: 'Konten' },
       ]}

@@ -41,6 +41,7 @@ export function DocumentMaterial({
     () => ({
       kind: 'document',
       id: file.id,
+      workspaceId: file.workspaceId,
       canComment,
       canManage,
       viewer: me,
@@ -52,7 +53,7 @@ export function DocumentMaterial({
       setPanelOpen: onPanelOpen,
       wording: DOCUMENT_WORDING,
     }),
-    [file.id, canComment, canManage, me, name, notify, open, onOpen, panelOpen, onPanelOpen],
+    [file.id, file.workspaceId, canComment, canManage, me, name, notify, open, onOpen, panelOpen, onPanelOpen],
   );
   return (
     <BoardOwnerContext value={owner}>

@@ -67,7 +67,7 @@ export function CallOrders({
                   ? `Wartet auf dein Okay – ✓ oder ${say}`
                   : order.state === 'running'
                     ? (order.doing ??
-                      `Läuft${order.sentBy ? ` · von ${firstName(order.sentBy.name)}` : ''}`)
+                      `Läuft${order.sentBy ? ` | von ${firstName(order.sentBy.name)}` : ''}`)
                     : order.state === 'done'
                       ? 'Fertig'
                       : (order.error ?? 'Ließ sich nicht losschicken')}

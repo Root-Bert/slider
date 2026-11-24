@@ -1808,12 +1808,31 @@ async function fetchGenerated(
  * One picture from `prompt`, as the service sends it (PNG, JPEG or WebP): through OpenAI's
  * `/images/generations`, or Black Forest Labs' own API – a task asked about until it is ready.
  */
+/** A picture a generated one goes after – its look, a person, a product. */
+export interface ImageReference {
+  bytes: Uint8Array;
+  /** `image/png`, `image/jpeg` or `image/webp`. */
+  mediaType: string;
+}
+
+/** Pictures a model takes at most to go after. */
+export const MAX_IMAGE_REFERENCES = 4;
+
+/**
+ * The image model takes pictures to go after: FLUX Kontext and FLUX.2 at Black Forest Labs,
+ * gpt-image (its edits) at OpenAI and services speaking its API.
+ */
+export const takesImageReferences = (connection: Pick<AiConnection, 'provider' | 'model'>) =>
+  connection.provider === 'black-forest-labs'
+    ? /kontext|flux-2/i.test(connection.model)
+    : /gpt-image/i.test(connection.model);
+
 export async function generateImage(
   deps: Pick<AppDeps, 'config' | 'aiFetch'>,
   connection: AiConnection,
   prompt: string,
   shape: ImageShape,
-  options: { signal?: AbortSignal } = {},
+  options: { signal?: AbortSignal; references?: readonly ImageReference[] } = {},
 ): Promise<Uint8Array> {
   const picture = await generatePicture(deps, connection, prompt, shape, options);
   connection.meter?.({ feature: 'image', model: connection.model, images: 1 });
@@ -1825,12 +1844,27 @@ async function generatePicture(
   connection: AiConnection,
   prompt: string,
   shape: ImageShape,
-  options: { signal?: AbortSignal },
+  options: { signal?: AbortSignal; references?: readonly ImageReference[] },
 ): Promise<Uint8Array> {
   const timeout = AbortSignal.timeout(IMAGE_TIMEOUT_MS);
   const signal = options.signal ? AbortSignal.any([options.signal, timeout]) : timeout;
+  const references = (options.references ?? []).slice(0, MAX_IMAGE_REFERENCES);
+  if (references.length > 0 && !takesImageReferences(connection)) {
+    throw new ApiError(
+      400,
+      'bad_request',
+      `Das Bildmodell „${connection.model}“ nimmt keine Bilder als Vorlage – ohne sie beschreiben oder in den Integrationen ein anderes wählen.`,
+    );
+  }
   if (connection.provider === 'black-forest-labs') {
     const { width, height, aspect_ratio } = BFL_SIZES[shape];
+    // input_image, input_image_2, …: base64, as FLUX Kontext and FLUX.2 take them.
+    const given = Object.fromEntries(
+      references.map((one, i) => [
+        i === 0 ? 'input_image' : `input_image_${i + 1}`,
+        Buffer.from(one.bytes).toString('base64'),
+      ]),
+    );
     const task = await requestJson(
       deps,
       connection,
@@ -1838,8 +1872,8 @@ async function generatePicture(
       {
         method: 'POST',
         body: /kontext/i.test(connection.model)
-          ? { prompt, aspect_ratio, output_format: 'jpeg' }
-          : { prompt, width, height, output_format: 'jpeg' },
+          ? { prompt, aspect_ratio, output_format: 'jpeg', ...given }
+          : { prompt, width, height, output_format: 'jpeg', ...given },
         signal,
       },
       bflTaskSchema,
@@ -1889,6 +1923,35 @@ async function generatePicture(
     }
   }
   const gptImage = /gpt-image/i.test(connection.model);
+  if (references.length > 0) {
+    // gpt-image goes after pictures through its edits, as a form.
+    const form = new FormData();
+    form.append('model', connection.model);
+    form.append('prompt', prompt);
+    form.append('n', '1');
+    form.append('size', openAiSize(connection.model, shape));
+    form.append('output_format', 'jpeg');
+    references.forEach((one, i) => {
+      const extension = one.mediaType.split('/')[1] ?? 'png';
+      form.append(
+        'image[]',
+        new File([one.bytes as Uint8Array<ArrayBuffer>], `vorlage-${i + 1}.${extension}`, {
+          type: one.mediaType,
+        }),
+      );
+    });
+    const edited = await requestJson(
+      deps,
+      connection,
+      '/images/edits',
+      { method: 'POST', body: form, signal },
+      openAiImageSchema,
+    );
+    const [made] = edited.data;
+    if (made?.b64_json) return new Uint8Array(Buffer.from(made.b64_json, 'base64'));
+    if (made?.url) return fetchGenerated(deps, made.url);
+    throw new ProviderHttpError(502, 'Die Antwort enthielt kein Bild.', null);
+  }
   const body = await requestJson(
     deps,
     connection,

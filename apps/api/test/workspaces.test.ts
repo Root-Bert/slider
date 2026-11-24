@@ -721,8 +721,14 @@ describe('invitations', () => {
       title: 'Annas Agent',
     });
     expect(
-      (await api('PATCH', `/sender/channels/${group.id}`, { agentId: annasAgent }, anna.cookie))
-        .status,
+      (
+        await api(
+          'POST',
+          `/sender/channels/${group.id}/agents`,
+          { agentId: annasAgent },
+          anna.cookie,
+        )
+      ).status,
     ).toBe(200);
 
     // Removed through the service with the app clock's time: a later link works.
@@ -741,7 +747,7 @@ describe('invitations', () => {
     expect(
       (await api('POST', `/sender/channels/${group.id}/messages`, { text: 'Ohne Anna' })).status,
     ).toBe(201);
-    expect((await home()).groups.find((each) => each.id === group.id)?.agent).toBeNull();
+    expect((await home()).groups.find((each) => each.id === group.id)?.agents).toEqual([]);
     expect((await api('GET', `/sender/channels/${hers.id}/messages`)).status).toBe(404);
     ctx.clock.advance(1000);
     expect((await join((await invite({ role: 'member' })).token)).status).toBe(200);

@@ -60,7 +60,7 @@ import { FolderColorDialog } from '../components/FolderColorDialog';
 import { DestinationDialog, type Destination } from '../components/DestinationDialog';
 import { ShareDialog } from '../components/ShareDialog';
 import { UploadTray } from '../components/UploadTray';
-import { flyInto } from '../lib/fly';
+import { flyInto, leaveList } from '../lib/fly';
 import { appFor } from '../lib/kinds';
 import {
   cloudBridge,
@@ -97,6 +97,12 @@ export interface CloudUi {
   /** Where „Neu“ puts things: the open folder or area, else one's own files. */
   place: CloudTarget;
   setPlace: (place: CloudTarget | null) => void;
+  /**
+   * The side bar's row the open page lies under where its address does not say it – an area's
+   * agent or folder: its area's row is lit, not „Agenten“ or none. `null`: the address decides.
+   */
+  barRow: string | null;
+  setBarRow: (row: string | null) => void;
   /** What is being dragged inside the page – a folder or an area it is dropped on takes it. */
   dragged: () => readonly CloudNode[];
   setDragged: (nodes: readonly CloudNode[]) => void;
@@ -220,6 +226,7 @@ export function CloudProvider({
   const uploads = useUploads(workspace.id);
   const [dialog, setDialog] = useState<DialogState | null>(null);
   const [place, setPlace] = useState<CloudTarget | null>(null);
+  const [barRow, setBarRow] = useState<string | null>(null);
   const [renaming, setRenaming] = useState<CloudUi['renaming']>(null);
   // Each with when the server had it deleted (`null` while asked): only a list fetched later than
   // that tells it is back.
@@ -479,29 +486,34 @@ export function CloudProvider({
 
   const moveInto = useCallback(
     (nodes: readonly Pick<CloudNode, 'id'>[], destination: Destination) =>
-      moveNodes.mutate(
-        {
-          ids: nodes.map((node) => node.id),
-          parentId: destination.parentId,
-          areaId: destination.areaId,
-        },
-        {
-          onSuccess: (result) => {
-            const [skipped] = result.skipped;
-            if (skipped && result.nodes.length === 0) notify(skipped.reason, 'danger');
-            else {
-              notify(
-                withSkipped(
-                  `${named(result.nodes, 'nach', 'nach')} „${destination.name}“ verschoben`,
-                  result.skipped,
-                ),
-                skipped ? 'danger' : 'neutral',
-              );
-            }
-            close();
-          },
-          onError: failed,
-        },
+      leaveList(
+        nodes.map((node) => node.id),
+        () =>
+          moveNodes.mutate(
+            {
+              ids: nodes.map((node) => node.id),
+              parentId: destination.parentId,
+              areaId: destination.areaId,
+            },
+            {
+              onSuccess: (result) => {
+                // Seen leaving the list: no word about it – only about what stayed where it was.
+                const [skipped] = result.skipped;
+                if (skipped && result.nodes.length === 0) notify(skipped.reason, 'danger');
+                else if (skipped) {
+                  notify(
+                    withSkipped(
+                      `${named(result.nodes, 'nach', 'nach')} „${destination.name}“ verschoben`,
+                      result.skipped,
+                    ),
+                    'danger',
+                  );
+                }
+                close();
+              },
+              onError: failed,
+            },
+          ),
       ),
     [failed, moveNodes, notify],
   );
@@ -840,6 +852,8 @@ export function CloudProvider({
       uploads,
       place: place ?? OWN_FILES,
       setPlace,
+      barRow,
+      setBarRow,
       dragged,
       setDragged,
       hrefOf,
@@ -883,6 +897,7 @@ export function CloudProvider({
       notify,
       uploads,
       place,
+      barRow,
       dragged,
       setDragged,
       hrefOf,

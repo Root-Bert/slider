@@ -17,7 +17,7 @@ import {
 } from '../db/schema';
 import type { AppDeps } from '../deps';
 import { badRequest, notFound } from '../http/errors';
-import { ownThread, tell, threadMessages } from './mail';
+import { later, ownThread, pushMoves, tell, threadMessages } from './mail';
 import { filterLearn } from './mail-filter';
 import { ruleDomain } from './mail-domains';
 import { requireRole } from './workspaces/roles';
@@ -213,7 +213,12 @@ async function applyRule(deps: AppDeps, owner: RuleOwner, rule: MailRuleRow): Pr
   }
   if (placed.length === 0) return 0;
   const threads = await deps.db
-    .select({ id: mailThreads.id, spam: mailThreads.spam, spamBy: mailThreads.spamBy })
+    .select({
+      id: mailThreads.id,
+      accountId: mailThreads.accountId,
+      spam: mailThreads.spam,
+      spamBy: mailThreads.spamBy,
+    })
     .from(mailThreads)
     .where(
       inArray(
@@ -246,5 +251,8 @@ async function applyRule(deps: AppDeps, owner: RuleOwner, rule: MailRuleRow): Pr
         spam,
       );
   }
+  // Its person's say: on the server too, as a mail program's rule moves it.
+  for (const accountId of new Set(threads.map((one) => one.accountId)))
+    later(deps, () => pushMoves(deps, accountId));
   return moved;
 }

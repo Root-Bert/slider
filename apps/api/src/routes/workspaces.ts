@@ -29,6 +29,7 @@ import { deckUploadSlot, importLimit } from '../http/import-limit';
 import { clientAddress, fixedWindow, rateLimit } from '../http/rate-limit';
 import { readJson } from '../http/validate';
 import { cancelSubscriptions } from '../services/billing-owner';
+import { deleteAttachments } from '../services/attachments';
 import { deleteBlobs, mailBlobs } from '../services/blob-deletions';
 import { revokeCloudConnection } from '../services/cloud-connections';
 import {
@@ -355,6 +356,7 @@ export function workspacesRoutes(deps: AppDeps, presence: WorkspacePresence) {
         await cancelSubscriptions(deps, [removal.cancelSubscriptionId]);
         await deleteDeckFiles(deps, removal.deletedDeckIds);
         await deleteBlobs(deps, mailBlobs(removal.deletedMailAccountIds));
+        await deleteAttachments(deps, removal.deletedAttachments);
         runInBackground(deps, async () => {
           for (const row of removal.deletedConnections) await revokeCloudConnection(deps, row);
         });

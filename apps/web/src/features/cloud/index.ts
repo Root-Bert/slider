@@ -21,6 +21,7 @@ export {
 } from './lib/computer';
 /** Parts Sender's agent conversations share with Cloud's agent page. */
 export { AgentAvatar } from './components/AgentAvatar';
+export { AgentFace } from './components/AgentFace';
 export { useDeleteAgentAction } from './components/AgentActions';
 export { AgentChat } from './components/AgentChat';
 export { messageWords } from './lib/message-words';
@@ -28,9 +29,14 @@ export { CallEntry, CallMeta, CallRecordView } from './components/CallRecord';
 export { AgentComposer } from './components/AgentComposer';
 export { AsideAgent, AsideBullets, AsidePart } from './components/AsidePart';
 export { AgentDesk } from './components/AgentDesk';
-export { useAgentAside, useKeptWidth } from './components/AgentAside';
+export {
+  AsideToggle,
+  useAgentAside,
+  useAgentCardsShown,
+  useKeptWidth,
+} from './components/AgentAside';
 export { GIVE_WAY_TO_PANEL } from './lib/panel';
-export { AgentList, AgentListSkeleton } from './components/AgentList';
+export { AgentList, AgentListSkeleton, GRID as AGENT_GRID } from './components/AgentList';
 export { CloudProvider } from './hooks/useCloud';
 export { Empty, LoadFailed } from './components/Empty';
 export { NamedIcon, WithNamed } from './components/Named';

@@ -151,7 +151,7 @@ export const workspaceIntegrationsNav = (group: IntegrationGroup) => [
   ...navOf(INTEGRATION_GROUPS[group].kinds),
 ];
 
-/** „Anthropic · claude-sonnet-5-5“ – what applies from the instance (or the server). */
+/** „Anthropic | claude-sonnet-5-5“ – what applies from the instance (or the server). */
 export const describeInherited = (inherited: InheritedIntegration) =>
   [PROVIDER_LABELS[inherited.provider], inherited.model].filter(Boolean).join(' | ');
 

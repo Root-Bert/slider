@@ -1,12 +1,12 @@
 import { useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router';
-import { isTagChat, type CloudAgentChat, type CloudAgentDetail } from '@slider/shared';
 import {
-  tellTypingInCloudAgent,
-  useMessageCloudAgent,
-  useOpenCloudAgentChat,
-  useStopCloudAgent,
-} from '@/lib/api';
+  isTagChat,
+  type Attachment,
+  type CloudAgentChat,
+  type CloudAgentDetail,
+} from '@slider/shared';
+import { tellTypingInCloudAgent, useMessageCloudAgent, useStopCloudAgent } from '@/lib/api';
 import { chatMatches, useMarkedMatches, useShowHit } from '@/lib/chat-search';
 import { draftKeys } from '@/lib/drafts';
 import { routes } from '@/lib/routes';
@@ -61,13 +61,12 @@ function Typing({ chat }: { chat: CloudAgentChat }) {
 }
 
 /**
- * One of the agent's chats – `chat` null: a new one beside the others, which starts with its
- * first message. Everyone who may write writes here, and sees the others doing it.
+ * The agent's chat – `chat` null: none yet, it starts with the first message. Everyone who may
+ * write writes here, and sees the others doing it.
  */
 export function AgentChat({
   agent,
   chat,
-  onOpened,
   inline = false,
   autoFocus,
   onSend,
@@ -75,20 +74,18 @@ export function AgentChat({
 }: {
   agent: CloudAgentDetail;
   chat: CloudAgentChat | null;
-  onOpened: (chatId: string) => void;
   /** A part of a column that scrolls as one (`MailAside`): its messages no scroll of their own. */
   inline?: boolean;
-  /** The field focused as it shows – by default only in a new chat. */
+  /** The field focused as it shows – by default only in an empty chat. */
   autoFocus?: boolean;
   /** Writes to the open chat in place of the plain message (beside a mail: which one). */
-  onSend?: (text: string, chatId: string) => Promise<boolean>;
+  onSend?: (text: string, chatId: string, attachments: Attachment[]) => Promise<boolean>;
   /** The chat's search: only the messages it finds, marked (`lib/chat-search.ts`). */
   search?: { query: string; clear: () => void };
 }) {
   const ui = useCloud();
   const shownCall = useShownCall();
   const message = useMessageCloudAgent(ui.workspace.id, agent.id);
-  const openChat = useOpenCloudAgentChat(ui.workspace.id, agent.id);
   const stop = useStopCloudAgent(ui.workspace.id, agent.id);
   const listRef = useRef<HTMLOListElement>(null);
   const composerRef = useRef<HTMLDivElement>(null);
@@ -135,13 +132,10 @@ export function AgentChat({
     !last.call
       ? choicesIn(last.text)
       : [];
-  const send = (text: string) => {
+  const send = (text: string, attachments: Attachment[] = []) => {
     pinned.current = true;
-    if (chat && onSend) return onSend(text, chat.id);
-    const sent = chat
-      ? message.mutateAsync({ text, chatId: chat.id })
-      : openChat.mutateAsync(text).then(({ chatId }) => onOpened(chatId));
-    return sent.then(
+    if (chat && onSend) return onSend(text, chat.id, attachments);
+    return message.mutateAsync({ text, attachments, chatId: chat?.id ?? agent.id }).then(
       () => true,
       (error: Error) => {
         ui.notify(error.message, 'danger');
@@ -187,12 +181,6 @@ export function AgentChat({
         {searching && shownMessages.length === 0 && (
           <li className="m-auto text-body text-fg-muted">Nichts gefunden.</li>
         )}
-        {!chat && (
-          <li className="m-auto max-w-[420px] text-center text-body text-fg-muted">
-            Ein weiterer Chat in diesem Agenten: an derselben Sache, mit demselben Schreibtisch.
-            Alle hier sehen ihn sofort, und die Chats wissen voneinander.
-          </li>
-        )}
         {shownMessages.map((each) => (
           <li
             key={each.id}
@@ -206,6 +194,7 @@ export function AgentChat({
             ) : each.role === 'user' ? (
               <ChatMessage
                 text={each.text}
+                attachments={each.attachments}
                 above={
                   each.author && (
                     <>
@@ -214,7 +203,7 @@ export function AgentChat({
                         <span className="flex min-w-0 items-center gap-1">
                           <Icon name="at" size={16} />
                           <span className="truncate">{chat.calledIn}</span>
-                          {each.author.id !== ui.userId && <span aria-hidden>·</span>}
+                          {each.author.id !== ui.userId && <span aria-hidden>|</span>}
                         </span>
                       )}
                       {each.author.id !== ui.userId && each.author.name}
@@ -271,9 +260,7 @@ export function AgentChat({
           className={cn('flex shrink-0 flex-col', inline && 'sticky bottom-0 z-10 bg-canvas pt-2')}
         >
           <AgentComposer
-            placeholder={
-              chat ? 'Schreib dem Agenten …' : 'Was soll in diesem Chat erledigt werden?'
-            }
+            placeholder="Schreib dem Agenten …"
             autoFocus={autoFocus ?? !chat}
             inline={inline}
             // Its own page: typing goes in from anywhere on it; beside a mail, letters are the mail's.
@@ -293,7 +280,7 @@ export function AgentChat({
                   }
                 : undefined
             }
-            busy={openChat.isPending}
+            workspaceId={ui.workspace.id}
             working={Boolean(chat?.running)}
             onTyping={chat ? () => tellTypingInCloudAgent(agent.id, chat.id) : undefined}
             onStop={

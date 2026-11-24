@@ -1,7 +1,7 @@
 import { useSenderSummary } from '@/lib/api';
-import { EmptyState, RowList, Spinner } from '@/ui';
+import { EmptyState, RowList } from '@/ui';
 import { MenuButton } from './components/MenuButton';
-import { Failed, SummaryBody, UnreadRow, UnreadSkeleton } from './components/SenderStart';
+import { Failed, SummaryAside, UnreadRow, UnreadSkeleton } from './components/SenderStart';
 import { useSender } from './hooks/useSender';
 import { useUnreadNow } from './hooks/useUnreadNow';
 import { PAGE_HEADER, PAGE_TITLE } from './lib/title';
@@ -54,23 +54,14 @@ export function Component() {
                 </RowList>
               )}
             </section>
-            <aside
-              aria-labelledby="sender-summary"
-              className="glass flex flex-col gap-2 rounded-panel p-4 max-xl:order-first"
-            >
-              <div className="flex items-center gap-2 pb-1">
-                <h2 id="sender-summary" className="min-w-0 flex-1 text-base font-semibold text-fg">
-                  Seit deinem letzten Besuch
-                </h2>
-                {summary.isFetching && <Spinner size={16} label="Die KI fasst zusammen" />}
-              </div>
-              <SummaryBody
-                summary={summary.data}
-                pending={summary.isPending}
-                error={summary.isError && !summary.data ? summary.error.message : null}
-                onRetry={() => void summary.refetch()}
-              />
-            </aside>
+            <SummaryAside
+              summary={summary.data}
+              pending={summary.isPending}
+              fetching={summary.isFetching}
+              error={summary.isError && !summary.data ? summary.error.message : null}
+              onRetry={() => void summary.refetch()}
+              className="max-xl:order-first"
+            />
           </div>
         </div>
       )}

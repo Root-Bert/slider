@@ -1,4 +1,5 @@
 import type {
+  Attachment,
   Calendar,
   CalendarChange,
   CalendarConnection,
@@ -237,12 +238,23 @@ const eventPath = (id: string) => `/calendar-events/${encodeURIComponent(id)}`;
 export function useUpdateEvent(workspaceId: string) {
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: ({ id, change }: { id: string; change: CalendarEventChange }) =>
-      api.patch<CalendarEvent>(eventPath(id), change),
-    onMutate: ({ id, change }) =>
+    mutationFn: ({
+      id,
+      change,
+    }: {
+      id: string;
+      change: CalendarEventChange;
+      /** The files `change.attachments` names, shown at once. */
+      files?: Attachment[];
+    }) => api.patch<CalendarEvent>(eventPath(id), change),
+    onMutate: ({ id, change, files }) => {
+      const { attachments: _ids, ...rest } = change;
       updateEvents(queryClient, workspaceId, (list) =>
-        list.map((each) => (each.id === id ? { ...each, ...change } : each)),
-      ),
+        list.map((each) =>
+          each.id === id ? { ...each, ...rest, ...(files && { attachments: files }) } : each,
+        ),
+      );
+    },
     onSuccess: (event, { id }) =>
       updateEvents(queryClient, workspaceId, (list) =>
         list.map((each) => (each.id === id ? event : each)),

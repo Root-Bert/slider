@@ -1,5 +1,6 @@
 import { z } from 'zod';
 import { accentColorSchema, accountAuthorSchema, authorSchema, workspaceRoleSchema } from './model';
+import type { SenderSummary, SenderSummaryPart } from './sender';
 
 /**
  * Cloud – the workspace's files beside its presentations: areas („Bereiche“) with a colour and
@@ -327,6 +328,8 @@ export const cloudNodeSchema = z.object({
   createdAt: z.iso.datetime(),
   /** The last change of its content or name. */
   updatedAt: z.iso.datetime(),
+  /** „Zuletzt“ only: its last change or when the caller last opened it, whichever came later. */
+  recentAt: z.iso.datetime().optional(),
   /** Who changed it last. */
   updatedBy: authorSchema,
   /** Whose it is: who put it there. */
@@ -633,6 +636,37 @@ export const cloudActivityQuerySchema = z.object({
   limit: z.coerce.number().int().min(1).max(100).default(40),
 });
 export type CloudActivityQuery = z.input<typeof cloudActivityQuerySchema>;
+
+/**
+ * `GET /cloud/summary?since=`: „Seit deinem letzten Besuch“ on Cloud's start – `since` is when
+ * the caller was last there (the browser keeps it); without it the last days.
+ */
+export const cloudSummaryQuerySchema = z.object({ since: z.iso.datetime().optional() });
+
+/**
+ * A part of Cloud's summary: a conversation's (as Sender's start has it) or what others did
+ * with files – named by the server, opened from its name while the file is still there.
+ */
+export type CloudSummaryPart =
+  | SenderSummaryPart
+  | {
+      kind: 'file';
+      /** The file or folder; `null` once it is gone. */
+      id: string | null;
+      nodeKind: CloudNodeKind | null;
+      areaId: string | null;
+      name: string;
+      text: string;
+    };
+
+/** As `SenderSummary`, over the unread conversations and what happened to the files. */
+export interface CloudSummary {
+  state: SenderSummary['state'];
+  /** The oldest news: an unread line, or the last visit when files changed since. */
+  since: string | null;
+  parts: CloudSummaryPart[];
+  reason: string | null;
+}
 
 // ── One file, opened ────────────────────────────────────────────────────────
 

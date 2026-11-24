@@ -430,7 +430,7 @@ export function TextBoxField({
           )}
           style={{ backgroundColor: color }}
         >
-          <Icon name="moreHoriz" size="xs" className="rotate-90" />
+          <Icon name="moreVert" size="xs" />
           {author.name.split(' ')[0]}
         </span>
         {/* Resized by its corners as a picked element is while editing. */}

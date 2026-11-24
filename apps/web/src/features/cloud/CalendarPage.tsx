@@ -164,7 +164,7 @@ export function Component() {
     <CloudPage
       docTitle="Kalender"
       title="Kalender"
-      crumbs={[{ label: ui.workspace.name }, { label: 'Kalender' }]}
+      crumbs={[{ label: 'Kalender' }]}
       // As „Postfächer“ beside Post: the accounts whose calendars stand here.
       actions={
         <ButtonLink

@@ -2,10 +2,11 @@ import type Anthropic from '@anthropic-ai/sdk';
 import { eq } from 'drizzle-orm';
 import { z } from 'zod';
 import type { HomeChatEvent, homeChatInputSchema } from '@slider/shared';
-import type { Viewer } from '@slider/shared';
+import type { Attachment, Viewer } from '@slider/shared';
 import { workspaces } from '../db/schema';
 import type { AppDeps } from '../deps';
-import { ApiError } from '../http/errors';
+import { ApiError, badRequest } from '../http/errors';
+import { claimAttachments } from './attachments';
 import { promptName, todayForPrompt } from './ai-prompt-parts';
 import type { AiConnection } from './ai-providers';
 import { workspaceAiConnection } from './integration-keys';
@@ -105,7 +106,8 @@ export interface HomeChat {
   connection: AiConnection;
   keyId: string;
   controller: AbortController;
-  input: z.output<typeof homeChatInputSchema>;
+  input: z.output<typeof homeChatInputSchema>; /** The files put on the message, taken. */
+  attachments: Attachment[];
 }
 
 /** Checks that the chat may run – a member of the workspace, its AI set up – before it streams. */
@@ -128,6 +130,15 @@ export async function startHomeChat(
     .select({ name: workspaces.name })
     .from(workspaces)
     .where(eq(workspaces.id, workspaceId));
+  if (!input.text && input.attachments.length === 0) throw badRequest('Schreib etwas.');
+  // The files put on the message: taken last but one, nothing refused after that.
+  const attachments = await claimAttachments(
+    deps.db,
+    deps.clock.now(),
+    userId,
+    workspaceId,
+    input.attachments,
+  );
   // Counted last, with nothing left that could fail: a slot taken is given back by the answer only.
   const controller = new AbortController();
   running.set(controller, userId);
@@ -139,6 +150,7 @@ export async function startHomeChat(
     keyId: found.keyId,
     controller,
     input,
+    attachments,
   };
 }
 
@@ -199,6 +211,9 @@ export async function answerHomeChat(
       controller: chat.controller,
       history: chat.input.history,
       text: chat.input.text,
+      attachments: chat.attachments,
+      workspaceId: chat.workspaceId,
+      filesOwner: chat.viewer.author.id,
       system: () => system(chat.workspaceName, todayForPrompt(deps.clock.now())),
       tools: [...TOOLS, ...more.map((each) => each.tool)],
       run: async (name, input) => {

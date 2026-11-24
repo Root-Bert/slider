@@ -2,16 +2,17 @@ import { z } from 'zod';
 import { MAX_MATERIAL_CHAT_MESSAGE, type MaterialChatAnswerState } from './material-chat';
 import type { Author } from './model';
 import type { CallBrief } from './calls';
+import { attachmentIdsSchema, type Attachment } from './attachments';
 
 /*
  * „Agenten“ in Cloud: an order to the workspace's AI that works across files on the server –
  * nothing needs to be on anyone's computer. Each agent is a place to work on one thing, kept, its
  * owner's alone until they share it with the workspace: then everyone in it sees who else is
- * there, writes along and opens further chats beside the first – all on the same thing, with one
- * desk. In each chat it works with the rights of the person who wrote, nothing more. What
- * it does touches nothing: new files and folders, changed files, what is to be moved, renamed or
- * deleted, and the presentations it makes or changes (on a copy) lie on the agent's own desk
- * („Desktop“) until that person takes them over – the originals stay as they are until then.
+ * there and writes along in its one chat, with one desk. It works with the rights of the person
+ * who wrote, nothing more. What it does touches nothing: new files and folders, changed files,
+ * what is to be moved, renamed or deleted, and the presentations it makes or changes (on a copy)
+ * lie on the agent's own desk („Desktop“) until that person takes them over – the originals stay
+ * as they are until then.
  */
 
 /** Characters of one file an agent writes. */
@@ -20,7 +21,10 @@ export const MAX_CLOUD_AGENT_FILE_CHARS = 400_000;
 export const MAX_CLOUD_AGENT_FILES = 400;
 
 export const cloudAgentInputSchema = z.object({
-  text: z.string().trim().min(1).max(MAX_MATERIAL_CHAT_MESSAGE, 'Die Nachricht ist zu lang.'),
+  /** May stay empty where files are put on it. */
+  text: z.string().trim().max(MAX_MATERIAL_CHAT_MESSAGE, 'Die Nachricht ist zu lang.'),
+  /** Files put on it (`@slider/shared` attachments): the agent reads them. */
+  attachments: attachmentIdsSchema,
   /** Which of the agent's chats; left out: its first. */
   chatId: z.string().min(1).max(100).optional(),
   /** The writer's time zone („Europe/Berlin“): the clock a time in the order is meant on. */
@@ -30,11 +34,9 @@ export const cloudAgentInputSchema = z.object({
 });
 /** One of an agent's chats (left out: its first) – to stop it, or to say one is typing there. */
 export const cloudAgentChatRefSchema = z.object({ chatId: z.string().min(1).max(100).optional() });
-/** Chats side by side in one agent – not counting its tag chats (`isTagChat`). */
-export const MAX_CLOUD_AGENT_CHATS = 8;
 /**
- * Where it was called in a conversation (`@Agent`): one chat per conversation, `<agent>:<channel>`
- * (the others' ids are bare UUIDs) – as many as there are conversations, apart from the bound.
+ * Where it was called in a conversation (`@Agent`): one chat per conversation, `<agent>:<channel>`,
+ * apart from the agent's own chat (its id the agent's) – only the call writes there.
  */
 export const isTagChat = (chatId: string) => chatId.includes(':');
 export type CloudAgentInput = z.input<typeof cloudAgentInputSchema>;
@@ -57,10 +59,17 @@ export const cloudAgentTitleSchema = z.object({
     .min(1, 'Gib dem Agenten einen Namen.')
     .max(CLOUD_AGENT_TITLE_MAX, `Höchstens ${CLOUD_AGENT_TITLE_MAX} Zeichen.`),
 });
-/** `POST /workspaces/:id/cloud/agents`: the order, and the area the new agent belongs to. */
+/**
+ * `POST /workspaces/:id/cloud/agents`: the order, the area the new agent stands in and whether it
+ * is given to that area's people (in none the workspace's) – an order written in an area or the
+ * workspace is theirs from the start, one under „Agenten“ › „Meine“ its owner's alone.
+ */
 export const cloudAgentOrderSchema = cloudAgentInputSchema
-  .pick({ text: true, zone: true, mailThreadId: true })
-  .extend({ areaId: z.string().min(1).max(100).nullable().optional() });
+  .pick({ text: true, attachments: true, zone: true, mailThreadId: true })
+  .extend({
+    areaId: z.string().min(1).max(100).nullable().optional(),
+    shared: z.boolean().optional(),
+  });
 export type CloudAgentOrder = z.input<typeof cloudAgentOrderSchema>;
 
 /** How often a repeated order runs: every day, Monday to Friday, or once a week. */
@@ -216,6 +225,8 @@ export interface CloudAgentMessage {
   id: string;
   role: 'user' | 'assistant';
   text: string;
+  /** Files the person put on it. */
+  attachments?: Attachment[];
   /** The agent's: `answering` while it works; `null` for a person's. */
   state: MaterialChatAnswerState | 'answering' | null;
   error: string | null;

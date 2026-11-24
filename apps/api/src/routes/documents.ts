@@ -204,6 +204,7 @@ export function documentsRoutes(deps: AppDeps, live = new DocumentLive()) {
             c.req.param('documentId'),
             input.prompt,
             input.aspect ?? null,
+            input.references,
           ),
           201,
         );

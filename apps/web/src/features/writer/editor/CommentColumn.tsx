@@ -9,10 +9,17 @@ import {
 } from 'react';
 import {
   AI_RUNNING_LIMIT_MS,
+  type Attachment,
   type WriterAiProposal,
   type WriterAnchor,
   type WriterComment,
 } from '@slider/shared';
+import {
+  AttachButton,
+  AttachmentChips,
+  SentAttachments,
+  useAttachments,
+} from '@/features/attachments';
 import { accentAlpha, accentColor } from '@/lib/accent';
 import { formatDateTime, formatRelativeTime } from '@/lib/format';
 import { isModEnter } from '@/lib/keyboard';
@@ -312,7 +319,8 @@ function Message({
       </header>
       {editing === null ? (
         <>
-          <CommentBody body={comment.body} className="leading-5" />
+          {comment.body && <CommentBody body={comment.body} className="leading-5" />}
+          <SentAttachments attachments={comment.attachments} />
           <ReactionChipsOf state={reaction} />
         </>
       ) : (
@@ -378,22 +386,30 @@ function Field({
   label: string;
   autoFocus?: boolean;
   /** `toAi`: sent and handed to the AI in one (✨, ⌘↵) – where one may write. */
-  onSend: (body: string, toAi: boolean) => void;
+  onSend: (body: string, toAi: boolean, attachments: Attachment[]) => void;
   onCancel?: () => void;
 }) {
-  const { document } = useWriter();
+  const { document, notify } = useWriter();
+  const attach = useAttachments({
+    workspaceId: document.workspaceId,
+    keep: draftKey && `writer:${draftKey}`,
+    onError: (message) => notify(message, 'danger'),
+  });
   const canAsk = document.permissions.canEdit;
   const [own, setOwn] = useState('');
   const [kept, setKept] = useReplyDraftBody(draftKey ?? '');
   const [text, setText] = draftKey ? [kept, setKept] : [own, setOwn];
   const fieldRef = useRef<HTMLTextAreaElement>(null);
   const mentions = useMentions(text, setText, fieldRef);
+  const files = attach.ready;
+  const sendable = (text.trim() !== '' || files.length > 0) && !attach.busy;
   const send = (event?: SyntheticEvent, toAi = false) => {
     event?.preventDefault();
     const body = text.trim();
-    if (body === '') return;
+    if (!sendable) return;
     setText('');
-    onSend(body, toAi && canAsk);
+    attach.clear();
+    onSend(body, toAi && canAsk, files);
   };
   const onKeyDown = (event: KeyboardEvent<HTMLTextAreaElement>) => {
     if (event.nativeEvent.isComposing || mentions.onKeyDown(event)) return;
@@ -407,10 +423,15 @@ function Field({
   return (
     <form
       onSubmit={send}
-      className="field-well focus-field relative flex min-h-9 min-w-0 items-end gap-0.5 rounded-control-sm py-1 pr-1 pl-3"
+      className={cn(
+        'field-well focus-field relative flex min-h-9 min-w-0 items-end gap-0.5 rounded-control-sm py-1 pr-1 pl-3',
+        attach.items.length > 0 && 'flex-wrap justify-end',
+      )}
     >
       <MentionMenu mentions={mentions} />
-      <div className="min-w-0 flex-1 self-center">
+      <div
+        className={cn('min-w-0 flex-1 self-center', attach.items.length > 0 && 'basis-full pr-2')}
+      >
         <MentionTextarea
           {...mentions.fieldProps}
           ref={fieldRef}
@@ -421,9 +442,12 @@ function Field({
           maxHeight={160}
           rows={1}
           onKeyDown={onKeyDown}
+          onPaste={attach.onPaste}
           className="w-full resize-none bg-transparent text-body leading-5 text-fg outline-none placeholder:text-fg-subtle"
         />
+        <AttachmentChips files={attach} className="pt-2 pb-1" />
       </div>
+      <AttachButton files={attach} />
       {canAsk && (
         <IconButton
           icon="autoAwesome"
@@ -431,7 +455,7 @@ function Field({
           title={`Senden und an die KI geben (${isApplePlatform() ? '⌘' : 'Strg'}↵)`}
           size="compact"
           disabledStyle="dim"
-          disabled={text.trim() === ''}
+          disabled={!sendable}
           onClick={() => send(undefined, true)}
         />
       )}
@@ -443,7 +467,7 @@ function Field({
         size="compact"
         iconTone="success"
         disabledStyle="dim"
-        disabled={text.trim() === ''}
+        disabled={!sendable}
       />
     </form>
   );
@@ -476,7 +500,12 @@ export function CommentColumn({
   active: string | null;
   onActivate: (id: string | null) => void;
   comments: DocumentComments;
-  onDraftSent: (body: string, anchor: WriterAnchor, toAi: boolean) => void;
+  onDraftSent: (
+    body: string,
+    anchor: WriterAnchor,
+    toAi: boolean,
+    attachments: Attachment[],
+  ) => void;
   onDraftCancel: () => void;
   /** No room beside the page: the cards lie over it, the page under them stays in reach. */
   overlay?: boolean;
@@ -538,7 +567,7 @@ export function CommentColumn({
                 autoFocus
                 label="Kommentar senden"
                 placeholder="Kommentieren …"
-                onSend={(body, toAi) => onDraftSent(body, anchor, toAi)}
+                onSend={(body, toAi, attachments) => onDraftSent(body, anchor, toAi, attachments)}
                 onCancel={onDraftCancel}
               />
               <div className="flex justify-start">
@@ -618,7 +647,9 @@ export function CommentColumn({
                   draftKey={`document-reply:${thread.root.id}`}
                   label="Antwort senden"
                   placeholder="Antworten …"
-                  onSend={(body, toAi) => comments.add(body, null, thread.root.id, toAi)}
+                  onSend={(body, toAi, attachments) =>
+                    comments.add(body, null, thread.root.id, toAi, attachments)
+                  }
                 />
               )}
             </div>

@@ -1,5 +1,6 @@
 import {
   aiAuthor,
+  type Attachment,
   type Author,
   type ReaderAiProposal,
   type ReaderAnchor,
@@ -137,6 +138,8 @@ export function usePdfComments(
       parentId: string | null,
       /** Sent and handed to the AI in one (⌘↵). */
       toAi = false,
+      /** Files put on it, up already. */
+      attachments: Attachment[] = [],
     ) {
       const now = new Date().toISOString();
       const comment: ReaderComment = {
@@ -145,6 +148,7 @@ export function usePdfComments(
         parentId,
         author: me,
         body,
+        attachments,
         anchor,
         status: 'open',
         resolvedBy: null,
@@ -153,7 +157,13 @@ export function usePdfComments(
         updatedAt: now,
       };
       change((list) => [...list, comment]);
-      createPdfComment(pdfId, { id: comment.id, parentId, body, anchor }).then((saved) => {
+      createPdfComment(pdfId, {
+        id: comment.id,
+        parentId,
+        body,
+        attachments: attachments.map((one) => one.id),
+        anchor,
+      }).then((saved) => {
         change((list) => list.map((each) => (each.id === saved.id ? saved : each)));
         if (toAi) askAi(saved.id);
       }, failed('Kommentar nicht gesendet'));

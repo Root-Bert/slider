@@ -18,6 +18,7 @@ import {
   type CalendarRow,
 } from '../db/schema';
 import type { AppDeps } from '../deps';
+import { claimAttachments, deleteAttachments } from './attachments';
 import { badRequest, forbidden, notFound } from '../http/errors';
 import { authorsOf, cloudContext, type CloudCtx } from './cloud/context';
 import {
@@ -320,11 +321,30 @@ export async function deleteCalendar(deps: AppDeps, userId: string, calendarId: 
   }
   const { row } = await calendarToEdit(deps, userId, calendarId);
   if (!row.parentId) throw forbidden('Diesen Kalender kannst du nicht löschen.');
+  // Its events go with it, those of the calendars under it too – and their files.
+  const ids = [calendarId];
+  for (let at = 0; at < ids.length && ids.length < 1000; at++) {
+    const under = await deps.db
+      .select({ id: calendars.id })
+      .from(calendars)
+      .where(eq(calendars.parentId, ids[at]!));
+    ids.push(...under.map((each) => each.id));
+  }
+  const files = await deps.db
+    .select({ attachments: calendarEvents.attachments })
+    .from(calendarEvents)
+    .where(inArray(calendarEvents.calendarId, ids));
   await deps.db.delete(calendars).where(eq(calendars.id, calendarId));
+  await deleteAttachments(
+    deps,
+    files.flatMap((each) => each.attachments),
+  );
   await tellCalendar(deps, row);
 }
 
 // ── Events ──────────────────────────────────────────────────────────────────
+
+const MAIL_EVENT_FILES = 'Dateien gehen nur an Termine in Slider-Kalendern.';
 
 const DAY_MS = 86_400_000;
 /** An all-day event's days as UTC midnights, so they compare with instants in one range. */
@@ -363,6 +383,7 @@ async function toEvents(
     end: row.allDay ? dayOf(row.endsAt) : row.endsAt.toISOString(),
     canEdit: editable(row.calendarId),
     createdBy: (row.createdBy && people.get(row.createdBy)) || null,
+    attachments: row.attachments,
   }));
 }
 
@@ -471,6 +492,7 @@ export async function createEvent(
 ): Promise<CalendarEvent> {
   const { row: calendar } = await calendarToEdit(deps, userId, input.calendarId);
   if (calendar.mailAccountId) {
+    if (input.attachments?.length) throw badRequest(MAIL_EVENT_FILES);
     bounds(input);
     const made = await createMailEvent(deps, calendar, {
       title: input.title.trim(),
@@ -494,6 +516,13 @@ export async function createEvent(
       notes: input.notes ?? '',
       allDay: input.allDay,
       ...bounds(input),
+      attachments: await claimAttachments(
+        deps.db,
+        deps.clock.now(),
+        userId,
+        calendar.workspaceId,
+        input.attachments ?? [],
+      ),
       createdBy: userId,
     })
     .returning();
@@ -528,6 +557,9 @@ async function moveAcross(
   event: CalendarEvent,
   change: CalendarEventChange & { calendarId: string },
 ): Promise<CalendarEvent> {
+  if ((event.attachments?.length ?? 0) > 0 || change.attachments?.length) {
+    throw badRequest(MAIL_EVENT_FILES);
+  }
   const made = await createEvent(deps, userId, {
     calendarId: change.calendarId,
     title: change.title ?? event.title,
@@ -556,6 +588,7 @@ export async function updateEvent(
     const { row, remoteId } = await mailEventToEdit(deps, userId, eventId, true);
     const event = await mailEventOf(deps, row, remoteId);
     if (!event) throw eventNotFound();
+    if (change.attachments?.length) throw badRequest(MAIL_EVENT_FILES);
     if (change.calendarId && change.calendarId !== row.id) {
       const target = (await calendarToEdit(deps, userId, change.calendarId)).row;
       if (target.workspaceId !== row.workspaceId) throw forbidden(READ_ONLY);
@@ -589,6 +622,22 @@ export async function updateEvent(
           end: change.end ?? (allDay ? dayOf(event.endsAt) : event.endsAt.toISOString()),
         })
       : {};
+  // Its files as asked: the new ones taken (one's own, waiting), the ones left out deleted after.
+  let files = event.attachments;
+  let gone: typeof files = [];
+  if (change.attachments !== undefined) {
+    const wanted = new Set(change.attachments);
+    const known = new Set(files.map((one) => one.id));
+    gone = files.filter((one) => !wanted.has(one.id));
+    const added = await claimAttachments(
+      deps.db,
+      deps.clock.now(),
+      userId,
+      calendar.workspaceId,
+      change.attachments.filter((id) => !known.has(id)),
+    );
+    files = [...files.filter((one) => wanted.has(one.id)), ...added];
+  }
   const [after] = await deps.db
     .update(calendarEvents)
     .set({
@@ -598,10 +647,12 @@ export async function updateEvent(
       ...(change.notes !== undefined && { notes: change.notes }),
       allDay,
       ...timing,
+      ...(change.attachments !== undefined && { attachments: files }),
       updatedAt: new Date(),
     })
     .where(eq(calendarEvents.id, eventId))
     .returning();
+  await deleteAttachments(deps, gone);
   await tellCalendar(deps, calendar);
   if (target !== calendar) await tellCalendar(deps, target);
   return (await toEvents(deps, () => true, [after!]))[0]!;
@@ -614,7 +665,8 @@ export async function deleteEvent(deps: AppDeps, userId: string, eventId: string
     await tellCalendar(deps, row);
     return;
   }
-  const { calendar } = await eventToEdit(deps, userId, eventId);
+  const { event, calendar } = await eventToEdit(deps, userId, eventId);
   await deps.db.delete(calendarEvents).where(eq(calendarEvents.id, eventId));
+  await deleteAttachments(deps, event.attachments);
   await tellCalendar(deps, calendar);
 }

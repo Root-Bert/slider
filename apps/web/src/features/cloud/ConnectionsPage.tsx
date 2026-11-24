@@ -338,7 +338,7 @@ function ConnectHelper({ agentId, onClose }: { agentId: string; onClose: () => v
             onRetry={() => void found.refetch()}
           />
         ) : (
-          <AgentChat agent={agent} chat={agent.chats[0] ?? null} onOpened={() => {}} />
+          <AgentChat agent={agent} chat={agent.chats[0] ?? null} />
         )}
       </div>
     </section>
@@ -481,7 +481,7 @@ export function Component() {
     <CloudPage
       docTitle="Verbindungen"
       title="Verbindungen"
-      crumbs={[{ label: ui.workspace.name }, { label: 'Verbindungen' }]}
+      crumbs={[{ label: 'Verbindungen' }]}
       nodes={[]}
     >
       {() => (

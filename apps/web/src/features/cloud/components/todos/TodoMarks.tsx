@@ -46,90 +46,39 @@ export function StatusMark({ status, size = 14 }: { status: TodoStatus; size?: n
 }
 
 /**
- * Its priority as a temperature: urgent a flame, high a small one, medium a thermometer half full,
- * low ice, none an empty thermometer.
+ * Its priority as Jira's and Linear's marks: low a flat line, medium a roof (both plain grey),
+ * high a double roof, urgent a filled box with „!“; none three faint dashes.
  */
 export function PriorityMark({ priority, size = 14 }: { priority: TodoPriority; size?: number }) {
-  if (priority === 1 || priority === 2) {
-    return (
-      <svg
-        viewBox="0 0 14 14"
-        width={size}
-        height={size}
-        aria-hidden
-        className={cn('shrink-0', priority === 1 ? 'text-danger' : 'text-warning')}
-      >
-        {/* High: the same flame, smaller, standing on the same ground. */}
-        <g
-          transform={
-            priority === 2 ? 'translate(7 13.2) scale(0.78) translate(-7 -13.2)' : undefined
-          }
-        >
-          <path
-            d="M7 .8c.5 2.3 4.2 3.9 4.2 7.6A4.2 4.2 0 0 1 7 13.2a4.2 4.2 0 0 1-4.2-4.4c.1-1.9 1.2-2.8 1.7-4.2.7 1.1.8 2.1 1.5 2.7C6 5.5 6.2 3.1 7 .8z"
-            fill="currentColor"
-          />
-          <path
-            d="M7 7.4c.3 1.2 2 1.9 2 3.6a2 2 0 0 1-4 0c0-.9.5-1.4.8-2 .3.5.4.9.7 1.2.1-1 .2-2 .5-2.8z"
-            fill="var(--color-canvas)"
-            opacity={0.85}
-          />
-        </g>
-      </svg>
-    );
-  }
-  if (priority === 4) {
-    // Ice: a crystal of six arms, each forked at its end.
-    return (
-      <svg
-        viewBox="0 0 14 14"
-        width={size}
-        height={size}
-        aria-hidden
-        className="shrink-0 text-sky"
-      >
-        <g
-          fill="none"
-          stroke="currentColor"
-          strokeWidth={1.2}
-          strokeLinecap="round"
-          strokeLinejoin="round"
-        >
-          {[0, 60, 120, 180, 240, 300].map((angle) => (
-            <path key={angle} d="M7 7V1.5M5.6 2.6 7 4l1.4-1.4" transform={`rotate(${angle} 7 7)`} />
-          ))}
-        </g>
-      </svg>
-    );
-  }
-  // Medium: the column half way.
-  const column = { 0: 0, 3: 5.8 }[priority];
+  const tone = {
+    0: 'text-fg-faint',
+    1: 'text-danger',
+    2: 'text-warning',
+    3: 'text-fg-muted',
+    4: 'text-fg-muted',
+  }[priority];
   return (
     <svg
       viewBox="0 0 14 14"
       width={size}
       height={size}
       aria-hidden
-      className={cn('shrink-0', { 0: 'text-fg-faint', 3: 'text-fg' }[priority])}
+      className={cn('shrink-0', tone)}
+      fill="none"
+      stroke="currentColor"
+      strokeWidth={1.75}
+      strokeLinecap="round"
+      strokeLinejoin="round"
     >
-      <path
-        d="M5.1 8.1V3a1.9 1.9 0 0 1 3.8 0v5.1a3.1 3.1 0 1 1-3.8 0z"
-        fill="none"
-        stroke="currentColor"
-        strokeWidth={1.25}
-        strokeLinejoin="round"
-      />
-      {priority !== 0 && (
+      {priority === 0 && <path d="M2 7h1.5M6.25 7h1.5M10.5 7H12" />}
+      {priority === 4 && <path d="M2.5 7h9" />}
+      {priority === 3 && <path d="M2.5 9.25 7 4.75l4.5 4.5" />}
+      {priority === 2 && <path d="M2.5 7.5 7 3l4.5 4.5M2.5 11.5 7 7l4.5 4.5" />}
+      {priority === 1 && (
         <>
-          <circle cx={7} cy={10.6} r={1.7} fill="currentColor" />
-          <rect
-            x={6.2}
-            y={column}
-            width={1.6}
-            height={10.6 - column}
-            rx={0.8}
-            fill="currentColor"
-          />
+          <rect x={1} y={1} width={12} height={12} rx={3.5} fill="currentColor" stroke="none" />
+          <path d="M7 3.9v3.9" stroke="var(--color-canvas)" strokeWidth={1.8} />
+          <circle cx={7} cy={10.1} r={1} fill="var(--color-canvas)" stroke="none" />
         </>
       )}
     </svg>

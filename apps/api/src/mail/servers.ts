@@ -62,6 +62,18 @@ export interface SeenMark {
   seen: boolean;
 }
 
+/** A mail to move by UID from the folder at `path` to the one at `to`. */
+export interface MailMove {
+  path: string;
+  uid: number;
+  to: string;
+}
+
+/** Moved: its UID in the folder it went to, where the server tells it (UIDPLUS). */
+export interface MailMoved extends MailMove {
+  newUid: number | null;
+}
+
 /** A mail asked for again by UID in the folder at `path` (`MailServers.headers`). */
 export interface HeaderWanted {
   path: string;
@@ -110,6 +122,8 @@ export interface MailServers {
   send(login: MailLogin, mail: OutgoingMail): Promise<{ messageId: string }>;
   /** Sets mails read or unread on the server (`\Seen`); returns those set. */
   mark?(login: MailLogin, marks: readonly SeenMark[]): Promise<SeenMark[]>;
+  /** Moves mails to another folder on the server; returns those moved. */
+  move?(login: MailLogin, moves: readonly MailMove[]): Promise<MailMoved[]>;
   /**
    * Only the named header fields of mails read before – nothing marked read; a UID no longer
    * there or a folder gone is left out.
@@ -766,6 +780,40 @@ export const realMailServers: MailServers = {
               ? await client.messageFlagsAdd(range, ['\\Seen'], { uid: true, silent: true })
               : await client.messageFlagsRemove(range, ['\\Seen'], { uid: true, silent: true });
             if (stored) done.push(...these);
+          }
+        } finally {
+          lock.release();
+        }
+      }
+      return done;
+    } finally {
+      await client.logout().catch(() => client.close());
+    }
+  },
+
+  async move(login, moves) {
+    const client = await imap(login);
+    try {
+      await client.connect();
+    } catch (error) {
+      throw new Error(mailErrorText(error, 'IMAP', login), { cause: error });
+    }
+    const done: MailMoved[] = [];
+    try {
+      for (const path of new Set(moves.map((one) => one.path))) {
+        const lock = await client.getMailboxLock(path);
+        try {
+          for (const to of new Set(moves.filter((one) => one.path === path).map((one) => one.to))) {
+            const these = moves.filter((one) => one.path === path && one.to === to);
+            // MOVE (RFC 6851), else copied and expunged (imapflow); a UID no longer there moves
+            // nothing.
+            const moved = await client.messageMove(these.map((one) => one.uid).join(','), to, {
+              uid: true,
+            });
+            if (moved)
+              done.push(
+                ...these.map((one) => ({ ...one, newUid: moved.uidMap?.get(one.uid) ?? null })),
+              );
           }
         } finally {
           lock.release();

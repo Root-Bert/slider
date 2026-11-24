@@ -1,3 +1,4 @@
+import { SentAttachments } from '@/features/attachments';
 import { Fragment, useEffect, useLayoutEffect, useRef, useState, type ReactNode } from 'react';
 import {
   DELETED_ACCOUNT_NAME,
@@ -104,17 +105,24 @@ function Editor({
   );
 }
 
-/** A message's tools, beside it on the free side while the pointer is on it (above it on a phone). */
+/**
+ * A message's tools while the pointer is on it, in the line of its time and face – there from the
+ * start, only unseen, so nothing moves. A message in a row under one name has no such line: the
+ * same plain tools beside it on its free side.
+ */
 function Tools({
   message,
   own,
   mine,
+  inLine,
   onEdit,
   onDelete,
 }: {
   message: SenderMessage;
   own: boolean;
   mine: boolean;
+  /** In the line of its time and face (the first of a row); otherwise beside the message. */
+  inLine: boolean;
   onEdit: () => void;
   onDelete: () => void;
 }) {
@@ -123,11 +131,13 @@ function Tools({
   return (
     <div
       className={cn(
-        'glass-elevated absolute bottom-0 z-(--z-raised) hidden items-center gap-0.5 rounded-control p-0.5 group-hover/message:flex group-focus-within/message:flex',
-        // A phone has no room beside a full row: above the message there.
-        own
-          ? 'right-0 bottom-full mb-1 sm:right-full sm:bottom-0 sm:mr-1.5 sm:mb-0'
-          : 'left-0 bottom-full mb-1 sm:left-full sm:bottom-0 sm:ml-1.5 sm:mb-0',
+        'invisible flex items-center gap-0.5 group-hover/message:visible group-focus-within/message:visible',
+        // Plain beside it on its free side; a phone has no room there – over it, on glass.
+        !inLine &&
+          cn(
+            'absolute z-(--z-raised) max-sm:glass-elevated max-sm:bottom-full max-sm:mb-0.5 max-sm:rounded-control max-sm:p-0.5 sm:top-1/2 sm:-translate-y-1/2',
+            own ? 'right-0 sm:right-full sm:mr-2' : 'left-0 sm:left-full sm:ml-2',
+          ),
       )}
     >
       <IconButton
@@ -293,6 +303,19 @@ export function MessageList({
         {timeOf(message.createdAt)}
       </time>
     );
+    const tools = (inLine: boolean) =>
+      !message.deleted &&
+      !isPending(message) &&
+      editing !== message.id && (
+        <Tools
+          message={message}
+          own={own}
+          mine={mine}
+          inLine={inLine}
+          onEdit={() => onEditing(message.id)}
+          onDelete={() => onDelete(message)}
+        />
+      );
     rows.push(
       <Fragment key={message.id}>
         {newDay && (
@@ -337,6 +360,7 @@ export function MessageList({
           {head &&
             (own ? (
               <div className="flex min-h-6 items-center gap-1.5 text-xs text-fg-subtle">
+                {tools(true)}
                 {time}
                 <Who message={message} />
               </div>
@@ -346,6 +370,7 @@ export function MessageList({
                 <span className="truncate">{name}</span>
                 {message.agent && <Badge tone="info">Agent</Badge>}
                 {time}
+                {tools(true)}
               </div>
             ))}
           <div
@@ -381,26 +406,29 @@ export function MessageList({
                 <CallEntry call={message.call} to={callHref(message.call.id)} />
               </div>
             ) : (
-              <p className="text-body leading-[1.45] break-words whitespace-pre-wrap text-fg select-text">
-                <MessageText text={message.text} people={people} me={me} />
-                {message.editedAt && (
-                  <span className="ml-1 text-xs text-fg-subtle" title={stampOf(message.editedAt)}>
-                    (bearbeitet)
-                  </span>
+              <>
+                {(message.text || !message.attachments?.length) && (
+                  <p className="text-body leading-[1.45] break-words whitespace-pre-wrap text-fg select-text">
+                    <MessageText text={message.text} people={people} me={me} />
+                    {message.editedAt && (
+                      <span
+                        className="ml-1 text-xs text-fg-subtle"
+                        title={stampOf(message.editedAt)}
+                      >
+                        (bearbeitet)
+                      </span>
+                    )}
+                  </p>
                 )}
-              </p>
+                <SentAttachments
+                  attachments={message.attachments}
+                  className={cn(message.text && 'pt-1.5')}
+                />
+              </>
             )}
             {below?.(message)}
           </div>
-          {!message.deleted && !isPending(message) && editing !== message.id && (
-            <Tools
-              message={message}
-              own={own}
-              mine={mine}
-              onEdit={() => onEditing(message.id)}
-              onDelete={() => onDelete(message)}
-            />
-          )}
+          {!head && tools(false)}
         </article>
       </Fragment>,
     );
