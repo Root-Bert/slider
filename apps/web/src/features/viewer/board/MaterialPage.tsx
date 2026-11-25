@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
+import { usePanelForCalls } from '@/features/calls';
 import { cn } from '@/ui';
 import { useBoardOwner } from './board-owner';
 import { MaterialBoard } from './MaterialBoard';
@@ -15,7 +16,9 @@ const PAD = 16;
  * has none.
  */
 export function MaterialPage() {
-  const { open: materialOpen, setOpen, template } = useBoardOwner();
+  const { open: materialOpen, setOpen, template, canComment } = useBoardOwner();
+  // Shown, the call stays in its AI's side panel (✨ in the board's bar), open or closed.
+  usePanelForCalls(materialOpen && !template && canComment);
   const [mounted, setMounted] = useState(materialOpen);
   if (materialOpen && !mounted) setMounted(true);
   const boxRef = useRef<HTMLDivElement>(null);

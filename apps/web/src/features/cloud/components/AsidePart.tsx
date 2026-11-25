@@ -1,5 +1,5 @@
 import { useEffect, useEffectEvent, useState, type ReactNode } from 'react';
-import type { Attachment, CloudAgentDetail } from '@slider/shared';
+import type { Attachment, CloudAgentDetail, CloudAgentOverview } from '@slider/shared';
 import { useCloudAgent, useMessageCloudAgent, type AgentInput } from '@/lib/api';
 import { ApiError } from '@/lib/api-client';
 import { ButtonLink, cn, Icon, IconButton, type IconName } from '@/ui';
@@ -114,6 +114,13 @@ interface AsideAgentProps {
   order: { mutateAsync: (input: AgentInput) => Promise<CloudAgentDetail>; isPending: boolean };
   /** Each message written on is beside this mail, as the order was. */
   mailThreadId?: string;
+  /** Each message, the order too, is under this overview: the agent is told what it shows. */
+  overview?: CloudAgentOverview;
+  /**
+   * In the page under an overview's sentence (`Triage`, `ForYou`), not a column's part: no
+   * heading, the field where it stands, the chat below it scrolling in itself.
+   */
+  bare?: boolean;
   placeholder: string;
   /** Without the workspace's AI: why there is none. */
   off?: string | null;
@@ -135,7 +142,7 @@ export function AsideAgent(props: AsideAgentProps) {
   // A question its agent refused whose new agent could not be ordered either: back in the field.
   const [kept, setKept] = useState<{ text: string } | null>(null);
   const ask = (text: string, attachments: Attachment[] = []) =>
-    order.mutateAsync({ text, attachments }).then(
+    order.mutateAsync({ text, attachments, overview: props.overview }).then(
       (agent) => {
         onAgent(agent.id);
         setFresh(true);
@@ -182,20 +189,66 @@ export function AsideAgent(props: AsideAgentProps) {
       />
     );
   }
+  const field = (
+    <AgentComposer
+      placeholder={props.placeholder}
+      autoFocus={fresh}
+      inline
+      draft={kept}
+      busy={order.isPending}
+      workspaceId={props.workspaceId}
+      onSend={ask}
+    />
+  );
   return (
-    <AsidePart label="Nachfragen" icon="chatBubble" last>
-      <div className="sticky bottom-0 z-10 flex flex-col bg-canvas pt-2">
-        <AgentComposer
-          placeholder={props.placeholder}
-          autoFocus={fresh}
-          inline
-          draft={kept}
-          busy={order.isPending}
-          workspaceId={props.workspaceId}
-          onSend={ask}
-        />
-      </div>
-    </AsidePart>
+    <AskPart bare={props.bare}>
+      {props.bare ? (
+        field
+      ) : (
+        <div className="sticky bottom-0 z-10 flex flex-col bg-canvas pt-2">{field}</div>
+      )}
+    </AskPart>
+  );
+}
+
+/**
+ * Where „Nachfragen“ stands: the column's last part, or (`bare`) in the page under an overview's
+ * sentence – no heading, its buttons at the chat's top end.
+ */
+function AskPart({
+  bare = false,
+  working = false,
+  actions,
+  children,
+}: {
+  bare?: boolean | undefined;
+  working?: boolean;
+  actions?: ReactNode;
+  children: ReactNode;
+}) {
+  if (!bare)
+    return (
+      <AsidePart label="Nachfragen" icon="chatBubble" working={working} last actions={actions}>
+        {children}
+      </AsidePart>
+    );
+  return (
+    <section aria-label="Nachfragen" className="flex min-w-0 flex-col gap-1">
+      {actions && (
+        <div className="-my-1 flex items-center justify-end gap-1">
+          {working && (
+            <Icon
+              name="autoAwesome"
+              size={14}
+              aria-label="Die KI arbeitet"
+              className="mr-auto shrink-0 text-sage motion-safe:animate-pulse"
+            />
+          )}
+          {actions}
+        </div>
+      )}
+      {children}
+    </section>
   );
 }
 
@@ -208,6 +261,8 @@ function AsideAgentThread({
   workspaceId,
   agentId,
   mailThreadId,
+  overview,
+  bare,
   agentPath,
   notify,
   wrapChat = (chat) => chat,
@@ -237,7 +292,7 @@ function AsideAgentThread({
     if (gone) forget();
   }, [gone]);
   const send = (text: string, chatId: string, attachments: Attachment[], replyTo?: string) =>
-    message.mutateAsync({ text, attachments, chatId, mailThreadId, replyTo }).then(
+    message.mutateAsync({ text, attachments, chatId, mailThreadId, replyTo, overview }).then(
       () => true,
       (error: Error) => {
         if (refused(error)) return onAsk(text, attachments);
@@ -246,11 +301,9 @@ function AsideAgentThread({
       },
     );
   return (
-    <AsidePart
-      label="Nachfragen"
-      icon="chatBubble"
+    <AskPart
+      bare={bare}
       working={!!agent?.running}
-      last
       actions={
         <>
           <ButtonLink
@@ -274,6 +327,19 @@ function AsideAgentThread({
           message={found.error?.message ?? 'Diesen Agenten gibt es nicht.'}
           onRetry={() => void found.refetch()}
         />
+      ) : bare ? (
+        // In the page: its own scroll, so an answer never moves the page, and keys stay the page's.
+        <div className="flex max-h-[min(480px,60vh)] min-h-0 flex-col">
+          {wrapChat(
+            <AgentChat
+              agent={agent}
+              chat={agent.chats[0] ?? null}
+              autoFocus={autoFocus}
+              typeInto={false}
+              onSend={send}
+            />,
+          )}
+        </div>
       ) : (
         wrapChat(
           <AgentChat
@@ -285,6 +351,6 @@ function AsideAgentThread({
           />,
         )
       )}
-    </AsidePart>
+    </AskPart>
   );
 }

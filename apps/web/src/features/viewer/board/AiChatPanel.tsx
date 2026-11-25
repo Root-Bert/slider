@@ -1,4 +1,6 @@
 import { useMemo } from 'react';
+import { usePanelForCalls } from '@/features/calls';
+import { useAiPresence } from '../controls/ParticipantAvatars';
 import { useViewerDispatch, useViewerState } from '../state/viewer-state';
 import { useBoardOwner } from './board-owner';
 import { MaterialChatView } from './MaterialChat';
@@ -13,6 +15,10 @@ import { useBoard } from './useBoard';
 export function AiChatPanel() {
   const { aiChatOpen } = useViewerState();
   const { canComment } = useBoardOwner();
+  // The call stays in this panel, open or closed – where its button (the AI's avatar) is; also
+  // while the comments are closed (working on the slides alone): nothing floats over them.
+  const { aiPresent } = useAiPresence();
+  usePanelForCalls(canComment && aiPresent);
   // Asking spends the workspace's AI: not for Betrachter, as on the material page.
   if (!aiChatOpen || !canComment) return null;
   return <OpenAiChat />;

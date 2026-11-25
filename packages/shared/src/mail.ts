@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { cloudNameSchema } from './cloud';
 
 /*
  * Mail in Sender: a person's mailboxes (IMAP to read, SMTP to send, any provider) in a workspace.
@@ -321,8 +322,25 @@ export interface MailContextFiling {
   parentId: string | null;
   place: string;
   why: string;
+  /**
+   * Nothing there fits yet: a folder of this name, made on „Ablegen“ in the place above (or the
+   * one of that name there by then). Absent/`null`: into the place itself.
+   */
+  newFolder?: string | null;
   /** Put there already – its file in Cloud. */
   nodeId: string | null;
+}
+
+/** A meeting or appointment the mails fix, to be put into one's calendar with a click. */
+export interface MailContextEvent {
+  title: string;
+  location: string;
+  allDay: boolean;
+  /** As a calendar event's: all-day `YYYY-MM-DD` (`end` exclusive), else ISO instants. */
+  start: string;
+  end: string;
+  /** Put into the calendar already – that event. */
+  eventId: string | null;
 }
 
 /** What the AI makes of a mail conversation, shown to its right. */
@@ -352,6 +370,8 @@ export interface MailContext {
   links: MailContextLink[];
   documents: MailContextDocument[];
   filing: MailContextFiling[];
+  /** A meeting the mails fix („Termin anlegen“) – never on spam; absent on older looks. */
+  event?: MailContextEvent | null;
 }
 
 export type MailContextState = 'none' | 'working' | 'done' | 'failed';
@@ -579,7 +599,12 @@ export const mailFileSchema = z.object({
   attachmentId: z.string().min(1),
   areaId: z.string().nullable().optional(),
   parentId: z.string().nullable().optional(),
+  /** Into a folder of this name in that place – made there unless one is. */
+  newFolder: cloudNameSchema.nullable().optional(),
 });
+
+/** „Termin anlegen“: the meeting the AI found, into this calendar. */
+export const mailEventSchema = z.object({ calendarId: z.string().min(1).max(100) });
 
 export const mailSpamSchema = z.object({ spam: z.boolean() });
 

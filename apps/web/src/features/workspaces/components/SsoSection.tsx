@@ -1,6 +1,11 @@
 import { useState } from 'react';
 import { updateWorkspaceSsoInputSchema, type Workspace, type WorkspaceSso } from '@slider/shared';
-import { useDeleteWorkspaceSso, useSaveWorkspaceSso, useWorkspaceSso } from '@/lib/api';
+import {
+  useDeleteWorkspaceSso,
+  useSaveWorkspaceSso,
+  useSetWorkspaceSsoRequired,
+  useWorkspaceSso,
+} from '@/lib/api';
 import {
   Badge,
   Button,
@@ -11,6 +16,7 @@ import {
   Section,
   TextField,
   TextLink,
+  Toggle,
   useCopyToClipboard,
   type ShowToast,
 } from '@/ui';
@@ -75,6 +81,7 @@ function SsoSettings({
   const [deleting, setDeleting] = useState(false);
   const save = useSaveWorkspaceSso(workspaceId);
   const remove = useDeleteWorkspaceSso(workspaceId);
+  const setRequired = useSetWorkspaceSsoRequired(workspaceId);
   const parsed = updateWorkspaceSsoInputSchema.safeParse({
     issuer,
     clientId,
@@ -179,6 +186,25 @@ function SsoSettings({
             </Button>
           </div>
         </div>
+      )}
+
+      {sso.configured && (
+        <Toggle
+          label="Nur Firmen-Login"
+          description={
+            sso.active
+              ? `Alle mit @${sso.domain} melden sich nur noch über euren Login-Anbieter an – nicht per E-Mail-Link, Google, Microsoft, Nextcloud oder Passkey. Wer schon angemeldet ist, bleibt es.`
+              : 'Geht, sobald der Firmen-Login aktiv ist.'
+          }
+          checked={sso.required}
+          // Off always works; on only while the login is active.
+          disabled={!sso.active && !sso.required}
+          onChange={(required) =>
+            setRequired.mutate(required, {
+              onError: (error) => onNotify(error.message, 'danger'),
+            })
+          }
+        />
       )}
 
       <ConfirmDialog

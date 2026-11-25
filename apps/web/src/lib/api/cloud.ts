@@ -391,11 +391,16 @@ export function useCreateCloudArea(workspaceId: string) {
 }
 
 export function useUpdateCloudArea(workspaceId: string) {
+  const queryClient = useQueryClient();
   const { refresh } = useListPatch(workspaceId);
   return useMutation({
     mutationFn: ({ id, ...input }: CloudAreaUpdate & { id: string }) =>
       api.patch<CloudArea>(`/cloud/areas/${id}`, input),
-    onSuccess: refresh,
+    onSuccess: () => {
+      // An area's calendars are called and coloured as it is (`calendarKeys.all`).
+      void queryClient.invalidateQueries({ queryKey: ['calendar', workspaceId] });
+      return refresh();
+    },
   });
 }
 

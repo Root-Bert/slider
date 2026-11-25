@@ -892,6 +892,8 @@ export function MailThreadView({ threadId }: { threadId: string }) {
       typeInto={false}
       // A mail goes out on ⌘↵ (as a new one), Enter breaks the line.
       sendKey="mod-enter"
+      // A mail goes out as plain text: typed as it goes.
+      rich={false}
       onFiles={(picked) => {
         files.add(picked);
         focusReply();

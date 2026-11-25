@@ -56,7 +56,7 @@ export function CallAudio({ stream }: { stream: MediaStream }) {
     audio.srcObject = stream;
     void audio.play().catch(() => {});
   }, [stream]);
-  return <audio ref={ref} autoPlay className="hidden" />;
+  return <audio ref={ref} autoPlay data-call-audio className="hidden" />;
 }
 
 /**

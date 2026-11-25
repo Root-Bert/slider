@@ -4,11 +4,14 @@ import { useIsMutating, useQueryClient } from '@tanstack/react-query';
 import {
   MAX_TODO_TITLE,
   type MailContextDocument,
+  type MailContextEvent,
   type MailParty,
   type MailThread,
 } from '@slider/shared';
 import {
+  useAddMailEvent,
   useAskMailContext,
+  useCalendars,
   useFileMailAttachment,
   useMailInsights,
   useOrderCloudAgent,
@@ -18,7 +21,7 @@ import {
   useTodos,
 } from '@/lib/api';
 import { draftsQueryKey } from '@/lib/drafts';
-import { routes } from '@/lib/routes';
+import { CLOUD_EVENT_PARAM, routes } from '@/lib/routes';
 import { createStoredStore } from '@/lib/storage';
 import {
   AsideAgent,
@@ -27,6 +30,7 @@ import {
   CloudProvider,
   NamedIcon,
   namedHref,
+  plainEventCalendar,
   type Named,
 } from '@/features/cloud';
 import { Badge, Button, ButtonLink, cn, GlassPanel, Icon, IconButton } from '@/ui';
@@ -151,6 +155,25 @@ function DocumentRow({
   );
 }
 
+const DAY = new Intl.DateTimeFormat('de-DE', { weekday: 'long', day: 'numeric', month: 'numeric' });
+const TIME = new Intl.DateTimeFormat('de-DE', { hour: '2-digit', minute: '2-digit' });
+
+/** When a meeting is, as one says it: „Freitag, 27.11. | 14:00–15:00“, a whole day by its days. */
+function eventWhen(event: MailContextEvent): string {
+  if (event.allDay) {
+    const first = new Date(`${event.start}T12:00:00`);
+    const last = new Date(Date.parse(`${event.end}T12:00:00`) - 24 * 60 * 60 * 1000);
+    return last > first ? `${DAY.format(first)} – ${DAY.format(last)}` : DAY.format(first);
+  }
+  const start = new Date(event.start);
+  const end = new Date(event.end);
+  return `${DAY.format(start)} | ${TIME.format(start)}–${TIME.format(end)}`;
+}
+
+/** The calendar day an event starts on (`YYYY-MM-DD`, local), to open the calendar there. */
+const eventDay = (event: MailContextEvent) =>
+  event.allDay ? event.start : new Date(event.start).toLocaleDateString('sv-SE');
+
 const LINK_CLASS =
   'rounded-chip transition-colors hover:text-fg focus-visible:ring-2 focus-visible:ring-focus focus-visible:outline-none';
 
@@ -244,6 +267,8 @@ export function MailAside({
   const data = insights.data;
   const context = thread.context;
   const working = thread.contextState === 'working';
+  // A meeting the mails fix: into the calendar with one click, where a new event goes by itself.
+  const event = context?.verdict === 'ok' ? (context.event ?? null) : null;
   // Not read by itself (turned off for the mailbox, or past its hour's share): asked for here.
   const unassessed = !context && !working && !assess.isPending;
 
@@ -268,6 +293,7 @@ export function MailAside({
     unassessed ||
     !!context?.warning ||
     !!context?.todo ||
+    !!event ||
     bullets.length > 0 ||
     summary?.state === 'ask' ||
     summarize.isPending;
@@ -291,6 +317,9 @@ export function MailAside({
   const kept = todos?.find(
     (todo) => todo.source?.kind === 'mail' && todo.source.threadId === thread.id,
   );
+  const addEvent = useAddMailEvent(workspaceId, thread.id);
+  const calendars = useCalendars(workspaceId, Boolean(event && event.eventId === null)).data;
+  const calendarId = calendars ? plainEventCalendar(calendars, workspaceId) : '';
   const summaryAfter =
     summarizable || unassessed ? (
       <Button
@@ -318,11 +347,22 @@ export function MailAside({
             <p className="text-body text-danger">{context.warning}</p>
           </AsidePart>
         )}
-        {context?.todo && (
+        {(context?.todo || event) && (
           <AsidePart label="Zu tun" icon="checklist">
-            <p className="text-body font-medium text-fg">{context.todo}</p>
+            {context?.todo && <p className="text-body font-medium text-fg">{context.todo}</p>}
+            {event && (
+              <div className="flex items-start gap-2">
+                <Icon name="event" size={16} className="mt-0.5 shrink-0 text-fg-muted" />
+                <span className="flex min-w-0 flex-1 flex-col">
+                  <span className="text-body text-fg">{event.title}</span>
+                  <span className="text-xs text-fg-muted">
+                    {[eventWhen(event), event.location].filter(Boolean).join(' | ')}
+                  </span>
+                </span>
+              </div>
+            )}
             {/* Where it is done: a link from the mail itself, its host plain to see. */}
-            {context.todoLink && (
+            {context?.todoLink && (
               <a
                 href={context.todoLink.url}
                 {...BESIDE}
@@ -337,48 +377,70 @@ export function MailAside({
                 </span>
               </a>
             )}
-            {kept ? (
-              <ButtonLink
-                to={routes.cloudTodos(workspaceId)}
-                variant="ghost"
-                size="xs"
-                icon="checklist"
-                className="self-start"
-              >
-                {`Aufgabe #${kept.number}`}
-              </ButtonLink>
-            ) : (
-              <Button
-                variant="soft"
-                size="xs"
-                icon="add"
-                className="self-start"
-                disabled={!todos || makeTodo.isPending}
-                onClick={() =>
-                  makeTodo.mutate(
-                    {
-                      title: context.todo!.slice(0, MAX_TODO_TITLE),
-                      source: {
-                        kind: 'mail',
-                        threadId: thread.id,
-                        ...(context.todoLink
-                          ? {
-                              url: context.todoLink.url,
-                              label: context.todoLink.label.slice(0, 200),
-                            }
-                          : {}),
+            <div className="flex flex-wrap gap-2">
+              {!context?.todo ? null : kept ? (
+                <ButtonLink
+                  to={routes.cloudTodos(workspaceId)}
+                  variant="ghost"
+                  size="xs"
+                  icon="checklist"
+                  className="self-start"
+                >
+                  {`Aufgabe #${kept.number}`}
+                </ButtonLink>
+              ) : (
+                <Button
+                  variant="soft"
+                  size="xs"
+                  icon="add"
+                  className="self-start"
+                  disabled={!todos || makeTodo.isPending}
+                  onClick={() =>
+                    makeTodo.mutate(
+                      {
+                        title: context!.todo!.slice(0, MAX_TODO_TITLE),
+                        source: {
+                          kind: 'mail',
+                          threadId: thread.id,
+                          ...(context?.todoLink
+                            ? {
+                                url: context.todoLink.url,
+                                label: context.todoLink.label.slice(0, 200),
+                              }
+                            : {}),
+                        },
                       },
-                    },
-                    {
-                      onSuccess: (todo) => notify(`Aufgabe #${todo.number} angelegt`),
-                      onError: fail,
-                    },
-                  )
-                }
-              >
-                Als Aufgabe anlegen
-              </Button>
-            )}
+                      {
+                        onSuccess: (todo) => notify(`Aufgabe #${todo.number} angelegt`),
+                        onError: fail,
+                      },
+                    )
+                  }
+                >
+                  Als Aufgabe anlegen
+                </Button>
+              )}
+              {!event ? null : event.eventId ? (
+                <ButtonLink
+                  to={`${routes.cloudCalendar(workspaceId, eventDay(event))}&${CLOUD_EVENT_PARAM}=${encodeURIComponent(event.eventId)}`}
+                  variant="ghost"
+                  size="xs"
+                  icon="event"
+                >
+                  Im Kalender
+                </ButtonLink>
+              ) : (
+                <Button
+                  variant="soft"
+                  size="xs"
+                  icon="add"
+                  disabled={!calendarId || event.eventId === '' || addEvent.isPending}
+                  onClick={() => addEvent.mutate(calendarId, { onError: fail })}
+                >
+                  {event.eventId === '' ? 'Termin angelegt' : 'Termin anlegen'}
+                </Button>
+              )}
+            </div>
           </AsidePart>
         )}
         {/* A newsletter's own way out, from the mail itself – not to be looked for in it. */}
@@ -458,6 +520,10 @@ export function MailAside({
             <ul className="-mx-1 -my-1.5 flex flex-col">
               {filing.map((one) => {
                 const name = attachments.get(one.attachmentId)?.name ?? 'Anhang';
+                // Nothing there fits yet: a folder the AI would start, made on „Ablegen“.
+                const where = one.newFolder
+                  ? `neuer Ordner „${one.newFolder}“ in ${one.place}`
+                  : `nach ${one.place}`;
                 return (
                   <li
                     key={one.attachmentId}
@@ -470,9 +536,9 @@ export function MailAside({
                       <span className="truncate text-body font-medium text-fg">{name}</span>
                       <span
                         className="truncate text-xs text-fg-muted"
-                        title={[`nach ${one.place}`, one.why].filter(Boolean).join(' | ')}
+                        title={[where, one.why].filter(Boolean).join(' | ')}
                       >
-                        nach {one.place}
+                        {where}
                       </span>
                     </span>
                     {one.nodeId ? (
@@ -495,6 +561,7 @@ export function MailAside({
                               attachmentId: one.attachmentId,
                               areaId: one.areaId,
                               parentId: one.parentId,
+                              newFolder: one.newFolder ?? null,
                             },
                             {
                               onSuccess: () => notify(`${name} abgelegt`),

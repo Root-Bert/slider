@@ -5,7 +5,6 @@ import {
   MailboxTabs,
   MailToolbar,
   UnreadFilter,
-  MailSyncButton,
 } from './components/mail/MailView';
 import { useMailView } from './hooks/useMailView';
 import { MenuButton } from './components/MenuButton';
@@ -31,7 +30,6 @@ export function Component() {
         {/* „Ungelesen“ beside „Postfächer“: on or off, for every mailbox. */}
         <div className="ml-auto flex shrink-0 items-center gap-2">
           <UnreadFilter view={view} />
-          <MailSyncButton view={view} />
           <ButtonLink to={ui.mailAccountsPath} variant="ghost" icon="settings" size="sm">
             <span className="max-sm:sr-only">Postfächer</span>
           </ButtonLink>

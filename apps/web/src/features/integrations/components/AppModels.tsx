@@ -17,7 +17,8 @@ const APPS: readonly { app: AppName; name: string; models: string }[] = [
   {
     app: 'sender',
     name: 'Sender',
-    models: 'KI zur Mail, Spam, Neues – auf dem Modell für schnelle Aufträge',
+    models:
+      'KI zur Mail, Spam, Neues – auf dem Modell für schnelle Aufträge; der Agent im Anruf auf dem unter „Notizen in Anrufen“ gewählten',
   },
 ];
 

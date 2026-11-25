@@ -7,7 +7,7 @@
 export const AI_MODEL_ROLES = {
   review: {
     label: 'Review, Kommentar, Anpassung',
-    hint: 'Prüft Folien, antwortet in Kommentaren und ändert, worum ihr bittet. Auch die Agenten und Chats in Cloud, Writer und Reader.',
+    hint: 'Prüft Folien, antwortet in Kommentaren und ändert, worum ihr bittet. Auch die Agenten und Chats in Cloud, Writer und Reader und – wenn nicht anders gewählt – der Agent im Anruf, wenn er nachschaut.',
   },
   create: {
     label: 'Präsentation erstellen',

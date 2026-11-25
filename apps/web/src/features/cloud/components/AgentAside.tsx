@@ -1,4 +1,5 @@
 import {
+  useEffect,
   useState,
   useSyncExternalStore,
   type CSSProperties,
@@ -14,6 +15,28 @@ const KEY = 'slider.agent.asideWidth';
 const MIN = 300;
 /** What the chat keeps at least when the cards are pulled wide (its gap included). */
 const CHAT_MIN = 380;
+
+/**
+ * Whether the page has room for cards beside its chat – measured on the page, not the window: the
+ * AI's side panel open takes 400 px, and cards squeezed below their least width cut the call's
+ * card off. Without room the cards stand back (the panel then shows the call). Put the returned
+ * ref on the page's root.
+ */
+export function useAsideRoom() {
+  const [page, setPage] = useState<HTMLElement | null>(null);
+  const [width, setWidth] = useState(0);
+  useEffect(() => {
+    if (!page) return;
+    // It tells the first width at once, as it starts watching.
+    const observer = new ResizeObserver(([entry]) => {
+      if (entry) setWidth(entry.contentRect.width);
+    });
+    observer.observe(page);
+    return () => observer.disconnect();
+  }, [page]);
+  // Before the first measure: as before, by the window.
+  return [setPage, width === 0 || width >= MIN + CHAT_MIN] as const;
+}
 
 /** A width pulled with a handle, kept in this browser under `key`; `null`: the default. */
 export function useKeptWidth(key: string) {

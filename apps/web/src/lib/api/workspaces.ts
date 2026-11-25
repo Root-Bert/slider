@@ -301,6 +301,26 @@ export function useSaveWorkspaceSso(workspaceId: string) {
   });
 }
 
+/** „Nur Firmen-Login“ on or off – shown at once, back as it was if refused. */
+export function useSetWorkspaceSsoRequired(workspaceId: string) {
+  const queryClient = useQueryClient();
+  const key = workspaceKeys.sso(workspaceId);
+  return useMutation({
+    mutationFn: (required: boolean) =>
+      api.put<WorkspaceSso>(`/workspaces/${workspaceId}/sso/required`, { required }),
+    onMutate: async (required) => {
+      await queryClient.cancelQueries({ queryKey: key });
+      const before = queryClient.getQueryData<WorkspaceSso>(key);
+      if (before) queryClient.setQueryData<WorkspaceSso>(key, { ...before, required });
+      return { before };
+    },
+    onError: (_error, _required, context) => {
+      if (context?.before) queryClient.setQueryData(key, context.before);
+    },
+    onSuccess: (sso) => queryClient.setQueryData(key, sso),
+  });
+}
+
 export function useDeleteWorkspaceSso(workspaceId: string) {
   const queryClient = useQueryClient();
   return useMutation({

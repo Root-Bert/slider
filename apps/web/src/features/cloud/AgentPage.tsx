@@ -18,7 +18,12 @@ import { LoadFailed } from './components/Empty';
 import { AgentDesk } from './components/AgentDesk';
 import { useCloud } from './hooks/useCloud';
 import { useOpenedFrom } from './hooks/useOpenedFrom';
-import { AsideToggle, useAgentAside, useAgentCardsShown } from './components/AgentAside';
+import {
+  AsideToggle,
+  useAgentAside,
+  useAgentCardsShown,
+  useAsideRoom,
+} from './components/AgentAside';
 
 /** The agent's one chat – its id the agent's (the chats of calls in conversations stay there). */
 function Chats({
@@ -33,7 +38,7 @@ function Chats({
     // Stacked over the cards (phone), the chat keeps most of the window and the cards follow
     // when the page scrolls – squeezed beside them, its first line lay in the list's fade.
     <div className="flex min-h-0 min-w-0 flex-1 flex-col gap-3 max-lg:h-[calc(100svh-20rem)] max-lg:flex-none">
-      <AgentChat key={agent.id} agent={agent} chat={chat} search={search} />
+      <AgentChat key={agent.id} agent={agent} chat={chat} search={search} takesHanded />
     </div>
   );
 }
@@ -69,7 +74,9 @@ export function Component() {
   const stacked = useMediaQuery('(max-width: 1023px)');
   // Side by side the cards can be put away (the switch at the tool bar's end); stacked they stay.
   const [cardsKept, setCardsKept] = useAgentCardsShown();
-  const cards = stacked || cardsKept;
+  // Side by side without room (the AI's panel open): the cards stand back, the panel shows the call.
+  const [rowRef, room] = useAsideRoom();
+  const cards = stacked || (cardsKept && room);
   const asideRef = useRef<HTMLDivElement>(null);
   const aside = useAgentAside(!stacked && cards, 380, asideRef);
   // The chat's search; another agent starts without one.
@@ -119,7 +126,8 @@ export function Component() {
               onChange={(next) => setSearched({ agentId, query: next })}
               className="ml-auto w-64 max-sm:w-full"
             />
-            {!stacked && (
+            {/* Without room (the AI's panel open) the cards cannot show: no toggle that does nothing. */}
+            {!stacked && room && (
               <AsideToggle
                 shown={cards}
                 onToggle={() => setCardsKept(!cards)}
@@ -161,7 +169,7 @@ export function Component() {
             onRetry={() => void found.refetch()}
           />
         ) : (
-          <div className="flex min-h-0 flex-1 flex-col gap-5 lg:flex-row lg:gap-0">
+          <div ref={rowRef} className="flex min-h-0 flex-1 flex-col gap-5 lg:flex-row lg:gap-0">
             {view === 'files' ? (
               <div className="flex min-h-0 min-w-0 flex-1 flex-col max-lg:h-[calc(100svh-20rem)] max-lg:flex-none">
                 <ChatFiles

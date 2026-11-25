@@ -238,6 +238,14 @@ export const integrationAreaSchema = z.object({
 });
 export type IntegrationArea = z.infer<typeof integrationAreaSchema>;
 
+/**
+ * Which of the AI's models a call's agent thinks on where it looks something up or answers
+ * through its Cloud agent (`CallHub.lookUp`, `ask`): one of the key's three, `review` unless the
+ * workspace's admins pick another.
+ */
+export const CALL_MODELS = ['review', 'create', 'quick'] as const;
+export type CallModel = (typeof CALL_MODELS)[number];
+
 /** `GET /instance/integrations`, `GET /workspaces/:id/integrations` */
 export const integrationsSchema = z.object({
   areas: z.object({
@@ -252,6 +260,8 @@ export const integrationsSchema = z.object({
   aiName: z.string().nullable(),
   /** An agent writes along in calls and sends notes afterwards; `null` for the instance. */
   callNotes: z.boolean().nullable(),
+  /** The model a call's agent thinks on (`CALL_MODELS`); `null` for the instance. */
+  callModel: z.enum(CALL_MODELS).nullable(),
 });
 export type Integrations = z.infer<typeof integrationsSchema>;
 
@@ -295,6 +305,7 @@ export const updateWorkspaceAiInputSchema = z.object({
     .max(MAX_AI_NAME_LENGTH, `Höchstens ${MAX_AI_NAME_LENGTH} Zeichen.`)
     .optional(),
   callNotes: z.boolean().optional(),
+  callModel: z.enum(CALL_MODELS).optional(),
 });
 export type UpdateWorkspaceAiInput = z.infer<typeof updateWorkspaceAiInputSchema>;
 

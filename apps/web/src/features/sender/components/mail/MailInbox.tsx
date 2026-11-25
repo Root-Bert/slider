@@ -1,13 +1,17 @@
-import { useState, type ComponentProps } from 'react';
+import { useEffect, useRef, useState, type ComponentProps } from 'react';
 import { Link } from 'react-router';
 import { useQueryClient } from '@tanstack/react-query';
 import { mailThreadKind, type MailThreadSummary } from '@slider/shared';
 import {
+  MAIL_LISTED,
+  MAIL_LISTED_MAX,
   prefetchMailThread,
   useDeleteMailThread,
   useMailFolder,
   useMailSearch,
+  useMailSearchOnServer,
   useMailSpam,
+  useOlderMail,
   useReadMailThread,
   useUnreadMailThread,
 } from '@/lib/api';
@@ -66,6 +70,94 @@ function RowLink({
   );
 }
 
+/** How far ahead of the list's end its next part is fetched – before one gets there. */
+const AHEAD_PX = 600;
+/**
+ * Searches asked of the server lately (mailbox and words) – back from a mail, the same search is
+ * not swept through the server again.
+ */
+const searchedOnServer = new Map<string, number>();
+const SEARCHED_MS = 10 * 60_000;
+
+/**
+ * The list's end: as it comes near, more of the newest kept here (`limit`), and once none are left
+ * here, older ones from the server – again and again while it stays in view and there are older
+ * ones, as the chats bring older messages („Ältere laden …“). Refused: said so, tried again on a
+ * click.
+ */
+function ListEnd({
+  accountId,
+  folder,
+  count,
+  limit,
+  waiting,
+  grows,
+  onLonger,
+}: {
+  accountId: string;
+  folder: string;
+  /** The conversations the list has (before its filters). */
+  count: number;
+  limit: number;
+  /** The list is being fetched (longer, or anew): asked again once it is here. */
+  waiting: boolean;
+  /** Off: the list stays as it is („Ungelesen“ – short, its end is always in view). */
+  grows: boolean;
+  onLonger: () => void;
+}) {
+  const ui = useSender();
+  const older = useOlderMail(ui.workspace.id);
+  const endRef = useRef<HTMLDivElement>(null);
+  const [near, setNear] = useState(false);
+  const [done, setDone] = useState(false);
+  const [failed, setFailed] = useState(false);
+  useEffect(() => {
+    const end = endRef.current;
+    if (!end || typeof IntersectionObserver === 'undefined') return;
+    const observer = new IntersectionObserver(
+      (entries) => setNear(entries.some((entry) => entry.isIntersecting)),
+      { rootMargin: `0px 0px ${AHEAD_PX}px 0px` },
+    );
+    observer.observe(end);
+    return () => observer.disconnect();
+  }, []);
+  const asking = older.isPending;
+  useEffect(() => {
+    if (!near || waiting || asking || done || failed || !grows) return;
+    // As many as asked for came: more may be kept here – up to the longest a list gets.
+    if (count >= limit) return limit < MAIL_LISTED_MAX ? onLonger() : undefined;
+    older.mutate(
+      { accountId, folder },
+      {
+        onSuccess: (result) => {
+          setFailed(result.failed);
+          setDone(!result.more && !result.failed);
+        },
+        onError: () => setFailed(true),
+      },
+    );
+    // `older` changes each render; what it does is the same.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [near, waiting, asking, done, failed, count, limit, grows, accountId, folder]);
+  return (
+    <div ref={endRef}>
+      {asking && <p className="py-3 text-center text-xs text-fg-subtle">Ältere laden …</p>}
+      {failed && (
+        <p className="py-3 text-center text-xs text-fg-subtle">
+          Ältere Mails ließen sich nicht laden.{' '}
+          <button
+            type="button"
+            className="font-medium text-fg-muted underline-offset-2 hover:underline"
+            onClick={() => setFailed(false)}
+          >
+            Erneut versuchen
+          </button>
+        </p>
+      )}
+    </div>
+  );
+}
+
 /**
  * One folder of one mailbox, the latest first – pinned ones above them, the latest pinned first –
  * who, what about, its latest words; unread ones as Sender's side bar shows them (name semibold
@@ -82,11 +174,16 @@ export function MailInbox({ view }: { view: MailViewState }) {
   const [look] = useMailListLook();
   const queryClient = useQueryClient();
   const { account, folder } = view;
+  // Scrolled down to its end: more of the newest – from the start again in another folder.
+  const listKey = `${account?.id ?? ''}|${folder}`;
+  const [longer, setLonger] = useState({ key: listKey, limit: MAIL_LISTED });
+  const limit = longer.key === listKey ? longer.limit : MAIL_LISTED;
   // „Übersicht“ is no folder on the server: there the list only stands for a search.
   const threads = useMailFolder(
     ui.workspace.id,
     folder === OVERVIEW ? '' : (account?.id ?? ''),
     folder,
+    limit,
   );
   // Searched (the toolbar's field): what the words find in this mailbox, whatever its folder –
   // in what the mails say too.
@@ -97,6 +194,31 @@ export function MailInbox({ view }: { view: MailViewState }) {
     enabled: !!account,
   });
   const listed = query ? found.data : threads.data;
+  // Settled a while: older mails on the server it finds come in too (once per search, words of
+  // two letters or more) – a quiet line says so meanwhile, as the chats' search of older ones.
+  const settled = useDebounced(query, 700);
+  const onServer = useMailSearchOnServer(ui.workspace.id);
+  const askServer = onServer.mutate;
+  const accountId = account?.id ?? '';
+  useEffect(() => {
+    if (settled.length < 2 || !accountId) return;
+    const key = `${accountId}\n${settled.toLowerCase()}`;
+    if (Date.now() - (searchedOnServer.get(key) ?? 0) < SEARCHED_MS) return;
+    searchedOnServer.set(key, Date.now());
+    // Not asked (refused, offline): asked again the next time those words settle.
+    askServer(
+      { query: settled, accountId, inText: true },
+      { onError: () => searchedOnServer.delete(key) },
+    );
+  }, [settled, accountId, askServer]);
+  const searchingServer =
+    !!query &&
+    onServer.isPending &&
+    onServer.variables?.query === query &&
+    onServer.variables.accountId === accountId;
+  const searchingLine = searchingServer && (
+    <p className="py-3 text-center text-xs text-fg-subtle">Ältere Mails werden durchsucht …</p>
+  );
   const spam = useMailSpam(ui.workspace.id);
   const read = useReadMailThread(ui.workspace.id);
   const unreadAgain = useUnreadMailThread(ui.workspace.id);
@@ -151,6 +273,7 @@ export function MailInbox({ view }: { view: MailViewState }) {
     ),
   );
   if (shown.length === 0) {
+    if (searchingServer) return searchingLine;
     return (
       <div className="m-auto in-data-empty-frame:my-0">
         <Empty
@@ -332,6 +455,20 @@ export function MailInbox({ view }: { view: MailViewState }) {
           );
         })}
       </RowList>
+      {searchingLine}
+      {!query && (
+        <ListEnd
+          key={listKey}
+          accountId={account.id}
+          folder={folder}
+          count={threads.data?.length ?? 0}
+          limit={limit}
+          waiting={threads.isFetching || threads.isPlaceholderData}
+          // „Ungelesen“: the unread among the newest – never the whole mailbox to find some.
+          grows={!view.unread}
+          onLonger={() => setLonger({ key: listKey, limit: limit + MAIL_LISTED })}
+        />
+      )}
       {deleting && (
         <ConfirmDialog
           onClose={() => setDeleting(null)}

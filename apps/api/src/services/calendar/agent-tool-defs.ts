@@ -4,6 +4,7 @@ import {
   MAX_EVENT_LOCATION,
   MAX_EVENT_NOTES,
   MAX_EVENT_TITLE,
+  meetingUrlSchema,
 } from '@slider/shared';
 
 /*
@@ -35,6 +36,8 @@ const eventFields = {
   location: z.string().max(MAX_EVENT_LOCATION),
   notes: z.string().max(MAX_EVENT_NOTES),
   calendar: id,
+  /** A meeting elsewhere (Zoom, Meet, Teams) by its link; empty: none any more. */
+  meeting_link: z.union([z.literal(''), meetingUrlSchema]),
 };
 
 export const CALENDAR_INPUTS = {
@@ -50,6 +53,7 @@ export const CALENDAR_INPUTS = {
     end: eventFields.end.optional(),
     location: eventFields.location.optional(),
     notes: eventFields.notes.optional(),
+    meeting_link: eventFields.meeting_link.optional(),
   }),
   update_event: z
     .object({ event: id, ...eventFields })
@@ -85,6 +89,11 @@ const EVENT_PROPERTIES = {
   },
   location: { type: 'string', description: 'Where: a place, an address or a link.' },
   notes: { type: 'string', description: 'Details, plain text. On update it replaces the old.' },
+  meeting_link: {
+    type: 'string',
+    description:
+      'A meeting held elsewhere (Zoom, Google Meet, Teams …): its https link – joined from the event and, shortly before, from the header. Empty on update: no meeting any more.',
+  },
 } as const;
 
 /** The tools as the model reads them: name, what it does, its input (JSON Schema). */

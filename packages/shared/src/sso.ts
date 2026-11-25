@@ -29,6 +29,11 @@ export const workspaceSsoSchema = z.object({
   available: z.boolean(),
   /** Everything is in place: people at `domain` can sign in through the provider. */
   active: z.boolean(),
+  /**
+   * „Nur Firmen-Login“: while `active`, addresses at `domain` sign in through the provider alone
+   * (no mailed link, Google, Microsoft, Nextcloud or passkey). Off again with another provider.
+   */
+  required: z.boolean(),
 });
 export type WorkspaceSso = z.infer<typeof workspaceSsoSchema>;
 
@@ -43,6 +48,10 @@ export const updateWorkspaceSsoInputSchema = z.object({
   clientSecret: z.string().trim().min(1).max(2000).optional(),
 });
 export type UpdateWorkspaceSsoInput = z.infer<typeof updateWorkspaceSsoInputSchema>;
+
+/** `PUT /workspaces/:id/sso/required` – „Nur Firmen-Login“ on or off. */
+export const setWorkspaceSsoRequiredInputSchema = z.object({ required: z.boolean() });
+export type SetWorkspaceSsoRequiredInput = z.infer<typeof setWorkspaceSsoRequiredInputSchema>;
 
 /** `POST /auth/sso/discover` – the address someone wants to sign in with. */
 export const discoverSsoInputSchema = z.object({

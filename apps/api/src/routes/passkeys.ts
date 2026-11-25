@@ -316,9 +316,15 @@ export function passkeysRoutes(deps: AppDeps) {
         try {
           await startSession(c, deps, row.userId);
         } catch (error) {
-          // Blocked by the instance admin (BER-167): the login page says so.
-          if (!(error instanceof ApiError) || error.code !== 'account_blocked') throw error;
-          return c.json<LoginResult>({ redirectTo: loginErrorPath('account_blocked', returnTo) });
+          // Blocked by the instance admin (BER-167), or the address's workspace allows its company
+          // login alone: the login page says so.
+          if (
+            !(error instanceof ApiError) ||
+            (error.code !== 'account_blocked' && error.code !== 'sso_required')
+          ) {
+            throw error;
+          }
+          return c.json<LoginResult>({ redirectTo: loginErrorPath(error.code, returnTo) });
         }
         return c.json<LoginResult>({ redirectTo: returnTo });
       })

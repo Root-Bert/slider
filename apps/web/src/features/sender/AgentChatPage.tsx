@@ -4,7 +4,7 @@ import type { CloudAgentChat } from '@slider/shared';
 import { useQueryClient } from '@tanstack/react-query';
 import { senderKeys, useCloudAgent } from '@/lib/api';
 import { routes } from '@/lib/routes';
-import { AgentAvatar, AgentChat, AgentDesk, useAgentAside } from '@/features/cloud';
+import { AgentAvatar, AgentChat, AgentDesk, useAgentAside, useAsideRoom } from '@/features/cloud';
 import { AgentCallButton, CallBoxes, useAgentCall } from '@/features/calls';
 import { ViewSearch } from '@/features/workspaces';
 import { ButtonLink, cn, EmptyState, useMediaQuery } from '@/ui';
@@ -29,7 +29,8 @@ export function Component() {
   const agent = query.data;
   // The cards stand beside the chat from xl on (below they are hidden): only there a handle.
   const asideRef = useRef<HTMLDivElement>(null);
-  const aside = useAgentAside(useMediaQuery('(min-width: 1024px)'), 360, asideRef);
+  const [pageRef, room] = useAsideRoom();
+  const aside = useAgentAside(useMediaQuery('(min-width: 1024px)') && room, 360, asideRef);
   // One's call with it: a card at the top of the cards beside the chat, as in Cloud.
   const call = useAgentCall(agentId);
   // Its one chat (the chats of calls in conversations stay there).
@@ -66,7 +67,7 @@ export function Component() {
   if (!agent || !chat) return null;
 
   return (
-    <section aria-label={agent.title} className="flex min-h-0 flex-1 flex-col gap-3">
+    <section ref={pageRef} aria-label={agent.title} className="flex min-h-0 flex-1 flex-col gap-3">
       <header className={cn(PAGE_HEADER, 'max-sm:flex-wrap')}>
         <MenuButton />
         <AgentAvatar id={agent.id} size={32} />
@@ -108,6 +109,7 @@ export function Component() {
               chat={chat}
               autoFocus
               search={{ query: search, clear: () => setSearch('') }}
+              takesHanded
             />
           )}
         </div>
@@ -119,6 +121,7 @@ export function Component() {
           style={aside.style}
           className={cn(
             'flex min-h-0 w-[360px] shrink-0 flex-col gap-5 max-lg:hidden',
+            !aside.handle && 'hidden',
             call && aside.handle && 'overflow-y-auto overscroll-contain',
           )}
         >

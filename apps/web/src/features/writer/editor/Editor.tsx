@@ -106,6 +106,7 @@ import { PageStrip, STRIP_COLUMN } from './PageStrip';
 import { WRITER_PAGES, WriterContext, type WriterPages, type WriterSession } from './session';
 import { WriterToolbar } from './WriterToolbar';
 import { clampZoom, ZOOMS, type ZoomChoice } from './zoom';
+import { WriterHere } from '../voice/WriterHere';
 import { WriterVoiceProvider } from '../voice/WriterVoiceProvider';
 import { useRemoteCursors, useSendPresence } from './presence';
 import { RemoteCursors } from './RemoteCursors';
@@ -1212,6 +1213,7 @@ export function Editor({
               onZoom={setZoomChoice}
             />
           </WriterVoiceProvider>
+          <WriterHere />
           <FormatBar onComment={startComment} onPictures={(files) => void addPictures(files)} />
           {finding && (
             <FindBar

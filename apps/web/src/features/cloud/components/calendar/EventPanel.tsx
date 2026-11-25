@@ -1,4 +1,10 @@
-import type { Attachment, Calendar, CalendarEvent, CalendarEventChange } from '@slider/shared';
+import type {
+  Attachment,
+  Calendar,
+  CalendarEvent,
+  CalendarEventChange,
+  EventMeeting,
+} from '@slider/shared';
 import {
   useEffect,
   useEffectEvent,
@@ -30,7 +36,6 @@ import {
   Icon,
   IconButton,
   Menu,
-  Select,
   SidePanel,
   Toggle,
   cn,
@@ -43,21 +48,26 @@ import {
 } from '@/features/attachments';
 import { useCloud } from '../../hooks/useCloud';
 import { Picker } from '../todos/TodoList';
+import { CalendarPicker } from './CalendarPicker';
 import { at, clock, iso, midnight, plus } from './days';
 import { colorOf } from './entries';
+import { isWorkspaceOwn } from '../../lib/areas';
+import { lastCalendarKey, plainEventCalendar } from '../../lib/event-calendar';
+import { MeetingField, useCallPlaces } from './MeetingField';
 import { MonthGrid } from './MonthGrid';
 
 /** A new event's start, from where it was asked for: a day, and on a time grid its minute. */
 export interface NewEvent {
   day: string;
   minutes?: number;
+  /** „Neues Meeting“: at a time, a call in its area's conversation where its calendar is one's. */
+  meeting?: boolean;
 }
 
 const NEW = 'neu';
 const NEW_DAY = 'neu-tag';
 const NEW_AT = 'neu-um';
-/** The calendar a new one goes to: the last one picked, in this browser. */
-const lastCalendarKey = (workspaceId: string) => `slider.calendar.last:${workspaceId}`;
+const NEW_MEETING = 'neu-meeting';
 
 /** The event beside the page (`?termin=`): one panel at a time – a to-do's or file's makes way. */
 export function useShownEvent() {
@@ -71,9 +81,11 @@ export function useShownEvent() {
         else after.delete(CLOUD_EVENT_PARAM);
         after.delete(NEW_DAY);
         after.delete(NEW_AT);
+        after.delete(NEW_MEETING);
         if (draft) {
           after.set(NEW_DAY, draft.day);
           if (draft.minutes !== undefined) after.set(NEW_AT, String(draft.minutes));
+          if (draft.meeting) after.set(NEW_MEETING, '1');
         }
         after.delete(CLOUD_TODO_PARAM);
         after.delete(CLOUD_FILE_PARAM);
@@ -89,6 +101,7 @@ export function useShownEvent() {
         ? {
             day: params.get(NEW_DAY) ?? iso(new Date()),
             minutes: params.has(NEW_AT) ? Number(params.get(NEW_AT)) : undefined,
+            meeting: params.has(NEW_MEETING),
           }
         : null,
     toggle: (eventId: string) => set(id === eventId ? null : eventId),
@@ -109,6 +122,7 @@ interface Fields {
   /** All-day: the last day (shown inclusive, kept exclusive). */
   endDay: string;
   endTime: string;
+  meeting: EventMeeting | null;
 }
 
 function fieldsOf(event: CalendarEvent): Fields {
@@ -124,6 +138,7 @@ function fieldsOf(event: CalendarEvent): Fields {
     startTime: event.allDay ? '09:00' : clock(start),
     endDay: iso(end),
     endTime: event.allDay ? '10:00' : clock(end),
+    meeting: event.meeting ?? null,
   };
 }
 
@@ -183,7 +198,7 @@ export function EventPanel() {
     <SidePanel aria-label={shown.draft ? 'Neuer Termin' : 'Termin'} data-cloud-panel>
       {shown.draft ? (
         <NewEventForm
-          key={`${shown.draft.day}:${shown.draft.minutes ?? ''}`}
+          key={`${shown.draft.day}:${shown.draft.minutes ?? ''}:${shown.draft.meeting ? 'm' : ''}`}
           draft={shown.draft}
           calendars={calendars.data}
           onClose={shown.close}
@@ -270,23 +285,59 @@ function NewEventForm({
   const create = useCreateEvent(ui.workspace.id);
   const editable = calendars.filter((each) => each.canEdit);
   const last = readString(lastCalendarKey(ui.workspace.id));
+  // A meeting goes to an area's calendar (its call is the area's): the last one picked if it is
+  // one, else the workspace's own; a plain event to the last one, else one's private one.
+  const areaCalendars = editable.filter((each) => each.kind === 'area' && !each.parentId);
   const calendarId =
-    editable.find((each) => each.id === last)?.id ??
-    editable.find((each) => each.kind === 'private' && !each.parentId)?.id ??
-    editable[0]?.id ??
-    '';
-  const startMinutes = draft.minutes ?? 9 * 60;
+    (draft.meeting
+      ? (
+          areaCalendars.find((each) => each.id === last) ??
+          areaCalendars.find((each) => each.areaId === ui.home?.areas.find(isWorkspaceOwn)?.id) ??
+          areaCalendars[0]
+        )?.id
+      : undefined) ?? plainEventCalendar(calendars, ui.workspace.id);
+  const startMinutes =
+    draft.minutes ?? (draft.meeting ? Math.min(23, new Date().getHours() + 1) * 60 : 9 * 60);
   const [fields, setFields] = useState<Fields>({
     calendarId,
     title: '',
     location: '',
     notes: '',
-    allDay: draft.minutes === undefined,
+    allDay: draft.minutes === undefined && !draft.meeting,
     startDay: draft.day,
     startTime: hhmm(startMinutes),
     endDay: startMinutes + 60 >= 24 * 60 ? iso(plus(at(draft.day), 1)) : draft.day,
     endTime: hhmm(startMinutes + 60),
+    meeting: null,
   });
+  // „Neues Meeting“: the call in its calendar's area, once Sender's conversations are in – and
+  // along with the calendar while it is still the one set by itself.
+  const places = useCallPlaces(ui.workspace.id, draft.meeting === true);
+  const areaCall = (id: string): EventMeeting | null => {
+    const areaId = editable.find((each) => each.id === id)?.areaId;
+    const channel = places.areas.find(
+      (each) => each.area.id === areaId && each.channel.kind === 'area',
+    )?.channel;
+    return channel ? { kind: 'call', channelId: channel.id } : null;
+  };
+  const [presetFor, setPresetFor] = useState<string | null>(null);
+  // Its meeting picked by hand („Kein Meeting“ too): no area's call comes back with a calendar.
+  const [picked, setPicked] = useState(false);
+  const preset = draft.meeting && !picked ? areaCall(fields.calendarId) : null;
+  if (draft.meeting && preset && !fields.meeting && presetFor !== fields.calendarId) {
+    setPresetFor(fields.calendarId);
+    setFields({ ...fields, meeting: preset });
+  }
+  const onFields = (next: Fields) => {
+    const byHand = picked || JSON.stringify(next.meeting) !== JSON.stringify(fields.meeting);
+    if (byHand) setPicked(true);
+    const followed =
+      draft.meeting &&
+      !byHand &&
+      next.calendarId !== fields.calendarId &&
+      JSON.stringify(fields.meeting) === JSON.stringify(areaCall(fields.calendarId));
+    setFields(followed ? { ...next, meeting: areaCall(next.calendarId) } : next);
+  };
   // Files pasted into the notes or picked with the clip go on it when it is put in – not on a
   // mail calendar's (those live at the provider).
   const mailCalendar = !!editable.find((each) => each.id === fields.calendarId)?.mailAccountId;
@@ -307,6 +358,7 @@ function NewEventForm({
         title,
         location: fields.location.trim(),
         notes: fields.notes,
+        ...(fields.meeting && { meeting: fields.meeting }),
         ...(attach.enabled && attach.ids.length > 0 && { attachments: attach.ids }),
         ...when,
       },
@@ -324,13 +376,13 @@ function NewEventForm({
     );
   }
   return (
-    <Shell title="Neuer Termin" onClose={onClose}>
+    <Shell title={draft.meeting ? 'Neues Meeting' : 'Neuer Termin'} onClose={onClose}>
       <Fields
         fields={fields}
         calendars={editable}
         canEdit
         autoFocus
-        onFields={setFields}
+        onFields={onFields}
         onSubmit={put}
         onPaste={attach.onPaste}
         files={
@@ -345,7 +397,7 @@ function NewEventForm({
         }
       />
       <Button icon="add" onClick={put} className="self-start">
-        Termin anlegen
+        {draft.meeting ? 'Meeting anlegen' : 'Termin anlegen'}
       </Button>
     </Shell>
   );
@@ -401,6 +453,9 @@ function EventForm({
     if (next.title.trim() && next.title.trim() !== event.title) change.title = next.title.trim();
     if (next.location.trim() !== event.location) change.location = next.location.trim();
     if (next.notes !== event.notes) change.notes = next.notes;
+    if (JSON.stringify(next.meeting) !== JSON.stringify(before.meeting)) {
+      change.meeting = next.meeting;
+    }
     const when = timing(next);
     const was = timing(before);
     if (when && JSON.stringify(when) !== JSON.stringify(was)) Object.assign(change, when);
@@ -581,13 +636,7 @@ function Fields({
     const frame = requestAnimationFrame(() => titleRef.current?.focus());
     return () => cancelAnimationFrame(frame);
   }, [autoFocus]);
-  const byDepth = (calendar: Calendar) => {
-    let depth = 0;
-    for (let up = calendar.parentId; up && depth < 8; depth++) {
-      up = calendars.find((each) => each.id === up)?.parentId ?? null;
-    }
-    return depth;
-  };
+
   return (
     <>
       <AutosizeTextarea
@@ -649,21 +698,21 @@ function Fields({
           onTime={(endTime) => set({ endTime })}
         />
       </div>
-      <label className="flex items-center gap-2 text-sm text-fg-muted">
+      <div className="flex min-w-0 items-center gap-2 text-sm">
         <Icon name="calendar" size="sm" className="shrink-0 text-fg-subtle" />
-        <span className="sr-only">Kalender</span>
-        <Select
+        <CalendarPicker
           value={fields.calendarId}
-          onChange={(calendarId) => set({ calendarId })}
+          calendars={calendars}
           disabled={!canEdit || calendars.length < 2}
-          aria-label="Kalender"
-          className="min-w-0 flex-1"
-          options={calendars.map((each) => ({
-            value: each.id,
-            label: `${' '.repeat(byDepth(each))}${each.name}`,
-          }))}
+          onPick={(calendarId) => set({ calendarId })}
         />
-      </label>
+      </div>
+      <MeetingField
+        meeting={fields.meeting}
+        canEdit={canEdit}
+        callsAllowed={!calendars.find((each) => each.id === fields.calendarId)?.mailAccountId}
+        onChange={(meeting) => set({ meeting })}
+      />
       <div className="flex items-start gap-2">
         <Icon name="location" size="sm" className="mt-0.5 shrink-0 text-fg-subtle" />
         <AutosizeTextarea

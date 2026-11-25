@@ -188,9 +188,9 @@ export function callRoutes(deps: AppDeps, calls: CallHub) {
         async (c) => {
           const callId = c.req.param('callId');
           const tab = calls.tabIn(callId, me(c).id, c.req.query('peer') ?? '');
-          const file = (await c.req.parseBody().catch(() => ({}) as Record<string, unknown>))[
-            'audio'
-          ];
+          const body = await c.req.parseBody().catch(() => ({}) as Record<string, unknown>);
+          const file = body['audio'];
+          const here = typeof body['here'] === 'string' ? body['here'] : undefined;
           if (!(file instanceof File))
             throw badRequest('Bitte die Aufnahme im Feld „audio“ mitsenden.');
           const audio = new Uint8Array(await file.arrayBuffer());
@@ -214,14 +214,14 @@ export function callRoutes(deps: AppDeps, calls: CallHub) {
             throw error;
           }
           text = text.replace(/\s+/g, ' ').trim().slice(0, MAX_CALL_UTTERANCE);
-          if (text) calls.heard(deps, c.var.viewer, callId, c.req.query('peer') ?? '', text);
+          if (text) calls.heard(deps, c.var.viewer, callId, c.req.query('peer') ?? '', text, here);
           return c.json({ text });
         },
       )
       .post('/calls/:callId/transcript', viewer, turns, async (c) => {
-        const { peerId, text } = await readJson(c, callTranscriptSchema);
+        const { peerId, text, here } = await readJson(c, callTranscriptSchema);
         me(c);
-        calls.heard(deps, c.var.viewer, c.req.param('callId'), peerId, text);
+        calls.heard(deps, c.var.viewer, c.req.param('callId'), peerId, text, here);
         return c.body(null, 204);
       })
       .post('/calls/:callId/leave', viewer, async (c) => {

@@ -56,6 +56,7 @@ import { Timeline } from './timeline/Timeline';
 import { LayoutGridPanel } from './template/LayoutGridPanel';
 import { VoiceBar } from './voice/VoiceBar';
 import { VoiceProvider } from './voice/VoiceProvider';
+import { SliderHere } from './voice/SliderHere';
 import { TemplateControls } from './template/TemplateControls';
 
 /** The controls row (tool bar, filter, deck controls): where the skip link leads. */
@@ -123,6 +124,7 @@ function ViewerMain() {
       <EditingProvider>
         <LayersProvider>
           <VoiceProvider>
+            <SliderHere />
             {/* The fullscreen target: the presentation and the material page beside it. */}
             <div ref={rootRef} className="relative h-dvh overflow-hidden">
               {/* The presentation: slides out to the right while the material page is shown (its

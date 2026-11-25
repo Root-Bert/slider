@@ -7,6 +7,7 @@ import {
   type SenderMessage,
 } from '@slider/shared';
 import { mayNotify } from '@/lib/notify-prefs';
+import { markupPlain } from './markup';
 
 /**
  * What Sender's app adds on a computer (`desktop/sender`): the count on its icon in the Dock or
@@ -80,7 +81,7 @@ export function tell(channel: SenderChannel, message: SenderMessage, onOpen: () 
   const files = message.attachments ?? [];
   // Files alone: their names stand for the words.
   const text = (
-    message.text ||
+    markupPlain(message.text) ||
     (files.length
       ? `${files.length === 1 ? 'Datei' : 'Dateien'}: ${files.map((one) => one.name).join(', ')}`
       : '')

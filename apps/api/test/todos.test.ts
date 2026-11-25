@@ -592,6 +592,7 @@ describe('To-dos', () => {
     // An app reads them; changing is the person's own.
     expect(await app('change_settings', { mail_check_minutes: 15 })).toMatchObject({ error: true });
     expect((await app('read_settings', {})).text).toContain('mail_check_minutes: 1 ');
+    expect((await app('read_settings', {})).text).toContain('meeting_notice_minutes: 5 (');
     expect((await app('list_conversations', {})).text).toContain('channel of the area „Vertrieb“');
     const channel = /^(\S+) channel of the area „Vertrieb“/m.exec(
       (await app('list_conversations', {})).text,

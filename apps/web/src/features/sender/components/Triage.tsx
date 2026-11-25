@@ -10,8 +10,10 @@ import {
   useSenderTriage,
   useUnsubscribeMail,
 } from '@/lib/api';
+import { AsideAgent, CloudProvider } from '@/features/cloud';
 import { setDraft } from '@/lib/drafts';
 import { formatRelativeTime } from '@/lib/format';
+import { useOverviewAgent } from '@/lib/overview-agents';
 import { CLOUD_TODO_PARAM, routes } from '@/lib/routes';
 import {
   Button,
@@ -41,6 +43,7 @@ import {
 import { MailAvatar } from './mail/MailAvatar';
 import { Failed, Mark, UnreadSkeleton } from './SenderStart';
 import { Unread } from './SenderSidebar';
+import { markupPlain } from '../lib/markup';
 
 /*
  * Sender's start as a to-do list – „Aktuell“ for everything, „Übersicht“ in a mailbox for its mail
@@ -145,6 +148,7 @@ export function Triage({
           triage={triage}
           asking={asking}
           count={count}
+          mailbox={mailbox}
           onRetry={() => void told.refetch()}
         />
         {triage.agenda.length > 0 && <Agenda agenda={triage.agenda} />}
@@ -175,16 +179,25 @@ function Headline({
   triage,
   asking,
   count,
+  mailbox,
   onRetry,
 }: {
   triage: SenderTriage;
   asking: boolean;
   count: number;
+  mailbox: string | undefined;
   onRetry: () => void;
 }) {
+  // Answered, asked about or handed on right under it – not without the AI.
+  const ask = triage.ai !== 'off' && <OverviewAsk mailbox={mailbox} />;
   if (count === 0 && !triage.headline && triage.agenda.length === 0)
     return (
-      <p className="py-2 text-body text-fg-muted">Alles gelesen. Was neu dazukommt, steht hier.</p>
+      <div className="flex flex-col gap-3">
+        <p className="py-2 text-body text-fg-muted">
+          Alles gelesen. Was neu dazukommt, steht hier.
+        </p>
+        {ask}
+      </div>
     );
   // No spinner: the AI's look is made ahead on the server – until there is one, the count.
   return (
@@ -211,7 +224,33 @@ function Headline({
       {!asking && triage.ai === 'off' && triage.reason && (
         <p className="pl-7 text-body text-fg-muted">{triage.reason}</p>
       )}
+      {ask && <div className="mt-1.5 pl-7">{ask}</div>}
     </div>
+  );
+}
+
+/**
+ * Under the headline: a reply, a question or an order to an agent of one's own, its chat right
+ * there („Nachfragen“ as beside a mail) – the agent is told what the page shows, by id.
+ */
+function OverviewAsk({ mailbox }: { mailbox: string | undefined }) {
+  const ui = useSender();
+  const overview = { of: 'sender' as const, ...(mailbox && { mailbox }) };
+  const [agentId, setAgentId] = useOverviewAgent(ui.workspace.id, overview);
+  const order = useOrderCloudAgent(ui.workspace.id);
+  return (
+    <AsideAgent
+      bare
+      workspaceId={ui.workspace.id}
+      agentId={agentId}
+      onAgent={setAgentId}
+      order={order}
+      overview={overview}
+      placeholder="Frag dazu oder gib einen Auftrag …"
+      agentPath={ui.agentPath}
+      notify={ui.notify}
+      wrapChat={(chat) => <CloudProvider workspace={ui.workspace}>{chat}</CloudProvider>}
+    />
   );
 }
 
@@ -489,7 +528,13 @@ function ItemRow({ each, actions }: { each: TriageItem; actions: ReactNode }) {
   const { item } = each;
   // Who wrote it, unless the conversation is theirs (a direct one, an agent's).
   const who = item.last?.who && !item.last.who.startsWith(item.name) ? item.last.who : null;
-  const last = item.last ? (who ? `${who}: ${item.last.text}` : item.last.text) : '';
+  // A chat's words without their marks; a mail's as written (its * and _ are no marks).
+  const words = item.last
+    ? item.kind === 'mail'
+      ? item.last.text
+      : markupPlain(item.last.text)
+    : '';
+  const last = item.last ? (who ? `${who}: ${words}` : words) : '';
   return (
     <Row
       to={place(each)}

@@ -9,6 +9,7 @@ import {
   updateMemberInputSchema,
   updateWorkspaceDomainInputSchema,
   updateWorkspaceInputSchema,
+  setWorkspaceSsoRequiredInputSchema,
   updateWorkspaceSsoInputSchema,
   WORKSPACE_LOGO_MAX_BYTES,
   type Author,
@@ -68,6 +69,7 @@ import {
   requireRole,
   revokeInvite,
   saveWorkspaceSso,
+  setWorkspaceSsoRequired,
   setAgentAvatars,
   setWorkspaceDomain,
   setWorkspaceLogo,
@@ -293,6 +295,12 @@ export function workspacesRoutes(deps: AppDeps, presence: WorkspacePresence) {
       .put('/workspaces/:id/sso', viewer, async (c) => {
         const input = await readJson(c, updateWorkspaceSsoInputSchema);
         return c.json(await saveWorkspaceSso(deps, userId(c.var.viewer), c.req.param('id'), input));
+      })
+      .put('/workspaces/:id/sso/required', viewer, async (c) => {
+        const { required } = await readJson(c, setWorkspaceSsoRequiredInputSchema);
+        return c.json(
+          await setWorkspaceSsoRequired(deps, userId(c.var.viewer), c.req.param('id'), required),
+        );
       })
       .post('/workspaces/:id/sso/verify', viewer, async (c) =>
         c.json(await verifyWorkspaceSso(deps, userId(c.var.viewer), c.req.param('id'))),

@@ -4,6 +4,7 @@ import {
   mailAccountInputSchema,
   mailAccountPatchSchema,
   mailDraftSchema,
+  mailEventSchema,
   mailFileSchema,
   mailOAuthStartSchema,
   mailReplySchema,
@@ -33,6 +34,8 @@ import {
   linkedMailAccounts,
   listMailAccounts,
   listMailThreads,
+  readOlderMail,
+  searchMailOnServer,
   mailAttachment,
   mailHtmlPage,
   mailImage,
@@ -51,7 +54,7 @@ import {
   updateMailAccount,
   uploadMailFile,
 } from '../services/mail';
-import { askMailContext, fileMailAttachment } from '../services/mail-context';
+import { addMailEvent, askMailContext, fileMailAttachment } from '../services/mail-context';
 import { addMailRule, deleteMailRule, listMailRules } from '../services/mail-rules';
 import { workspaceAiConnection } from '../services/integration-keys';
 import { draftMailReply } from '../services/mail-draft';
@@ -199,6 +202,8 @@ export function mailRoutes(deps: AppDeps) {
           query,
           // `&in=all`: what the mails say too, as Cloud's search in what files say.
           inText: c.req.query('in') === 'all',
+          // `&limit=`: more of the newest, as the list is scrolled down.
+          limit: Number(c.req.query('limit')) || undefined,
         });
         // Pinned ones (`sender-pins.ts`) stand atop the list – the client puts them there.
         const pins = await pinnedAtOf(
@@ -210,6 +215,36 @@ export function mailRoutes(deps: AppDeps) {
         return c.json(
           threads.map((thread) => ({ ...thread, pinnedAt: pins.get(thread.id) ?? null })),
         );
+      })
+      // The list's end: older mails from the server (`?account=&folder=` as the list's).
+      .post('/workspaces/:workspaceId/mail/older', viewer, async (c) =>
+        c.json(
+          await readOlderMail(deps, me(c), c.req.param('workspaceId'), {
+            accountId: c.req.query('account') || undefined,
+            folder: c.req.query('folder') || undefined,
+          }),
+        ),
+      )
+      // A search on the server too (`?q=&account=&in=all` as the list's): what it finds older
+      // than all read comes in, the search here then finds it.
+      .post('/workspaces/:workspaceId/mail/search', viewer, async (c) => {
+        const userId = me(c);
+        const query = (c.req.query('q') ?? '').trim().slice(0, 200);
+        const searched = aiLimits(deps).mailSearches.hit(userId);
+        if (!searched.allowed) {
+          c.header('Retry-After', String(searched.retryAfterS));
+          throw new ApiError(
+            429,
+            'rate_limited',
+            'Zu viele Suchen auf einmal – gleich noch einmal.',
+          );
+        }
+        await searchMailOnServer(deps, userId, c.req.param('workspaceId'), {
+          query,
+          accountId: c.req.query('account') || undefined,
+          inText: c.req.query('in') === 'all',
+        });
+        return c.body(null, 204);
       })
       .get('/workspaces/:workspaceId/mail/logos/:domain', viewer, async (c) => {
         // A firm's picture by its domain alone (`services/mail-logos`): a PNG drawn here, or nothing.
@@ -412,6 +447,13 @@ export function mailRoutes(deps: AppDeps) {
       .post('/mail/threads/:threadId/file', viewer, async (c) => {
         const input = await readJson(c, mailFileSchema);
         return c.json(await fileMailAttachment(deps, me(c), c.req.param('threadId'), input), 201);
+      })
+      .post('/mail/threads/:threadId/event', viewer, async (c) => {
+        const input = await readJson(c, mailEventSchema);
+        return c.json(
+          await addMailEvent(deps, me(c), c.req.param('threadId'), input.calendarId),
+          201,
+        );
       })
       .get('/mail/threads/:threadId/messages/:messageId/html', viewer, async (c) => {
         // A mail as it looks: the page of a sandboxed frame (`services/mail-html`), pictures from

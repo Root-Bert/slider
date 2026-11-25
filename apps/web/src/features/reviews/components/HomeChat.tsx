@@ -1,9 +1,10 @@
 import { aiInSentence, aiNameOf } from '@slider/shared';
 import { useQueryClient } from '@tanstack/react-query';
 import { useEffect, useState } from 'react';
+import { useCallInBackground, usePanelForCalls } from '@/features/calls';
 import { ChatPanel, useAgentChat } from '@/features/viewer';
 import { chatHome, queryKeys } from '@/lib/api';
-import { IconButton } from '@/ui';
+import { AiButton } from '@/ui';
 
 /*
  * The AI on Slider's start: ✨ in the header opens a chat in a side panel over the whole
@@ -24,10 +25,9 @@ const STARTERS = [
 /** ✨ in the app's header, on Slider's start. */
 export function HomeChatButton({ name }: { name?: string | undefined }) {
   return (
-    <IconButton
-      icon="autoAwesome"
-      label={aiNameOf(name)}
-      title={`${aiInSentence(name, true)} fragen`}
+    <AiButton
+      name={name}
+      calling={useCallInBackground()}
       onClick={() => window.dispatchEvent(new Event(OPEN_CHAT_EVENT))}
     />
   );
@@ -43,6 +43,7 @@ interface HomeChatProps {
 /** The chat's panel, shown once ✨ was pressed; closed with ✕ or Esc, the chat stays. */
 export function HomeChat(props: HomeChatProps) {
   const [open, setOpen] = useState(false);
+  usePanelForCalls();
   useEffect(() => {
     const toggle = () => setOpen((now) => !now);
     window.addEventListener(OPEN_CHAT_EVENT, toggle);

@@ -10,10 +10,21 @@ import {
   AttachmentChips,
   SentAttachments,
   useAttachments,
-  useCloudDrop,
+  FileDropHint,
+  useFileDrop,
 } from '@/features/attachments';
 import { useMe } from '@/lib/api';
-import { AutosizeTextarea, Avatar, cn, Icon, IconButton, LogoMark, useFocusLoop } from '@/ui';
+import { CurrentCallBoxes, OwnAgentCallButton } from '@/features/calls';
+import {
+  AI_ICON,
+  AutosizeTextarea,
+  Avatar,
+  cn,
+  Icon,
+  IconButton,
+  LogoMark,
+  useFocusLoop,
+} from '@/ui';
 import { SidePanel, SidePanelHeader } from '../components/SidePanel';
 import { useRestoreFocus } from '../hooks/useRestoreFocus';
 import { RichText } from './rich-text';
@@ -97,8 +108,9 @@ export function ChatPanel({
     keep: keep && `chat:${keep}`,
     onError: (text) => toast(text, 'danger'),
   });
-  // Cloud files and folders dropped on the field: pointed to, not copied.
-  const drop = useCloudDrop(attach);
+  // Files dropped anywhere on the chat: from the computer up and on the message, from Cloud
+  // pointed to – the caret back in the field.
+  const drop = useFileDrop(attach, () => fieldRef.current?.focus({ preventScroll: true }));
   useRestoreFocus();
   useFocusLoop(panelRef);
   useEffect(() => fieldRef.current?.focus({ preventScroll: true }), []);
@@ -138,8 +150,11 @@ export function ChatPanel({
   return (
     <SidePanel
       ref={panelRef}
+      // The call's corner dock steps aside for it (`CallProvider`).
+      data-ai-panel
       {...panel}
       aria-labelledby={titleId}
+      {...drop.props}
       onKeyDown={(event) => {
         if (event.key !== 'Escape' || event.defaultPrevented || event.nativeEvent.isComposing)
           return;
@@ -150,7 +165,7 @@ export function ChatPanel({
     >
       <SidePanelHeader>
         <div className="flex items-center gap-2">
-          <Icon name="autoAwesome" size={18} className="shrink-0 text-fg-muted" />
+          <Icon name={AI_ICON} size={18} className="shrink-0 text-fg-muted" />
           <h2 id={titleId} className="min-w-0 flex-1 truncate text-base font-semibold text-fg">
             {title}
           </h2>
@@ -165,9 +180,29 @@ export function ChatPanel({
               }}
             />
           )}
+          {workspaceId && (
+            // Disabled while it calls, gone once in the call: the focus goes to the field.
+            <span className="contents" onClick={toField}>
+              <OwnAgentCallButton workspaceId={workspaceId} />
+            </span>
+          )}
           <IconButton icon="close" label={`${title} schließen (Esc)`} size="sm" onClick={onClose} />
         </div>
       </SidePanelHeader>
+      {/* A call one is in goes on here, over the chat – in every app. Its card taken away by a
+          click („Schweben lassen“, „Auflegen“): the focus goes back to the field, as above. */}
+      <div
+        className="contents"
+        onClick={(event) => {
+          // A button's only: a click in its text keeps what it picked there.
+          if (!(event.target as Element).closest('button')) return;
+          requestAnimationFrame(() => {
+            if (document.activeElement === document.body) toField();
+          });
+        }}
+      >
+        <CurrentCallBoxes className="flex shrink-0 flex-col gap-2 px-3 pt-3" />
+      </div>
 
       {empty ? (
         <div className="flex min-h-0 flex-1 flex-col gap-3 overflow-y-auto px-5 py-4">
@@ -234,14 +269,12 @@ export function ChatPanel({
           event.preventDefault();
           send(body, true);
         }}
-        {...drop.props}
         className="shrink-0 border-t border-hairline p-3"
       >
         <div
           className={cn(
             'glass-elevated flex items-end gap-0.5 rounded-control py-1 pr-1 pl-3',
             attach.items.length > 0 && 'flex-wrap justify-end',
-            drop.over && 'ring-2 ring-focus',
           )}
         >
           <div
@@ -300,6 +333,7 @@ export function ChatPanel({
           )}
         </div>
       </form>
+      {drop.over && <FileDropHint />}
     </SidePanel>
   );
 }

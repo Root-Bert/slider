@@ -55,6 +55,8 @@ export interface RemoteEvent {
   end: string;
   /** The version read: a write sent with it is refused once the event changed elsewhere. */
   etag?: string;
+  /** The provider's own meeting on it (Google Meet, Teams): its link to join. */
+  meetingUrl?: string;
 }
 
 /** An event's fields as written; days `YYYY-MM-DD` (end exclusive), times ISO instants. */
@@ -861,6 +863,9 @@ interface GoogleEvent {
   description?: string;
   start?: GoogleTime;
   end?: GoogleTime;
+  /** Google Meet's link, and a conference's ways in (Meet, or another added to Google). */
+  hangoutLink?: string;
+  conferenceData?: { entryPoints?: { entryPointType?: string; uri?: string }[] };
 }
 
 interface GoogleEvents {
@@ -897,7 +902,16 @@ function fromGoogle(item: GoogleEvent, remoteId: string): RemoteEvent | null {
     start,
     end,
     ...(item.etag && { etag: item.etag }),
+    ...meetingAt(
+      item.conferenceData?.entryPoints?.find((one) => one.entryPointType === 'video')?.uri ??
+        item.hangoutLink,
+    ),
   };
+}
+
+/** A provider's meeting link, when it is one to open (https). */
+function meetingAt(url: string | undefined): { meetingUrl?: string } {
+  return url && /^https:\/\/\S+$/i.test(url) && url.length <= 2000 ? { meetingUrl: url } : {};
 }
 
 /** A change as Google takes it; a patch clears the other kind of time with `null`. */
@@ -1107,6 +1121,8 @@ interface GraphEvent {
   isCancelled?: boolean;
   start?: GraphTime;
   end?: GraphTime;
+  /** A Teams meeting's ways in. */
+  onlineMeeting?: { joinUrl?: string } | null;
 }
 
 interface GraphEvents {
@@ -1115,7 +1131,7 @@ interface GraphEvents {
 }
 
 const GRAPH_API = 'https://graph.microsoft.com/v1.0';
-const GRAPH_EVENT_FIELDS = 'id,subject,location,body,isAllDay,isCancelled,start,end';
+const GRAPH_EVENT_FIELDS = 'id,subject,location,body,isAllDay,isCancelled,start,end,onlineMeeting';
 /** Times in UTC, notes as text instead of Outlook's HTML – asked and answered alike. */
 const GRAPH_PREFER = { Prefer: 'outlook.timezone="UTC", outlook.body-content-type="text"' };
 
@@ -1162,6 +1178,7 @@ function fromGraph(item: GraphEvent, remoteId: string): RemoteEvent | null {
     start,
     end,
     ...(item['@odata.etag'] && { etag: item['@odata.etag'] }),
+    ...meetingAt(item.onlineMeeting?.joinUrl),
   };
 }
 

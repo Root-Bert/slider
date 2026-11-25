@@ -44,6 +44,7 @@ import {
   endOtherAccount,
   endSession,
   otherAccounts,
+  companyLoginOnly,
   startSession,
   switchAccount,
 } from '../auth/session';
@@ -80,6 +81,7 @@ import {
 import { userEmail } from '../services/users';
 import {
   anyWorkspaceSso,
+  companyLoginRequired,
   findSsoForEmail,
   findSsoForWorkspace,
   getRole,
@@ -261,12 +263,21 @@ export function authRoutes(deps: AppDeps, gate: InstanceGate) {
     return linkFailed(c, back.pathname === ACCOUNT_PATH ? returnTo : ACCOUNT_PATH, kind);
   };
 
+  /** {@link startSession} refused: the address's workspace allows its company login alone. */
+  const companyOnly = (error: unknown) =>
+    error instanceof ApiError && error.code === 'sso_required';
+
   const loginFailed = (c: Context, error: LoginError, returnTo?: string) =>
     toWeb(c, loginErrorPath(error, returnTo));
 
-  /** Signs the account in on this browser. */
-  const loggedIn = async (c: Context, userId: string, returnTo: string) => {
-    await startSession(c, deps, userId);
+  /** Signs the account in on this browser – refused where only the company login may. */
+  const loggedIn = async (c: Context, userId: string, returnTo: string, companyLogin = false) => {
+    try {
+      await startSession(c, deps, userId, { companyLogin });
+    } catch (error) {
+      if (!companyOnly(error)) throw error;
+      return loginFailed(c, 'sso_required', returnTo);
+    }
     return toWeb(c, returnTo);
   };
 
@@ -450,14 +461,19 @@ export function authRoutes(deps: AppDeps, gate: InstanceGate) {
     link: { email: string; inviteToken: string | null; returnTo: string },
   ) => {
     const target = safeReturnTo(link.returnTo, DEFAULT_LOGIN_RETURN_TO);
+    const refused = (error: LoginError) =>
+      c.json<EmailLoginResult>({ redirectTo: loginErrorPath(error, target), newAccount: false });
+    // A link mailed before „Nur Firmen-Login“ went on: refused before it makes an account, joins
+    // the workspace or adds „E-Mail“ to the logins.
+    if (await companyLoginRequired(deps, link.email)) return refused('sso_required');
     const signIn = await signInWithEmail(deps, link);
-    if (!signIn.ok) {
-      return c.json<EmailLoginResult>({
-        redirectTo: loginErrorPath(signIn.error, target),
-        newAccount: false,
-      });
+    if (!signIn.ok) return refused(signIn.error);
+    try {
+      await startSession(c, deps, signIn.user.id);
+    } catch (error) {
+      if (!companyOnly(error)) throw error;
+      return refused('sso_required');
     }
-    await startSession(c, deps, signIn.user.id);
     return c.json<EmailLoginResult>({ redirectTo: target, newAccount: signIn.created });
   };
 
@@ -734,7 +750,7 @@ export function authRoutes(deps: AppDeps, gate: InstanceGate) {
             deps.log.info(`SSO sign-in did not join workspace ${found.workspace.id}`, error);
           });
         }
-        return loggedIn(c, signIn.user.id, returnTo);
+        return loggedIn(c, signIn.user.id, returnTo, true);
       })
 
       // ── Nextcloud (the organisation's, OAuth 2.0) ────────────────────────
@@ -921,7 +937,12 @@ export function authRoutes(deps: AppDeps, gate: InstanceGate) {
             (await knownHere(c)).includes(signIn.user.id))
         ) {
           await keepAccess(signIn.user.id);
-          await startSession(c, deps, signIn.user.id);
+          try {
+            await startSession(c, deps, signIn.user.id);
+          } catch (error) {
+            if (!companyOnly(error)) throw error;
+            return done(loginErrorPath('sso_required', flow.returnTo));
+          }
           await markKnownHere(c, signIn.user.id);
           return done(flow.returnTo);
         }
@@ -961,7 +982,12 @@ export function authRoutes(deps: AppDeps, gate: InstanceGate) {
           return c.json<LoginResult>({ redirectTo: loginErrorPath(signIn.error, target) });
         }
         removeCookie(c, config, NEXTCLOUD_SIGNUP_COOKIE);
-        await startSession(c, deps, signIn.user.id);
+        try {
+          await startSession(c, deps, signIn.user.id);
+        } catch (error) {
+          if (!companyOnly(error)) throw error;
+          return c.json<LoginResult>({ redirectTo: loginErrorPath('sso_required', target) });
+        }
         await markKnownHere(c, signIn.user.id);
         return c.json<LoginResult>({ redirectTo: target });
       })
@@ -978,6 +1004,10 @@ export function authRoutes(deps: AppDeps, gate: InstanceGate) {
           emailLoginClientLimit.hit(clientAddress(c)),
           'Zu viele Anmeldelinks angefordert. Bitte versuch es später noch einmal.',
         );
+        // No mail for an address whose workspace allows its company login alone (the login page
+        // goes there first; this is for anything else asking) – asked within the limit, as it
+        // may ask the domain's DNS.
+        if (await companyLoginRequired(deps, input.email)) throw companyLoginOnly();
         // Kept across requests, so a link mailed earlier still works here.
         const browser = await browserKey(c, config, EMAIL_LOGIN_COOKIE, EMAIL_LOGIN_TTL_MS / 1000);
         const returnTo = safeReturnTo(input.returnTo, DEFAULT_LOGIN_RETURN_TO);

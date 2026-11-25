@@ -85,6 +85,31 @@ export interface FetchedHeader extends HeaderWanted {
   header: Uint8Array;
 }
 
+/** Older mails of a folder asked for – below all read so far (`MailServers.older`). */
+export interface OlderWanted {
+  path: string;
+  folder: MailFolder;
+  /** The numbering they were read in (UIDVALIDITY): another one, nothing is read. */
+  validity: string;
+  /** Nothing below this UID is read yet. */
+  below: number;
+  /** At most this many – the newest of them. */
+  count: number;
+  /** Only those holding every word: in the subject or people, with `inText` the text too. */
+  words?: string[];
+  inText?: boolean;
+}
+
+export interface OlderRead {
+  mails: FetchedMail[];
+  /** The folder's numbering now – another than asked: nothing read. */
+  validity: string;
+  /** The lowest UID read now: everything from it on up (with words: as asked, a search skips). */
+  oldest: number;
+  /** Still older ones there (with words: older hits). */
+  more: boolean;
+}
+
 export interface OutgoingMail {
   /** Its `Message-ID` as kept here – the copy in „Gesendet“ is known by it. */
   messageId?: string;
@@ -133,6 +158,8 @@ export interface MailServers {
     wanted: readonly HeaderWanted[],
     fields: readonly string[],
   ): Promise<FetchedHeader[]>;
+  /** Mails older than all read of a folder – the newest of them, or those a search finds. */
+  older?(login: MailLogin, wanted: OlderWanted): Promise<OlderRead>;
 }
 
 /** On a folder's first read: this many of its latest mails. */
@@ -155,6 +182,9 @@ const WATCHED = new Set(['inbox', 'spam']);
 const HEADERS_PER_FETCH = 400;
 /** Without CONDSTORE: the read state of this many latest mails, each round. */
 export const FLAGS_WINDOW = 300;
+/** What one ask for older mails reads at most (`older`) – the rest the next ask. */
+const OLDER_BYTES = 50 * 1024 * 1024;
+const OLDER_MS = 60 * 1000;
 
 /** A server named for a mailbox that is no public one – the network inside, the cloud's metadata. */
 export class MailHostBlocked extends Error {}
@@ -589,8 +619,12 @@ export async function readFolder(
       watched && !!client.enabled?.has('CONDSTORE') && !!box.highestModseq && !box.noModseq;
     const mod = condstore ? { modseq: String(box.highestModseq) } : {};
     let next = box.uidNext;
-    if (known && known.validity === validity) {
+    // The lowest UID read: below lies what is older, fetched only when asked (`older`).
+    let oldest: number | undefined;
+    const same = !!known && known.validity === validity;
+    if (known && same) {
       next = known.next;
+      oldest = known.oldest;
       // The mails read before: read or unread meanwhile (in a mail program, on the phone).
       const unchanged = condstore && known.modseq === String(box.highestModseq);
       if (watched && box.exists > 0 && next > 1 && !unchanged) {
@@ -613,7 +647,10 @@ export async function readFolder(
       for await (const message of client.fetch(`${from}:*`, { uid: true }))
         next = Math.min(next, message.uid);
     }
-    round.state[folder] = { validity, next, ...mod };
+    // Read the first time (or numbered anew): everything from its first mail read on up.
+    if (!same) oldest = next;
+    const keep = { ...mod, ...(oldest === undefined ? {} : { oldest }) };
+    round.state[folder] = { validity, next, ...keep };
     // First their sizes: what is too large is told of, a round stays within its bytes.
     const seen: number[] = [];
     const wanted: number[] = [];
@@ -667,7 +704,7 @@ export async function readFolder(
     let waiting = 0;
     const advance = () => {
       while (waiting < wanted.length && got.has(wanted[waiting]!)) waiting += 1;
-      round.state[folder] = { validity, next: wanted[waiting] ?? done, ...mod };
+      round.state[folder] = { validity, next: wanted[waiting] ?? done, ...keep };
     };
     if (wanted.length > 0) {
       for await (const message of client.fetch(
@@ -686,7 +723,104 @@ export async function readFolder(
         advance();
       }
     }
-    round.state[folder] = { validity, next: done, ...mod };
+    round.state[folder] = { validity, next: done, ...keep };
+  } finally {
+    lock.release();
+  }
+}
+
+/**
+ * Older mails than all read of a folder (`wanted.below`): the newest `count` of them, or of those
+ * holding every word (IMAP SEARCH, a word in the subject or people – with `inText` the text too –
+ * in any case, as the search here). Within `OLDER_BYTES`, newest first; a mail too large is told
+ * of as a round does. Read-only: nothing is marked read.
+ */
+export async function readOlder(
+  client: Pick<ImapFlow, 'getMailboxLock' | 'mailbox' | 'fetch' | 'search'>,
+  wanted: OlderWanted,
+): Promise<OlderRead> {
+  const lock = await client.getMailboxLock(wanted.path, { readOnly: true });
+  try {
+    const box = client.mailbox;
+    const validity = box ? String(box.uidValidity) : wanted.validity;
+    const none = { mails: [], validity, oldest: wanted.below, more: false };
+    if (!box || validity !== wanted.validity || wanted.below <= 1 || box.exists === 0) return none;
+    const uid = `1:${wanted.below - 1}`;
+    const fields = ['subject', 'from', 'to', 'cc', ...(wanted.inText ? ['body'] : [])];
+    // Each word on its own (IMAP ORs only two at a time), the hits of all of them kept.
+    let found: number[] | null = null;
+    for (const word of wanted.words?.length ? wanted.words : [null]) {
+      const query =
+        word === null ? { uid } : { uid, or: fields.map((field) => ({ [field]: word })) };
+      const hits = await client.search(query, { uid: true });
+      // Refused (NO, BAD – busy, throttled): not „none older“, which would be kept for good.
+      if (!Array.isArray(hits)) throw new Error(`IMAP SEARCH in ${wanted.path} was refused`);
+      const these = new Set(hits);
+      found = found === null ? hits : found.filter((one) => these.has(one));
+    }
+    const older = (found ?? []).filter((one) => one < wanted.below).toSorted((a, b) => b - a);
+    const asked = older.slice(0, wanted.count);
+    if (asked.length === 0) return none;
+    const sizes = new Map<number, number>();
+    for await (const message of client.fetch(
+      asked.join(','),
+      { uid: true, size: true },
+      { uid: true },
+    ))
+      sizes.set(message.uid, message.size ?? 0);
+    // Newest first, within the bytes: what does not fit waits for the next ask.
+    const taken: number[] = [];
+    const whole: number[] = [];
+    const large = new Map<number, number>();
+    let bytes = 0;
+    for (const one of asked) {
+      const size = sizes.get(one);
+      if (size === undefined) continue;
+      if (size > MAX_RAW_BYTES) large.set(one, size);
+      else if (whole.length > 0 && bytes + size > OLDER_BYTES) break;
+      else {
+        whole.push(one);
+        bytes += size;
+      }
+      taken.push(one);
+    }
+    const mails: FetchedMail[] = [];
+    if (large.size > 0)
+      for await (const message of client.fetch(
+        [...large.keys()].join(','),
+        { uid: true, envelope: true, flags: true },
+        { uid: true },
+      ))
+        mails.push({
+          folder: wanted.folder,
+          uid: message.uid,
+          raw: await tooLargeMail(
+            message.envelope ?? {},
+            large.get(message.uid) ?? 0,
+            `${wanted.folder}-${validity}-${message.uid}`,
+          ),
+          seen: !!message.flags?.has('\\Seen'),
+        });
+    if (whole.length > 0)
+      for await (const message of client.fetch(
+        whole.join(','),
+        { uid: true, source: true, flags: true },
+        { uid: true },
+      ))
+        if (message.source && message.source.length <= MAX_RAW_BYTES)
+          mails.push({
+            folder: wanted.folder,
+            uid: message.uid,
+            raw: new Uint8Array(message.source),
+            seen: !!message.flags?.has('\\Seen'),
+          });
+    const lowest = taken.at(-1) ?? wanted.below;
+    return {
+      mails,
+      validity,
+      oldest: wanted.words?.length ? wanted.below : lowest,
+      more: older.length > taken.length,
+    };
   } finally {
     lock.release();
   }
@@ -821,6 +955,22 @@ export const realMailServers: MailServers = {
       }
       return done;
     } finally {
+      await client.logout().catch(() => client.close());
+    }
+  },
+
+  async older(login, wanted) {
+    const client = await imap(login);
+    try {
+      await client.connect();
+    } catch (error) {
+      throw new Error(mailErrorText(error, 'IMAP', login), { cause: error });
+    }
+    const deadline = setTimeout(() => client.close(), OLDER_MS);
+    try {
+      return await readOlder(client, wanted);
+    } finally {
+      clearTimeout(deadline);
       await client.logout().catch(() => client.close());
     }
   },

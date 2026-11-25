@@ -1,10 +1,12 @@
 import { useState } from 'react';
 import {
+  CALL_MODELS,
   DEFAULT_AI_NAME,
   MAX_AI_NAME_LENGTH,
   INTEGRATION_KIND_LABELS,
   INTEGRATION_KINDS,
   updateWorkspaceAiInputSchema,
+  type CallModel,
   type IntegrationArea,
   type IntegrationKind,
 } from '@slider/shared';
@@ -16,11 +18,13 @@ import {
   LoadingState,
   Notice,
   Section,
+  Select,
   TextField,
   Toggle,
   type ShowToast,
 } from '@/ui';
 import { AppModelsOverview } from './components/AppModels';
+import { AI_MODEL_ROLES } from './lib/ai-models';
 import { InstanceRow } from './components/InstanceRow';
 import { KeyForm } from './components/KeyForm';
 import { KeyRow } from './components/KeyRow';
@@ -57,7 +61,7 @@ export function IntegrationsPanel({
   const integrations = useIntegrations(workspaceId);
   if (integrations.isError) return <ErrorText>{integrations.error.message}</ErrorText>;
   if (!integrations.data) return <LoadingState padding="lg" />;
-  const { areas, aiName, callNotes } = integrations.data;
+  const { areas, aiName, callNotes, callModel } = integrations.data;
   const kinds: readonly IntegrationKind[] = group
     ? INTEGRATION_GROUPS[group].kinds
     : INTEGRATION_KINDS;
@@ -74,9 +78,12 @@ export function IntegrationsPanel({
       {workspaceId && callNotes !== null && (!group || group === 'ki') && (
         <Section
           {...CALL_NOTES_SECTION}
-          description="In jedem Anruf in einer Unterhaltung schreibt ein Agent mit. Danach schickt er Notizen, Beschlüsse und Aufgaben in die Unterhaltung, und man kann ihn zum Anruf fragen. Er braucht einen Key für Live-Mitschrift (Sprache) und einen für die KI."
+          description="In jedem Anruf in einer Unterhaltung schreibt ein Agent mit und antwortet, wenn man ihn anspricht. Danach stehen Notizen, Beschlüsse und Aufgaben beim Anruf. Er braucht einen Key für Live-Mitschrift (Sprache) und einen für die KI."
         >
           <CallNotesToggle workspaceId={workspaceId} on={callNotes} onNotify={onNotify} />
+          {callModel !== null && (
+            <CallModelSelect workspaceId={workspaceId} model={callModel} onNotify={onNotify} />
+          )}
         </Section>
       )}
       {kinds.map((kind) => (
@@ -291,6 +298,60 @@ function CallNotesToggle({
         );
       }}
     />
+  );
+}
+
+/**
+ * Which of the key's three models the agent in a call thinks on where it looks something up or
+ * works – at once, back on a refusal. The quick voice that answers at once stays as it is.
+ */
+function CallModelSelect({
+  workspaceId,
+  model: saved,
+  onNotify,
+}: {
+  workspaceId: string;
+  model: CallModel;
+  onNotify: ShowToast;
+}) {
+  const [model, setModel] = useState(saved);
+  const update = useUpdateWorkspaceAi(workspaceId);
+  return (
+    <div className="mt-4 flex flex-col gap-1.5">
+      <label htmlFor="call-model" className="text-sm font-medium text-fg">
+        Der Agent im Anruf denkt mit
+      </label>
+      <Select
+        id="call-model"
+        className="sm:max-w-sm"
+        value={model}
+        options={CALL_MODELS.map((value) => ({
+          value,
+          label: `Modell für ${AI_MODEL_ROLES[value].label}${value === 'review' ? ' (Standard)' : ''}`,
+        }))}
+        onChange={(next) => {
+          const before = model;
+          setModel(next);
+          update.mutate(
+            { callModel: next },
+            {
+              onSuccess: () =>
+                onNotify(
+                  `Der Agent im Anruf denkt jetzt mit dem Modell für ${AI_MODEL_ROLES[next].label}`,
+                ),
+              onError: (error) => {
+                setModel(before);
+                onNotify(error.message, 'danger');
+              },
+            },
+          );
+        }}
+      />
+      <span className="text-xs text-fg-subtle">
+        Schaut nach, was er nicht sicher weiß – in Dateien, Präsentationen, Mails, Terminen und im
+        Web – und arbeitet mit allen Werkzeugen. Die Stimme, die sofort antwortet, bleibt dieselbe.
+      </span>
+    </div>
   );
 }
 

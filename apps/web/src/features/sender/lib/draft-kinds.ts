@@ -2,10 +2,14 @@ import { searchFold } from '@slider/shared';
 import type { Draft } from '@/lib/drafts';
 import type { IconName } from '@/ui';
 import type { DraftEntry, DraftPlace } from '../hooks/useWorkspaceDrafts';
+import { markupPlain } from './markup';
 
 /** A draft's words in one line – a new mail without any yet: to whom it goes. */
 export const summary = (draft: Draft) =>
-  draft.text.replace(/\s+/g, ' ').trim() ||
+  // A chat's words without their marks; a mail's as written.
+  (draft.target?.kind.startsWith('mail') ? draft.text : markupPlain(draft.text))
+    .replace(/\s+/g, ' ')
+    .trim() ||
   (draft.target?.kind === 'mail-new' && draft.target.to.trim()
     ? `An ${draft.target.to.trim()}`
     : '');

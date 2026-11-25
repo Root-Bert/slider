@@ -1,3 +1,8 @@
-export { CallProvider, useCallsOrNull } from './CallProvider';
-export { AgentCallButton, CallButtons } from './components/CallButtons';
-export { CallBoxes, useAgentCall, useChannelCall } from './components/CallBoxes';
+export {
+  CallProvider,
+  useCallInBackground,
+  useCallsOrNull,
+  usePanelForCalls,
+} from './CallProvider';
+export { AgentCallButton, CallButtons, OwnAgentCallButton } from './components/CallButtons';
+export { CallBoxes, CurrentCallBoxes, useAgentCall, useChannelCall } from './components/CallBoxes';

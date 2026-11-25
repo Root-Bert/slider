@@ -2,12 +2,14 @@ import { useState, type ReactNode } from 'react';
 import { Link } from 'react-router';
 import { cloudFileType, type CloudFocus, type CloudFocusItem } from '@slider/shared';
 import { useConversationPlace } from '@/features/sender';
-import { useCloudFocus } from '@/lib/api';
+import { useCloudFocus, useOrderCloudAgent } from '@/lib/api';
 import { formatRelativeTime } from '@/lib/format';
+import { useOverviewAgent } from '@/lib/overview-agents';
 import { CLOUD_TODO_PARAM, routes } from '@/lib/routes';
 import { Icon, type IconName, ListRow, LogoMark, RowList, Spinner, TextLink } from '@/ui';
 import { useCloud } from '../hooks/useCloud';
 import { AgentAvatar } from './AgentAvatar';
+import { AsideAgent } from './AsidePart';
 import { FileIcon } from './FileIcon';
 
 /*
@@ -149,6 +151,11 @@ export function ForYou({ stamp }: { stamp: string | null }) {
         <p className="min-w-0 flex-1 text-base leading-6 font-medium text-fg">{headline}</p>
         {told.isFetching && <Spinner size={16} label="Die KI schaut, was ansteht" />}
       </div>
+      {focus.ai !== 'off' && told.data?.ai !== 'off' && (
+        <div className="pl-7">
+          <FocusAsk />
+        </div>
+      )}
       {!told.isFetching && focus.ai === 'failed' && (
         <p className="pl-7 text-body text-fg-muted">
           Die KI hat gerade nicht zusammengefasst.{' '}
@@ -195,5 +202,30 @@ export function ForYou({ stamp }: { stamp: string | null }) {
         </div>
       )}
     </section>
+  );
+}
+
+const OVERVIEW = { of: 'cloud' } as const;
+
+/**
+ * Under the headline, as under Sender's „Aktuell“: a reply, a question or an order to an agent of
+ * one's own, its chat right there – the agent is told what „Für dich“ shows, by id.
+ */
+function FocusAsk() {
+  const ui = useCloud();
+  const [agentId, setAgentId] = useOverviewAgent(ui.workspace.id, OVERVIEW);
+  const order = useOrderCloudAgent(ui.workspace.id);
+  return (
+    <AsideAgent
+      bare
+      workspaceId={ui.workspace.id}
+      agentId={agentId}
+      onAgent={setAgentId}
+      order={order}
+      overview={OVERVIEW}
+      placeholder="Frag dazu oder gib einen Auftrag …"
+      agentPath={(id) => routes.cloudAgent(ui.workspace.id, id)}
+      notify={ui.notify}
+    />
   );
 }

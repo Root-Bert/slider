@@ -1,0 +1,1 @@
+ALTER TABLE "workspaces" ADD COLUMN "call_model" text DEFAULT 'review' NOT NULL;

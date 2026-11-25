@@ -35,6 +35,7 @@ import {
 } from '@/ui';
 import { isMailThreadOpen, type MailOutlet, type MailViewState } from '../../hooks/useMailView';
 import { useSender } from '../../hooks/useSender';
+import { PULL_AT, usePullToRefresh } from '../../hooks/usePullToRefresh';
 import { MailAsideButton } from './MailAside';
 import { NewMailButton } from './MailCompose';
 import { MailboxNameInput } from './MailboxNameInput';
@@ -294,39 +295,58 @@ export function UnreadFilter({ view }: { view: MailViewState }) {
 }
 
 /**
- * „Abrufen“ beside „Ungelesen“: one's mailboxes here read from their servers now (as each
- * mailbox's „Jetzt abrufen“) – the list fills as they come; the sign turns meanwhile. However
- * often they are read by themselves: Einstellungen › Mail › Abrufen.
+ * The list pulled down (`usePullToRefresh`): one's mailboxes here read from their servers now (as
+ * each mailbox's „Jetzt abrufen“) – the list fills as they come; the sign above it turns
+ * meanwhile. However often they are read by themselves: Einstellungen › Mail › Abrufen.
  */
-export function MailSyncButton({ view }: { view: MailViewState }) {
+function useFetchMailboxes(view: MailViewState) {
   const ui = useSender();
-  const narrow = useMediaQuery('(max-width: 639px)');
   const sync = useSyncMailAccount(ui.workspace.id);
   const [busy, setBusy] = useState(false);
   const ready = (view.accounts ?? []).filter((each) => each.state !== 'signin');
-  if (!view.account || ready.length === 0) return null;
+  return {
+    can: !!view.account && ready.length > 0,
+    busy,
+    fetch: () => {
+      if (busy) return;
+      setBusy(true);
+      void Promise.allSettled(ready.map((each) => sync.mutateAsync(each.id))).finally(() =>
+        setBusy(false),
+      );
+    },
+  };
+}
+
+/** Above the list: the sign of it pulled down – turning with the pull, then while it fetches. */
+function PullSign({ pull, busy }: { pull: number; busy: boolean }) {
+  const shown = busy ? 40 : pull;
   return (
-    <Button
-      variant="ghost"
-      size="sm"
-      title="Jetzt abrufen"
-      aria-busy={busy || undefined}
-      disabled={busy}
-      onClick={() => {
-        setBusy(true);
-        void Promise.allSettled(ready.map((each) => sync.mutateAsync(each.id))).finally(() =>
-          setBusy(false),
-        );
-      }}
-      className="disabled:opacity-100"
+    <div
+      aria-hidden
+      className={cn(
+        'flex shrink-0 items-end justify-center overflow-hidden text-fg-subtle',
+        // Following the finger at once; let go, it goes as the rows come up.
+        pull === 0 && 'transition-[height] duration-200',
+      )}
+      style={{ height: shown }}
     >
-      <Icon
-        name="sync"
-        size={18}
-        className={cn(busy && 'animate-spin motion-reduce:animate-none')}
-      />
-      <span className={cn(narrow && 'sr-only')}>Abrufen</span>
-    </Button>
+      <span
+        className="mb-2 flex"
+        style={{
+          opacity: busy ? 1 : Math.min(pull / PULL_AT, 1),
+          transform: busy ? undefined : `rotate(${(pull / PULL_AT) * 270}deg)`,
+        }}
+      >
+        <Icon
+          name="sync"
+          size={20}
+          className={cn(
+            busy && 'animate-spin motion-reduce:animate-none',
+            pull >= PULL_AT && 'text-fg-muted',
+          )}
+        />
+      </span>
+    </div>
   );
 }
 
@@ -417,9 +437,12 @@ export function MailBody({ view }: { view: MailViewState }) {
   const [expanded, setExpandedState] = useState(() => readString(EXPANDED_KEY) === '1');
   const [listWidth, setListWidth] = useKeptWidth(LIST_WIDTH_KEY);
   useMailKeys(view, listRef);
+  const fetching = useFetchMailboxes(view);
   // One tree whether a mail is open or not: the list stays the same element (its scroll, its
   // place – no shift as a mail opens), only narrowing to its width; the mail comes in beside it.
   const open = !!view.threadId && view.wide;
+  // Pulled down at its top, the list fetches what is new – on every device, as a phone's mail.
+  const pull = usePullToRefresh(listRef, fetching.fetch, fetching.can && !(open && expanded));
   const pane: MailOutlet = {
     split: true,
     expanded,
@@ -449,6 +472,7 @@ export function MailBody({ view }: { view: MailViewState }) {
               open ? 'shrink-0' : 'min-w-0 flex-1',
             )}
           >
+            {fetching.can && <PullSign pull={pull} busy={fetching.busy} />}
             {view.folder === OVERVIEW && !view.query.trim() ? (
               <Triage
                 key={view.account?.id}

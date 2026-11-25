@@ -22,7 +22,7 @@ import { cloudContext, loadNode } from './cloud/context';
 import { searchNodes } from './cloud/nodes';
 import { agentFor, keepCallInChat } from './cloud-agents';
 import { workspaceAiConnection } from './integration-keys';
-import { conversationForCall, keepCallInConversation } from './sender';
+import { announceCallNotes, conversationForCall, keepCallInConversation } from './sender';
 
 /**
  * Calls that are over, kept (`call_records`): what was said turn by turn – people's words and the
@@ -287,6 +287,10 @@ async function writeNotes(deps: AppDeps, callId: string): Promise<void> {
     .update(callRecords)
     .set({ notes, notesState: 'done' })
     .where(eq(callRecords.id, callId));
+  // Written whatever the call box hears of it: a failed announce never marks them failed.
+  await announceCallNotes(deps, callId).catch((error: unknown) =>
+    deps.log.warn('Calls: the call box did not hear of its notes', { callId, error }),
+  );
 }
 
 /**

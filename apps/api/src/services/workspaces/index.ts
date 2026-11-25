@@ -49,11 +49,13 @@ export {
 } from './domains';
 export {
   anyWorkspaceSso,
+  companyLoginRequired,
   deleteWorkspaceSso,
   findSsoForEmail,
   findSsoForWorkspace,
   getWorkspaceSso,
   saveWorkspaceSso,
+  setWorkspaceSsoRequired,
   verifyWorkspaceSso,
   type ActiveSso,
 } from './sso';

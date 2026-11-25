@@ -91,7 +91,9 @@ export type McpContent =
   | { type: 'text'; text: string }
   | { type: 'image'; data: string; mimeType: string }
   /** A file handed over (download_presentation): its bytes, base64. */
-  | { type: 'resource'; resource: { uri: string; mimeType: string; blob: string } };
+  | { type: 'resource'; resource: { uri: string; mimeType: string; blob: string } }
+  /** Text for the app rather than the model (show_presentation's A2UI card). */
+  | { type: 'resource'; resource: { uri: string; mimeType: string; text: string } };
 
 export interface McpToolResult {
   content: McpContent[];
@@ -539,7 +541,7 @@ function withinLimit(hit: { allowed: boolean; retryAfterS: number }, what: strin
     throw new ToolError(`Too many ${what} at once – try again in ${hit.retryAfterS} s.`);
 }
 
-const deckLink = (deps: AppDeps, deckId: string, suffix = '') =>
+export const deckLink = (deps: AppDeps, deckId: string, suffix = '') =>
   `${deps.config.webOrigin}/d/${deckId}${suffix}`;
 
 // ── Who may see what ───────────────────────────────────────────────────────
@@ -1011,7 +1013,7 @@ async function fetchResult(deps: AppDeps, caller: McpCaller, id: string): Promis
 }
 
 /** The slides people see, numbered as Slider numbers them (variants made in the editor apart). */
-async function slidesOf(deps: AppDeps, deck: DeckRow): Promise<Slide[]> {
+export async function slidesOf(deps: AppDeps, deck: DeckRow): Promise<Slide[]> {
   return (await listSlides(deps.db, deck)).filter((slide) => !slide.variantOf);
 }
 
@@ -1735,6 +1737,38 @@ function proposalLine(proposal: Pick<AiProposal, 'status' | 'summary' | 'error' 
   }
 }
 
+/**
+ * A request for Slider's AI as a person asks it: written as their comment on slide `number` (as
+ * `view_slide` counts), the AI sent on it – `edit_slides`, and an order said in a call about the
+ * slide in front of who said it (no agent of its own). Refused (no right to edit, no AI key)
+ * before anything is written: no comment left behind for a change that cannot be.
+ */
+export async function askSliderAi(
+  deps: AppDeps,
+  viewer: Viewer,
+  deck: DeckRow,
+  number: number,
+  instruction: string,
+): Promise<{ slide: Slide; proposal: AiProposal }> {
+  const slide = await slideAt(deps, deck, number);
+  await editTarget(deps, viewer, deck.id);
+  const comment = await createComment(
+    deps,
+    viewer,
+    deck.id,
+    createCommentInputSchema.parse({
+      slideId: slide.id,
+      parentId: null,
+      body: instruction,
+      anchor: { type: 'slide' },
+    }),
+  );
+  return {
+    slide,
+    proposal: await createProposal(deps, viewer, deck.id, { commentId: comment.id }),
+  };
+}
+
 async function editSlides(
   deps: AppDeps,
   caller: McpCaller,
@@ -1743,21 +1777,13 @@ async function editSlides(
   const input = editInput.parse(args);
   withinLimit(aiLimits(deps).aiRequests.hit(caller.viewer.author.id), 'AI requests');
   const deck = await whenRead(deps, await findDeck(deps, caller, args.presentation, 'own'));
-  const slide = await slideAt(deps, deck, input.slide);
-  // Refused before anything is written: no comment left behind for a change that cannot be.
-  await editTarget(deps, caller.viewer, deck.id);
-  const comment = await createComment(
+  const { slide, proposal: started } = await askSliderAi(
     deps,
     caller.viewer,
-    deck.id,
-    createCommentInputSchema.parse({
-      slideId: slide.id,
-      parentId: null,
-      body: input.instruction,
-      anchor: { type: 'slide' },
-    }),
+    deck,
+    input.slide,
+    input.instruction,
   );
-  const started = await createProposal(deps, caller.viewer, deck.id, { commentId: comment.id });
   const link = deckLink(deps, deck.id, `?slide=${encodeURIComponent(slide.id)}`);
   const until = Date.now() + EDIT_WAIT_MS;
   let now = started;
@@ -2111,7 +2137,7 @@ export async function runMcpTool(
 }
 
 /** A tool's error as its answer – what the app or the AI may read of it. */
-function toolFailure(deps: AppDeps, name: string, error: unknown): McpToolResult {
+export function toolFailure(deps: AppDeps, name: string, error: unknown): McpToolResult {
   const message =
     error instanceof ToolError || error instanceof ApiError
       ? error.message

@@ -1,11 +1,5 @@
-import { $createLinkNode, $isLinkNode, LinkNode, TOGGLE_LINK_COMMAND } from '@lexical/link';
-import {
-  $isListNode,
-  INSERT_ORDERED_LIST_COMMAND,
-  INSERT_UNORDERED_LIST_COMMAND,
-  ListItemNode,
-  ListNode,
-} from '@lexical/list';
+import { LinkNode } from '@lexical/link';
+import { $isListNode, ListItemNode, ListNode } from '@lexical/list';
 import {
   $convertToMarkdownString,
   BOLD_ITALIC_STAR,
@@ -26,8 +20,7 @@ import { LinkPlugin } from '@lexical/react/LexicalLinkPlugin';
 import { ListPlugin } from '@lexical/react/LexicalListPlugin';
 import { MarkdownShortcutPlugin } from '@lexical/react/LexicalMarkdownShortcutPlugin';
 import { RichTextPlugin } from '@lexical/react/LexicalRichTextPlugin';
-import { $createHeadingNode, $isHeadingNode, HeadingNode } from '@lexical/rich-text';
-import { $setBlocksType } from '@lexical/selection';
+import { HeadingNode } from '@lexical/rich-text';
 import { $findMatchingParent, mergeRegister } from '@lexical/utils';
 import {
   $createParagraphNode,
@@ -36,16 +29,15 @@ import {
   $getSelection,
   $isRangeSelection,
   COMMAND_PRIORITY_HIGH,
-  FORMAT_TEXT_COMMAND,
   INSERT_PARAGRAPH_COMMAND,
   KEY_ENTER_COMMAND,
   KEY_ESCAPE_COMMAND,
   type EditorState,
-  type TextFormatType,
 } from 'lexical';
 import { useStore } from '@xyflow/react';
 import { useEffect, useRef, useState } from 'react';
-import { cn, IconButton, Toolbar, ToolbarDivider, type IconName } from '@/ui';
+import { RichFormatToolbar } from '@/lib/rich-format';
+import { cn } from '@/ui';
 import type { NoteEnd } from './NoteComposer';
 import { RICH_THEME as THEME } from './rich-theme';
 
@@ -259,69 +251,10 @@ function Keys({
   return null;
 }
 
-type Block = 'paragraph' | 'h1' | 'h2' | 'ul' | 'ol';
-
 /** The floating bar while typing: the format bar's look, over the box. */
 function FormatBar() {
-  const [editor] = useLexicalComposerContext();
   // As large on screen at any zoom, as the editor's format bar.
   const zoom = useStore((store) => store.transform[2]);
-  const [state, setState] = useState<{ formats: Set<TextFormatType>; block: Block; link: boolean }>(
-    {
-      formats: new Set(),
-      block: 'paragraph',
-      link: false,
-    },
-  );
-  const [linking, setLinking] = useState<string | null>(null);
-  useEffect(
-    () =>
-      editor.registerUpdateListener(({ editorState }) =>
-        editorState.read(() => {
-          const selection = $getSelection();
-          if (!$isRangeSelection(selection)) return;
-          const node = selection.anchor.getNode();
-          const formats = new Set(
-            (['bold', 'italic', 'underline', 'strikethrough'] as const).filter((format) =>
-              selection.hasFormat(format),
-            ),
-          );
-          const heading = $findMatchingParent(node, $isHeadingNode);
-          const list = $findMatchingParent(node, $isListNode);
-          const block: Block = list
-            ? list.getListType() === 'number'
-              ? 'ol'
-              : 'ul'
-            : heading
-              ? (heading.getTag() as 'h1' | 'h2')
-              : 'paragraph';
-          setState({ formats, block, link: $findMatchingParent(node, $isLinkNode) !== null });
-        }),
-      ),
-    [editor],
-  );
-  const format = (type: TextFormatType) => editor.dispatchCommand(FORMAT_TEXT_COMMAND, type);
-  const block = (next: 'paragraph' | 'h1' | 'h2') =>
-    editor.update(() => {
-      const selection = $getSelection();
-      if (!$isRangeSelection(selection)) return;
-      $setBlocksType(selection, () =>
-        next === 'paragraph' ? $createParagraphNode() : $createHeadingNode(next),
-      );
-    });
-  const button = (icon: IconName, label: string, on: boolean, run: () => void) => (
-    <IconButton
-      key={label}
-      icon={icon}
-      label={label}
-      size="compact"
-      aria-pressed={on}
-      className={cn(on && 'bg-selected text-fg')}
-      // Keeps the caret in the text.
-      onMouseDown={(event) => event.preventDefault()}
-      onClick={run}
-    />
-  );
   return (
     <div
       data-sticker-bar
@@ -330,81 +263,7 @@ function FormatBar() {
       style={{ transform: `scale(${1 / zoom})` }}
       onMouseDown={(event) => event.stopPropagation()}
     >
-      {linking === null ? (
-        <Toolbar label="Text formatieren">
-          {button('formatBold', 'Fett (⌘B)', state.formats.has('bold'), () => format('bold'))}
-          {button('formatItalic', 'Kursiv (⌘I)', state.formats.has('italic'), () =>
-            format('italic'),
-          )}
-          {button('formatUnderlined', 'Unterstrichen (⌘U)', state.formats.has('underline'), () =>
-            format('underline'),
-          )}
-          {button(
-            'formatStrikethrough',
-            'Durchgestrichen',
-            state.formats.has('strikethrough'),
-            () => format('strikethrough'),
-          )}
-          <ToolbarDivider />
-          {button('formatListBulleted', 'Aufzählung (- )', state.block === 'ul', () =>
-            editor.dispatchCommand(INSERT_UNORDERED_LIST_COMMAND, undefined),
-          )}
-          {button('formatListNumbered', 'Nummerierung (1. )', state.block === 'ol', () =>
-            editor.dispatchCommand(INSERT_ORDERED_LIST_COMMAND, undefined),
-          )}
-          <ToolbarDivider />
-          {(
-            [
-              ['paragraph', 'Text', 'textFields'],
-              ['h2', 'Groß (## )', 'formatSize'],
-              ['h1', 'Überschrift (# )', 'title'],
-            ] as const
-          ).map(([tag, label, icon]) =>
-            button(icon as IconName, label, state.block === tag, () => block(tag)),
-          )}
-          <ToolbarDivider />
-          {button('link', state.link ? 'Link entfernen' : 'Link', state.link, () =>
-            state.link ? editor.dispatchCommand(TOGGLE_LINK_COMMAND, null) : setLinking(''),
-          )}
-        </Toolbar>
-      ) : (
-        <form
-          className="flex items-center gap-1 p-1"
-          onSubmit={(event) => {
-            event.preventDefault();
-            const url = linking.trim();
-            setLinking(null);
-            if (!/^https?:\/\//i.test(url)) return;
-            editor.update(() => {
-              const selection = $getSelection();
-              if ($isRangeSelection(selection) && selection.isCollapsed()) {
-                const link = $createLinkNode(url);
-                link.append($createTextNode(url));
-                selection.insertNodes([link]);
-              }
-            });
-            editor.dispatchCommand(TOGGLE_LINK_COMMAND, url);
-            editor.focus();
-          }}
-        >
-          <input
-            autoFocus
-            value={linking}
-            placeholder="https://"
-            aria-label="Adresse des Links"
-            className="h-7 w-56 rounded-control bg-surface-1 px-2 text-body text-fg outline-none"
-            onChange={(event) => setLinking(event.target.value)}
-            onKeyDown={(event) => {
-              event.stopPropagation();
-              if (event.key === 'Escape') {
-                setLinking(null);
-                editor.focus();
-              }
-            }}
-          />
-          <IconButton type="submit" icon="check" label="Link setzen" size="compact" />
-        </form>
-      )}
+      <RichFormatToolbar />
     </div>
   );
 }

@@ -98,8 +98,26 @@ function speakerOf(entries: Entry[], me: string, spoke: ReadonlyMap<string, numb
  * Many people: small it shows who speaks and how many are there, large up to 4 × 4 at once –
  * who spoke last on the first page, the others on further pages.
  */
-export function CallDock({ call, place = 'dock' }: { call: CallState; place?: 'dock' | 'box' }) {
-  const { snap, client, open, openAgent, expanded: grown, setExpanded } = useCalls();
+export function CallDock({
+  call,
+  place = 'dock',
+  inPanel = false,
+}: {
+  call: CallState;
+  place?: 'dock' | 'box';
+  /** The card in the AI's side panel: it can be let float. */
+  inPanel?: boolean;
+}) {
+  const {
+    snap,
+    client,
+    open,
+    openAgent,
+    expanded: grown,
+    setExpanded,
+    panelHere,
+    setFloating,
+  } = useCalls();
   const box = place === 'box';
   // The card stays in its column; grown, the window-wide dock shows the call (and plays it).
   const expanded = grown && !box;
@@ -251,6 +269,15 @@ export function CallDock({ call, place = 'dock' }: { call: CallState; place?: 'd
           <span className="shrink-0 text-caption text-fg-subtle tabular-nums">
             {duration(now - since)}
           </span>
+          {inPanel && (
+            <IconButton
+              size="compact"
+              icon="pictureInPicture"
+              label="Schweben lassen"
+              title="Schweben lassen – sichtbar auch bei geschlossener Seitenleiste"
+              onClick={() => setFloating(true)}
+            />
+          )}
           <IconButton
             size="compact"
             icon="openInFull"
@@ -274,6 +301,15 @@ export function CallDock({ call, place = 'dock' }: { call: CallState; place?: 'd
           <span className="shrink-0 text-caption text-fg-subtle tabular-nums">
             {duration(now - since)}
           </span>
+          {panelHere && !expanded && (
+            <IconButton
+              size="xs"
+              icon="sidePanel"
+              label="In die Seitenleiste"
+              title="In die Seitenleiste – der Anruf läuft dort weiter, auch wenn sie zu ist"
+              onClick={() => setFloating(false)}
+            />
+          )}
           <IconButton
             size="xs"
             icon={expanded ? 'closeFullscreen' : 'openInFull'}

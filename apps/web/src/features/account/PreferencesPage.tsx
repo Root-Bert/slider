@@ -1,6 +1,6 @@
 import { SettingsLayout } from '@/shell/layouts/SettingsLayout';
 import { useAccount } from '@/features/auth';
-import { canPlaceApps, FilesPreferences } from '@/features/cloud';
+import { CalendarPreferences, canPlaceApps, FilesPreferences } from '@/features/cloud';
 import { MailPreferences, NotifyPreferences } from '@/features/sender';
 import { loadedVersion, useNewerVersion } from '@/lib/app-version';
 import { Button, Icon, Section, useToast, type IconName } from '@/ui';
@@ -15,6 +15,7 @@ const NAV = [
   // Cloud's app only: where each app's pages open.
   ...(canPlaceApps() ? ([{ id: 'apps', title: 'Apps', icon: 'apps' }] as const) : []),
   { id: 'dateien', title: 'Dateien', icon: 'folder' },
+  { id: 'kalender', title: 'Kalender', icon: 'calendar' },
   { id: 'arbeiten', title: 'Präsentationen', icon: 'slideshow' },
   { id: 'mail', title: 'Post', icon: 'mail' },
   { id: 'version', title: 'Version', icon: 'info' },
@@ -50,6 +51,7 @@ export function Component() {
       <NotifyPreferences />
       <AppsSection />
       <FilesPreferences onNotify={showToast} />
+      <CalendarPreferences onNotify={showToast} />
       <WorkSection />
       <MailPreferences />
       <Section id="version" title="Version">

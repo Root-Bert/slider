@@ -1324,6 +1324,34 @@
       "when": 1801051200000,
       "tag": "0188_user_show_extensions",
       "breakpoints": true
+    },
+    {
+      "idx": 189,
+      "version": "7",
+      "when": 1801137600000,
+      "tag": "0189_workspace_sso_required",
+      "breakpoints": true
+    },
+    {
+      "idx": 190,
+      "version": "7",
+      "when": 1801224000000,
+      "tag": "0190_calendar_meetings",
+      "breakpoints": true
+    },
+    {
+      "idx": 191,
+      "version": "7",
+      "when": 1801310400000,
+      "tag": "0191_calendar_local_name",
+      "breakpoints": true
+    },
+    {
+      "idx": 192,
+      "version": "7",
+      "when": 1801396800000,
+      "tag": "0192_call_model",
+      "breakpoints": true
     }
   ]
 }

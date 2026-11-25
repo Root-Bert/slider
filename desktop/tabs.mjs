@@ -229,11 +229,11 @@ export function createTabWindow({
       // window, and so does what is no page (a file's content).
       if (origin && isOwn(url) && disposition !== 'new-window') {
         if (deckIdOf(url)) {
-          openDeck(url);
+          openDeck(url, true);
           return { action: 'deny' };
         }
         if (app?.newTab && !new URL(url).pathname.startsWith('/api/')) {
-          openFree(url);
+          openFree(url, true);
           return { action: 'deny' };
         }
       }
@@ -323,8 +323,94 @@ export function createTabWindow({
     if (arriving && active) window.contentView.addChildView(active.view);
   }
 
-  function select(tab, { focus = true } = {}) {
+  // A call one is in follows into a tab a page opens (a presentation, another app's page – as the
+  // web app's window for another app, `lib/call-handover.ts`) and out of a tab that closes: the
+  // page in front before says its call (`data-call`), the page now in front is named after it and
+  // takes it over – never a call left behind in a hidden tab. Only on opening and closing: a
+  // plain switch of tabs leaves it where it is (taken over, the others hear one leave and come). Only between Slider's own pages on one
+  // side (this computer or the server); the id as the server makes them, it goes into a script.
+  const CALL_ID = /^[A-Za-z0-9-]{1,100}$/;
+  const ownOrigin = (contents) => {
+    if (!origin || contents.isDestroyed()) return null;
+    const url = contents.getURL();
+    return url && isOwn(url) ? new URL(url).origin : null;
+  };
+  /**
+   * The call the page of `contents` is in, or `null` while it stays there (`data-call-stays`,
+   * taken over it would join anew unmuted, without camera or screen) – sharing, unless `even`
+   * (its page closes); muted, always.
+   */
+  async function callIn(contents, { even = false } = {}) {
+    if (!ownOrigin(contents)) return null;
+    try {
+      const [id, stays] = await contents.executeJavaScript(
+        `[document.documentElement.dataset.call ?? '', document.documentElement.dataset.callStays ?? '']`,
+      );
+      if (stays === 'muted' || (stays && !even)) return null;
+      return typeof id === 'string' && CALL_ID.test(id) ? id : null;
+    } catch {
+      return null;
+    }
+  }
+  /**
+   * `to`'s page takes over the call `from`'s is in, once loaded; `even`: also one with the screen
+   * or camera shared (`from` closes). Resolves whether it was handed on.
+   */
+  async function followCall(from, to, { even = false } = {}) {
+    const side = ownOrigin(from.view.webContents);
+    const callId = side ? await callIn(from.view.webContents, { even }) : null;
+    const contents = to.view.webContents;
+    if (!callId || contents.isDestroyed()) return false;
+    const give = () => {
+      // Never into a page that is not Slider's (a sign-in on the way) or on the other side, nor
+      // into one put out of sight again meanwhile.
+      if (to !== active || contents.isDestroyed() || ownOrigin(contents) !== side) return false;
+      return contents
+        .executeJavaScript(
+          `window.name = ${JSON.stringify(`slider-call:${callId}`)};
+           dispatchEvent(new Event('slider:call-handover'));`,
+        )
+        .then(
+          () => true,
+          () => false,
+        );
+    };
+    // Whether it was handed: else a closing page need not wait to be out of it.
+    if (!contents.isLoading()) return give();
+    // (Never loading, or gone: not handed – a closing page is not kept on that account.)
+    return new Promise((resolve) => {
+      const end = (handed) => {
+        clearTimeout(late);
+        contents.removeListener('destroyed', gone);
+        contents.removeListener('did-stop-loading', loaded);
+        resolve(handed);
+      };
+      const gone = () => end(false);
+      const loaded = () => end(give());
+      const late = setTimeout(gone, 10_000);
+      contents.once('destroyed', gone);
+      contents.once('did-stop-loading', loaded);
+    });
+  }
+  /** Whether the page of `contents` is in a call at all. */
+  const stillIn = (contents) =>
+    ownOrigin(contents)
+      ? contents.executeJavaScript(`'call' in document.documentElement.dataset`).then(
+          (is) => is === true,
+          () => false,
+        )
+      : Promise.resolve(false);
+  /** Closes a tab's page – once it is out of the call it handed on, at most 10 s later. */
+  async function closeOnceOut(contents, handed) {
+    const until = Date.now() + 10_000;
+    while (handed && Date.now() < until && (await stillIn(contents)))
+      await new Promise((resolve) => setTimeout(resolve, 250));
+    if (!contents.isDestroyed()) contents.close();
+  }
+
+  function select(tab, { focus = true, follow = false } = {}) {
     if (!tab) return;
+    const before = active;
     arriving = null;
     if (tab === beside) {
       // The other half: the keys go there, both stay where they are.
@@ -337,6 +423,9 @@ export function createTabWindow({
     send();
     save();
     if (tab.kind === 'deck') refreshTitle(tab);
+    // Opened from the tab in front before, which is out of sight now (not the other half): its
+    // call comes along.
+    if (follow && before && before !== tab && before !== beside) void followCall(before, tab);
   }
 
   async function refreshTitle(tab) {
@@ -407,11 +496,11 @@ export function createTabWindow({
         const guest = guestAt(url);
         if (!deckIdOf(url)) {
           if (!guest) return;
-          openFree(url);
+          openFree(url, true);
           return backToList();
         }
         if (app && !loaded && !guest) return openFromHome(url);
-        openDeck(url);
+        openDeck(url, true);
         backToList();
       };
       contents.on('did-navigate-in-page', (_event, url) => onNavigate(url, false));
@@ -420,6 +509,8 @@ export function createTabWindow({
       tab.deckId = deckIdOf(url);
       // Leaving the presentation (closing it, a link elsewhere): the tab goes, home takes over.
       contents.on('did-navigate-in-page', (_event, next) => {
+        // Closed, its page still handing its call on (`closeOnceOut`): nothing of it shows.
+        if (!tabs.includes(tab)) return;
         if (handedOver(contents, next)) return;
         const deckId = deckIdOf(next);
         // The tab itself opens another app's page, and is free from there on.
@@ -442,6 +533,7 @@ export function createTabWindow({
       // A new page offers its buttons anew. Loaded anew away from the presentation (the account
       // was switched, the session ended): the tab goes, home shows where things are now.
       contents.on('did-navigate', (_event, next) => {
+        if (!tabs.includes(tab)) return;
         if (guestAt(next)) tab.free = true;
         if (isOwn(next) && !deckIdOf(next) && !tab.free) return closeTab(tab);
         if (tab.free) {
@@ -513,17 +605,18 @@ export function createTabWindow({
       .catch(() => {});
   }
 
-  function openDeck(url) {
+  /** `follow`: opened by a page – its call comes along (not from the bar or from outside). */
+  function openDeck(url, follow = false) {
     const deckId = deckIdOf(url);
     const open = tabs.find((tab) => tab.kind === 'deck' && tab.deckId === deckId);
-    select(open ?? addTab('deck', url));
+    select(open ?? addTab('deck', url), { follow });
   }
 
   /** A tab that is one's own to move about in („+“, a link that asks for a new tab). */
-  function openFree(url) {
+  function openFree(url, follow = false) {
     const tab = addTab('deck', url);
     tab.free = true;
-    select(tab);
+    select(tab, { follow });
   }
 
   /**
@@ -536,7 +629,7 @@ export function createTabWindow({
     const key = deckIdOf(url);
     const open = tabs.find((tab) => tab.kind === 'deck' && tab.deckId === key);
     if (open) {
-      select(open);
+      select(open, { follow: true });
       return backToList();
     }
     const tab = addTab('deck', url);
@@ -553,7 +646,7 @@ export function createTabWindow({
       // One more beat: the page has drawn what its title says.
       setTimeout(() => {
         if (arriving !== tab || window.isDestroyed()) return;
-        select(tab);
+        select(tab, { follow: true });
         backToList();
       }, 120);
     };
@@ -561,13 +654,13 @@ export function createTabWindow({
   }
 
   function closeTab(tab) {
-    if (!tab || tab.kind === 'home') return;
+    // (Its page may still speak while it closes: closed once is enough.)
+    if (!tab || tab.kind === 'home' || !tabs.includes(tab)) return;
     if (tab === arriving) arriving = null;
     if (tab === last) last = null;
     const index = tabs.indexOf(tab);
     tabs.splice(index, 1);
     window.contentView.removeChildView(tab.view);
-    tab.view.webContents.close();
     // One of two side by side: the other takes the window.
     const alone = active === tab ? beside : null;
     if (tab === beside || alone) {
@@ -580,6 +673,11 @@ export function createTabWindow({
       send();
       save();
     }
+    // A call its page is in goes to the tab in front first: closed at once, the page would leave
+    // the call – and end one it is alone in.
+    void (active ? followCall(tab, active, { even: true }) : Promise.resolve(false))
+      .catch(() => false)
+      .then((handed) => closeOnceOut(tab.view.webContents, handed));
   }
 
   /** „Nebeneinander“ on or off: the tab that was in front before comes beside this one. */

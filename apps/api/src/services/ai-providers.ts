@@ -781,7 +781,7 @@ export async function streamChat(
   input: {
     model: string;
     system: string;
-    messages: { role: 'user' | 'assistant'; content: string }[];
+    messages: { role: 'user' | 'assistant'; content: string | ChatPart[] }[];
     tools?: StreamTool[];
     maxTokens: number;
   },
@@ -1503,8 +1503,9 @@ async function anthropicTurnAt(
   return { stop, content: message.content, timing: timingOf(message) };
 }
 
-/** A part of an OpenAI chat message. */
-type ChatPart = { type: 'text'; text: string } | { type: 'image_url'; image_url: { url: string } };
+/** A part of an OpenAI chat message (Mistral reads the same: words, or a picture's `data:` URL). */
+export type ChatPart =
+  { type: 'text'; text: string } | { type: 'image_url'; image_url: { url: string } };
 
 interface ChatMessage {
   role: 'system' | 'user' | 'assistant' | 'tool';

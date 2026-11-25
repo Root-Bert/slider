@@ -4,6 +4,7 @@ import {
   INTEGRATION_INHERITS,
   INTEGRATION_KINDS,
   SERVER_PROVIDER,
+  type CallModel,
   type IntegrationKind,
   type IntegrationRule,
 } from '@slider/shared';
@@ -20,6 +21,7 @@ import {
   DEFAULT_ANTHROPIC_MODEL,
   keyHint,
   listLiveModels,
+  quickModelOf,
   recommendedModel,
   type AiConnection,
   type AiUsageReport,
@@ -461,6 +463,25 @@ export async function aiConnectionFor(
   };
 }
 
+/**
+ * The key for a call's agent's Cloud agent turn (`CallModel`): on the model picked for it – the
+ * review model, the one decks are created on, or the quick one – its usage written down as the
+ * request's own (only the model changes).
+ */
+export async function callModelConnection(
+  deps: AppDeps,
+  workspaceId: string,
+  role: CallModel = 'review',
+): Promise<WorkspaceConnection> {
+  const found = await effectiveKey(deps, workspaceId, 'ai');
+  if (!found.row) return { connection: null, error: MISSING.ai[found.why] };
+  const usable = usableConnection(deps, workspaceId, found.row);
+  if (role === 'review' || !usable.connection) return usable;
+  const model =
+    role === 'create' ? found.row.createModel || found.row.model : quickModelOf(usable.connection);
+  return { ...usable, connection: { ...usable.connection, model } };
+}
+
 /** The key for a workspace's AI request (reviews, comments, changes) – or why there is none. */
 export const workspaceAiConnection = (deps: AppDeps, workspaceId: string) =>
   aiConnectionFor(deps, workspaceId, 'review');
@@ -693,7 +714,8 @@ async function importEnvKeys(deps: AppDeps, kind?: IntegrationKind): Promise<voi
         // The environment's key of this kind is one: the value named now, in the place it had.
         const old = before.filter((row) => row !== kept);
         // Gone first: only one key of a kind is active at a time.
-        for (const row of old) await tx.delete(integrationKeys).where(eq(integrationKeys.id, row.id));
+        for (const row of old)
+          await tx.delete(integrationKeys).where(eq(integrationKeys.id, row.id));
         await tx
           .update(integrationKeys)
           .set({

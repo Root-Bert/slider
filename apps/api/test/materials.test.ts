@@ -1158,6 +1158,42 @@ describe('the material page', () => {
     const { body: listed } = await rpc(tokens.access_token, 'tools/list');
     const names = (listed?.result.tools ?? []).map((tool) => tool.name);
     expect(names).toEqual(expect.arrayContaining(['search', 'fetch', 'add_note', 'edit_slides']));
+    // show_presentation brings a card: an MCP App page that renders the tool's A2UI messages.
+    const shown = (listed?.result.tools ?? []).find((tool) => tool.name === 'show_presentation') as
+      { _meta?: { ui?: { resourceUri?: string } } } | undefined;
+    expect(shown?._meta?.ui?.resourceUri).toBe('ui://slider/presentation.html');
+    const page = (await rpc(tokens.access_token, 'resources/read', {
+      uri: 'ui://slider/presentation.html',
+    })) as unknown as { body: { result: { contents: { mimeType: string; text: string }[] } } };
+    expect(page.body.result.contents[0]).toMatchObject({
+      mimeType: 'text/html;profile=mcp-app',
+      text: expect.stringMatching(/^<!doctype html>[\s\S]*<script type="module">/),
+    });
+    const card = (await rpc(tokens.access_token, 'tools/call', {
+      name: 'show_presentation',
+      arguments: { presentation: deck.deckId },
+    })) as unknown as {
+      body: {
+        result: {
+          content: { type: string; text?: string; resource?: { mimeType: string; text: string } }[];
+        };
+      };
+    };
+    // For the model a line and what view_slide gives (its picture too, where the slide has one –
+    // these test slides have none), the card beside them.
+    expect(card.body.result.content.map((part) => part.type)).toEqual(['text', 'text', 'resource']);
+    expect(card.body.result.content[0]!.text).toMatch(/slide 1 of 2\.$/);
+    expect(card.body.result.content[1]!.text).toContain('(No picture of this slide.)');
+    const a2ui = card.body.result.content.find(
+      (part) => part.resource?.mimeType === 'application/a2ui+json',
+    );
+    expect(JSON.parse(a2ui!.resource!.text)[0]).toEqual({
+      version: '1.0',
+      createSurface: {
+        surfaceId: 'slider-presentation',
+        catalogId: 'https://a2ui.org/specification/v1_0/catalogs/basic/catalog.json',
+      },
+    });
     // Files come from the app – the server fetches no address for it (the page has none either).
     expect(
       await call(tokens.access_token, 'add_file', {
@@ -1516,6 +1552,11 @@ describe('the material page', () => {
     expect((await call(held, 'list_documents')).text).toBe('No documents.');
     // … whatever is asked of it: where it lies is looked at before what the person may do.
     expect(await call(held, 'delete_presentation', { presentation: deck.deckId })).toEqual({
+      text: `No presentation "${deck.deckId}" – list_presentations finds it.`,
+      error: true,
+    });
+    // … nor shows it as a card: no picture, no slide count, no card.
+    expect(await call(held, 'show_presentation', { presentation: deck.deckId })).toEqual({
       text: `No presentation "${deck.deckId}" – list_presentations finds it.`,
       error: true,
     });

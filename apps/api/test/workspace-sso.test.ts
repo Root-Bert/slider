@@ -8,10 +8,12 @@ import {
   type WorkspaceSso,
 } from '@slider/shared';
 import type { Config } from '../src/config';
+import { RecordingMailer, type Mailer } from '../src/mail/mailer';
 import { SSO_LOGINS_PER_HOUR } from '../src/routes/auth';
 import { userIdentities, workspaceMembers, workspaces, workspaceSso } from '../src/db/schema';
 import type { FetchLike } from '../src/sources/safe-fetch';
 import {
+  cookiePair,
   createTestContext,
   fakeJwt,
   sessionCookieFrom,
@@ -78,10 +80,11 @@ function fakeIdp(claims: Record<string, unknown> = {}): FakeIdp {
 /** TXT records the fake DNS answers with, per name. */
 let txt: Record<string, string[][]> = {};
 
-async function context(idp: FakeIdp, auth: Partial<Config['auth']> = {}) {
+async function context(idp: FakeIdp, auth: Partial<Config['auth']> = {}, mailer?: Mailer) {
   txt = {};
   ctx = await createTestContext({
     config: { auth: { ...testConfig().auth, devLogin: false, signup: 'company', ...auth } },
+    ...(mailer ? { mailer } : {}),
     fetch: idp.fetch,
     resolveTxt: async (name) => txt[name] ?? [],
     instanceAdmin: true,
@@ -227,6 +230,31 @@ describe('company login per workspace (BER-162)', () => {
     // Saving again without a secret keeps it, and the proof stays.
     const again = await saveSso(admin.workspaceId, admin.cookie, { clientSecret: undefined });
     expect(workspaceSsoSchema.parse(await again.json())).toMatchObject({ active: true });
+    // „Nur Firmen-Login“ stays with a new proof of the same domain, goes with one of another:
+    // nobody at that one signed in through it yet.
+    const verify = async () =>
+      workspaceSsoSchema.parse(
+        await (
+          await ctx.request(`/api/workspaces/${admin.workspaceId}/sso/verify`, {
+            method: 'POST',
+            cookie: admin.cookie,
+          })
+        ).json(),
+      );
+    await ctx.deps.db
+      .update(workspaceSso)
+      .set({ required: true })
+      .where(eq(workspaceSso.workspaceId, admin.workspaceId));
+    expect((await verify()).required).toBe(true);
+    const moveTo = (joinDomain: string) =>
+      ctx.deps.db
+        .update(workspaces)
+        .set({ joinDomain })
+        .where(eq(workspaces.id, admin.workspaceId));
+    await moveTo('firma-neu.de');
+    txt['_slider-sso.firma-neu.de'] = [[saved.dnsRecord!.value]];
+    expect(await verify()).toMatchObject({ active: true, required: false });
+    await moveTo('firma.de');
 
     // Another provider needs a new secret and a new DNS proof.
     const oldRecord = saved.dnsRecord!.value;
@@ -276,7 +304,8 @@ describe('company login per workspace (BER-162)', () => {
 
   it('signs colleagues in, links existing accounts, refuses other domains and a closed domain', async () => {
     const idp = fakeIdp();
-    await context(idp);
+    const mailer = new RecordingMailer();
+    await context(idp, {}, mailer);
     const admin = await activeSso();
 
     const { authorize, callback } = await ssoLogin(idp, 'Ben@Firma.de', '/decks');
@@ -314,6 +343,29 @@ describe('company login per workspace (BER-162)', () => {
       email: 'anna@firma.de',
     });
 
+    // „Nur Firmen-Login“: not by a member, nor before the admin at the domain signed in through it.
+    const setRequired = (as: string, required: boolean) =>
+      ctx.request(`/api/workspaces/${admin.workspaceId}/sso/required`, {
+        method: 'PUT',
+        cookie: as,
+        json: { required },
+      });
+    expect((await setRequired(cookie, true)).status).toBe(403);
+    const untried = await setRequired(admin.cookie, true);
+    expect(untried.status).toBe(400);
+    expect(await untried.json()).toMatchObject({
+      error: { message: expect.stringContaining('Firmen-Login an') },
+    });
+    // Ben asks for a login mail while mail still works.
+    const mailed = await ctx.request('/api/auth/email/start', {
+      method: 'POST',
+      json: { email: 'ben@firma.de', returnTo: '/' },
+    });
+    expect(mailed.status).toBe(204);
+    const asked = cookiePair(mailed, 'slider_email_login');
+    const mailedCode = /ein: (\d{6})/.exec(mailer.sent.at(-1)?.text ?? '')?.[1] ?? '';
+    expect(mailedCode).toMatch(/^\d{6}$/);
+
     const anna = await ssoLogin(idp, 'anna@firma.de');
     expect((await me(sessionCookieFrom(anna.callback) ?? '')).user?.id).toBe(admin.user.id);
     const providers = await ctx.deps.db
@@ -321,6 +373,51 @@ describe('company login per workspace (BER-162)', () => {
       .from(userIdentities)
       .where(eq(userIdentities.userId, admin.user.id));
     expect(providers.map((row) => row.provider).sort()).toEqual(['google', 'sso']);
+
+    // Signed in through it once, Anna turns „Nur Firmen-Login“ on: for firma.de no mail any more,
+    // the code mailed before signs nobody in – only the company login does.
+    const on = await setRequired(admin.cookie, true);
+    expect(workspaceSsoSchema.parse(await on.json())).toMatchObject({
+      active: true,
+      required: true,
+    });
+    const noMail = await ctx.request('/api/auth/email/start', {
+      method: 'POST',
+      json: { email: 'Ben@Firma.de' },
+    });
+    expect(noMail.status).toBe(403);
+    expect(await noMail.json()).toMatchObject({ error: { code: 'sso_required' } });
+    const oldCode = await ctx.request('/api/auth/email/code', {
+      method: 'POST',
+      json: { code: mailedCode },
+      cookie: asked,
+    });
+    expect(await oldCode.json()).toMatchObject({
+      redirectTo: expect.stringContaining('error=sso_required'),
+    });
+    expect(sessionCookieFrom(oldCode)).toBeNull();
+    // … nor adds „E-Mail“ to Ben's logins.
+    expect(
+      (
+        await ctx.deps.db
+          .select({ provider: userIdentities.provider })
+          .from(userIdentities)
+          .where(eq(userIdentities.userId, body.user!.id))
+      ).map((row) => row.provider),
+    ).toEqual(['sso']);
+    expect(
+      (
+        await ctx.request('/api/auth/email/start', {
+          method: 'POST',
+          json: { email: 'eva@elsewhere.de' },
+        })
+      ).status,
+    ).toBe(204);
+    expect(sessionCookieFrom((await ssoLogin(idp, 'anna@firma.de')).callback)).toBeTruthy();
+    // Off again: the switch answers as it is.
+    expect(
+      workspaceSsoSchema.parse(await (await setRequired(admin.cookie, false)).json()).required,
+    ).toBe(false);
 
     // Addresses outside the domain are refused.
     idp.claims = { ...idp.claims, sub: 'kc-mallory', email: 'mallory@elsewhere.de' };

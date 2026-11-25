@@ -1,6 +1,7 @@
 import type { SenderReplyQuote } from '@slider/shared';
 import { DELETED_ACCOUNT_NAME } from '@slider/shared';
 import { cn } from '@/ui';
+import { markupPlain } from '../lib/markup';
 
 /**
  * „Antworten“: the message one answers, quoted – above the answer in the list (a click shows it,
@@ -21,7 +22,7 @@ export function ReplyQuote({
         {quote.name ?? DELETED_ACCOUNT_NAME}
       </span>
       <span className={cn('line-clamp-2 break-words', quote.deleted && 'italic')}>
-        {quote.deleted ? 'Nachricht gelöscht' : quote.text || 'Dateien'}
+        {quote.deleted ? 'Nachricht gelöscht' : markupPlain(quote.text) || 'Dateien'}
       </span>
     </>
   );

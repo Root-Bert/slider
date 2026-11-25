@@ -1,3 +1,4 @@
+import type { ReactNode } from 'react';
 import type { CalendarEvent } from '@slider/shared';
 import { useCalendarEvents, useCalendars } from '@/lib/api';
 import { routes } from '@/lib/routes';
@@ -31,10 +32,20 @@ function when(entry: Entry, now: Date) {
 }
 
 /**
- * „Anstehende Termine“ on „Zuletzt“, beside „Deine Aufgaben“: the next few of the calendars one
- * shows, each opened beside the page as in the calendar; there only while there is some.
+ * „Anstehende Termine“ on „Zuletzt“ (a widget): the next few of the calendars one shows, each
+ * opened beside the page as in the calendar.
  */
-export function UpcomingEvents({ shown = 5 }: { shown?: number }) {
+export function UpcomingEvents({
+  shown = 5,
+  head,
+  empty = null,
+}: {
+  shown?: number;
+  /** The widget's heading with this link at its end (`home/`). */
+  head: (link: ReactNode) => ReactNode;
+  /** Shown while there is none. */
+  empty?: ReactNode;
+}) {
   const ui = useCloud();
   const workspaceId = ui.workspace.id;
   const today = todayNoon();
@@ -50,17 +61,21 @@ export function UpcomingEvents({ shown = 5 }: { shown?: number }) {
   const upcoming = toEntries(events.data ?? [], calendars.data ?? [], [], hidden)
     .filter((entry) => (entry.allDay ? entry.end > at(iso(today)) : entry.end > now))
     .sort((a, b) => a.start.getTime() - b.start.getTime());
-  if (upcoming.length === 0) return null;
+  const link = (
+    <TextLink to={routes.cloudCalendar(workspaceId, undefined, 'agenda')} size="body">
+      {upcoming.length > shown ? `Alle ${upcoming.length}` : 'Kalender'}
+    </TextLink>
+  );
+  if (upcoming.length === 0)
+    return (
+      <>
+        {head(link)}
+        {empty}
+      </>
+    );
   return (
-    <section aria-labelledby="cloud-events" className="flex min-w-0 flex-col gap-2">
-      <div className="flex items-baseline justify-between">
-        <h2 id="cloud-events" className="text-base font-semibold text-fg">
-          Anstehende Termine
-        </h2>
-        <TextLink to={routes.cloudCalendar(workspaceId, undefined, 'agenda')} size="body">
-          {upcoming.length > shown ? `Alle ${upcoming.length}` : 'Kalender'}
-        </TextLink>
-      </div>
+    <>
+      {head(link)}
       <ul className="flex flex-col">
         {upcoming.slice(0, shown).map((entry) => (
           <EventRow
@@ -73,7 +88,7 @@ export function UpcomingEvents({ shown = 5 }: { shown?: number }) {
           />
         ))}
       </ul>
-    </section>
+    </>
   );
 }
 

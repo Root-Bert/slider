@@ -16,7 +16,8 @@ import {
   type EditableElement,
   type LiveEvent,
 } from '@slider/shared';
-import { media, integrationKeys } from '../src/db/schema';
+import { comments, decks, media, integrationKeys } from '../src/db/schema';
+import { askSliderAi } from '../src/services/mcp';
 import { layoutCheck, measureDeck } from '../src/services/ai-context';
 import { asksForVariant, callGroups } from '../src/services/ai-proposals';
 import { effortMessage, runTurn } from '../src/services/ai-providers';
@@ -668,6 +669,32 @@ describe('AI proposals', { timeout: 60_000 }, () => {
       expect(thread).toContain('Titel gekürzt.');
       expect(thread).toContain('Bitte mit Zahl');
       expect(thread).toContain('points at x 50%, y 50%');
+      // Asked from elsewhere (`edit_slides`, an order said in a call about the slide in front):
+      // the person's own comment on the slide (by its number), the AI sent on it.
+      anthropic.steps = [message([text('Nichts zu tun.')], 'end_turn')];
+      const [deckRow] = await ctx.deps.db.select().from(decks).where(eq(decks.id, deckId));
+      const owner = {
+        type: 'owner' as const,
+        id: ctx.ownerId,
+        name: 'Owner',
+        color: 'blue' as const,
+      };
+      const { slide: asked, proposal } = await askSliderAi(
+        ctx.deps,
+        { kind: 'owner', author: owner },
+        deckRow!,
+        3,
+        'Kürzer, bitte',
+      );
+      expect(asked.id).toBe(slide.slideId);
+      const [said] = await ctx.deps.db
+        .select()
+        .from(comments)
+        .where(eq(comments.id, proposal.commentId!));
+      expect(said).toMatchObject({ body: 'Kürzer, bitte', slideId: slide.slideId, parentId: null });
+      expect(said!.author).toMatchObject({ id: ctx.ownerId });
+      expect(said!.anchor).toEqual({ type: 'slide' });
+      expect(await settled(ctx, deckId)).toMatchObject({ commentId: said!.id, status: 'ready' });
     }
     {
       const { ctx, anthropic, deckId, state } = await setup();

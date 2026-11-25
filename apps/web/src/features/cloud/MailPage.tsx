@@ -2,7 +2,6 @@ import { Outlet } from 'react-router';
 import {
   MailBody,
   MailboxTabs,
-  MailSyncButton,
   MailToolbar,
   UnreadFilter,
   useMailView,
@@ -29,7 +28,6 @@ export function Component() {
       actions={
         <div className="flex items-center gap-2">
           <UnreadFilter view={view} />
-          <MailSyncButton view={view} />
           <ButtonLink
             to={routes.cloudMailAccounts(ui.workspace.id)}
             variant="ghost"

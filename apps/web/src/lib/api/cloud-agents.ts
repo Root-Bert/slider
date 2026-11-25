@@ -4,6 +4,7 @@ import type {
   CloudAgentRepeatInput,
   CloudAgentAsk,
   CloudAgentDetail,
+  CloudAgentOverview,
   CloudAgentFile,
   CloudAgentFileContent,
   CloudAgentSummary,
@@ -72,11 +73,17 @@ export function useCloudAgentFile(workspaceId: string, agentId: string, fileId: 
 export interface AgentInput {
   text: string;
   attachments?: Attachment[];
+  /** Written under an overview: the agent is told what it shows now. */
+  overview?: CloudAgentOverview;
 }
 const inputBody = (input: string | AgentInput) =>
   typeof input === 'string'
     ? { text: input, attachments: [] }
-    : { text: input.text, attachments: (input.attachments ?? []).map((one) => one.id) };
+    : {
+        text: input.text,
+        attachments: (input.attachments ?? []).map((one) => one.id),
+        overview: input.overview,
+      };
 
 /**
  * A new agent with its order, standing in an area (`areaId`) or in none – its owner's alone, or
@@ -169,6 +176,7 @@ export function useMessageCloudAgent(workspaceId: string, agentId: string) {
       chatId,
       mailThreadId,
       replyTo,
+      overview,
     }: {
       text: string;
       /** Files put on it: the agent reads them. */
@@ -178,6 +186,8 @@ export function useMessageCloudAgent(workspaceId: string, agentId: string) {
       mailThreadId?: string;
       /** „Antworten“: a message of that chat, quoted above it. */
       replyTo?: string;
+      /** Written under an overview: the agent is told what it shows now, as with the order. */
+      overview?: CloudAgentOverview;
     }) =>
       api.post<CloudAgentDetail>(`/cloud/agents/${agentId}/messages`, {
         text,
@@ -186,6 +196,7 @@ export function useMessageCloudAgent(workspaceId: string, agentId: string) {
         zone: ownZone(),
         mailThreadId,
         replyTo,
+        overview,
       }),
     onMutate: () => markRunning(queryClient, workspaceId, agentId),
     onSuccess: (agent) => queryClient.setQueryData(cloudAgentKeys.one(workspaceId, agentId), agent),

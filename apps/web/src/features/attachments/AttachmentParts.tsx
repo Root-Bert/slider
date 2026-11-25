@@ -12,7 +12,7 @@ import { useActiveWorkspace } from '@/features/workspaces';
 import { formatFileSize } from '@/lib/format';
 import { cn, ErrorText, Icon, IconButton } from '@/ui';
 import type { Attachments, FieldAttachment } from './useAttachments';
-import { referenceRoute } from './useCloudDrop';
+import { referenceRoute } from './useFileDrop';
 
 /** A file's chip symbol: a Cloud folder or file pointed to, else the clip. */
 const chipIcon = (one: Pick<Attachment, 'type' | 'nodeId'>) =>
@@ -71,6 +71,26 @@ export function AttachButton({
         className={cn(off && 'cursor-default opacity-40')}
       />
     </>
+  );
+}
+
+/**
+ * Over a conversation while files are dragged onto it (`useFileDrop`): where letting go puts them
+ * on the message – as over a mail being written. Its box needs `relative` (or another position).
+ */
+export function FileDropHint({ className }: { className?: string }) {
+  return (
+    <div
+      className={cn(
+        'pointer-events-none absolute inset-0 z-20 flex items-center justify-center rounded-panel border-2 border-dashed border-primary bg-surface/80 text-body font-semibold text-fg',
+        className,
+      )}
+    >
+      <span className="flex items-center gap-2">
+        <Icon name="attachFile" size={18} />
+        Zum Anhängen loslassen
+      </span>
+    </div>
   );
 }
 

@@ -18,6 +18,7 @@ import { SELECT_ID, useCollectionSelection } from '@/lib/collection-selection';
 import { isTextTarget, isTypingTarget } from '@/lib/dom';
 import { isModKey } from '@/lib/keyboard';
 import { CLOUD_FILE_PARAM } from '@/lib/routes';
+import { hereLink, useCallHere } from '@/lib/call-here';
 import { isOnControl } from '@/lib/marquee-select';
 import { useAccount } from '@/features/auth';
 import { MenuButton, SenderMenuContext } from '@/features/sender';
@@ -37,6 +38,36 @@ export interface Crumb {
   to?: string;
   /** Where files and folders dragged onto it go, as onto the side bar's row – unset, nowhere. */
   into?: CloudTarget | undefined;
+}
+
+/** Of a page's items the agent of a call hears this many names. */
+const HERE_ITEMS = 25;
+
+/** Where one is in Cloud, as lines for the agent of one's call (`callHere`). */
+function cloudHere(
+  docTitle: string,
+  crumbs: readonly Crumb[] | undefined,
+  target: CloudTarget | null,
+  nodes: readonly CloudNode[],
+  selected: readonly CloudNode[],
+): string {
+  const path = [...(crumbs ?? []).map((crumb) => crumb.label), docTitle]
+    .filter((label, index, all) => label !== all[index - 1])
+    .join(' > ');
+  const link = (node: CloudNode) =>
+    hereLink(node.kind === 'folder' ? 'folder' : 'file', node.id, node.name);
+  const lines = [
+    `Cloud: ${path}${target?.parentId ? ` (${hereLink('folder', target.parentId, target.name)})` : ''}`,
+  ];
+  if (nodes.length > 0) {
+    const names = nodes.slice(0, HERE_ITEMS).map((node) => node.name);
+    lines.push(
+      `Hier ${nodes.length === 1 ? 'liegt' : `liegen ${nodes.length}`}: ${names.join(', ')}${nodes.length > HERE_ITEMS ? ', …' : ''}`,
+    );
+  }
+  if (selected.length > 0)
+    lines.push(`Ausgewählt: ${selected.slice(0, HERE_ITEMS).map(link).join(', ')}`);
+  return lines.join('\n');
 }
 
 /** A crumb leading back: a link, and – where it may take them – a place to drop files onto. */
@@ -144,6 +175,8 @@ export function CloudPage({
     scrollRef,
   );
   const selected = nodes.filter((node) => selection.selected.has(node.id));
+  // In a call, its agent knows where one is in Cloud and what is picked („die hier“).
+  useCallHere('cloud', cloudHere(docTitle, crumbs, target, nodes, selected));
   // The file whose details stand beside: picked with one click, it is the selection – emptied
   // (Esc, ⌫, a click beside the items), its details go too.
   const [params, setParams] = useSearchParams();

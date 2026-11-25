@@ -244,6 +244,18 @@ describe('data export (BER-145)', () => {
       ).status,
     ).toBe(200);
     expect((await meNow())?.showExtensions).toBe(true);
+    // „Meetings vorher zeigen“ too: 5 minutes until changed, off as null, nothing past two hours.
+    expect((await meNow())?.meetingNoticeMinutes).toBe(5);
+    const notice = (minutes: number | null) =>
+      ctx.request('/api/me', {
+        method: 'PATCH',
+        json: { meetingNoticeMinutes: minutes },
+        cookie: person.cookie,
+      });
+    expect((await notice(121)).status).toBe(400);
+    expect((await notice(null)).status).toBe(200);
+    expect((await meNow())?.meetingNoticeMinutes).toBeNull();
+    expect((await notice(15)).status).toBe(200);
     const own = await createReadyDeck(ctx, { title: 'Annas Deck' });
     const pptxKey = blobKeys.pptx(own.deckId, own.revisionId);
     await ctx.deps.storage.put(pptxKey, new TextEncoder().encode('PPTX'));
@@ -647,6 +659,7 @@ describe('data export (BER-145)', () => {
       email: 'anna@firma.de',
       callVoice: 'paul',
       showExtensions: true,
+      meetingNoticeMinutes: 15,
     });
     expect(account.workspaces).toEqual([
       expect.objectContaining({ id: ctx.workspaceId, role: 'member' }),

@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import type { SenderScheduled } from '@slider/shared';
 import { ConfirmDialog, Icon } from '@/ui';
 import { whenPlanned } from '../lib/later';
+import { markupPlain } from '../lib/markup';
 
 const LINK =
   'shrink-0 rounded-chip px-1.5 py-0.5 font-semibold text-primary hover:bg-surface-2 focus-visible:outline-2 focus-visible:outline-primary';
@@ -53,7 +54,7 @@ export function ScheduledLines({
       )}
       <ul aria-label="Geplante Nachrichten" className="flex flex-col gap-0.5 px-1">
         {planned.map((one) => {
-          const what = one.text || one.attachments.map((file) => file.name).join(', ');
+          const what = markupPlain(one.text) || one.attachments.map((file) => file.name).join(', ');
           const failed = one.state === 'failed';
           // An agent's goes in its name, words only: sent again or deleted, not typed on.
           const own = !one.agent;

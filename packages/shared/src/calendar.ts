@@ -28,11 +28,19 @@ export interface Calendar {
   /** From a mail account: which (its address names the group). */
   mailAccountId: string | null;
   name: string;
-  /** An accent name (`blue`, … as an area's) or a provider's `#rrggbb`. */
+  /**
+   * An accent name (`blue`, … as an area's) or `#rrggbb`: an area's own takes the area's, one's
+   * private one its person's („Deine Farbe“), the ones under them theirs until coloured; a mail
+   * calendar its provider's until coloured in Slider.
+   */
   color: string;
   /** Events may be put in, changed and deleted here. */
   canEdit: boolean;
-  /** It may be renamed and coloured (sub-calendars one may edit in; a mail calendar one owns). */
+  /**
+   * It may be renamed (sub-calendars one may edit in; a mail calendar one owns – in Slider alone
+   * where its provider won't) and coloured – the list offers a colour only for one's private
+   * sub-calendars and mail calendars, an area's keep the area's.
+   */
   canManage: boolean;
   /** It may be deleted („Löschen“) – with its events, at the provider too. */
   canDelete: boolean;
@@ -69,6 +77,49 @@ export interface CalendarConnection {
   signedOut: boolean;
 }
 
+/**
+ * A meeting on an event: a call in one of Sender's conversations (an area's channel, a group, a
+ * direct one – joined in Slider), or one held elsewhere (Zoom, Meet, Teams) by its link. A mail
+ * calendar's events bring the provider's own link (Meet, Teams) or one found in where/notes.
+ */
+export type EventMeeting = { kind: 'call'; channelId: string } | { kind: 'link'; url: string };
+
+export const MAX_MEETING_URL = 2000;
+
+/** A link one may open to join: http(s) only. */
+export const meetingUrlSchema = z
+  .string()
+  .trim()
+  .max(MAX_MEETING_URL)
+  .refine((value) => /^https?:\/\/[^\s]+$/i.test(value), {
+    message: 'Der Link zum Meeting muss mit http:// oder https:// beginnen.',
+  });
+
+export const eventMeetingSchema = z.discriminatedUnion('kind', [
+  z.object({ kind: z.literal('call'), channelId: z.string().min(1).max(100) }),
+  z.object({ kind: z.literal('link'), url: meetingUrlSchema }),
+]);
+
+/** Minutes before a meeting that it shows beside the date in the header; `null`: never. */
+export const MEETING_NOTICE_CHOICES = [null, 1, 5, 10, 15, 30] as const;
+export const DEFAULT_MEETING_NOTICE = 5;
+export const meetingNoticeSchema = z.number().int().min(0).max(120).nullable();
+
+/** Hosts whose links are meetings: found in a mail calendar's where/notes. */
+const MEETING_HOSTS =
+  /^https:\/\/(?:[\w-]+\.)*(?:zoom\.us|zoom\.com|meet\.google\.com|teams\.microsoft\.com|teams\.live\.com|webex\.com|whereby\.com|meet\.jit\.si|gotomeeting\.com|bluejeans\.com|chime\.aws)\//i;
+
+/** The first meeting link in a text („Ort“, notes of an invitation), if any. */
+export function meetingLinkIn(...texts: string[]): string | null {
+  for (const text of texts) {
+    for (const match of text.matchAll(/https:\/\/[^\s<>"')\]]+/gi)) {
+      const url = match[0].replace(/[.,;:!?]+$/, '');
+      if (MEETING_HOSTS.test(url) && url.length <= MAX_MEETING_URL) return url;
+    }
+  }
+  return null;
+}
+
 export interface CalendarEvent {
   /** A mail calendar's: the provider's, per occurrence. */
   id: string;
@@ -84,6 +135,8 @@ export interface CalendarEvent {
   createdBy: Author | null;
   /** Files put on it – Slider's own calendars only (a mail calendar's live at its provider). */
   attachments?: Attachment[];
+  /** A meeting to join from it (and from the header shortly before). */
+  meeting?: EventMeeting | null;
 }
 
 export const MAX_CALENDAR_NAME = 80;
@@ -144,6 +197,7 @@ export const calendarEventInputSchema = z
     notes: eventFields.notes.optional(),
     /** Files up already (`/attachments`), waiting as the caller's. */
     attachments: z.array(z.string().min(1).max(100)).max(MAX_ATTACHMENTS).optional(),
+    meeting: eventMeetingSchema.nullable().optional(),
   })
   .refine(fits, { message: 'Der Termin endet vor seinem Beginn.' });
 export type CalendarEventInput = z.infer<typeof calendarEventInputSchema>;
@@ -154,6 +208,8 @@ export const calendarEventChangeSchema = z
     ...eventFields,
     /** Its files as they shall be: the ones kept, new ones up already; the rest is deleted. */
     attachments: z.array(z.string().min(1).max(100)).max(MAX_ATTACHMENTS),
+    /** `null`: no meeting any more. */
+    meeting: eventMeetingSchema.nullable(),
   })
   .partial();
 export type CalendarEventChange = z.infer<typeof calendarEventChangeSchema>;

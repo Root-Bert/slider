@@ -8,9 +8,10 @@ import {
   type DragEvent,
   type ReactNode,
 } from 'react';
-import { NavLink, useLocation, useSearchParams } from 'react-router';
+import { NavLink, useLocation, useNavigate, useSearchParams } from 'react-router';
 import {
   cloudAccessAtLeast,
+  cloudReference,
   type CloudArea,
   type CloudNode,
   type CloudPin,
@@ -18,6 +19,8 @@ import {
   type MailThreadSummary,
   type SenderChannel,
 } from '@slider/shared';
+import { handToChat } from '@/features/attachments';
+import { atLeast } from '@/features/workspaces';
 import { useMailThreads, usePinCloudNode, useTodos } from '@/lib/api';
 import { routes } from '@/lib/routes';
 import { BarHandle } from '@/shell/BarHandle';
@@ -421,7 +424,8 @@ function AreaRow({
 
 /**
  * A person, group or agent one writes with – Sender's „Direkt“, under the areas. Its menu (right
- * click, long press) pins it to the top of the chats or lets it go.
+ * click, long press) pins it to the top of the chats or lets it go. Files dragged onto it – from
+ * the page or the computer – open the chat with them on the message being written.
  */
 function ChatRow({
   chat,
@@ -464,6 +468,31 @@ function ChatRow({
   );
   const name = isMailChat(chat) ? mailGroupName(chat) : 'title' in chat ? chat.title : chat.name;
   const conversation = !isMailChat(chat) && !('title' in chat) ? chat : null;
+  const navigate = useNavigate();
+  // Only where one may write: a viewer's agent (members and admins write, as the server's
+  // `canWrite`) or a read-only conversation refuses the drop instead of holding it for nobody.
+  const handTo = isMailChat(chat)
+    ? null
+    : 'title' in chat
+      ? atLeast(ui.workspace.role, 'member')
+        ? `agent:${chat.id}`
+        : null
+      : chat.canWrite
+        ? `channel:${chat.id}`
+        : null;
+  const drop = useRowDrop({
+    enabled: !!handTo,
+    onNodes: (nodes) => {
+      if (!handTo) return;
+      handToChat(handTo, { refs: nodes.map(cloudReference) });
+      void navigate(to);
+    },
+    onFiles: (data) => {
+      if (!handTo) return;
+      handToChat(handTo, { files: [...data.files] });
+      void navigate(to);
+    },
+  });
   const mentioned = Boolean(conversation?.mentioned);
   // Muted: its count goes, an „@“ still shows – as in Sender's bar.
   const count = conversation?.muted ? 0 : chat.unread;
@@ -481,8 +510,10 @@ function ChatRow({
             unread && !state.isActive && 'font-semibold text-fg',
             folded && foldedRow,
             ROW_MENU_CLASS,
+            drop.over && overClass,
           )
         }
+        {...drop.handlers}
       >
         <span className="flex size-[18px] shrink-0 items-center justify-center">{mark}</span>
         <span className={cn('min-w-0 flex-1 truncate', folded && foldedHide)}>{name}</span>

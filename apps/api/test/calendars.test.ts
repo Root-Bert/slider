@@ -8,6 +8,7 @@ import type {
   CalendarEvent,
   CloudArea,
   SenderEvent,
+  SenderHome,
   WorkspaceRole,
 } from '@slider/shared';
 import { calendarEvents, calendars, mailAccounts, workspaceMembers } from '../src/db/schema';
@@ -144,6 +145,9 @@ describe('Calendars', () => {
     );
     expect(mine.filter((one) => one.kind === 'area')).toHaveLength(3);
     expect(mine.find((one) => one.name === 'Vertrieb')?.color).toBe('cyan');
+    // One's private one takes one's own colour („Deine Farbe“), as it changes.
+    await ok(send('PATCH', '/me', { color: 'green' }));
+    expect((await calendarsOf()).find((one) => one.kind === 'private')?.color).toBe('green');
     // Looking again makes none twice.
     expect(await calendarsOf()).toHaveLength(mine.length);
     const salesCal = mine.find((one) => one.areaId === sales.id)!;
@@ -187,6 +191,22 @@ describe('Calendars', () => {
         .status,
     ).toBe(404);
     expect((await send('PATCH', `/calendars/${salesCal.id}`, { name: 'Neu' })).status).toBe(403);
+    // Uncoloured under one's private one or an area's: theirs, until coloured itself.
+    const holiday = await ok<Calendar>(
+      send('POST', '/calendars', { parentId: privateCal.id, name: 'Urlaub' }),
+      201,
+    );
+    const visits = await ok<Calendar>(
+      send('POST', '/calendars', { parentId: salesCal.id, name: 'Besuche' }),
+      201,
+    );
+    expect([holiday.color, visits.color]).toEqual(['green', 'cyan']);
+    expect(
+      (await ok<Calendar>(send('PATCH', `/calendars/${holiday.id}`, { color: '#A16207' }))).color,
+    ).toBe('#a16207');
+    await ok(send('DELETE', `/calendars/${holiday.id}`), 204);
+    await ok(send('DELETE', `/calendars/${visits.id}`), 204);
+    await ok(send('PATCH', '/me', { color: 'blue' }));
     expect((await send('DELETE', `/calendars/${privateCal.id}`)).status).toBe(403);
     expect(
       (await ok<Calendar>(send('PATCH', `/calendars/${trips.id}`, { name: 'Messen 2027' }))).name,
@@ -320,6 +340,70 @@ describe('Calendars', () => {
       .from(calendarEvents)
       .where(eq(calendarEvents.id, doctor.id));
     expect(stored?.raw.startsWith(SEALED_PREFIX)).toBe(true);
+
+    // Meetings: a call in one of Sender's conversations the maker sees, or a link (sealed) –
+    // seen as one by whoever sees the event; a conversation one cannot see is refused.
+    const home = await ok<SenderHome>(send('GET', `/workspaces/${ctx.workspaceId}/sender`));
+    const salesTalk = home.areas
+      .find((one) => one.id === sales.id)!
+      .channels.find((one) => one.kind === 'area')!;
+    const secretTalk = home.areas
+      .find((one) => one.name === 'Geheim')!
+      .channels.find((one) => one.kind === 'area')!;
+    expect(
+      (
+        await ok<CalendarEvent>(
+          send('PATCH', `/calendar-events/${fair.id}`, {
+            meeting: { kind: 'call', channelId: salesTalk.id },
+          }),
+        )
+      ).meeting,
+    ).toEqual({ kind: 'call', channelId: salesTalk.id });
+    expect(
+      (await eventsOf('2027-04-01T00:00:00Z', '2027-05-01T00:00:00Z', anna.cookie))[0]?.meeting,
+    ).toEqual({ kind: 'call', channelId: salesTalk.id });
+    expect(
+      (
+        await send(
+          'POST',
+          '/calendar-events',
+          {
+            calendarId: annas.find((one) => one.kind === 'private')!.id,
+            title: 'X',
+            allDay: false,
+            start: '2027-04-14T08:00:00Z',
+            end: '2027-04-14T09:00:00Z',
+            meeting: { kind: 'call', channelId: secretTalk.id },
+          },
+          anna.cookie,
+        )
+      ).status,
+    ).toBe(404);
+    expect(
+      (
+        await send('PATCH', `/calendar-events/${fair.id}`, {
+          meeting: { kind: 'link', url: 'javascript:alert(1)' },
+        })
+      ).status,
+    ).toBe(400);
+    expect(
+      (
+        await ok<CalendarEvent>(
+          send('PATCH', `/calendar-events/${fair.id}`, {
+            meeting: { kind: 'link', url: ' https://zoom.us/j/123 ' },
+          }),
+        )
+      ).meeting,
+    ).toEqual({ kind: 'link', url: 'https://zoom.us/j/123' });
+    const [link] = await ctx.deps.db
+      .select({ raw: sql<string>`${calendarEvents.meetingUrl}` })
+      .from(calendarEvents)
+      .where(eq(calendarEvents.id, fair.id));
+    expect(link?.raw.startsWith(SEALED_PREFIX)).toBe(true);
+    expect(
+      (await ok<CalendarEvent>(send('PATCH', `/calendar-events/${fair.id}`, { meeting: null })))
+        .meeting,
+    ).toBeNull();
 
     // Files on an event (Slider's own calendars): up first, taken when it is made or changed,
     // deleted when left out – or with the event, or with its calendar.
@@ -456,6 +540,7 @@ describe('Calendars', () => {
         return Promise.resolve(made);
       },
       updateCalendar: (remoteId, change) => {
+        if (change.name === 'Abgelehnt') return Promise.reject(new Error('Nicht erlaubt.'));
         writes.push(`rename ${remoteId.split('/').at(-2)} ${change.name}`);
         remote = remote.map((one) => (one.remoteId === remoteId ? { ...one, ...change } : one));
         return Promise.resolve();
@@ -496,7 +581,7 @@ describe('Calendars', () => {
     ).toEqual([
       ['Arbeit', '#ff2968', true, true, true, false, true, false],
       // Someone else's at the provider: only read, only taken off one's list.
-      ['Feiertage', 'blue', false, false, false, true, true, false],
+      ['Feiertage', 'blue', false, true, false, true, true, false],
     ]);
     expect((await calendarsOf(anna.cookie)).some((one) => one.kind === 'mail')).toBe(false);
     const april = await eventsOf('2027-04-01T00:00:00Z', '2027-05-01T00:00:00Z');
@@ -572,16 +657,27 @@ describe('Calendars', () => {
         allDay: false,
         start: '2027-04-13T08:00:00Z',
         end: '2027-04-13T08:30:00Z',
+        // A mailbox's calendar keeps a meeting's link where its provider shows one: the place.
+        meeting: { kind: 'link', url: 'https://meet.google.com/abc-defg-hij' },
       }),
       201,
     );
-    expect(call).toMatchObject({ id: `mail:${withMail[0]!.id}:new-3`, canEdit: true });
+    expect(call).toMatchObject({
+      id: `mail:${withMail[0]!.id}:new-3`,
+      canEdit: true,
+      location: 'https://meet.google.com/abc-defg-hij',
+      meeting: { kind: 'link', url: 'https://meet.google.com/abc-defg-hij' },
+    });
     const ownCall = await ok<CalendarEvent>(
       send('PATCH', `/calendar-events/${encodeURIComponent(call.id)}`, {
         calendarId: privateCal.id,
       }),
     );
-    expect(ownCall).toMatchObject({ calendarId: privateCal.id, title: 'Anruf' });
+    expect(ownCall).toMatchObject({
+      calendarId: privateCal.id,
+      title: 'Anruf',
+      meeting: { kind: 'link', url: 'https://meet.google.com/abc-defg-hij' },
+    });
     expect(ownCall.id.startsWith('mail:')).toBe(false);
     expect(writes.slice(-2)).toEqual(['create arbeit Anruf', 'remove new-3 -']);
     const back = await ok<CalendarEvent>(
@@ -597,6 +693,37 @@ describe('Calendars', () => {
         })
       ).status,
     ).toBe(400);
+    // … nor a call in Slider.
+    expect(
+      (
+        await send('PATCH', `/calendar-events/${encodeURIComponent(back.id)}`, {
+          meeting: { kind: 'call', channelId: 'any' },
+        })
+      ).status,
+    ).toBe(400);
+    // Another link takes the old one's place (the one read back); only the place is written.
+    expect(
+      await ok<CalendarEvent>(
+        send('PATCH', `/calendar-events/${encodeURIComponent(back.id)}`, {
+          meeting: { kind: 'link', url: 'https://zoom.us/j/42' },
+        }),
+      ),
+    ).toMatchObject({
+      location: 'https://zoom.us/j/42',
+      meeting: { kind: 'link', url: 'https://zoom.us/j/42' },
+    });
+    expect(writes.at(-1)).toMatch(/^update new-\d+ \S+ location$/);
+    // One too long for the place (read back cut, broken) goes to the head of the notes instead.
+    const long = `https://zoom.us/j/42?pwd=${'a'.repeat(520)}`;
+    const longer = await ok<CalendarEvent>(
+      send('PATCH', `/calendar-events/${encodeURIComponent(back.id)}`, {
+        meeting: { kind: 'link', url: long },
+      }),
+    );
+    expect(longer.location).toBe('');
+    expect(longer.notes.startsWith(long)).toBe(true);
+    expect(writes.at(-1)).toMatch(/location/);
+    expect(writes.at(-1)).toMatch(/notes/);
     await ok(send('DELETE', `/calendar-events/${encodeURIComponent(back.id)}`), 204);
     expect(writes.at(-1)).toMatch(/^remove new-\d+ /);
     // Someone else's calendar at the provider: nothing goes in, it only comes off one's list.
@@ -611,7 +738,33 @@ describe('Calendars', () => {
         })
       ).status,
     ).toBe(403);
-    expect((await send('PATCH', `/calendars/${withMail[1]!.id}`, { name: 'Y' })).status).toBe(403);
+    // Its name and colour in Slider alone (the provider won't rename it): the compare keeps them,
+    // nothing is written there; its own name again drops Slider's.
+    expect(
+      await ok<Calendar>(
+        send('PATCH', `/calendars/${withMail[1]!.id}`, { name: ' Ferien ', color: 'red' }),
+      ),
+    ).toMatchObject({ name: 'Ferien', color: 'red' });
+    const writesBefore = writes.length;
+    ctx.clock.advance(16 * 60_000);
+    expect(
+      (await calendarsOf())
+        .filter((one) => one.kind === 'mail')
+        .map((one) => [one.name, one.color]),
+    ).toEqual([
+      ['Arbeit', '#ff2968'],
+      ['Ferien', 'red'],
+    ]);
+    expect(
+      (await ok<Calendar>(send('PATCH', `/calendars/${withMail[1]!.id}`, { name: 'Feiertage' })))
+        .name,
+    ).toBe('Feiertage');
+    const [local] = await ctx.deps.db
+      .select({ name: calendars.localName, color: calendars.localColor })
+      .from(calendars)
+      .where(eq(calendars.id, withMail[1]!.id));
+    expect(local).toEqual({ name: null, color: 'red' });
+    expect(writes).toHaveLength(writesBefore);
     // Calendars: made in the account, renamed; another person can't touch them.
     const mailbox = withMail[0]!.mailAccountId!;
     const project = await ok<Calendar>(
@@ -628,10 +781,17 @@ describe('Calendars', () => {
     expect(
       (await send('PATCH', `/calendars/${project.id}`, { name: 'X' }, anna.cookie)).status,
     ).toBe(404);
+    // Refused at the provider after all: renamed in Slider alone; renamed there, Slider's goes.
+    expect(
+      (await ok<Calendar>(send('PATCH', `/calendars/${project.id}`, { name: 'Abgelehnt' }))).name,
+    ).toBe('Abgelehnt');
     expect(
       await ok<Calendar>(send('PATCH', `/calendars/${project.id}`, { name: 'Projekt Nord' })),
     ).toMatchObject({ name: 'Projekt Nord' });
-    expect((await send('PATCH', `/calendars/${project.id}`, { color: 'red' })).status).toBe(400);
+    // Coloured in Slider alone: the provider is not asked (no write below).
+    expect(
+      (await ok<Calendar>(send('PATCH', `/calendars/${project.id}`, { color: 'violet' }))).color,
+    ).toBe('violet');
     expect((await send('DELETE', `/calendars/${project.id}`, undefined, anna.cookie)).status).toBe(
       404,
     );
@@ -760,7 +920,14 @@ describe('Calendars', () => {
       `Changed: [${sport}] „Laufen“.`,
     );
     await expect(
-      runCalendarTool(ctx.deps, ctx.ownerId, ctx.workspaceId, 'create_calendar', { name: 'X' }, shared),
+      runCalendarTool(
+        ctx.deps,
+        ctx.ownerId,
+        ctx.workspaceId,
+        'create_calendar',
+        { name: 'X' },
+        shared,
+      ),
     ).rejects.toThrow('Not here');
     expect(
       await askText(

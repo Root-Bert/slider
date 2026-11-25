@@ -322,6 +322,7 @@ async function buildExport(
         callVoice: user.callVoice,
         mailSyncMinutes: user.mailSyncMinutes,
         showExtensions: user.showExtensions,
+        meetingNoticeMinutes: user.meetingNoticeMinutes,
         instanceAdmin: user.isInstanceAdmin,
         createdAt: user.createdAt.toISOString(),
         lastActiveAt: user.lastActiveAt.toISOString(),
@@ -888,6 +889,8 @@ async function buildExport(
         remoteId: row.remoteId,
         name: row.name || (row.parentId || row.mailAccountId ? '' : 'Privat'),
         color: row.color,
+        // A mail calendar's name and colour in Slider alone, over the provider's.
+        ...(row.mailAccountId && { localName: row.localName, localColor: row.localColor }),
         createdAt: row.createdAt.toISOString(),
       })),
       events: eventRows.map((row) => ({
@@ -896,6 +899,8 @@ async function buildExport(
         title: row.title,
         location: row.location,
         notes: row.notes,
+        meetingUrl: row.meetingUrl,
+        callChannelId: row.callChannelId,
         allDay: row.allDay,
         startsAt: row.startsAt.toISOString(),
         endsAt: row.endsAt.toISOString(),

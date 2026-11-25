@@ -1,7 +1,8 @@
 import { aiInSentence, aiNameOf, CLOUD_TRASH_DAYS } from '@slider/shared';
 import { useEffect, useState, type ComponentProps } from 'react';
+import { useCallInBackground, usePanelForCalls } from '@/features/calls';
 import { ChatPanel } from '@/features/viewer';
-import { IconButton } from '@/ui';
+import { AiButton } from '@/ui';
 import { useCloudChat, type ChatPlace } from '../hooks/cloud-chat';
 import { useCloud } from '../hooks/useCloud';
 
@@ -42,10 +43,9 @@ const WORKSPACE_STARTERS = [
 /** ✨ in the app's header, in Cloud. */
 export function CloudChatButton({ name }: { name?: string | undefined }) {
   return (
-    <IconButton
-      icon="autoAwesome"
-      label={aiNameOf(name)}
-      title={`${aiInSentence(name, true)} fragen`}
+    <AiButton
+      name={name}
+      calling={useCallInBackground()}
       onClick={() => window.dispatchEvent(new Event(OPEN_CHAT_EVENT))}
     />
   );
@@ -74,6 +74,7 @@ type Notify = ComponentProps<typeof ChatPanel>['toast'];
 export function CloudChat() {
   const ui = useCloud();
   const { open, ask, asked, close } = useChatOpen();
+  usePanelForCalls();
   if (!open) return null;
   // Asked from a menu, the chat is about that place – else about where the person is.
   const place = ask
@@ -100,6 +101,7 @@ export function WorkspaceChat({
   notify: Notify;
 }) {
   const { open, ask, asked, close } = useChatOpen();
+  usePanelForCalls();
   if (!open) return null;
   return (
     <Panel

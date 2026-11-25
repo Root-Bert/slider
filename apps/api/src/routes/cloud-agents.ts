@@ -19,6 +19,7 @@ import { readJson } from '../http/validate';
 import {
   autoCloudAgent,
   createCloudAgent,
+  ownCloudAgent,
   decideCloudAgentAsk,
   deleteCloudAgent,
   getCloudAgent,
@@ -47,157 +48,172 @@ export function cloudAgentRoutes(deps: AppDeps) {
   const viewer = viewerMiddleware(deps);
   const asks = aiLimits(deps).materialQuestions;
   const TOO_MANY = 'Zu viele Aufträge auf einmal. Bitte warte einen Moment.';
-  return new Hono<ViewerEnv>()
-    .get('/workspaces/:id/cloud/agents', viewer, async (c) => {
-      requireOwner(c.var.viewer);
-      return c.json(await listCloudAgents(deps, c.var.viewer.author.id, c.req.param('id')));
-    })
-    .post('/workspaces/:id/cloud/agents', viewer, async (c) => {
-      requireOwner(c.var.viewer);
-      const { text, attachments, areaId, shared, zone, mailThreadId } = await readJson(
-        c,
-        cloudAgentOrderSchema,
-      );
-      assertWithinLimit(c, asks.hit(c.var.viewer.author.id), TOO_MANY);
-      return c.json(
-        await createCloudAgent(
-          deps,
-          c.var.viewer,
-          c.req.param('id'),
-          text,
-          areaId ?? null,
-          zone,
-          undefined,
-          mailThreadId,
-          false,
-          attachments,
-          shared,
-        ),
-        201,
-      );
-    })
-    .get('/cloud/agents/:agentId', viewer, async (c) => {
-      requireOwner(c.var.viewer);
-      return c.json(await getCloudAgent(deps, c.var.viewer.author, c.req.param('agentId')));
-    })
-    .post('/cloud/agents/:agentId/messages', viewer, async (c) => {
-      requireOwner(c.var.viewer);
-      const { text, attachments, chatId, zone, mailThreadId, replyTo } = await readJson(
-        c,
-        cloudAgentInputSchema,
-      );
-      assertWithinLimit(c, asks.hit(c.var.viewer.author.id), TOO_MANY);
-      return c.json(
-        await messageCloudAgent(
-          deps,
-          c.var.viewer,
-          c.req.param('agentId'),
-          text,
-          chatId,
-          zone,
-          undefined,
-          undefined,
-          undefined,
-          mailThreadId,
-          false,
-          attachments,
-          [],
-          replyTo,
-        ),
-      );
-    })
-    .post('/cloud/agents/:agentId/typing', viewer, async (c) => {
-      requireOwner(c.var.viewer);
-      const { chatId } = await readJson(c, cloudAgentChatRefSchema);
-      await typingInCloudAgent(deps, c.var.viewer.author, c.req.param('agentId'), chatId);
-      return c.body(null, 204);
-    })
-    .post('/cloud/agents/:agentId/stop', viewer, async (c) => {
-      requireOwner(c.var.viewer);
-      const { chatId } = cloudAgentChatRefSchema.parse(await c.req.json().catch(() => ({})));
-      await stopCloudAgent(deps, c.var.viewer.author.id, c.req.param('agentId'), chatId);
-      return c.body(null, 204);
-    })
-    .patch('/cloud/agents/:agentId', viewer, async (c) => {
-      requireOwner(c.var.viewer);
-      const { shared, areaId } = await readJson(c, cloudAgentShareSchema);
-      await shareCloudAgent(
-        deps,
-        c.var.viewer.author.id,
-        c.req.param('agentId'),
-        shared,
-        areaId ?? null,
-      );
-      return c.body(null, 204);
-    })
-    .patch('/cloud/agents/:agentId/title', viewer, async (c) => {
-      requireOwner(c.var.viewer);
-      const { title } = await readJson(c, cloudAgentTitleSchema);
-      await renameCloudAgent(deps, c.var.viewer.author.id, c.req.param('agentId'), title);
-      return c.body(null, 204);
-    })
-    .put('/cloud/agents/:agentId/repeat', viewer, async (c) => {
-      requireOwner(c.var.viewer);
-      const { repeat } = await readJson(c, cloudAgentRepeatInputSchema);
-      await repeatCloudAgent(deps, c.var.viewer.author.id, c.req.param('agentId'), repeat);
-      return c.json(await getCloudAgent(deps, c.var.viewer.author, c.req.param('agentId')));
-    })
-    .patch('/cloud/agents/:agentId/auto', viewer, async (c) => {
-      requireOwner(c.var.viewer);
-      const change = await readJson(c, cloudAgentAutoSchema);
-      await autoCloudAgent(deps, c.var.viewer.author.id, c.req.param('agentId'), change);
-      return c.json(await getCloudAgent(deps, c.var.viewer.author, c.req.param('agentId')));
-    })
-    .delete('/cloud/agents/:agentId', viewer, async (c) => {
-      requireOwner(c.var.viewer);
-      await deleteCloudAgent(deps, c.var.viewer.author.id, c.req.param('agentId'));
-      return c.body(null, 204);
-    })
-    .get('/cloud/agents/:agentId/files/:fileId', viewer, async (c) => {
-      requireOwner(c.var.viewer);
-      return c.json(
-        await readCloudAgentFile(
+  return (
+    new Hono<ViewerEnv>()
+      .get('/workspaces/:id/cloud/agents', viewer, async (c) => {
+        requireOwner(c.var.viewer);
+        return c.json(await listCloudAgents(deps, c.var.viewer.author.id, c.req.param('id')));
+      })
+      // One's own agent, named as the workspace names its AI – made at the first call.
+      .post('/workspaces/:id/cloud/agents/own', viewer, async (c) => {
+        requireOwner(c.var.viewer);
+        return c.json(await ownCloudAgent(deps, c.var.viewer, c.req.param('id')));
+      })
+      .post('/workspaces/:id/cloud/agents', viewer, async (c) => {
+        requireOwner(c.var.viewer);
+        const { text, attachments, areaId, shared, zone, mailThreadId, overview } = await readJson(
+          c,
+          cloudAgentOrderSchema,
+        );
+        assertWithinLimit(c, asks.hit(c.var.viewer.author.id), TOO_MANY);
+        return c.json(
+          await createCloudAgent(
+            deps,
+            c.var.viewer,
+            c.req.param('id'),
+            text,
+            areaId ?? null,
+            zone,
+            undefined,
+            mailThreadId,
+            false,
+            attachments,
+            shared,
+            overview,
+          ),
+          201,
+        );
+      })
+      .get('/cloud/agents/:agentId', viewer, async (c) => {
+        requireOwner(c.var.viewer);
+        return c.json(await getCloudAgent(deps, c.var.viewer.author, c.req.param('agentId')));
+      })
+      .post('/cloud/agents/:agentId/messages', viewer, async (c) => {
+        requireOwner(c.var.viewer);
+        const { text, attachments, chatId, zone, mailThreadId, replyTo, overview } = await readJson(
+          c,
+          cloudAgentInputSchema,
+        );
+        assertWithinLimit(c, asks.hit(c.var.viewer.author.id), TOO_MANY);
+        return c.json(
+          await messageCloudAgent(
+            deps,
+            c.var.viewer,
+            c.req.param('agentId'),
+            text,
+            chatId,
+            zone,
+            undefined,
+            undefined,
+            undefined,
+            mailThreadId,
+            false,
+            attachments,
+            [],
+            replyTo,
+            undefined,
+            overview,
+          ),
+        );
+      })
+      .post('/cloud/agents/:agentId/typing', viewer, async (c) => {
+        requireOwner(c.var.viewer);
+        const { chatId } = await readJson(c, cloudAgentChatRefSchema);
+        await typingInCloudAgent(deps, c.var.viewer.author, c.req.param('agentId'), chatId);
+        return c.body(null, 204);
+      })
+      .post('/cloud/agents/:agentId/stop', viewer, async (c) => {
+        requireOwner(c.var.viewer);
+        const { chatId } = cloudAgentChatRefSchema.parse(await c.req.json().catch(() => ({})));
+        await stopCloudAgent(deps, c.var.viewer.author.id, c.req.param('agentId'), chatId);
+        return c.body(null, 204);
+      })
+      .patch('/cloud/agents/:agentId', viewer, async (c) => {
+        requireOwner(c.var.viewer);
+        const { shared, areaId } = await readJson(c, cloudAgentShareSchema);
+        await shareCloudAgent(
           deps,
           c.var.viewer.author.id,
           c.req.param('agentId'),
-          c.req.param('fileId'),
-        ),
-      );
-    })
-    .post('/cloud/agents/:agentId/files/:fileId/take', viewer, async (c) => {
-      requireOwner(c.var.viewer);
-      return c.json(
-        await takeCloudAgentFile(deps, c.var.viewer, c.req.param('agentId'), c.req.param('fileId')),
-      );
-    })
-    .post('/cloud/agents/:agentId/asks/:askId', viewer, async (c) => {
-      requireOwner(c.var.viewer);
-      const { confirm } = await readJson(c, cloudAgentAskDecision);
-      return c.json(
-        await decideCloudAgentAsk(
-          deps,
-          c.var.viewer,
-          c.req.param('agentId'),
-          c.req.param('askId'),
-          confirm,
-        ),
-      );
-    })
-    .post('/cloud/agents/:agentId/take', viewer, async (c) => {
-      requireOwner(c.var.viewer);
-      return c.json(await takeCloudAgentDesk(deps, c.var.viewer, c.req.param('agentId')));
-    })
-    .patch('/cloud/agents/:agentId/files/:fileId', viewer, async (c) => {
-      requireOwner(c.var.viewer);
-      const { aside } = await readJson(c, asideSchema);
-      return c.json(
-        await setCloudAgentFileAside(
-          deps,
-          c.var.viewer,
-          c.req.param('agentId'),
-          c.req.param('fileId'),
-          aside,
-        ),
-      );
-    });
+          shared,
+          areaId ?? null,
+        );
+        return c.body(null, 204);
+      })
+      .patch('/cloud/agents/:agentId/title', viewer, async (c) => {
+        requireOwner(c.var.viewer);
+        const { title } = await readJson(c, cloudAgentTitleSchema);
+        await renameCloudAgent(deps, c.var.viewer.author.id, c.req.param('agentId'), title);
+        return c.body(null, 204);
+      })
+      .put('/cloud/agents/:agentId/repeat', viewer, async (c) => {
+        requireOwner(c.var.viewer);
+        const { repeat } = await readJson(c, cloudAgentRepeatInputSchema);
+        await repeatCloudAgent(deps, c.var.viewer.author.id, c.req.param('agentId'), repeat);
+        return c.json(await getCloudAgent(deps, c.var.viewer.author, c.req.param('agentId')));
+      })
+      .patch('/cloud/agents/:agentId/auto', viewer, async (c) => {
+        requireOwner(c.var.viewer);
+        const change = await readJson(c, cloudAgentAutoSchema);
+        await autoCloudAgent(deps, c.var.viewer.author.id, c.req.param('agentId'), change);
+        return c.json(await getCloudAgent(deps, c.var.viewer.author, c.req.param('agentId')));
+      })
+      .delete('/cloud/agents/:agentId', viewer, async (c) => {
+        requireOwner(c.var.viewer);
+        await deleteCloudAgent(deps, c.var.viewer.author.id, c.req.param('agentId'));
+        return c.body(null, 204);
+      })
+      .get('/cloud/agents/:agentId/files/:fileId', viewer, async (c) => {
+        requireOwner(c.var.viewer);
+        return c.json(
+          await readCloudAgentFile(
+            deps,
+            c.var.viewer.author.id,
+            c.req.param('agentId'),
+            c.req.param('fileId'),
+          ),
+        );
+      })
+      .post('/cloud/agents/:agentId/files/:fileId/take', viewer, async (c) => {
+        requireOwner(c.var.viewer);
+        return c.json(
+          await takeCloudAgentFile(
+            deps,
+            c.var.viewer,
+            c.req.param('agentId'),
+            c.req.param('fileId'),
+          ),
+        );
+      })
+      .post('/cloud/agents/:agentId/asks/:askId', viewer, async (c) => {
+        requireOwner(c.var.viewer);
+        const { confirm } = await readJson(c, cloudAgentAskDecision);
+        return c.json(
+          await decideCloudAgentAsk(
+            deps,
+            c.var.viewer,
+            c.req.param('agentId'),
+            c.req.param('askId'),
+            confirm,
+          ),
+        );
+      })
+      .post('/cloud/agents/:agentId/take', viewer, async (c) => {
+        requireOwner(c.var.viewer);
+        return c.json(await takeCloudAgentDesk(deps, c.var.viewer, c.req.param('agentId')));
+      })
+      .patch('/cloud/agents/:agentId/files/:fileId', viewer, async (c) => {
+        requireOwner(c.var.viewer);
+        const { aside } = await readJson(c, asideSchema);
+        return c.json(
+          await setCloudAgentFileAside(
+            deps,
+            c.var.viewer,
+            c.req.param('agentId'),
+            c.req.param('fileId'),
+            aside,
+          ),
+        );
+      })
+  );
 }

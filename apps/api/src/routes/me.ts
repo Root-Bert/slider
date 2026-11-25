@@ -22,7 +22,12 @@ import { readJson } from '../http/validate';
 import { deleteAccount, successorChoices } from '../services/account-deletion';
 import { callVoiceSample, callVoices, pickCallVoice } from '../services/call-voices';
 import { exportAccount } from '../services/account-export';
-import { setShowExtensions, updateViewerColor, updateViewerName } from '../services/users';
+import {
+  setShowExtensions,
+  setMeetingNotice,
+  updateViewerColor,
+  updateViewerName,
+} from '../services/users';
 import { disconnectNextcloud, listNextcloudConnections } from '../services/nextcloud-connections';
 import { requireOwner } from '../auth/access';
 import { ApiError, badRequest, notFound } from '../http/errors';
@@ -58,6 +63,7 @@ async function meResponse(
       color: user.color,
       isInstanceAdmin: user.isInstanceAdmin,
       showExtensions: user.showExtensions,
+      meetingNoticeMinutes: user.meetingNoticeMinutes,
     },
     workspaces,
     pendingInvites,
@@ -91,11 +97,16 @@ export function meRoutes(deps: AppDeps, gate: InstanceGate) {
         c.json<MeResponse>(await meResponse(deps, gate, c, c.var.viewer)),
       )
       .patch('/me', viewerMiddleware(deps), async (c) => {
-        const { color, name, showExtensions } = await readJson(c, updateMeInputSchema);
+        const { color, name, showExtensions, meetingNoticeMinutes } = await readJson(
+          c,
+          updateMeInputSchema,
+        );
         let viewer = c.var.viewer;
         if (color) viewer = await updateViewerColor(deps.db, viewer, color);
         if (showExtensions !== undefined)
           await setShowExtensions(deps.db, viewer.author.id, showExtensions);
+        if (meetingNoticeMinutes !== undefined)
+          await setMeetingNotice(deps.db, viewer.author.id, meetingNoticeMinutes);
         if (name && name !== viewer.author.name) {
           const renamed = await updateViewerName(deps.db, viewer, name);
           viewer = renamed.viewer;

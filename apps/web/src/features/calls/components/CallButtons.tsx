@@ -63,6 +63,26 @@ export function CallButtons({ channel }: { channel: Pick<SenderChannel, 'id' | '
 }
 
 /**
+ * In the AI's side panel's head: „Anrufen“ calls one's own agent of the workspace (named as it
+ * names its AI) – as an agent's „Anrufen“. In a call already, the panel shows that call instead.
+ */
+export function OwnAgentCallButton({ workspaceId }: { workspaceId: string }) {
+  const calls = useCallsOrNull();
+  if (!calls?.snap.me || calls.snap.active) return null;
+  const { snap, client } = calls;
+  return (
+    <IconButton
+      variant="subtle"
+      size="sm"
+      icon="call"
+      label="Anrufen"
+      disabled={snap.joining !== null}
+      onClick={() => void client.callOwnAgent(workspaceId)}
+    />
+  );
+}
+
+/**
  * In an agent's header (its chat in Sender, its page in Cloud): „Anrufen“ – one talks to it, it
  * answers aloud; while one is in that call: „Im Anruf“. Who may write to it may call it.
  */

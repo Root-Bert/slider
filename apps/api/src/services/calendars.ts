@@ -1,6 +1,8 @@
 import { and, eq, gt, inArray, isNull, lt, or, sql } from 'drizzle-orm';
 import {
+  MAX_EVENT_LOCATION,
   MAX_EVENT_RANGE_DAYS,
+  type AccentColor,
   type Calendar,
   type CalendarChange,
   type CalendarConnection,
@@ -8,12 +10,16 @@ import {
   type CalendarEventChange,
   type CalendarEventInput,
   type CalendarInput,
+  type EventMeeting,
   type MailCalendarRefusal,
 } from '@slider/shared';
 import {
   calendarEvents,
   calendars,
   mailAccounts,
+  senderChannels,
+  senderMembers,
+  users,
   type CalendarEventRow,
   type CalendarRow,
 } from '../db/schema';
@@ -35,7 +41,7 @@ import {
   updateMailCalendar,
   updateMailEvent,
 } from './calendar/mail-calendars';
-import { areaAudience, senderLive } from './sender';
+import { areaAudience, seenChannel, senderLive } from './sender';
 
 /*
  * Calendars (`@slider/shared` calendar). Every area has its own – made the first time its
@@ -111,14 +117,23 @@ function seenWhere(ctx: CloudCtx) {
   );
 }
 
-function toCalendar(ctx: CloudCtx, row: CalendarRow): Calendar {
+/** The caller's own colour („Deine Farbe“): their private calendar's, and of those under it. */
+async function ownColorOf(deps: AppDeps, userId: string): Promise<AccentColor> {
+  const [me] = await deps.db.select({ color: users.color }).from(users).where(eq(users.id, userId));
+  return me?.color ?? 'blue';
+}
+
+/**
+ * `ownColor`: the caller's – one's private calendar takes it, as an area's own takes the area's;
+ * the ones under them too, until coloured themselves. A mail calendar is its owner's alone: its
+ * name and colour may be Slider's own over the provider's (`local_name`, `local_color`).
+ */
+function toCalendar(ctx: CloudCtx, row: CalendarRow, ownColor: AccentColor): Calendar {
   const area = row.areaId ? ctx.areas.get(row.areaId)?.row : undefined;
   const root = !row.parentId && !row.mailAccountId;
   const access = accessTo(ctx, row);
   const rights = row.mailAccountId ? row.remoteRights : null;
-  const canManage = row.mailAccountId
-    ? (rights?.rename ?? true)
-    : access === 'edit' && Boolean(row.parentId);
+  const canManage = row.mailAccountId ? true : access === 'edit' && Boolean(row.parentId);
   return {
     id: row.id,
     workspaceId: row.workspaceId,
@@ -126,8 +141,10 @@ function toCalendar(ctx: CloudCtx, row: CalendarRow): Calendar {
     areaId: row.areaId,
     parentId: row.parentId,
     mailAccountId: row.mailAccountId,
-    name: root ? (area ? area.name : 'Privat') : row.name,
-    color: row.color ?? (root && area ? area.color : 'blue'),
+    name: root ? (area ? area.name : 'Privat') : (row.localName ?? row.name),
+    color: row.mailAccountId
+      ? (row.localColor ?? row.color ?? 'blue')
+      : (row.color ?? (area ? area.color : ownColor)),
     canEdit: access === 'edit',
     canManage,
     canDelete: row.mailAccountId ? !rights || rights.drop === 'delete' : canManage,
@@ -148,13 +165,14 @@ export async function listCalendars(
   const read = () => deps.db.select().from(calendars).where(seenWhere(ctx));
   let rows = await read();
   if (await ensureDefaults(deps, ctx, rows)) rows = await read();
+  const ownColor = await ownColorOf(deps, userId);
   const byOrder = (row: CalendarRow) => row.createdAt.getTime();
   return rows
     .sort(
       (a, b) =>
         Number(Boolean(a.parentId)) - Number(Boolean(b.parentId)) || byOrder(a) - byOrder(b),
     )
-    .map((row) => toCalendar(ctx, row));
+    .map((row) => toCalendar(ctx, row, ownColor));
 }
 
 /** The caller's mailboxes whose calendars their provider keeps from Slider (signed in before). */
@@ -222,7 +240,7 @@ export async function createCalendar(
       color: remoteColor(input.color),
     });
     await tellCalendar(deps, row);
-    return toCalendar(ctx, row);
+    return toCalendar(ctx, row, await ownColorOf(deps, userId));
   }
   const { ctx, row: parent } = await calendarToEdit(deps, userId, input.parentId!);
   if (parent.mailAccountId) {
@@ -251,7 +269,7 @@ export async function createCalendar(
     })
     .returning();
   await tellCalendar(deps, row!);
-  return toCalendar(ctx, row!);
+  return toCalendar(ctx, row!, await ownColorOf(deps, userId));
 }
 
 /** A provider takes a colour as `#rrggbb`; an accent name is Slider's theme's. */
@@ -271,7 +289,11 @@ async function mailCalendarOf(deps: AppDeps, userId: string, calendarId: string)
   return ctx && { ctx, row };
 }
 
-/** Renames or colours a sub-calendar (an area's own and one's private one keep theirs). */
+/**
+ * Renames or colours a sub-calendar (an area's own and one's private one keep theirs) or one of
+ * one's mail calendars: renamed at the provider where it lets, else in Slider alone; coloured in
+ * Slider alone (the palette's colours are Slider's, Outlook refuses any).
+ */
 export async function updateCalendar(
   deps: AppDeps,
   userId: string,
@@ -280,15 +302,24 @@ export async function updateCalendar(
 ): Promise<Calendar> {
   const mail = await mailCalendarOf(deps, userId, calendarId);
   if (mail) {
-    if (!(mail.row.remoteRights?.rename ?? true)) {
-      throw forbidden('Diesen Kalender kannst du nicht umbenennen.');
-    }
-    const after = await updateMailCalendar(deps, mail.row, {
-      ...(change.name !== undefined && { name: change.name.trim() }),
-      ...(change.color !== undefined && { color: remoteColor(change.color)! }),
-    });
-    await tellCalendar(deps, after);
-    return toCalendar(mail.ctx, after);
+    let row = mail.row;
+    const name = change.name?.trim();
+    const atProvider =
+      name !== undefined && name !== row.name && (row.remoteRights?.rename ?? true);
+    // Refused there after all (Outlook's default calendar, signed out, unreachable): Slider's own.
+    if (atProvider) row = await updateMailCalendar(deps, row, { name }).catch(() => row);
+    const [after] = await deps.db
+      .update(calendars)
+      .set({
+        // Its provider's name again, or renamed there: nothing of Slider's own over it.
+        ...(name !== undefined && { localName: name === row.name ? null : name }),
+        ...(change.color !== undefined && { localColor: change.color }),
+        updatedAt: new Date(),
+      })
+      .where(eq(calendars.id, row.id))
+      .returning();
+    await tellCalendar(deps, after!);
+    return toCalendar(mail.ctx, after!, await ownColorOf(deps, userId));
   }
   const { ctx, row } = await calendarToEdit(deps, userId, calendarId);
   if (!row.parentId) throw forbidden('Diesen Kalender kannst du nicht umbenennen.');
@@ -302,7 +333,7 @@ export async function updateCalendar(
     .where(eq(calendars.id, calendarId))
     .returning();
   await tellCalendar(deps, after!);
-  return toCalendar(ctx, after!);
+  return toCalendar(ctx, after!, await ownColorOf(deps, userId));
 }
 
 /**
@@ -363,15 +394,127 @@ function bounds(event: { allDay: boolean; start: string; end: string }) {
   return { startsAt, endsAt };
 }
 
+const SLIDER_CALL_ONLY =
+  'Ein Anruf in Slider geht nur in Slider-Kalendern – im Kalender eines Postfachs ein Link.';
+const NOT_A_CALL_PLACE = 'In diesem Gespräch kannst du kein Meeting ansetzen.';
+
+/**
+ * Of these conversations, the ones the caller sees: an area's while they see the area, a group or
+ * a direct one while in it. A meeting in another stays hidden from them.
+ */
+async function seenChannels(deps: AppDeps, userId: string, ids: readonly string[]) {
+  const seen = new Set<string>();
+  if (!ids.length) return seen;
+  const [rows, mine] = await Promise.all([
+    deps.db
+      .select()
+      .from(senderChannels)
+      .where(inArray(senderChannels.id, [...ids])),
+    deps.db
+      .select({ channelId: senderMembers.channelId })
+      .from(senderMembers)
+      .where(and(eq(senderMembers.userId, userId), inArray(senderMembers.channelId, [...ids]))),
+  ]);
+  const member = new Set(mine.map((each) => each.channelId));
+  const contexts = new Map<string, Promise<CloudCtx | null>>();
+  for (const row of rows) {
+    if (row.kind === 'agent') continue;
+    if (row.kind !== 'area' && row.kind !== 'channel') {
+      if (member.has(row.id)) seen.add(row.id);
+      continue;
+    }
+    if (!contexts.has(row.workspaceId)) {
+      contexts.set(
+        row.workspaceId,
+        cloudContext(deps.db, row.workspaceId, userId).catch(() => null),
+      );
+    }
+    const ctx = await contexts.get(row.workspaceId);
+    if (row.areaId && ctx?.areas.get(row.areaId)?.access) seen.add(row.id);
+  }
+  return seen;
+}
+
+/**
+ * A meeting as stored: a call only in a conversation of the event's workspace the caller sees and
+ * may speak in (not an agent's chat, not an area they only view); a link as typed.
+ */
+async function meetingColumns(
+  deps: AppDeps,
+  userId: string,
+  workspaceId: string,
+  meeting: EventMeeting | null,
+): Promise<{ callChannelId: string | null; meetingUrl: string | null }> {
+  if (!meeting) return { callChannelId: null, meetingUrl: null };
+  if (meeting.kind === 'link') return { callChannelId: null, meetingUrl: meeting.url.trim() };
+  const row = await seenChannel(deps, userId, meeting.channelId);
+  if (row.workspaceId !== workspaceId || row.kind === 'agent') throw badRequest(NOT_A_CALL_PLACE);
+  if (row.areaId && (row.kind === 'area' || row.kind === 'channel')) {
+    const ctx = await cloudContext(deps.db, workspaceId, userId);
+    if (ctx.areas.get(row.areaId)?.access === 'view') throw badRequest(NOT_A_CALL_PLACE);
+  }
+  return { callChannelId: row.id, meetingUrl: null };
+}
+
+/**
+ * A mail calendar keeps no meeting of Slider's: a link goes where its provider shows one – in the
+ * place or notes instead of the link it had (`before`), else the place when it has none (and the
+ * link fits), else at the head of the notes; a call is refused.
+ */
+function linkInto(
+  fields: { location: string; notes: string },
+  meeting: EventMeeting | null | undefined,
+  before: EventMeeting | null = null,
+): { location: string; notes: string } {
+  if (!meeting) return fields;
+  if (meeting.kind === 'call') throw badRequest(SLIDER_CALL_ONLY);
+  const url = meeting.url.trim();
+  // The old link read first from where it stands: replaced, so the new one is the one read back.
+  const old = before?.kind === 'link' && before.url !== url ? before.url : null;
+  if (old && fields.location.includes(old)) {
+    const location = fields.location.replace(old, () => url);
+    if (location.length <= MAX_EVENT_LOCATION) return { ...fields, location };
+    // Too long for the place (read back cut, the link broken): out of it, at the head of the notes.
+    const rest = fields.location
+      .replace(old, ' ')
+      .replace(/\s{2,}/g, ' ')
+      .replace(/^[\s|,;–-]+|[\s|,;–-]+$/g, '');
+    if (fields.notes.includes(url)) return { ...fields, location: rest };
+    return { location: rest, notes: fields.notes ? `${url}\n\n${fields.notes}` : url };
+  }
+  if (old && fields.notes.includes(old)) {
+    return { ...fields, notes: fields.notes.replace(old, () => url) };
+  }
+  if (fields.location.includes(url) || fields.notes.includes(url)) return fields;
+  if (!fields.location.trim() && url.length <= MAX_EVENT_LOCATION) {
+    return { ...fields, location: url };
+  }
+  return { ...fields, notes: fields.notes ? `${url}\n\n${fields.notes}` : url };
+}
+
 async function toEvents(
   deps: AppDeps,
+  userId: string,
   editable: (calendarId: string) => boolean,
   rows: CalendarEventRow[],
 ): Promise<CalendarEvent[]> {
-  const people = await authorsOf(
-    deps.db,
-    rows.map((row) => row.createdBy),
-  );
+  const [people, channels] = await Promise.all([
+    authorsOf(
+      deps.db,
+      rows.map((row) => row.createdBy),
+    ),
+    seenChannels(deps, userId, [
+      ...new Set(rows.flatMap((row) => (row.callChannelId ? [row.callChannelId] : []))),
+    ]),
+  ]);
+  const meetingOf = (row: CalendarEventRow): EventMeeting | null =>
+    row.callChannelId
+      ? channels.has(row.callChannelId)
+        ? { kind: 'call', channelId: row.callChannelId }
+        : null
+      : row.meetingUrl
+        ? { kind: 'link', url: row.meetingUrl }
+        : null;
   return rows.map((row) => ({
     id: row.id,
     calendarId: row.calendarId,
@@ -384,6 +527,7 @@ async function toEvents(
     canEdit: editable(row.calendarId),
     createdBy: (row.createdBy && people.get(row.createdBy)) || null,
     attachments: row.attachments,
+    meeting: meetingOf(row),
   }));
 }
 
@@ -431,7 +575,10 @@ export async function listEvents(
     )
     .orderBy(calendarEvents.startsAt)
     .limit(MAX_LISTED);
-  return [...(await toEvents(deps, (id) => access.get(id) === 'edit', rows)), ...(await fromMail)];
+  return [
+    ...(await toEvents(deps, userId, (id) => access.get(id) === 'edit', rows)),
+    ...(await fromMail),
+  ];
 }
 
 async function eventToEdit(deps: AppDeps, userId: string, eventId: string) {
@@ -482,7 +629,7 @@ export async function getEvent(
     calendar && (await cloudContext(deps.db, calendar.workspaceId, userId).catch(() => null));
   const access = ctx && accessTo(ctx, calendar);
   if (!access) throw eventNotFound();
-  return (await toEvents(deps, () => access === 'edit', [event]))[0]!;
+  return (await toEvents(deps, userId, () => access === 'edit', [event]))[0]!;
 }
 
 export async function createEvent(
@@ -496,8 +643,10 @@ export async function createEvent(
     bounds(input);
     const made = await createMailEvent(deps, calendar, {
       title: input.title.trim(),
-      location: input.location?.trim() ?? '',
-      notes: input.notes ?? '',
+      ...linkInto(
+        { location: input.location?.trim() ?? '', notes: input.notes ?? '' },
+        input.meeting,
+      ),
       allDay: input.allDay,
       start: input.start,
       end: input.end,
@@ -516,6 +665,7 @@ export async function createEvent(
       notes: input.notes ?? '',
       allDay: input.allDay,
       ...bounds(input),
+      ...(await meetingColumns(deps, userId, calendar.workspaceId, input.meeting ?? null)),
       attachments: await claimAttachments(
         deps.db,
         deps.clock.now(),
@@ -527,7 +677,7 @@ export async function createEvent(
     })
     .returning();
   await tellCalendar(deps, calendar);
-  return (await toEvents(deps, () => true, [row!]))[0]!;
+  return (await toEvents(deps, userId, () => true, [row!]))[0]!;
 }
 
 /** Start and end of the kind `allDay` asks: an event's own, or turned (a day ↔ its midnight). */
@@ -565,6 +715,7 @@ async function moveAcross(
     title: change.title ?? event.title,
     location: change.location ?? event.location,
     notes: change.notes ?? event.notes,
+    meeting: change.meeting !== undefined ? change.meeting : (event.meeting ?? null),
     ...timingOf(event, change),
   });
   try {
@@ -594,10 +745,28 @@ export async function updateEvent(
       if (target.workspaceId !== row.workspaceId) throw forbidden(READ_ONLY);
       return moveAcross(deps, userId, event, { ...change, calendarId: change.calendarId });
     }
+    // A link put on it goes in its place or notes; taken off, the provider's own stays. Only
+    // what the link changed is written: place and notes as read are cut to Slider's lengths.
+    const linked = change.meeting
+      ? linkInto(
+          {
+            location: change.location?.trim() ?? event.location,
+            notes: change.notes ?? event.notes,
+          },
+          change.meeting,
+          event.meeting ?? null,
+        )
+      : null;
     const changed = await updateMailEvent(deps, row, remoteId, {
       ...(change.title !== undefined && { title: change.title.trim() }),
       ...(change.location !== undefined && { location: change.location.trim() }),
       ...(change.notes !== undefined && { notes: change.notes }),
+      ...(linked &&
+        (change.location !== undefined || linked.location !== event.location) && {
+          location: linked.location,
+        }),
+      ...(linked &&
+        (change.notes !== undefined || linked.notes !== event.notes) && { notes: linked.notes }),
       ...(changesTiming(change) && timingOf(event, change)),
     });
     await tellCalendar(deps, row);
@@ -609,7 +778,7 @@ export async function updateEvent(
     target = (await calendarToEdit(deps, userId, change.calendarId)).row;
     if (target.workspaceId !== calendar.workspaceId) throw forbidden(READ_ONLY);
     if (target.mailAccountId) {
-      const [own] = await toEvents(deps, () => true, [event]);
+      const [own] = await toEvents(deps, userId, () => true, [event]);
       return moveAcross(deps, userId, own!, { ...change, calendarId: target.id });
     }
   }
@@ -648,6 +817,8 @@ export async function updateEvent(
       allDay,
       ...timing,
       ...(change.attachments !== undefined && { attachments: files }),
+      ...(change.meeting !== undefined &&
+        (await meetingColumns(deps, userId, calendar.workspaceId, change.meeting))),
       updatedAt: new Date(),
     })
     .where(eq(calendarEvents.id, eventId))
@@ -655,7 +826,7 @@ export async function updateEvent(
   await deleteAttachments(deps, gone);
   await tellCalendar(deps, calendar);
   if (target !== calendar) await tellCalendar(deps, target);
-  return (await toEvents(deps, () => true, [after!]))[0]!;
+  return (await toEvents(deps, userId, () => true, [after!]))[0]!;
 }
 
 export async function deleteEvent(deps: AppDeps, userId: string, eventId: string) {

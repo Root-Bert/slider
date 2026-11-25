@@ -5,7 +5,7 @@ import { useLayoutEffect, useState, type RefObject } from 'react';
  * whole width and its buttons a row of their own below. It stays so until the field is empty
  * again – a line that fits once the buttons are gone would send them back and forth.
  */
-export function useTallField(fieldRef: RefObject<HTMLTextAreaElement | null>, text: string) {
+export function useTallField(fieldRef: RefObject<HTMLElement | null>, text: string) {
   const [tall, setTall] = useState(false);
   if (tall && !text) setTall(false);
   useLayoutEffect(() => {

@@ -36,6 +36,7 @@ import { isModKey } from '@/lib/keyboard';
 import { downloadNextcloudFile, useNextcloudConnections } from '@/lib/api';
 import { NextcloudBrowser } from '@/features/nextcloud';
 import {
+  AiButton,
   Button,
   cn,
   ConfirmDialog,
@@ -48,6 +49,7 @@ import {
   Toolbar,
   ToolbarDivider,
 } from '@/ui';
+import { useCallInBackground } from '@/features/calls';
 import { ownerIds, useBoardOwner } from './board-owner';
 import {
   BOX_GAP,
@@ -212,6 +214,7 @@ export const MaterialBoard = memo(function MaterialBoard(props: {
 function Board({ w, h, onLeave }: { w: number; h: number; onLeave: () => void }) {
   const owner = useBoardOwner();
   const { canComment, canManage, aiAuthor, wording, viewer: me } = owner;
+  const calling = useCallInBackground();
   const {
     board,
     loading,
@@ -1251,10 +1254,10 @@ function Board({ w, h, onLeave }: { w: number; h: number; onLeave: () => void })
             </span>
             {/* Asking spends the workspace's AI: not for Betrachter, as no other AI is. */}
             {canComment && (
-              <IconButton
-                icon="autoAwesome"
-                label="KI"
-                title="KI – fragt das Material, recherchiert, legt Ergebnisse aufs Board"
+              <AiButton
+                name={aiAuthor.name}
+                calling={calling}
+                title={`${aiAuthor.name} – fragt das Material, recherchiert, legt Ergebnisse aufs Board`}
                 size="sm"
                 active={side === 'chat'}
                 aria-expanded={side === 'chat'}

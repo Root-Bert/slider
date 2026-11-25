@@ -1,4 +1,5 @@
 import { matchPath, useLocation, useNavigate } from 'react-router';
+import { handOverName } from './call-handover';
 import { routes } from './routes';
 
 /** The apps of one account that are there to open. */
@@ -164,6 +165,10 @@ export function windowForApp(app: AppId): { go: (to: string) => void; close: () 
   if (!installedApp || installedApp === app) return null;
   const opened = window.open('', '_blank');
   if (!opened) return null;
+  // An app's window, not a popup of this one: it rings and calls itself (`CallProvider` skips
+  // windows with an opener) and takes over the call this one is in.
+  opened.opener = null;
+  opened.name = handOverName();
   return { go: (to) => opened.location.replace(to), close: () => opened.close() };
 }
 

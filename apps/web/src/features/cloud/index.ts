@@ -12,6 +12,9 @@ export {
 } from './components/AppSwitcher';
 export { CloudChatButton, WorkspaceChat } from './components/CloudChat';
 export { DateButton } from './components/calendar/DateButton';
+export { MeetingNotice } from './components/calendar/MeetingNotice';
+export { CalendarPreferences } from './components/calendar/CalendarPreferences';
+export { lastCalendarKey, plainEventCalendar } from './lib/event-calendar';
 export { AppMark, AppTag, type AppName } from './components/AppMark';
 export { FilesPreferences } from './components/FilesPreferences';
 export { DestinationDialog, type Destination } from './components/DestinationDialog';
@@ -37,6 +40,7 @@ export { AgentDesk } from './components/AgentDesk';
 export {
   AsideToggle,
   useAgentAside,
+  useAsideRoom,
   useAgentCardsShown,
   useKeptWidth,
 } from './components/AgentAside';

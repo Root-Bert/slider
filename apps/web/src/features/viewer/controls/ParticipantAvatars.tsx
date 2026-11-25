@@ -1,7 +1,8 @@
 import type { AccentColor, Author } from '@slider/shared';
-import { useEffect, useId, useRef, useState } from 'react';
+import { useEffect, useId, useRef, useState, type ButtonHTMLAttributes } from 'react';
 import { useAiProposals, useUpdateMe } from '@/lib/api';
 import {
+  AiButton,
   Avatar,
   AvatarOverflow,
   Button,
@@ -13,6 +14,7 @@ import {
   Tooltip,
   usePopover,
 } from '@/ui';
+import { useCallInBackground } from '@/features/calls';
 import { useColorOverrides } from '../hooks/useColorOverrides';
 import { setColorOverride } from '../lib/color-overrides';
 import { slideLabel } from '../comments/lib/labels';
@@ -122,6 +124,7 @@ function AiAvatarButton({ author, working }: { author: Author; working: boolean 
   const { aiChatOpen } = useViewerState();
   const dispatch = useViewerDispatch();
   const speaking = voice.status !== 'off' && voice.status !== 'ended';
+  const calling = useCallInBackground();
   return (
     <AvatarColorPicker
       author={author}
@@ -129,7 +132,11 @@ function AiAvatarButton({ author, working }: { author: Author; working: boolean 
       voice={{ active: speaking, toggle: voice.toggle }}
       chat={
         canComment
-          ? { open: aiChatOpen, toggle: () => dispatch({ type: 'aiChatSet', open: !aiChatOpen }) }
+          ? {
+              open: aiChatOpen,
+              calling,
+              toggle: () => dispatch({ type: 'aiChatSet', open: !aiChatOpen }),
+            }
           : undefined
       }
     />
@@ -137,7 +144,7 @@ function AiAvatarButton({ author, working }: { author: Author; working: boolean 
 }
 
 /** Whether the AI is one of the participants, and whether it is working right now. */
-function useAiPresence() {
+export function useAiPresence() {
   const { deck, threads } = useViewerData();
   const { data: proposals } = useAiProposals(deck.id);
   const aiWorking = proposals?.some((proposal) => proposal.status === 'running') ?? false;
@@ -178,7 +185,7 @@ interface AvatarColorPickerProps {
   /** The AI's avatar: its menu starts (or sends) speaking to it. */
   voice?: { active: boolean; toggle: () => void };
   /** The AI's avatar: a click opens its chat; filtering by it moves into its menu. */
-  chat?: { open: boolean; toggle: () => void };
+  chat?: { open: boolean; toggle: () => void; calling?: boolean };
 }
 
 function AvatarColorPicker({
@@ -236,6 +243,68 @@ function AvatarColorPicker({
     : 'Nur Kommentare dieser Person';
   const heading = fixedColor ? author.name : self ? 'Deine Farbe' : `Farbe für ${author.name}`;
 
+  // What the avatar (or the AI's button) does: a click filters or opens the chat, a right click,
+  // Shift+F10 / the menu key or a long press opens the picker.
+  const trigger: ButtonHTMLAttributes<HTMLButtonElement> = {
+    onClick: () => {
+      // The click that ends a long press: the picker is open, no filter.
+      if (press.current?.opened) {
+        press.current = null;
+        return;
+      }
+      if (chat) chat.toggle();
+      else toggleFilter();
+    },
+    onContextMenu: (event) => {
+      if (!hasPicker) return;
+      event.preventDefault();
+      // Android's long press: our timer may have opened it already – keep it open.
+      if (press.current) setOpen(true);
+      else setOpen((value) => !value);
+    },
+    onKeyDown: (event) => {
+      // macOS has no menu key and fires no `contextmenu` for Shift+F10: handle both here
+      // (prevented, so Windows doesn't send its own `contextmenu` on top).
+      if (!hasPicker) return;
+      if (event.key !== 'ContextMenu' && !(event.shiftKey && event.key === 'F10')) return;
+      event.preventDefault();
+      focusPicker.current = true;
+      setOpen(true);
+    },
+    onPointerDown: (event) => {
+      endPress();
+      press.current = null;
+      if (!hasPicker || event.pointerType === 'mouse') return;
+      const current = {
+        x: event.clientX,
+        y: event.clientY,
+        opened: false,
+        timer: window.setTimeout(() => {
+          current.opened = true;
+          setOpen(true);
+        }, LONG_PRESS_MS),
+      };
+      press.current = current;
+    },
+    onPointerMove: (event) => {
+      const current = press.current;
+      if (!current || current.opened) return;
+      if (Math.hypot(event.clientX - current.x, event.clientY - current.y) > LONG_PRESS_SLOP) {
+        endPress();
+        press.current = null;
+      }
+    },
+    onPointerUp: () => {
+      endPress();
+      // A short tap: the click filters as usual.
+      if (press.current && !press.current.opened) press.current = null;
+    },
+    onPointerCancel: () => {
+      endPress();
+      press.current = null;
+    },
+  };
+
   const pick = (color: AccentColor) => {
     if (color === author.color) return;
     if (self) updateMe.mutate({ color });
@@ -257,93 +326,54 @@ function AvatarColorPicker({
           </>
         }
       >
-        <button
-          ref={triggerRef}
-          type="button"
-          aria-label={
-            chat
-              ? `Mit ${author.name} chatten`
-              : self
+        {chat ? (
+          // The AI: its own button, as ✨ everywhere else (`AiButton`) – no face in a circle.
+          <span className="relative flex">
+            <AiButton
+              ref={triggerRef}
+              name={author.name}
+              title={false}
+              calling={chat.calling}
+              expanded={chat.open}
+              aria-keyshortcuts={hasPicker ? 'Shift+F10' : undefined}
+              className="select-none [-webkit-touch-callout:none]"
+              {...trigger}
+            />
+            {live && (
+              <span
+                aria-label="arbeitet gerade"
+                className="pointer-events-none absolute right-1.5 bottom-1.5 size-2.5 rounded-full bg-success ring-2 ring-canvas"
+              />
+            )}
+          </span>
+        ) : (
+          <button
+            ref={triggerRef}
+            type="button"
+            aria-label={
+              self
                 ? 'Kommentare zeigen, in denen du erwähnt wirst'
                 : `Nur Kommentare von ${author.name}`
-          }
-          aria-pressed={chat ? undefined : filtered}
-          aria-expanded={chat?.open}
-          aria-keyshortcuts={hasPicker ? 'Shift+F10' : undefined}
-          onClick={() => {
-            // The click that ends a long press: the picker is open, no filter.
-            if (press.current?.opened) {
-              press.current = null;
-              return;
             }
-            if (chat) chat.toggle();
-            else toggleFilter();
-          }}
-          onContextMenu={(event) => {
-            if (!hasPicker) return;
-            event.preventDefault();
-            // Android's long press: our timer may have opened it already – keep it open.
-            if (press.current) setOpen(true);
-            else setOpen((value) => !value);
-          }}
-          onKeyDown={(event) => {
-            // macOS has no menu key and fires no `contextmenu` for Shift+F10: handle both here
-            // (prevented, so Windows doesn't send its own `contextmenu` on top).
-            if (!hasPicker) return;
-            if (event.key !== 'ContextMenu' && !(event.shiftKey && event.key === 'F10')) return;
-            event.preventDefault();
-            focusPicker.current = true;
-            setOpen(true);
-          }}
-          onPointerDown={(event) => {
-            endPress();
-            press.current = null;
-            if (!hasPicker || event.pointerType === 'mouse') return;
-            const current = {
-              x: event.clientX,
-              y: event.clientY,
-              opened: false,
-              timer: window.setTimeout(() => {
-                current.opened = true;
-                setOpen(true);
-              }, LONG_PRESS_MS),
-            };
-            press.current = current;
-          }}
-          onPointerMove={(event) => {
-            const current = press.current;
-            if (!current || current.opened) return;
-            if (
-              Math.hypot(event.clientX - current.x, event.clientY - current.y) > LONG_PRESS_SLOP
-            ) {
-              endPress();
-              press.current = null;
-            }
-          }}
-          onPointerUp={() => {
-            endPress();
-            // A short tap: the click filters as usual.
-            if (press.current && !press.current.opened) press.current = null;
-          }}
-          onPointerCancel={() => {
-            endPress();
-            press.current = null;
-          }}
-          className={cn(
-            // `flex`, not `block`: the inline avatar would sit on a text baseline and stretch the
-            // filter ring below it. No text selection or iOS callout on a long press.
-            'relative flex rounded-full outline-offset-2 transition-transform select-none [-webkit-touch-callout:none] hover:scale-105',
-            filtered && 'z-(--z-raised) ring-2 ring-fg ring-offset-2 ring-offset-canvas',
-          )}
-        >
-          <Avatar author={author} size={32} nativeTitle={false} />
-          {live && (
-            <span
-              aria-label={author.type === 'ai' ? 'arbeitet gerade' : 'gerade da'}
-              className="absolute right-0 bottom-0 size-2.5 rounded-full bg-success ring-2 ring-canvas"
-            />
-          )}
-        </button>
+            aria-pressed={filtered}
+            aria-keyshortcuts={hasPicker ? 'Shift+F10' : undefined}
+            {...trigger}
+            className={cn(
+              // `flex`, not `block`: the inline avatar would sit on a text baseline and stretch the
+              // filter ring below it. No text selection or iOS callout on a long press.
+              'relative flex rounded-full outline-offset-2 transition-transform select-none [-webkit-touch-callout:none] hover:scale-105',
+              filtered && 'z-(--z-raised) ring-2 ring-fg ring-offset-2 ring-offset-canvas',
+            )}
+          >
+            <Avatar author={author} size={32} nativeTitle={false} />
+            {live && (
+              <span
+                aria-label={author.type === 'ai' ? 'arbeitet gerade' : 'gerade da'}
+                className="absolute right-0 bottom-0 size-2.5 rounded-full bg-success ring-2 ring-canvas"
+              />
+            )}
+          </button>
+        )}
       </Tooltip>
 
       {open && (

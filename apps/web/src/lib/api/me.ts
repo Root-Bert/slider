@@ -39,9 +39,11 @@ export function useUpdateMe() {
     // One after another: a name saved as you type must not be overtaken by an older save.
     scope: { id: 'me' },
     mutationFn: (input: UpdateMeInput) => api.patch<MeResponse>('/me', input),
-    onSuccess: (me) => {
+    onSuccess: (me, input) => {
       queryClient.setQueryData(queryKeys.me, me);
       void queryClient.invalidateQueries({ queryKey: queryKeys.decks });
+      // One's private calendar is in one's colour (`calendarKeys`, every workspace's).
+      if (input.color !== undefined) void queryClient.invalidateQueries({ queryKey: ['calendar'] });
     },
   });
 }
@@ -65,6 +67,31 @@ export function useSetShowExtensions() {
       return { before };
     },
     onError: (_error, _shown, context) => {
+      if (context?.before !== undefined) put(context.before);
+    },
+  });
+}
+
+/**
+ * Einstellungen › Kalender: minutes before a meeting it shows beside the date in the header
+ * (`null`: never), kept with the account – the header follows at once, a refusal puts it back.
+ */
+export function useSetMeetingNotice() {
+  const queryClient = useQueryClient();
+  const put = (minutes: number | null) =>
+    queryClient.setQueryData<MeResponse>(queryKeys.me, (me) =>
+      me?.user ? { ...me, user: { ...me.user, meetingNoticeMinutes: minutes } } : me,
+    );
+  return useMutation({
+    scope: { id: 'me' },
+    mutationFn: (minutes: number | null) =>
+      api.patch<MeResponse>('/me', { meetingNoticeMinutes: minutes }),
+    onMutate: (minutes) => {
+      const before = queryClient.getQueryData<MeResponse>(queryKeys.me)?.user?.meetingNoticeMinutes;
+      put(minutes);
+      return { before };
+    },
+    onError: (_error, _minutes, context) => {
       if (context?.before !== undefined) put(context.before);
     },
   });

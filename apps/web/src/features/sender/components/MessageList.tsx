@@ -9,20 +9,15 @@ import {
 } from '@slider/shared';
 import { accentColor } from '@/lib/accent';
 import { isPending } from '@/lib/api';
+import { isModEnter } from '@/lib/keyboard';
 import { chatMatches, useMarkedMatches, useShowHit } from '@/lib/chat-search';
 import { AgentAvatar, CallEntry } from '@/features/cloud';
-import {
-  AutosizeTextarea,
-  Avatar,
-  Badge,
-  Button,
-  cn,
-  Icon,
-  IconButton,
-  useCopyToClipboard,
-} from '@/ui';
+import { Avatar, Badge, Button, cn, Icon, IconButton, useCopyToClipboard } from '@/ui';
 import { dayKey, dayOf, stampOf, timeOf } from '../lib/time';
+import { markupTrim } from '../lib/markup';
 import { MessageText } from './MessageText';
+import { RichField } from './LazyRichField';
+import type { RichFieldHandle } from './RichField';
 import { ReplyQuote } from './ReplyQuote';
 import {
   ReactionChipsOf,
@@ -64,39 +59,46 @@ function Editor({
   onCancel: () => void;
 }) {
   const [text, setText] = useState(message.text);
-  const ref = useRef<HTMLTextAreaElement>(null);
-  useEffect(() => {
-    const field = ref.current;
-    if (!field) return;
-    field.focus();
-    field.setSelectionRange(field.value.length, field.value.length);
-  }, []);
+  // Only what was changed is saved: the words read back unchanged are not an edit.
+  const [touched, setTouched] = useState(false);
+  const ref = useRef<RichFieldHandle>(null);
+  useEffect(() => ref.current?.focus(), []);
   const save = () => {
-    const trimmed = text.trim();
-    if (!trimmed || trimmed === message.text) onCancel();
+    const trimmed = markupTrim(text);
+    if (!touched || !trimmed || trimmed === message.text) onCancel();
     else onSave(trimmed);
   };
   return (
     <div className="mt-1 flex flex-col gap-2">
       <div className="glass-elevated rounded-control px-3 py-[9px]">
-        <AutosizeTextarea
+        <RichField
           ref={ref}
-          aria-label="Nachricht ändern"
+          label="Nachricht ändern"
+          placeholder=""
           value={text}
           maxLength={MAX_SENDER_MESSAGE}
           maxHeight={240}
-          onChange={(event) => setText(event.target.value)}
-          onKeyDown={(event) => {
-            event.stopPropagation();
+          onChange={(next) => {
+            setText(next);
+            setTouched(true);
+          }}
+          onKeyDownCapture={(event) => {
             if (event.nativeEvent.isComposing) return;
             if (event.key === 'Escape') {
               event.preventDefault();
+              event.stopPropagation();
               onCancel();
-            } else if (event.key === 'Enter' && !event.shiftKey) {
+            } else if (
+              event.key === 'Enter' &&
+              !event.shiftKey &&
+              (isModEnter(event) || !ref.current?.inList())
+            ) {
               event.preventDefault();
+              event.stopPropagation();
               save();
             }
           }}
+          onKeyDown={(event) => event.stopPropagation()}
           className="text-body leading-4.5 text-fg"
         />
       </div>

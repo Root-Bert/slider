@@ -30,7 +30,7 @@ import { searchNodes } from './cloud/nodes';
 import { workspaceAiConnection } from './integration-keys';
 import { ATTACHMENTS_ARE_DATA, attachmentsText } from './mail-attachment-text';
 import { freshPart, ownThread, threadMessages } from './mail';
-import { searchWords, unsubscribeLink } from './mail-context';
+import { folderNamed, searchWords, unsubscribeLink } from './mail-context';
 import { DAY_MS } from './retention-rules';
 import { isCompanyMailDomain } from './workspaces/domains';
 import { orgDomain } from '@slider/shared';
@@ -690,8 +690,9 @@ async function insightsOf(
     });
   }
 
-  // Where its attachments go: where the same person's or firm's went before, a folder named like
-  // the firm or the matter, the AI's pick, else one's own files.
+  // Where its attachments go: where the same person's or firm's went before, the AI's pick of a
+  // folder (or a new one where none fits – the one of that name once made), a folder named like
+  // the firm or the matter, else one's own files.
   const filing: MailContextFiling[] = [];
   const earlier =
     attachments.length > 0 ? await earlierFolder(deps, ctx, account, thread.id, sender) : null;
@@ -701,7 +702,10 @@ async function insightsOf(
   for (const attachment of attachments) {
     const said = context?.filing.find((one) => one.attachmentId === attachment.id);
     const nodeId = attachment.nodeId ?? said?.nodeId ?? null;
-    let pick: { folder: Folder; place: string; why: string };
+    let pick: { folder: Folder; place: string; why: string; newFolder?: string | null };
+    const mayHere =
+      !!said && mayFile(ctx, said.areaId, said.areaId === null ? account.userId : null);
+    const chosen = mayHere && (!!said.newFolder || said.areaId !== null || said.parentId !== null);
     if (earlier) {
       pick = {
         folder: earlier.folder,
@@ -712,13 +716,29 @@ async function insightsOf(
         }),
         why: earlier.why,
       };
+    } else if (chosen && said) {
+      const made = said.newFolder
+        ? await folderNamed(deps, ctx, said, said.newFolder).catch(() => null)
+        : null;
+      pick = made
+        ? {
+            folder: { areaId: made.areaId, parentId: made.id },
+            place: `${said.place} / ${made.name}`,
+            why: said.why,
+          }
+        : {
+            folder: { areaId: said.areaId, parentId: said.parentId },
+            place: said.place,
+            why: said.why,
+            newFolder: said.newFolder ?? null,
+          };
     } else if (named) {
       pick = {
         folder: { areaId: named.areaId, parentId: named.id },
         place: await placeOf(deps, ctx, named),
         why: `Der Ordner „${named.name}“ passt dazu`,
       };
-    } else if (said && mayFile(ctx, said.areaId, said.areaId === null ? account.userId : null)) {
+    } else if (mayHere && said) {
       pick = {
         folder: { areaId: said.areaId, parentId: said.parentId },
         place: said.place,
@@ -732,6 +752,7 @@ async function insightsOf(
       ...pick.folder,
       place: pick.place,
       why: pick.why,
+      ...(pick.newFolder ? { newFolder: pick.newFolder } : {}),
       nodeId,
     });
   }

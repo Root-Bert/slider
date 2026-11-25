@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { meetingNoticeSchema } from './calendar';
 import {
   accentColorSchema,
   anchorSchema,
@@ -188,6 +189,8 @@ export const ERROR_CODES = [
   'workspace_blocked',
   /** The instance admin blocked the account (BER-167): it can't sign in. */
   'account_blocked',
+  /** The address's workspace allows its company login alone („Nur Firmen-Login“). */
+  'sso_required',
   /** Deleting the account needs a fresh sign-in: sign out and in again first. */
   'reauth_required',
   /**
@@ -267,10 +270,15 @@ export const updateMeInputSchema = z
     color: accentColorSchema.optional(),
     name: z.string().trim().min(1, 'Der Name darf nicht leer sein.').max(USER_NAME_MAX).optional(),
     showExtensions: z.boolean().optional(),
+    /** Einstellungen › Kalender: minutes before a meeting it shows in the header; `null`: never. */
+    meetingNoticeMinutes: meetingNoticeSchema.optional(),
   })
   .refine(
     (input) =>
-      input.color !== undefined || input.name !== undefined || input.showExtensions !== undefined,
+      input.color !== undefined ||
+      input.name !== undefined ||
+      input.showExtensions !== undefined ||
+      input.meetingNoticeMinutes !== undefined,
     { message: 'Nichts zu ändern.' },
   );
 export type UpdateMeInput = z.infer<typeof updateMeInputSchema>;

@@ -4,8 +4,10 @@ import {
   MAX_EVENT_LOCATION,
   MAX_EVENT_NOTES,
   MAX_EVENT_TITLE,
+  meetingLinkIn,
   type CalendarConnection,
   type CalendarEvent,
+  type EventMeeting,
 } from '@slider/shared';
 import {
   calendars,
@@ -406,7 +408,14 @@ function fromRemote(row: CalendarRow, event: RemoteEvent): CalendarEvent {
     end: event.end,
     canEdit: row.remoteRights?.events ?? true,
     createdBy: null,
+    meeting: meetingOf(event),
   };
+}
+
+/** The provider's meeting (Meet, Teams), else a meeting's link in where or notes (an invitation's). */
+function meetingOf(event: RemoteEvent): EventMeeting | null {
+  const url = event.meetingUrl ?? meetingLinkIn(event.location, event.notes);
+  return url ? { kind: 'link', url } : null;
 }
 
 /** `mail:<calendar>:<provider's id>` – what `fromRemote` made; `null` for one's own events. */

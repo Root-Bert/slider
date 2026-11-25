@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { meetingNoticeSchema } from './calendar';
 import { accentColorSchema, templateColorsSchema, workspaceRoleSchema } from './model';
 
 /**
@@ -96,6 +97,8 @@ export const LOGIN_ERRORS = [
   'rate_limited',
   /** The instance admin blocked the account (BER-167). */
   'account_blocked',
+  /** The address's workspace allows its company login alone („Nur Firmen-Login“). */
+  'sso_required',
 ] as const;
 export type LoginError = (typeof LOGIN_ERRORS)[number];
 
@@ -189,6 +192,8 @@ export const meUserSchema = z.object({
   isInstanceAdmin: z.boolean(),
   /** Cloud's file names with their ending (Einstellungen › Dateien › „Dateiendungen zeigen“). */
   showExtensions: z.boolean(),
+  /** Minutes before a meeting it shows beside the date in the header; `null`: never. */
+  meetingNoticeMinutes: meetingNoticeSchema,
 });
 export type MeUser = z.infer<typeof meUserSchema>;
 

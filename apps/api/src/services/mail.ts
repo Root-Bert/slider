@@ -51,6 +51,7 @@ import {
   type MailAttachmentRow,
   type MailInlineImageRow,
   type MailMessageRow,
+  type MailSyncState,
   type MailThreadRow,
 } from '../db/schema';
 import type { AppDeps } from '../deps';
@@ -608,7 +609,7 @@ export async function syncMailAccount(deps: AppDeps, accountId: string): Promise
     await deps.db
       .update(mailAccounts)
       .set({
-        sync: fetched.state,
+        sync: keepOldest(row.sync, fetched.state),
         ...(fetched.folders ? { folders: fetched.folders } : {}),
         // A mailbox without an inbox read yet reads it whole the first time anyway.
         ...(htmlRead || !row.sync.inbox ? { htmlRead: true } : {}),
@@ -895,6 +896,184 @@ export async function pushMoves(deps: AppDeps, accountId: string): Promise<void>
   }
 }
 
+/**
+ * The older mails fetched so far stay counted: a folder read as the first time again (the inbox's
+ * `htmlRead`) starts its `oldest` at its latest few – the lower one kept was read already.
+ */
+function keepOldest(before: MailSyncState, after: MailSyncState): MailSyncState {
+  const kept: MailSyncState = { ...after };
+  for (const [folder, now] of Object.entries(after)) {
+    const was = before[folder]?.oldest;
+    if (
+      was !== undefined &&
+      before[folder]?.validity === now.validity &&
+      was < (now.oldest ?? Infinity)
+    )
+      kept[folder] = { ...now, oldest: was };
+  }
+  return kept;
+}
+
+/** Older mails fetched per ask and mailbox at the list's end (`readOlderMail`). */
+const OLDER_PER_ASK = 50;
+/** A search on the server: the newest hits fetched per folder at most. */
+const FOUND_PER_FOLDER = 20;
+/** How long a search on the server goes on, all folders together; later folders wait. */
+const SEARCH_ON_SERVER_MS = 30_000;
+/** How long an ask waits while a round reads the mailbox. */
+const TURN_WAIT_MS = 20_000;
+
+/** The mailbox's turn – a round reading it (or another ask) awaited, at most `TURN_WAIT_MS`. */
+async function turnFor(accountId: string): Promise<boolean> {
+  const until = Date.now() + TURN_WAIT_MS;
+  while (working.has(accountId)) {
+    if (Date.now() > until) return false;
+    await new Promise((done) => setTimeout(done, 200));
+  }
+  working.add(accountId);
+  return true;
+}
+
+/** Below which UID a folder holds nothing read yet; null: never read (its first round does it). */
+async function oldestRead(deps: AppDeps, row: MailAccountRow, folder: string) {
+  const known = row.sync[folder];
+  if (!known) return null;
+  if (known.oldest !== undefined) return known.oldest;
+  // Kept before `oldest` was: its lowest mail here.
+  const [low] = await deps.db
+    .select({ uid: sql<number | null>`min(${mailMessages.uid})` })
+    .from(mailMessages)
+    .where(and(eq(mailMessages.accountId, row.id), eq(mailMessages.folder, folder)));
+  return low?.uid ?? known.next;
+}
+
+/** One's mailboxes in a workspace, or the one asked for – those whose mails are read. */
+async function readMailboxes(
+  deps: AppDeps,
+  userId: string,
+  workspaceId: string,
+  accountId: string | undefined,
+) {
+  await cloudContext(deps.db, workspaceId, userId);
+  const rows = await deps.db
+    .select()
+    .from(mailAccounts)
+    .where(
+      and(
+        eq(mailAccounts.workspaceId, workspaceId),
+        eq(mailAccounts.userId, userId),
+        accountId ? eq(mailAccounts.id, accountId) : undefined,
+      ),
+    );
+  return rows.filter((row) => !row.calendarOnly && row.state !== 'signin');
+}
+
+/**
+ * Older mails than all read (`readOlder`) into the mailbox's folder – fetched in its turn, kept as
+ * any (Message-ID: one known stays one), but no new mail: nothing told, the AI not asked. Returns
+ * whether more are older still.
+ */
+async function fetchOlder(
+  deps: AppDeps,
+  accountId: string,
+  folder: string,
+  search?: { words: string[]; inText: boolean },
+): Promise<boolean> {
+  const servers = mailServersOf(deps);
+  if (!servers.older) return false;
+  // Busy all along: more may come – asked again.
+  if (!(await turnFor(accountId))) return true;
+  try {
+    const [row] = await deps.db.select().from(mailAccounts).where(eq(mailAccounts.id, accountId));
+    const known = row?.sync[folder];
+    const path =
+      row?.folders.find((one) => one.key === folder)?.path ?? (folder === 'inbox' ? 'INBOX' : null);
+    if (!row || !known || !path) return false;
+    const below = (await oldestRead(deps, row, folder)) ?? 1;
+    if (below <= 1) return false;
+    const read = await servers.older(await loginFor(deps, row), {
+      path,
+      folder,
+      validity: known.validity,
+      below,
+      count: search ? FOUND_PER_FOLDER : OLDER_PER_ASK,
+      ...(search ?? {}),
+    });
+    // Numbered anew meanwhile: the next round reads it as the first time.
+    if (read.validity !== known.validity) return false;
+    for (const mail of read.mails)
+      try {
+        await ingestMail(deps, row, mail, true);
+      } catch (error) {
+        deps.log.warn('Mail: an older mail could not be read', { accountId, error });
+      }
+    if (!search)
+      await deps.db
+        .update(mailAccounts)
+        .set({ sync: { ...row.sync, [folder]: { ...known, oldest: read.more ? read.oldest : 1 } } })
+        .where(eq(mailAccounts.id, accountId));
+    if (read.mails.length > 0) tell(row, null);
+    return read.more;
+  } finally {
+    working.delete(accountId);
+  }
+}
+
+/**
+ * The list's end: older mails of the folder (the side bar's list: the inbox) from the server, of
+ * one mailbox or all – `more` while any has older ones still.
+ */
+export async function readOlderMail(
+  deps: AppDeps,
+  userId: string,
+  workspaceId: string,
+  ask: { accountId?: string | undefined; folder?: string | undefined },
+): Promise<{ more: boolean; failed: boolean }> {
+  const rows = await readMailboxes(deps, userId, workspaceId, ask.accountId);
+  let more = false;
+  let failed = false;
+  for (const row of rows)
+    try {
+      if (await fetchOlder(deps, row.id, ask.folder ?? 'inbox')) more = true;
+    } catch (error) {
+      // The server away or refusing: asked again later, not „none older“.
+      if (!(error instanceof MailSignInNeeded)) failed = true;
+      deps.log.warn('Mail: older mails did not come', { accountId: row.id, error });
+    }
+  return { more, failed };
+}
+
+/**
+ * A search on the server too: what it finds older than all read (in every folder but the trash) is
+ * fetched, so the search here finds it – words as the search here takes them.
+ */
+export async function searchMailOnServer(
+  deps: AppDeps,
+  userId: string,
+  workspaceId: string,
+  ask: { query: string; accountId?: string | undefined; inText: boolean },
+): Promise<void> {
+  const words = ask.query
+    .toLowerCase()
+    .split(/\s+/)
+    .filter((word) => word.length > 1)
+    .slice(0, 8);
+  if (words.length === 0) return;
+  const until = Date.now() + SEARCH_ON_SERVER_MS;
+  for (const row of await readMailboxes(deps, userId, workspaceId, ask.accountId))
+    for (const folder of new Set([
+      'inbox',
+      ...row.folders.filter((one) => one.role !== 'trash').map((one) => one.key),
+    ])) {
+      if (Date.now() > until) return;
+      try {
+        await fetchOlder(deps, row.id, folder, { words, inText: ask.inText });
+      } catch (error) {
+        deps.log.warn('Mail: a search on the server failed', { accountId: row.id, error });
+      }
+    }
+}
+
 /** Set by the AI's part (`mail-context`): a mail conversation got a new mail. */
 let afterMail: ((deps: AppDeps, threadId: string) => void) | null = null;
 export function onNewMail(run: (deps: AppDeps, threadId: string) => void) {
@@ -1178,11 +1357,14 @@ async function keepInlineImages(
 /**
  * Takes one mail in: known already – nothing; a colleague's, vouched for – into the chat with
  * them; else into its conversation (the one it answers, or a new one). Returns the conversation.
+ * `older`: fetched from below all read (`fetchOlder`) – a colleague's too stays mail, quietly: no
+ * chat message from them now for what they wrote long ago.
  */
 export async function ingestMail(
   deps: AppDeps,
   account: MailAccountRow,
   mail: FetchedMail,
+  older = false,
 ): Promise<string | null> {
   if (mail.raw.byteLength > MAX_RAW_BYTES) return null;
   const parsed = await simpleParser(Buffer.from(mail.raw), { skipImageLinks: true });
@@ -1312,7 +1494,7 @@ export async function ingestMail(
     };
 
     const colleague =
-      mail.folder === 'inbox' && !spam && !outgoing && auth === 'pass' && from.address
+      !older && mail.folder === 'inbox' && !spam && !outgoing && auth === 'pass' && from.address
         ? await colleagueOf(deps, account, from.address, [...to, ...cc])
         : null;
     if (colleague) {
@@ -1466,10 +1648,13 @@ export interface MailThreadFilter {
   query?: string | undefined;
   /** The words may stand in what its mails say too (the newest mails' – Post's own search). */
   inText?: boolean | undefined;
+  /** How many, the newest – more as the list is scrolled down (`LISTED` at first). */
+  limit?: number | undefined;
 }
 
-/** As many conversations as a list shows at once – the newest. */
+/** As many conversations as a list shows at once – the newest; scrolled down, more (`MAX_LISTED`). */
 const LISTED = 200;
+const MAX_LISTED = 5000;
 
 /** Mails whose text a search reads at most, the newest first (20 000 of 3 KB: about a second). */
 const TEXT_SEARCH_MAILS = 20_000;
@@ -1619,8 +1804,9 @@ export async function listMailThreads(
     .from(mailThreads)
     .innerJoin(mailAccounts, eq(mailAccounts.id, mailThreads.accountId))
     .where(and(mine, found ? inArray(mailThreads.id, found) : inFolder))
-    .orderBy(desc(mailThreads.lastAt))
-    .limit(LISTED);
+    // The same order however many: one as old as another stays where it was.
+    .orderBy(desc(mailThreads.lastAt), desc(mailThreads.id))
+    .limit(Math.min(Math.max(filter.limit ?? LISTED, 1), MAX_LISTED));
   if (threads.length === 0) return [];
   const ids = threads.map((row) => row.thread.id);
   const latest = await deps.db

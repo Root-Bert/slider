@@ -20,12 +20,14 @@ import {
 } from '@/lib/api';
 import { draftKeys } from '@/lib/drafts';
 import { routes } from '@/lib/routes';
+import { FileDropHint, useFileDrop, useHandedToChat } from '@/features/attachments';
 import { AnswerBody } from '@/features/viewer';
 import { MessageList, quoteOf, ReplyQuote, TypingLine, useSenderOrNull } from '@/features/sender';
 import { cn, ConfirmDialog, Icon, IconButton } from '@/ui';
 import { useCloudOrNull, type CloudUi } from '../hooks/useCloud';
 import { choicesIn, withoutChoices } from '../lib/choices';
 import { plainNamed, type Named } from '../lib/named';
+import { useAgentAttachments } from '../hooks/useAgentAttachments';
 import { AgentComposer } from './AgentComposer';
 import { AgentAsks } from './AgentAsks';
 import { AgentChoices, AgentWatching } from './AgentWatching';
@@ -105,6 +107,8 @@ export function AgentChat({
   autoFocus,
   onSend,
   search,
+  typeInto,
+  takesHanded = false,
 }: {
   agent: CloudAgentDetail;
   chat: CloudAgentChat | null;
@@ -121,6 +125,14 @@ export function AgentChat({
   ) => Promise<boolean>;
   /** The chat's search: only the messages it finds, marked (`lib/chat-search.ts`). */
   search?: { query: string; clear: () => void };
+  /** Typing with the focus on no field writes here – by default where it is not inline. */
+  typeInto?: boolean;
+  /**
+   * Takes the files dropped on its row in Cloud's side bar (`useHandedToChat`) – its own page
+   * only: a chat of it elsewhere on the page being left (under „Für dich“, beside a mailbox)
+   * would take them and lose them with that page.
+   */
+  takesHanded?: boolean;
 }) {
   const ui = useChatPlace(agent.id);
   const chatId = chat?.id ?? agent.id;
@@ -191,9 +203,11 @@ export function AgentChat({
       return ok;
     });
   };
+  const toField = () =>
+    composerRef.current?.querySelector<HTMLElement>('textarea, [contenteditable="true"]')?.focus();
   const reply = (each: SenderMessage) => {
     setReplying(each);
-    composerRef.current?.querySelector<HTMLElement>('textarea, [contenteditable="true"]')?.focus();
+    toField();
   };
   const agentsOwn = (each: SenderMessage) => {
     const full = byId.get(each.id);
@@ -223,6 +237,15 @@ export function AgentChat({
     // The quote above the field takes room: the column follows as it does for a message.
     replying?.id,
   ]);
+  // The files on the message being written – also those dropped anywhere on the chat (beside a
+  // mail: on the agent's, not the mail's reply).
+  const attach = useAgentAttachments(
+    ui.workspaceId,
+    chat ? draftKeys.agent(agent.id, chat.id) : undefined,
+  );
+  const drop = useFileDrop(canWrite ? attach : undefined, toField);
+  // Dropped on its row in Cloud's side bar: on the field of its own page (not one beside a mail).
+  useHandedToChat(`agent:${agent.id}`, canWrite && takesHanded ? attach : undefined, toField);
   const lastOwn = ui.me
     ? [...messages]
         .reverse()
@@ -231,8 +254,10 @@ export function AgentChat({
   return (
     <section
       aria-label="Chat"
-      className={cn('flex min-w-0 flex-col gap-3', !inline && 'min-h-0 flex-1')}
+      {...drop.props}
+      className={cn('relative flex min-w-0 flex-col gap-3', !inline && 'min-h-0 flex-1')}
     >
+      {drop.over && <FileDropHint />}
       {ui.me && (
         <MessageList
           conversationId={chatId}
@@ -324,7 +349,7 @@ export function AgentChat({
             autoFocus={autoFocus ?? !chat}
             inline={inline}
             // Its own page: typing goes in from anywhere on it; beside a mail, letters are the mail's.
-            typeInto={!inline}
+            typeInto={typeInto ?? !inline}
             keep={
               chat
                 ? {
@@ -341,6 +366,7 @@ export function AgentChat({
                 : undefined
             }
             workspaceId={ui.workspaceId}
+            attach={attach}
             working={Boolean(chat?.running)}
             onTyping={chat ? () => tellTypingInCloudAgent(agent.id, chat.id) : undefined}
             onStop={chat ? () => stop.mutate(chat.id, { onError: fail }) : undefined}

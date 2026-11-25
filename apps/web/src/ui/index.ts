@@ -1,3 +1,5 @@
+export { AI_ICON } from './ai-icon';
+export { AiButton, type AiButtonProps } from './AiButton';
 export { AutosizeTextarea } from './AutosizeTextarea';
 export {
   Avatar,

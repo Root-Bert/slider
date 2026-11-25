@@ -1,5 +1,5 @@
 import { randomBytes } from 'node:crypto';
-import { and, eq, isNotNull, isNull } from 'drizzle-orm';
+import { and, eq, isNotNull, isNull, like } from 'drizzle-orm';
 import {
   domainJoinAllowed,
   emailDomain,
@@ -13,7 +13,14 @@ import {
   ssoTxtValue,
   workspaceSsoClient,
 } from '../../auth/workspace-sso';
-import { workspaceSso, workspaces, type WorkspaceRow, type WorkspaceSsoRow } from '../../db/schema';
+import {
+  userIdentities,
+  users,
+  workspaceSso,
+  workspaces,
+  type WorkspaceRow,
+  type WorkspaceSsoRow,
+} from '../../db/schema';
 import type { AppDeps } from '../../deps';
 import { badRequest } from '../../http/errors';
 import { planLimit, ssoAvailable } from '../plans';
@@ -83,6 +90,7 @@ function toWorkspaceSso(
     verified: !!sso && !!domain && sso.verifiedDomain === domain,
     available: ssoAvailable(deps.config, workspace.plan),
     active: isActive(deps, workspace, sso),
+    required: !!sso?.required,
   };
 }
 
@@ -161,6 +169,8 @@ export async function saveWorkspaceSso(
             verifyToken: randomBytes(18).toString('base64url'),
             verifiedDomain: null,
             verifiedAt: null,
+            // Not tried yet: „Nur Firmen-Login“ would lock everyone at the domain out with it.
+            required: false,
             updatedAt: now,
           },
     });
@@ -186,9 +196,74 @@ export async function verifyWorkspaceSso(
   const now = deps.clock.now();
   await deps.db
     .update(workspaceSso)
-    .set({ verifiedDomain: domain, verifiedAt: now, updatedAt: now })
+    .set({
+      verifiedDomain: domain,
+      verifiedAt: now,
+      // Another domain: nobody at it signed in through the login yet – „Nur Firmen-Login“ off.
+      ...(sso.verifiedDomain === domain ? {} : { required: false }),
+      updatedAt: now,
+    })
     .where(eq(workspaceSso.workspaceId, workspaceId));
   return getWorkspaceSso(deps, userId, workspaceId);
+}
+
+/**
+ * `PUT /workspaces/:id/sso/required` (admins): „Nur Firmen-Login“. On only while the login is
+ * active, and an admin at the domain must have signed in through it once – else they would shut
+ * themselves out with a provider that never worked.
+ */
+export async function setWorkspaceSsoRequired(
+  deps: SsoDeps,
+  userId: string,
+  workspaceId: string,
+  required: boolean,
+): Promise<WorkspaceSso> {
+  await requireRole(deps.db, workspaceId, userId, 'admin', ADMIN_ONLY);
+  if (required) {
+    const workspace = await workspaceRow(deps, workspaceId);
+    const sso = await ssoRow(deps, workspaceId);
+    if (!isActive(deps, workspace, sso)) {
+      throw badRequest('Richte den Firmen-Login zuerst ein und bestätige die Domain.');
+    }
+    const [me] = await deps.db
+      .select({ email: users.email })
+      .from(users)
+      .where(eq(users.id, userId));
+    if (me && emailDomain(me.email.toLowerCase()) === sso.verifiedDomain) {
+      const [tried] = await deps.db
+        .select({ subject: userIdentities.subject })
+        .from(userIdentities)
+        .where(
+          and(
+            eq(userIdentities.userId, userId),
+            eq(userIdentities.provider, 'sso'),
+            like(userIdentities.subject, `${workspaceId}:%`),
+          ),
+        )
+        .limit(1);
+      if (!tried) {
+        throw badRequest(
+          'Melde dich zuerst einmal selbst mit dem Firmen-Login an – sonst sperrst du dich aus, falls er nicht klappt.',
+        );
+      }
+    }
+  }
+  await deps.db
+    .update(workspaceSso)
+    .set({ required, updatedAt: deps.clock.now() })
+    .where(eq(workspaceSso.workspaceId, workspaceId));
+  return getWorkspaceSso(deps, userId, workspaceId);
+}
+
+/**
+ * Whether `email` may sign in through its workspace's company login alone („Nur Firmen-Login“).
+ * Only while that login works – its DNS proof re-checked like at the login: a lapsed proof or plan
+ * turns it off, so nobody is shut out with no way in.
+ */
+export async function companyLoginRequired(deps: SsoDeps, email: string): Promise<boolean> {
+  const found = await findSsoForEmail(deps, email);
+  if (!found?.sso.required) return false;
+  return (await findSsoForWorkspace(deps, found.workspace.id)) !== null;
 }
 
 /** `DELETE /workspaces/:id/sso` (admins). Logins made through it stay, but no longer work. */

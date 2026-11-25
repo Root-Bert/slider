@@ -279,6 +279,20 @@ Decrypt the deck's blob (`EncryptedBlobStorage` + `.data/data-key`), then from `
   (no `initialize` needed before `tools/call`). A bearer token only – the session cookie is never
   read there; open CORS for it, `/api/oauth/token|register` and `/.well-known/*` (`OPEN_PATHS`),
   `sameOriginWrites` skips them; on the desktop `desktopGuard` lets a bearer through on that path.
+- `show_presentation` (probe, 2026-11-25, `services/mcp-ui.ts`): a slide as a card in the AI app's
+  chat – an MCP App (ext-apps `2026-01-26`: tool `_meta.ui.resourceUri` + flat `ui/resourceUri`,
+  `resources/read` of `ui://slider/presentation.html` as `text/html;profile=mcp-app`) that renders
+  A2UI 1.0 (basic catalog; bindings are `{"@path": …}` in 1.0, `path` is 0.9 and stays a raw
+  object). Only the route lists it, not `APP_TOOLS` (chats and agents have no frame). The slide
+  goes as the result's `image` block (the model sees a picture, not base64 text), the page puts it
+  into the data model; the A2UI messages ride along as an `application/a2ui+json` resource. The
+  page talks postMessage JSON-RPC itself (`ext-apps` wants MCP SDK 2 + zod 4); buttons call
+  `tools/call` (page through) and `ui/open-link`. Its source is `apps/api/mcp-view/` – after a
+  change `bun apps/api/mcp-view/build.ts` (installs A2UI apart in the OS temp dir: A2UI needs
+  zod 3, the root `overrides` force zod 4 and then nothing binds) writes the gzipped page into
+  `mcp-view-html.ts`. No `color-scheme: dark` there: a dark iframe in a light host gets an opaque
+  canvas round the card. Checked in a sandboxed srcdoc frame under the spec's default CSP with a
+  fake host; not yet in Claude itself (MCP Apps are not on in every organisation).
 - OAuth 2.1, PKCE S256 only, dynamic registration and https client ids (metadata document,
   fetched via `safeFetch`); loopback redirects match on any port. Codes 5 min, single use – a
   wrong verifier spends the code too. Access `slider_at_` 1 h, refresh `slider_rt_` rotates (old
@@ -519,6 +533,19 @@ Unsplash can revoke the key; production approval needs screenshots of credits.
   (über Slider)“). In code „office“ otherwise means LibreOffice or an office file (`officePreviewable`,
   `office-fonts`). Left from before: `/office` still leads to `/cloud` (`router.tsx`, `OLD_START`),
   the usage feature is still `office` (rows in the database).
+- „Nur Firmen-Login“ (`workspace_sso.required`, migration 0189, 2026-11-25 the user's call): while
+  a workspace's company login is active, addresses at its domain sign in through it alone – the
+  check is in `startSession` (every login passes it; the SSO callback passes `companyLogin`),
+  plus `/auth/email/start` sends no mail. Not in `createSession`: the desktop handoff comes from a
+  session that exists. Sessions already open stay. On only once an admin at the domain signed in
+  through it (else 400), off by itself with another provider or a lapsed proof/plan
+  (`companyLoginRequired` → `findSsoForWorkspace`), so nobody is shut out with no way in. A proof
+  for another domain (`verifyWorkspaceSso`) turns it off like another provider does. A mailed link
+  or code is refused before `signInWithEmail` writes anything (no account, no domain join, no
+  „E-Mail“ login); `/auth/email/start` counts against its limit before that check (it may ask the
+  domain's DNS). Still open: the OAuth callbacks create the account before `startSession` refuses;
+  the „tried“ check counts an identity from an earlier provider (the subject carries no issuer); a
+  provider broken at its own end does not turn it off.
 - Login by mail (`services/email-login.ts`, since 2026-11-24 after the user's report of a login
   mail without code): every account of the address gets link + code, also one that signs in with
   Microsoft/Google/passkey (`signInWithEmail` adds „E-Mail“ to its logins; removing it on /konto
@@ -527,7 +554,10 @@ Unsplash can revoke the key; production approval needs screenshots of credits.
   code is the way there. Brevo (the SMTP of bertro.dev) rewrites links to click-tracking redirects
   over the own domain `r.send.bertro.dev` (CNAME at Cloudflare, DNS only, valid certificate,
   checked 2026-11-24) – no reason for failing links; no header turns it off per mail.
-  `img.send.bertro.dev` (Brevo's images and open pixel) had an expired certificate then.
+  `img.send.bertro.dev` (Brevo's images and open pixel) had an expired certificate then (still
+  2026-11-25): its CNAME `send-bertro-dev.img.brand.brevosend.com` leads on to Brevo's generic
+  `img.mailin.fr`, which serves `CN=ssl867385.cloudflaressl.com`, expired 2020-10-15 – Brevo never
+  issued one for our name; only Brevo (support) can fix it, our DNS is right.
 - Cut shadows and focus rings: every Cloud page's content scrolls in `CloudPage`'s scroll box, and
   a scroll box cuts what reaches past its padding – `shadow-float` (`glass-elevated`, the agents'
   order field, tooltips) reaches 24 px up, 32 px sideways, 40 px down; a focus ring 4 px. The box
@@ -558,7 +588,11 @@ Unsplash can revoke the key; production approval needs screenshots of credits.
   z layer shows dimmed under its backdrop. A confirm dialog shows its own failure (`error`).
 - A move takes the rows out of the folder lists at once (`useMoveCloudNodes`, only keys of scope
   `folder` – „Zuletzt“ keeps its rows); the side bar's „Meine Dateien“, „Gelöscht“, pins and
-  areas take drops through one hook (`useRowDrop`).
+  areas take drops through one hook (`useRowDrop`). A chat's row takes files only where one may
+  write (an agent: member and up, as its `canWrite`; a conversation: `canWrite`) – handed files
+  nobody takes would be lost; they wait in `hand-to-chat.ts` for the chat's own page
+  (`AgentChat takesHanded`: Cloud's and Sender's agent page – not one under „Für dich“ or beside a
+  mailbox, which would take them and lose them with the page being left).
 - Looking at the app from an agent: the desktop app's window stops `requestAnimationFrame` when
   hidden (the selection box then never draws) and is one app only (Präsentationen redirect to
   Cloud). A headless Chrome with the session cookie copied over CDP sees both apps.
@@ -1249,8 +1283,9 @@ the field (`?agent=`, `AgentChat` from `components/AgentChat.tsx`) with the pers
 „Zuletzt“'s „Ungelesen“ (user 2026-11-20: unread mails and chats belong on Cloud's start): the
 same server list and rows as Sender's „Aktuell“ – `useUnreadNow` (`/sender/unread`, asked anew by
 the side bar's counts + mail threads' stamp, so a read one goes) and `UnreadRow`, links through
-Cloud's `SenderProvider` paths. At most 5, newest first, no „all“ link (the side bar has the rest);
-hidden while pending and when nothing is unread. Slider's own start is „Präsentationen“, not
+Cloud's `SenderProvider` paths. At most 5 (all when its widget has a fixed height), newest first,
+no „all“ link (the side bar has the rest); „Alles gelesen.“ when nothing is unread. Slider's
+own start is „Präsentationen“, not
 „Zuletzt“ – nothing there. A colleagues-only mail shows the group mark as in the side bar.
 
 „Zuletzt“'s „Für dich“ (user 2026-11-24: an AI overview „was steht für mich an“ over all apps,
@@ -1268,8 +1303,45 @@ the AI's lines by key; the server keeps its answer while only some entries went,
 the two it names first is gone the headline is the count again. A share row opens „Geteilt“
 (listing it marks the share seen); a mailbox calendar slower than 3 s leaves the day out; the
 list is asked anew each time „Zuletzt“ opens.
-„Seit deinem letzten Besuch“ beside the cards is never taller than them (15rem at least), its
-list scrolls in the panel.
+
+„Zuletzt“ is widgets (`features/cloud/home/`, user 2026-11-25: „so frei wie möglich“, as Apple /
+Samsung home screens). `layout.ts` is the model: an ordered list `{id, type, w, h, look, title,
+text?}` – `w` in twelfths (3 4 6 8 9 12), `h` `'auto'` or 1–12 rows of 72 px (gap 24 included),
+`look` Ohne / Glas / Fläche / Linie. One of each kind, notes as many as one likes. Kept per browser
+in localStorage (`slider.cloud.home.v1:<user>:<workspace>`, `createStoredStore`, crossTab) – on
+purpose, not on the account (user 2026-11-25: phone and desktop each have their own; the ordered
+grid, not free x/y, is wanted too). `parseLayout` drops unknown kinds and doubles and
+clamps fields, nothing stored = `DEFAULT_LAYOUT` (the page as it was). `HomeBoard.tsx` lays them
+out in a dense CSS grid: 12 columns from 960 px, 6 from 560, else 1 (frozen while arranging – the
+panel takes 400 px); rows of 4 px, each box spans its measured height, so auto heights pack without
+gaps and order alone places them – no free x/y.
+While arranging, `RecentPage` hands `CloudPage` no nodes – no file is picked, so its ⌫ / ↵ / ↑↓ /
+⌘A cannot act under the widgets; keys wait while a corner is held.
+„Anpassen“ (page head) opens `HomeCustomize.tsx`, a `SidePanel` with `data-cloud-panel` (the page
+gives way) and `data-own-drag` (no marquee): the picked widget's Breite / Höhe / Hintergrund /
+Überschrift / Entfernen, below every widget – a click adds it at the end, a drag drops it where
+it goes; one already placed is scrolled to. On the page in that mode: drag to move, the corner
+to resize (snaps to the widths and rows), the round „–“ on its corner takes one off, ⌫ the picked,
+arrows move it, Esc deselects then ends – a capture listener so CloudPage's ⌫ / arrows (files)
+do not run. Dragging (move and from the panel) is `@dnd-kit/core`: mouse after 4 px, a finger
+after resting 250 ms (before that the page and the panel scroll), Esc cancels, the drop's click
+is swallowed, `DragOverlay` lifts a card. Where it lands is ours (`placeAt`): the nearest box
+*as it stood when the drag began* (`startRects`, shifted by the scroll) decides before/after –
+measuring the live, reflowing page swung it back and forth. Auto-scroll is ours too
+(`autoScroll={false}`): dnd-kit scrolls only what holds the dragged node, the panel for a new one.
+The corner is own pointer code with `setPointerCapture` + `touch-none` (no library resizes an
+ordered, content-height grid); „–“ and the grip have 40 px hit areas. Where less than 640 px of
+the page would stay beside the panel (phone, iPad, a window under ~1300 px) it is a sheet below
+(`SidePanel side="bottom"`, 50dvh, at most 720 px wide, no `data-cloud-panel`): the page keeps its
+width and columns, the grid gets 50dvh bottom padding, a drop over the sheet adds nothing, the
+page scrolls in the 64 px band above the sheet (not over it – a new one is picked up there).
+Cards in a widget („Weiterarbeiten“, „Präsentationen“, `useColumns`) count with the width it has
+on the page (`Frame.widen`: the grid's frozen width minus now, × span / columns) – counted on
+the narrower page beside the panel, cards went and came back and their pictures flickered.
+„Breite“ hides at one column. Touch checked in Chromium emulation (CDP
+`Input.dispatchTouchEvent`), not on a real iPad/iPhone. Content is `inert` while arranging. „Standard wiederherstellen“ toasts with
+„Rückgängig“. Each widget owns its queries (`widgets.tsx`), so a removed AI widget asks nothing;
+„Auftrag“ only with `canCreateDecks`. Empty widgets say so in a line instead of vanishing.
 
 ## Writer – text documents (`packages/odt`, `services/documents.ts`, `features/writer/`)
 
@@ -1503,6 +1575,32 @@ list scrolls in the panel.
   `failed` with the error. Files are `claimAttachments`-taken while waiting (else the 7-day sweep
   eats them), freed before posting. Agents and apps plan with `post_message`'s `send_at`
   (cloud-agents.ts / mcp-cloud.ts); an agent's planned row has `agentId` and goes in its name.
+- Rich text (2026-11-25, user: „alle Richtext-Features“ = the board sticker's set plus code and a
+  quote): the message stays its Markdown `text` – no `rich` column, agents/search/drafts/quotes
+  unchanged. Grammar `features/sender/lib/markup.ts` (lines: `- `/`1. ` lists, `# `/`## `
+  headings, `> ` quote, ``` blocks; inline `Code`, [Text](https://…), **fett**, ~~durch~~,
+  `<u>unter</u>` (Markdown has no underline), _kursiv_/*kursiv*) is read by `MessageText` and by
+  `rich-markup.ts` (`$setMarkup`/`$getMarkup`, a paragraph per line, code-block lines kept raw).
+  No escaping: typed `**x**` stays Markdown (and turns bold at once by `MarkdownShortcutPlugin`).
+  `Composer` `rich` (default; off in `MailThreadView`): keys it takes go in `onKeyDownCapture`
+  (stopped before Lexical), the page-key `stopPropagation` in bubble; Enter in a list is Lexical's
+  (new point), ⇧↵ a new paragraph. The bar over a selection is `lib/rich-format.tsx`, shared with
+  `RichSticker`. Previews (`markupPlain`): quote, search hits, planned, drafts, „Aktuell“, browser
+  notifications – server pushes still show the marks. Italic is written `*…*` inside a word or on
+  an @-name (`_` there is read as snake_case / hides the mention – `MENTION_NOT_AFTER` has `_`),
+  else `_…_` – also `*…*` on a word with `_` in it; beside a piece carrying marks of its own `_`
+  (`**a**_b_`); adjacent italic pieces with different other marks inside a word cannot be
+  expressed. A web address standing in the words is taken whole before any mark (`INLINE`'s last
+  alternative), so `_`/`*` in it stay; a link's address may hold one pair of brackets; lines split
+  on `\r?\n`. Sending trims an empty last list point/quote, also one standing alone (`markupTrim`). Composer/MessageList
+  import `LazyRichField` – a static import put Lexical (~300 KB) into the first chunk through the
+  AI's side panel (`AsidePart` → `AgentChat`); its handle queues a `focus()` asked before the chunk
+  is there (`focusOnOpen` on first load). „Formatieren“ (Aa, `textFormat`) in the Composer's row:
+  `RichField` `barOpen` puts `RichFormatToolbar bare` (no glass pill, wraps) in the field. e2e: the field is `getByRole('combobox', { name:
+  'Nachricht' })` – `textbox` where there is no @ list (agents, „Nachricht ändern“) –, no
+  `placeholder` attribute (`aria-placeholder`), `toHaveText` not `toHaveValue`; ⌘B/⌘I right
+  after Shift+arrows can hit the old caret (Lexical takes the selection on `selectionchange`) –
+  wait ~100 ms.
 - Message features (2026-11-24): reactions `sender_reactions` (0177, one per person and message,
   not on one's own, deleted messages or call entries; area viewers can't) via `PUT
   /sender/messages/:id/reaction`; answers `sender_messages.reply_to` (0178, set null when the
@@ -1747,6 +1845,30 @@ list scrolls in the panel.
   (`folder`/`folders` changed, the new UID from UIDPLUS or null until the next read finds it by
   Message-ID); `server`/`filter`/`ai` stay in Slider only – the provider's spam folder deletes by
   itself after days, other mail programs show no mark. Other folders (archive, own) never move.
+  A UID gone on the server does not stall the queue: UID MOVE ignores it (RFC 3501 6.4.8, OK
+  without COPYUID, imapflow returns the map) → the row counts as moved, `uid` null. Only a server
+  answering NO (then imapflow returns false) or a missing target folder repeats a batch each
+  round; nulling `uid` on any failure would drop mails that only met a passing error from all
+  later moves and read marks (checked 2026-11-25, left as is).
+- Older mails (`readOlderMail`, `searchMailOnServer`): a mailbox is read forward from its first
+  read (`next`); each folder keeps `sync[folder].oldest`, the lowest UID read (1: none left;
+  missing: the lowest UID of its rows here). `POST …/mail/older?account=&folder=` fetches the
+  newest 50 below it (read-only UID SEARCH, 50 MB, `servers.older`), `POST …/mail/search?q=&in=all`
+  what each word finds below it (subject, from, to, cc, body with `in=all`) in every folder but the
+  trash, `mailSearches` rate limit. Both in the mailbox's turn (`working`, `turnFor` waits 20 s),
+  through `ingestMail` only – never `afterMail`: no AI, no push, nothing told as arrived. A first
+  read again (`htmlRead`) keeps the lower mark (`keepOldest`). Deleted rows have no tombstone, so
+  only what lies below `oldest` is ever fetched – a mail deleted here stays deleted, except a server
+  search's hit: it lies below `oldest` (search does not move it), so deleted it comes back with the
+  next „Ältere laden“ or the same search (needs a kept list of found UIDs or a tombstone). Older
+  mails go through `ingestMail(…, older = true)`: a colleague's stays mail, never a chat message. A
+  refused UID SEARCH (imapflow `false`) throws – `failed`, never `oldest: 1`. Web: the list
+  asks `?limit=` 200 more as its end comes near (key under the folder's, the rows stay meanwhile),
+  up to 5000; once the folder has no more here, `/mail/older` („Ältere laden …“); not under
+  „Ungelesen“. A search settled 700 ms asks `/mail/search` once per mailbox and words for 10 min.
+  „Abrufen“ is gone: the list pulled down fetches (`usePullToRefresh`: touchmove not passive from
+  the start for Safari, wheel only for a stroke begun at rest at the top); „Jetzt abrufen“ per
+  mailbox stays. Real IMAP SEARCH and Safari touch: not yet tried (2026-11-25).
 - Own rules for senders (`mail_rules`, migration 0167, `services/mail-rules.ts`): per person and
   workspace, `block`/`trust` × `address`/`domain`, value sealed + `emailHash` for lookup. Address
   before domain; a domain only a firm's (`ruleDomain`, never gmail.com & co., never one's own);
@@ -2006,6 +2128,20 @@ list scrolls in the panel.
   (`MailServers.headers`). „An Agent geben“ orders a Cloud agent with the items by id (one mail:
   `mailThreadId`) and reads them; „Besprechen“ opens the direct chat with the items as its draft.
   The tab is `?ordner=uebersicht` (`OVERVIEW`), not a server folder; Posteingang stays the default.
+- Under the headline of „Aktuell“, a mailbox's „Übersicht“ and Cloud's „Für dich“ (the user
+  2026-11-25: „direkt drauf antworten … fragen stellen oder agenten losschicken“): „Nachfragen“ as
+  beside a mail – `AsideAgent bare` (no heading, the chat in its own ≤ 480 px scroll so an answer
+  never moves the page, `typeInto` off), the agent per workspace + overview in localStorage
+  (`lib/overview-agents.ts`) until „Neue Frage“. The order and every message carry
+  `overview: {of: 'sender' | 'cloud', mailbox?}`; the server appends what the overview shows now,
+  by id (`triageContext` / `focusContext`: the kept AI answer only, never a new AI call; mail only
+  `forAi`, no spam; a mailbox by its address, and the read mails of 30 days the headline is made
+  of, without asking the calendar – all read, the headline still has ids) – the chat keeps the
+  person's words alone. Own private agent only (400). A failed look-up sends the words with a bare
+  „look it up yourself“ line. No AI connection: `ai=1` says `off` even with nothing to tell (it
+  said `done` before), so the field goes.
+  `cloud-agents.ts` imports both lazily: a static import closes a cycle through `sender`
+  (`senderLive` before initialization – the API did not start).
 
 ## Attachments – files on what is written (`services/attachments.ts`, `services/sender-files.ts`, `features/attachments/`)
 
@@ -2098,6 +2234,17 @@ list scrolls in the panel.
   `todoKeys.all`. Web: overview in Cloud's side bar (`/dateien/aufgaben`, by place, finished folded),
   a tab per area (`/dateien/bereich/:id/aufgaben`, by status in Linear's order). Mail aside „Zu tun“ →
   „Als Aufgabe anlegen“ (own, with the mail as `source`).
+- Mail aside „Zu tun“ also offers „Termin anlegen“ when the AI (`mail-context.ts`, `event` in the
+  tool) found a meeting the mails fix: Berlin times parsed by `mailEvent` (its own, via `zonedToUtc`), none
+  past, on spam or with an `.ics` attached; mails are shown to it with weekday + Berlin time so
+  „Freitag“ resolves. `POST /mail/threads/:id/event {calendarId}` makes it in `plainEventCalendar`
+  (last picked, else private – shared with `EventPanel`) and notes `context.event.eventId` (kept
+  across re-looks while the start stays) → „Im Kalender“. „Anhänge ablegen“ may carry
+  `newFolder` (AI: nothing fits, a matter of its own): „neuer Ordner „X“ in …“, made on „Ablegen“
+  or found by name (`folderNamed`); in `insightsOf` the AI's pick (not plain „Meine Dateien“)
+  goes before a folder merely named like a mail word, after where the firm's files went before.
+  The `context` writers (`fileMailAttachment`, `addMailEvent`, the end of `lookAt`) run one at a
+  time per thread (`oneAtATime`, in-process) – else one's write lost the other's.
 - A to-do opens in the side panel beside the page (`TodoPanel` in `CloudLayout`, `?aufgabe=<id>`,
   `CLOUD_TODO_PARAM`), as a file's details (`?datei=`): one panel at a time, each opening clears
   the other's param. Rows (list, area tab, „Deine Aufgaben“ on „Zuletzt“) toggle it; Esc or ✕
@@ -2149,7 +2296,60 @@ list scrolls in the panel.
   CalDAV refuses (RRULE/RECURRENCE-ID or an id `uid/<start>`) – overrides are not written.
   Moving between a mail calendar and another is make-there + delete-here (new id; the panel
   follows it). Graph reads whole days as UTC – rounded to the nearest midnight; written at
-  midnight `Europe/Berlin`. Graph colours are names: recolouring refused.
+  midnight `Europe/Berlin`. Graph colours are names: recolouring refused at the provider.
+- Calendar colours and names (user's call 2026-11-25, migration 0191): `toCalendar` derives them –
+  an area's own calendar the area's colour, one's private one `users.color` („Deine Farbe“),
+  sub-calendars without a colour of their own their area's / one's own (`useUpdateMe` and
+  `useUpdateCloudArea` drop the calendar queries). A mail calendar may be renamed and coloured
+  in Slider alone: `calendars.local_name` (sealed) / `local_color` over the provider's
+  `name`/`color` (the 15-min compare rewrites those, never the local ones); a rename goes to the
+  provider where `remote_rights.rename` lets (user's call: at the source where it can, only else here) (and clears `local_name`), else – or refused there
+  after all – stays here; colours
+  (palette accents or `#rrggbb`) are always here alone. So every own mail calendar has
+  `canManage`. The side list (`CalendarList`) offers its „…“ on right click too: „Umbenennen“ in
+  place, „Farbe …“ (`AreaColorPicker` in a dialog, as a folder's) for private sub-calendars and
+  mail calendars only – an area's sub-calendars stay renamable but uncoloured in the UI (the API
+  and the AI's `update_calendar` still colour them). Scratch look at a mail calendar: stop the
+  scratch API, insert a `mail_accounts` row (`calendar_only`, an unreachable CalDAV host) and
+  `calendars` rows with plain text through PGlite (`apps/api/node_modules/@electric-sql/pglite`
+  – unsealed text opens as it is); the failing compare leaves them.
+- Calendar paging and zoom (user's call 2026-11-25, as Apple's): the page is a strip of three
+  panes (`CalendarStrip.tsx`, `data-strip`, middle `data-pane="0"`; `relative`, as `zoom.ts`
+  `laidOut()` reads the pane's `offsetLeft` as the strip's), each loading its own range
+  (`useCalendarPage`: what other ranges hold shows while it loads). A finger swipes natively
+  (snap); a wheel/trackpad does not – snapping takes its steps one by one and springs back – so
+  the strip's `wheel` handler follows it, turns once past 12 % of the width and ignores the
+  momentum until 160 ms quiet. The turn (and `slide()`: arrows, keys) is the strip's own rAF glide
+  (≤ 240 ms, ease-out, snap off meanwhile, a touch cancels it) – the browser's smooth scroll took
+  ~480 ms + ~60 ms to `scrollend` (user: „soll schneller gehen“); it settles the frame it arrives.
+  Settled (`scrollend`, else a 140 ms pause) → `onStep` → the URL
+  moves and the strip recentres unseen. Programmatic `scrollLeft` writes fire `scrollend` every
+  frame and router navigations render as transitions: after a turn the strip ignores settles until
+  the new middle page key is in (`turned`, at most 1.5 s – `unturn`, for a turn overtaken with no
+  new middle; the strip is not scrolled back then), and a new middle stops any glide still running
+  (`arrived`). `navigate()` in `CalendarPage` slides to the page beside
+  (carrying the asked day in `sliding`, else the month's 1st would win), jumps further away, and
+  zooms between views. Zoom (`zoom.ts`, `ZOOM_CHAIN` tag→woche→monat→jahr, agenda not in it):
+  Ctrl+wheel (Chrome/Firefox/Electron trackpad pinch), Safari's `gesture*`, two fingers; one step
+  per gesture. It is a clone overlay + WAAPI, no View Transitions: before the switch the pane is
+  cloned (scroll of `[data-scroller]` copied) and `[data-morph]` boxes measured
+  (`n:<iso>` day numbers, `e:<entry key>@<iso>` entries); after the new view's layout effect,
+  `[data-seg]` parts (with `data-day`/`data-week`/`data-month`) move apart or together around the
+  spot pointed at and matched morphs fly. Never a crossfade of two pages: in, a hole
+  (`clip-path: polygon(evenodd …)`) grows in the clone from the spot while the new pane grows out
+  of it scaled; out, the clone shrinks into the spot (evenly, as far as it still covers it) and is
+  cut to it (`inset(… round)`), fading late. Flyers: the new over the old (in 10–40 %, old out
+  25–40 %), text styles copied (a clone in the overlay loses inherited font size), scaled where
+  the box keeps its shape, else width/height. Motion is a spring (`linear()` curve, `EASE`
+  fallback). `finishZoom` runs in `CalendarPage`'s layout effect, after child layout effects but
+  before their `setState` re-render: a view must be right on its first draw (MonthView's `lastFit`
+  by number of weeks). `flushSync` of the view ahead of the URL was tried: it stalls the first
+  frame (51 ms at 1×) – reverted. 60 fps at 1×; 4× CPU throttle: one or two 80–130 ms hitches
+  (React's render, the strip's `settle`). A week's/
+  day's hours keep their scroll across panes and zooms (`hours` in `CalendarViews.tsx`, synced
+  by `data-hours`). Untested on a real trackpad and Safari's gesture events (scripted: wheel
+  steps, `synthesizeScrollGesture`, CDP touch); slowed screenshots via
+  `Animation.setPlaybackRate`.
 - An account's uses come and go apart (Anmeldung, Post, Kalender): one `mail_accounts` row per
   address per workspace, `calendar_only` = no mailbox, `with_calendars` (migration 0164) = its
   calendars stand in the calendar; the login is `user_identities`, matched only by provider +
@@ -2191,6 +2391,35 @@ list scrolls in the panel.
   `calendars.ts` → `sender` → agents is a cycle), run by `calendar/agent-tools.ts` for apps/the
   chat (`mcp-cloud`) and agents (`areasOnly`: shared/unattended agents see areas' calendars only).
   Times in and out are Europe/Berlin; a whole-day `end` is the last day, inclusive.
+- Meetings (migration 0190): an event's `meeting` is a call in one of Sender's conversations
+  (`calendar_events.call_channel_id`, FK `sender_channels` set null) or a link
+  (`meeting_url`, sealed, http(s) only, ≤ 2000). Set by who may edit the event: the call needs a
+  conversation they see (`seenChannel`), of this workspace, no agent chat, an area's not view-only;
+  read back only for viewers who see that conversation (`seenChannels`), else `null`. Mail
+  calendars keep no meeting of ours: a link is written where the provider shows one (the place
+  if empty, else the head of the notes), a call is refused (400); read back from Google
+  `conferenceData` video entry / `hangoutLink`, Graph `onlineMeeting.joinUrl`, else the first
+  known meeting host's https link in place or notes (`meetingLinkIn`, CalDAV and invitations).
+  No attendees: a call with a person (their direct conversation) on one's private calendar is
+  seen and announced to its maker alone; the other person learns of it only in the conversation.
+  UI: `CalendarPicker` (the panel's calendar, as the to-do's place `Picker`, area marks, mailbox
+  provider marks), `MeetingField` (none | „Externer Link“ typed in place | „Anruf in Slider“
+  with a filter over areas' channels, groups, direct ones, people – a person gets their direct
+  conversation opened), „Neues Meeting“ beside „Neuer Termin“ and in „Neu“ (`neu-meeting`): an
+  area's calendar (the last one if an area's, else the workspace's), its area's call preset and
+  following the calendar while untouched. Header: `MeetingNotice` left of `DateButton` (Cloud,
+  Sender), the first timed event with a meeting from `users.meeting_notice_minutes` (default 5,
+  null off; `/einstellungen#kalender`, `PATCH /me`, agent `change_settings`) before its start
+  until its end; „Beitreten“ lies over its time on hover/focus (always on touch) – a call joins
+  with video through `CallProvider`, a link opens outside (`window.open`, desktop: system browser).
+  A new link on a mail calendar's event replaces the old one where it stands (place, else notes);
+  one over 500 characters goes to the notes (also when replacing in the place: the old link leaves
+  it with its separator, not twice into notes that hold it; such notes are written, cut at 20 000
+  as read); a provider's own `meetingUrl` (Meet/Teams) still wins when read back; only the place or notes the link changed are written
+  to the provider (what is read is cut to Slider's lengths). Taking the meeting off leaves the
+  provider's own. „Neues Meeting“: once the meeting is picked by hand (also „Kein Meeting“), the
+  area's call no longer follows the calendar. `useCallPlaces` leaves out channels of areas one only
+  views (Sender lets reviewers write, the calendar refuses a call there).
 
 ## Calls – audio, video, screen (`services/calls.ts`, `routes/calls.ts`, `features/calls/`)
 
@@ -2214,6 +2443,100 @@ list scrolls in the panel.
   the dock stand bottom right, 72 px up (Sender's composer stays free); „Vergrößern“ fills the
   window, a shared screen shows large first. Ring and ringback are made by WebAudio
   (`lib/sounds.ts`), a system notification when the window has no focus and may.
+- Into another app's window (the user's call 2026-11-25: Cloud → a presentation in the installed
+  web app left the call behind): installed as a web app, `windowForApp` opens the other app in a
+  window of its own – it sets `opener = null` (an opener makes `CallProvider` skip the
+  window, meant for presenting popups) and names it `slider-call:<id>` (`lib/call-handover.ts`)
+  while this window is in a call. The new window's `CallProvider` reads the name once and, as soon
+  as its stream knows the call, `takeOver` joins it the way one got in (conversation, own agent
+  call, guest). The server hands over: `leaveOthers` keeps one's tabs in the call being joined and
+  `enter` takes them out once the new tab is in – without `leave`, so a call with one person (an
+  own agent call is `direct`) goes on with its history and orders instead of ending empty. The old
+  window says „Der Anruf läuft jetzt in einem anderen Fenster.“ No click there started the sound:
+  the first pointer/key wakes `wakeVoice` and paused `audio[data-call-audio]` (sound in the new
+  window not checked by ear yet). Checked with a scratch e2e (`navigator.standalone` faked, fake
+  media; app switcher → Slider, and a `.pptx` double-clicked in Cloud → `/d/:id`): dock in
+  Slider's window, Cloud's stepped out. The desktop app (`desktop/tabs.mjs`): the call follows into
+  a tab a page opens (`openDeck` / `openFree` / `openFromHome` with `follow`, not „+“ or a link
+  from outside) and out of a tab that closes. The page mirrors its call as `<html data-call>`
+  (`setCallToHandOver`); `select(…, {follow})` reads it from the tab now hidden, sets
+  `window.name = slider-call:<id>` in the tab now in front (once loaded, own pages on one origin,
+  only while still in front) and fires `slider:call-handover`; `CallProvider` re-reads the name,
+  each naming one takeover. `data-call-stays` keeps it in its tab: `muted` always (a takeover joins
+  with the mic on), `sharing` (screen/camera) except when its tab closes. `closeTab` hands it on
+  first (`followCall` resolves whether it was handed: the tab in front loaded within 10 s, still
+  in front, same side) and closes the page once it is out of the call (≤ 10 s, at once if not handed) – closed at once it would leave and
+  end a call one is alone in. A plain tab switch leaves the call where it is (a takeover re-joins:
+  the others hear it). Not covered: pages handed to another desktop app, a close while the
+  takeover is still joining, turning the split off. Not yet checked in the desktop app.
+- The agent knows where one is (the user's call 2026-11-25: „in welchem Ordner, welche Dateien
+  ausgewählt, welche Folie offen, welchen Kommentar geschrieben“ – no screenshot): pages set lines
+  in `lib/call-here.ts` (`useCallHere(key, lines)`, parts sorted by key – `cloud`, `slider`,
+  `slider:composer`), and `call-client` sends `callHere()` with each turn – `here` in the
+  `/transcript` body and in the `/heard` WAV form. Slider (`voice/SliderHere.tsx`): presentation,
+  slide n of m with its text, the picked element, what is marked – a comment draft's mark, else
+  `lastDrawing` (pen/arrow/marker still picked), else one's latest bare drawing since the page
+  opened (named with its slide when that is not the one in front): an arrow's tip via
+  `hitTestShapes` or the shape within 8 % of it (never what its length crosses), else shapes a
+  box/circle/drawing covers ≥ 50 %, else the one under its centre – and the open thread;
+  `Composer` adds the text being written. Cloud (`CloudPage`): path, items,
+  picked ones. Writer (`voice/WriterHere.tsx`): the document, the heading above the caret, the
+  words picked. Reader (`viewer/Viewer.tsx`): the PDF, page n of m, the words picked, what a
+  comment draft marks. Sender (`ChannelPage`, `Conversation`): the conversation with its id and
+  one's own draft (`useDraftText`). What goes is where one is and one's own – never others'
+  messages or a document's body: the lines reach orders, and an agent sent off may be shared;
+  it reads the thing itself by its id with one's rights. Ids go as Cloud agent links (`hereLink` → `[[presentation:ID|Name]]`). Server
+  (`calls.ts`, `hereLines`): only into the asked turn – the voice's system prompt („Was X gerade
+  vor sich hat …“), the message of a Cloud agent answering without the quick voice, and
+  `orderHere` → the text of an order sent off, only when who asked sends it. Never into
+  `call.lines`/`record` (the notes everyone reads), never into an overheard turn, and not when
+  someone asks the notes agent through its maker (`through`: that is the maker's chat). Two
+  windows (installed: the call went on in Slider's, one works in Cloud's): the window last focused
+  posts its lines on the `BroadcastChannel` `slider-call-here`, an unfocused one sends those;
+  `pagehide` takes them back. Playwright emulates focus in every page – the scratch check
+  dispatched `focus`/`blur`. Not checked in the desktop app's views. The pointer in Slider: the shape it is on
+  (`usePointedShape` – `locateCursor` + `hitTestShapes`, state only when the shape changes, kept
+  when the pointer leaves the slides to speak, let go over a slide's empty room and when another
+  slide comes in front) → „Mit dem Zeiger gezeigt“; the voice's prompt ranks it after what is marked
+  or picked. Slide numbers: the viewer leaves hidden slides out (`withoutHiddenSlides`), the server
+  and the agents' tools count them – the line then adds „(in der Datei Folie k)“ (`fileIndex`) and
+  `slideInFront` takes that one. Pictures: the quick voice (`mistral-small-latest` reads images) gets the slide in
+  front as it looks – `slidePicture` (`call-voice.ts`) finds it by the Slider line („[[presentation:
+  ID|…]], Folie n von“), reads it with the asker's rights through the agents' `view_slide`
+  (`runMcpTool`), makes it 768 px JPEG and puts it beside the turn's words; only the asker's own
+  page, waited for at most 700 ms (meanwhile `voiceAbout`; not timed against a real deck), else
+  without. A model that refuses it (an error before any word): the turn is asked once more without
+  it – the voice never goes mute over a picture. It is the saved render: pen marks and unsaved
+  edits are not in it. Never into the voice's history. Agents sent off look themselves (`view_slide` by the link). No client screenshot.
+- The AI's side panel stands beside the page in Cloud and in Sender (`mr-[400px]` while
+  `[data-cloud-panel]` is there and no `[data-page-aside]`, in `CloudLayout` and `SenderLayout`) –
+  over the page, `useAsideRoom` measured a page that never got narrow and the agent's chat kept its
+  call card under the panel.
+- The AI's side panel (`ChatPanel` – Cloud, Sender, Slider's start, a presentation's) shows the
+  call one is in at its top (`CurrentCallBoxes` → `CallBoxes place="panel"`); hosts are a list in
+  `CallProvider` (`host(callId, place)`), the corner's dock stands back while any shows the call,
+  and a panel over a page that shows it (`onPage`: the agent's page, the conversation) shows
+  nothing – one card, never two. Its head has „Anrufen“ (`OwnAgentCallButton`, not while in a
+  call): one's own agent of the workspace (`ownCloudAgent`, `POST /workspaces/:id/cloud/agents/own`)
+  – named as the workspace names its AI (`aiName`, else „KI“), `named`, its id from workspace and
+  person (`ownAgentId`, UUID-shaped sha256 – no column, no migration), made at the first call
+  (insert on conflict nothing), deleted the next is new; then called as any agent. The panel's
+  chat itself stays the client-held tool chat – not that agent's chat yet; agents have no tool to
+  read or ask one's other agents. Cards beside a chat (conversation, agent in Cloud and Sender)
+  need the page's room (`useAsideRoom`, measured on the page – the panel takes 400 px): without
+  it they stand back and the panel shows the call, never a card squeezed and cut off.
+- The call stays in the AI's side panel, also while it is closed (the user's call, 2026-11-25: no
+  call floating over the slides while working full screen): where a page has such a panel
+  (`usePanelForCalls` – `CloudChat`, `WorkspaceChat`, `HomeChat`, a presentation's `AiChatPanel`
+  where the AI's avatar shows, the material page while shown) the corner's dock does not show;
+  ✨ turns into a green phone (`AiButton calling`, `useCallInBackground`) and its audio plays from
+  `CallProvider` meanwhile (the dock or card played it before – nothing shown was silence). The
+  panel's card has „Schweben lassen“ (`pictureInPicture`), the dock „In die Seitenleiste“
+  (`sidePanel`, only where a panel is): `floating`, kept per browser (`slider:call-floating`);
+  floating, the panel shows no card and the dock stands left of an open panel (`data-ai-panel`).
+  A page without a panel (a presentation without the AI, a page of its own) lets it float as
+  before – never a call unseen with nothing to bring it back. A page's own card (agent, conversation)
+  is unchanged.
 - On the called agent's own page in Cloud (one's own call with it) the call is no dock but the
   first card beside its chat, its orders the next one (`CallBoxes`, the same `CallDock` /
   `CallOrders` with `place="box"`); the page `host`s the call so the corner's dock stands back,
@@ -2317,10 +2640,11 @@ list scrolls in the panel.
   it. Without turn detection words lag 0.7–1.2 s behind speech.
 - Notes („Notizen in Anrufen“, KI tab, `workspaces.call_notes`, default on): a call has `notes`
   when the setting is on and the workspace has a `live` and an `ai` key (`notesIn`, decided at
-  the call's start). When it ends with ≥ 25 words, `afterCall` → `services/call-notes.ts`
-  creates a Cloud agent as the starter (else the next member), unshared, in the conversation's
-  area; its order holds the transcript and tells it to `post_message` notes/tasks (@Vorname)
-  into the conversation. Measured with Claude: ~10 s, clean notes with an @mention.
+  the call's start). The notes stand at the call only (`call_records`, below): its page, and
+  their start as two lines in the chat's call box (`CallEntry`, `CallBrief.summary`), sent
+  live as `changed` once written (`announceCallNotes`). No agent posts them into the
+  conversation any more (2026-11-25: the user found them twice – once in the call, once as an
+  agent's message; `services/call-notes.ts` and `afterCall` are gone).
 - Calling an agent: `POST /cloud/agents/:id/call` (who may write to it, needs `live`, else 409)
   – a call of one's own (`place` `agent:<agent>:<user>`, `channelId` empty, nobody rings). An own
   agent call is the one with an empty `channelId` – check that, not `call.agent`, for title,
@@ -2340,6 +2664,36 @@ list scrolls in the panel.
   turn) loads the live key, the voice list and the chat summary ahead – the first answer was
   ~0.8 s slower cold. Not a word after 700 ms (about one turn in ten): a cached „Moment.“ is said
   meanwhile (`ACK`, made once per call, not in the history).
+- Looking up in a call (2026-11-25; the user: a call agent „hat komplett gelogen“ – the quick voice
+  has no tools, 400 tokens, and the warm prompt made it invent): the voice gets `nachschauen`
+  {frage} on turns to it (never overheard) and is told never to guess. A look-up says „Ich schau
+  nach.“ (`LOOK_ACK` when it wrote nothing) and `CallHub.lookUp` runs *not awaited* (the call and
+  the voice go on): the call's Cloud agent where who asked may write to it, else their own
+  (`ownCloudAgent` – never one made for it), with a briefing as `prompt` (use tools now, no
+  `SOFORT`/`AUFTRAG`, three spoken sentences, say when nothing is found) and the question as the
+  chat's text; with more than one person in the call `foreign` (no mail/connections – the frage is
+  the voice's words, read out to all). The answer is read out, its `SOFORT:` lines become orders,
+  and it goes into `voiceHistory` as „(Nachgeschaut: …)“ + answer so the voice does not contradict
+  it. Timeout (`AGENT_ANSWER_MS`) → „Das Nachschauen hat zu lange gedauert.“. `ORDER_HOWTO` now
+  says questions are answered with the agent's own tools; only long work goes to an order. In an
+  own-agent call the look-up also stands in its chat beside the call's one entry (`keep`). The
+  look-ups of a call run one after the other (`call.looking`): two at once in one agent chat
+  both read its last answer (`answerOf`). Tried live 2026-11-25 (`voiceAnswer`, real
+  `mistral-small-latest`, two runs each): Q3 revenue, „was steht morgen in meinem Kalender“, „was
+  hat Tom im Kanal geschrieben“ → `nachschauen` with no text before it; „hallo, wie geht's“ → an
+  answer, no look-up; „mach sofort …“ → order; „mach die Anpassung“ with a slide → order with
+  `folie`; „was steht auf der Folie“ → answered from the page. The whole path (Cloud agent with real
+  tools) was not run live.
+- The call's model (`workspaces.call_model`, `CALL_MODELS` review|create|quick, default review =
+  Sonnet; „Der Agent im Anruf denkt mit“ under „Notizen in Anrufen“, `PATCH /workspaces/:id/ai`
+  `callModel`): look-ups and every `ask` turn pass it through `messageCloudAgent(… model)` →
+  `Waiting.model` → `callModelConnection` (only `model` swapped, usage booked as usual; quick =
+  `quickModelOf`). Asked at each turn (`thinksOn` – a change applies mid-call). The first turn of a notes agent
+  made without the quick voice runs on it too (`createCloudAgent(… model)` in `wake`). Not covered,
+  on purpose: orders sent off (ordinary agents outliving the call, review model; slide orders on
+  Slider's AI) and the quick voice itself (Mistral). A failed turn leaves the next asked
+  (`call.asking` catches). A run batches waiting messages of the same person
+  (`joins`): the first message's model wins.
 - Adding to a conversation's call: „Hinzufügen“ (`personAdd`) in the dock (`AddToCall`) – first
   „Neuer Agent“ (marked on open, `Menu`'s `pickFirst`; ↵ brings it), then the agents one may write
   to, a line (`MenuAction.divider`), the workspace's members not in the call (ringing ones greyed).
@@ -2406,7 +2760,10 @@ list scrolls in the panel.
   the transcription hears is dropped (echo guard); talking over keeps the words of the last 800 ms.
   Mic blocks are 2048 samples (~43 ms). Measured (fake mic, 2 runs): talking start → silent here
   224–267 ms, `hush` in all tabs 232–283 ms; a bare „Stopp,“ (~130 ms loud, then a pause) stops it
-  only with the next words (~1.05 s).
+  only with the next words (~1.05 s). A hush cuts the voice's last answer only where what was heard
+  is part of it or its „Moment.“ (`answer.ack`) – talked over during a look-up's answer read out
+  after it, that answer and what was found stay as they were – unless the next answer is already
+  being written (`answering`, not yet `kept`, not only overheard): that one goes whole.
 - Measured 2026-11-20 (10 German questions, real Mistral; server = transcript post → event,
   browser = speech end in a fake-mic Chromium → first sound): before – Cloud agent polled, MP3
   per answer – `say` 2.17 s median / 2.89 s p95, audio 3.01 / 4.63 s after the post, first sound
@@ -2433,8 +2790,21 @@ list scrolls in the panel.
   „Losgeschickt: …“ / „Verworfen: …“. ✓ „Losschicken“ / ✕ „Verwerfen“ in the dock's „Aufträge“
   (`POST /calls/:id/orders/:orderId {send}`) as before, silent. Sent = `createCloudAgent` with
   the sending person's rights (in the call's area, else outside it); the hub polls it every 3 s
-  while the call runs (`running` + `doing` → `done`). The notes agent gets the sent orders listed
-  so it does not send them again. Cloud agents rename themselves with `name_chat` – the howto
+  while the call runs (`running` + `doing` → `done`). An order about the presentation in front
+  (the user, 2026-11-25: „im call in slider … mach mal die anpassung → einfach n kommentar
+  schreiben und ki drauf senden, kein extra agent“): where the speaker's page has a Slider line
+  (`slideInFront`) the voice's order tools get `folie` (offered then only) and a system line;
+  `folie: true` marks the order in `call.orderOnSlide` (beside it – the call's state goes to every
+  tab; `propose` keeps it through a replace, drop/✕ clear it). Sent by who asked (their `here`),
+  `toSlide` does what `edit_slides` does (`askSliderAi`: their comment on that slide, anchor
+  `slide`, links as names, counted as an AI request), polls the proposal: `doing` „Die KI ändert
+  die Folie“ (no number – the file's differs with hidden slides), applied → „Fertig“, asks/nothing changed → `done` with `doing` saying so (the card shows it)
+  and a question said aloud; refused (no edit right, no ODP, no key – `ApiError`, German) →
+  `failed`, said in the call too. Sent by someone else, or a `SOFORT:` text line (no flag): an
+  agent as before – also every call without the quick voice (live service not Mistral: text
+  path, no `folie`). The happy path is untested in api (calls' test context has no editable ODP –
+  `edit_slides`'s own success path is untested too); the refusal is. Whether the voice model sets
+  `folie` was not tried live. Cloud agents rename themselves with `name_chat` – the howto
   tells them not to, else the called agent took the order's name. Measured with Claude (old
   confirm flow): proposal ~4 s, a memo agent done in ~21 s.
 - Correcting a waiting order (the user's call 2026-11-20: „Ja, und nenn ihn Test 2 Bereich“ gave a
@@ -2450,9 +2820,8 @@ list scrolls in the panel.
 - The agent that writes along answers too: in a call with `notes`, a turn „Agent, …“ with no
   agent in the call `wake`s it – a Cloud agent made then as the speaker (call area, else none),
   titled like the notes („Notizen: Anruf in … am …“), shown as the call's agent (✕ sends it
-  away, the next „Agent, …“ brings the same one back). `call.notesAgent` → `EndedCall.notesAgent`:
-  `writeCallNotes` messages that agent instead of making a second one. Measured with Claude:
-  answer ~2 s, notes by the same agent naming the order already sent. It is its maker's private
+  away, the next „Agent, …“ brings the same one back). It writes no notes after the call (they
+  stand at the call). Measured with Claude: answer ~2 s. It is its maker's private
   agent (in a group or direct call): the others in the call ask it through its maker (`ask`'s
   `through`), `confined` to posting into the call's conversation – never with the maker's tools.
   Everything said before a question goes along marked „Gesagtes, kein Auftrag an dich“ (also the

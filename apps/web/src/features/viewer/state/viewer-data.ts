@@ -26,6 +26,11 @@ export interface ViewerData {
    */
   slides: Slide[];
   slideIndex: ReadonlyMap<string, number>;
+  /**
+   * Each slide's place in the file, hidden ones counted – „Folie n“ as the server and the agents'
+   * tools count (`view_slide`), also while hidden slides are out of sight.
+   */
+  fileIndex: ReadonlyMap<string, number>;
   /** Each slide's variants (made in the editor), by the slide's id, in file order. */
   variantsOf: ReadonlyMap<string, Slide[]>;
   /** Slides hidden in PowerPoint, shown or not – the switch for them only shows when there are any. */
@@ -118,6 +123,10 @@ export function deriveViewerData(
     deck,
     slides,
     slideIndex: new Map(slides.map((slide, index) => [slide.id, index])),
+    // The server counts no variant at all – one whose slide is gone neither (`slidesOf`).
+    fileIndex: new Map(
+      slides.filter((slide) => !slide.variantOf).map((slide, index) => [slide.id, index]),
+    ),
     variantsOf,
     hiddenSlideCount: slides.filter((slide) => slide.hidden).length,
     viewer,

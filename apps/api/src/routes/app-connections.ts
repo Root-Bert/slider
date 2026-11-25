@@ -1,6 +1,11 @@
 import { Server } from '@modelcontextprotocol/sdk/server/index.js';
 import { WebStandardStreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/webStandardStreamableHttp.js';
-import { CallToolRequestSchema, ListToolsRequestSchema } from '@modelcontextprotocol/sdk/types.js';
+import {
+  CallToolRequestSchema,
+  ListResourcesRequestSchema,
+  ListToolsRequestSchema,
+  ReadResourceRequestSchema,
+} from '@modelcontextprotocol/sdk/types.js';
 import { Hono, type Context } from 'hono';
 import { bodyLimit } from 'hono/body-limit';
 import { createMiddleware } from 'hono/factory';
@@ -16,6 +21,13 @@ import { aiLimits } from '../http/ai-limits';
 import { notFound } from '../http/errors';
 import { rateLimit } from '../http/rate-limit';
 import { MAX_JSON_BODY_BYTES, readJson } from '../http/validate';
+import {
+  MCP_VIEW_RESOURCE,
+  MCP_VIEW_URI,
+  readMcpView,
+  SHOW_PRESENTATION,
+  showPresentation,
+} from '../services/mcp-ui';
 import {
   OAuthError,
   approveAppRequest,
@@ -272,9 +284,20 @@ export function appConnectionsRoutes(deps: AppDeps, live = new DocumentLive()) {
               { src: `${issuerOf(deps)}/icon-192.png`, mimeType: 'image/png', sizes: ['192x192'] },
             ],
           },
-          { capabilities: { tools: {} }, instructions: MCP_INSTRUCTIONS },
+          { capabilities: { tools: {}, resources: {} }, instructions: MCP_INSTRUCTIONS },
         );
-        server.setRequestHandler(ListToolsRequestSchema, () => ({ tools: APP_TOOLS }));
+        // show_presentation brings its card (an MCP App page) – for apps only, not in APP_TOOLS.
+        server.setRequestHandler(ListToolsRequestSchema, () => ({
+          tools: [...APP_TOOLS, SHOW_PRESENTATION],
+        }));
+        server.setRequestHandler(ListResourcesRequestSchema, () => ({
+          resources: [MCP_VIEW_RESOURCE],
+        }));
+        server.setRequestHandler(ReadResourceRequestSchema, (request) => {
+          if (request.params.uri !== MCP_VIEW_URI)
+            throw new Error(`Unknown resource ${request.params.uri}.`);
+          return readMcpView();
+        });
         // One request may carry many calls (a JSON-RPC batch): each counts, the first is paid.
         let calls = 0;
         server.setRequestHandler(CallToolRequestSchema, async (request) => {
@@ -292,13 +315,11 @@ export function appConnectionsRoutes(deps: AppDeps, live = new DocumentLive()) {
                 ],
               };
           }
-          const result = await runAppTool(
-            deps,
-            caller,
-            request.params.name,
-            (request.params.arguments ?? {}) as Record<string, unknown>,
-            live,
-          );
+          const args = (request.params.arguments ?? {}) as Record<string, unknown>;
+          const result =
+            request.params.name === SHOW_PRESENTATION.name
+              ? await showPresentation(deps, caller, args)
+              : await runAppTool(deps, caller, request.params.name, args, live);
           return { ...result };
         });
         const transport = new WebStandardStreamableHTTPServerTransport({

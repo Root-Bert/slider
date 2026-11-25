@@ -1,4 +1,5 @@
 import type {
+  CalendarEvent,
   LinkedMailAccount,
   MailAccount,
   MailAccountInput,
@@ -27,6 +28,7 @@ import {
   type QueryClient,
 } from '@tanstack/react-query';
 import { api, apiRequest, uploadWithProgress } from '../api-client';
+import { calendarKeys } from './calendar';
 
 /*
  * Mail in Sender: one's mailboxes in a workspace and their conversations. Kept under Sender's
@@ -113,21 +115,90 @@ export const useMailSearch = (
     placeholderData: keepPreviousData,
   });
 
-/** What lies in one folder of one mailbox (a conversation shows where one of its mails lies). */
-const folderQuery = (workspaceId: string, accountId: string, folder: string) => ({
-  queryKey: mailKeys.folder(workspaceId, accountId, folder),
+/**
+ * A search settled: what it finds on the server below what was ever read (older mails), fetched
+ * there – its list asked again once they are here.
+ */
+export const useMailSearchOnServer = (workspaceId: string) => {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({
+      query,
+      accountId,
+      inText,
+    }: {
+      query: string;
+      accountId: string;
+      inText: boolean;
+    }) =>
+      api.post<void>(
+        `/workspaces/${workspaceId}/mail/search?q=${encodeURIComponent(query)}&account=${encodeURIComponent(accountId)}${inText ? '&in=all' : ''}`,
+      ),
+    onSuccess: (_none, { query, accountId, inText }) =>
+      queryClient.invalidateQueries({
+        queryKey: mailKeys.search(workspaceId, query, accountId, inText),
+      }),
+  });
+};
+
+/** As many conversations as a list shows at first – scrolled down, this many more each time. */
+export const MAIL_LISTED = 200;
+/** The longest a list gets (the server's `MAX_LISTED`). */
+export const MAIL_LISTED_MAX = 5000;
+
+/**
+ * What lies in one folder of one mailbox (a conversation shows where one of its mails lies) – the
+ * newest `limit`; more than at first under a key of its own beneath the folder's.
+ */
+const folderQuery = (
+  workspaceId: string,
+  accountId: string,
+  folder: string,
+  limit = MAIL_LISTED,
+) => ({
+  queryKey:
+    limit > MAIL_LISTED
+      ? [...mailKeys.folder(workspaceId, accountId, folder), limit]
+      : mailKeys.folder(workspaceId, accountId, folder),
   queryFn: () =>
     api.get<MailThreadSummary[]>(
-      `/workspaces/${workspaceId}/mail/threads?account=${encodeURIComponent(accountId)}&folder=${encodeURIComponent(folder)}`,
+      `/workspaces/${workspaceId}/mail/threads?account=${encodeURIComponent(accountId)}&folder=${encodeURIComponent(folder)}${limit > MAIL_LISTED ? `&limit=${limit}` : ''}`,
     ),
 });
 
-export const useMailFolder = (workspaceId: string, accountId: string, folder: string) =>
+export const useMailFolder = (
+  workspaceId: string,
+  accountId: string,
+  folder: string,
+  limit = MAIL_LISTED,
+) =>
   useQuery({
-    ...folderQuery(workspaceId, accountId, folder),
+    ...folderQuery(workspaceId, accountId, folder, limit),
     enabled: accountId !== '',
     refetchInterval: THREADS_MS,
+    // Scrolled further: the rows stand while the longer list comes (not another folder's).
+    placeholderData: (previous, previousQuery) => {
+      const key = mailKeys.folder(workspaceId, accountId, folder);
+      return previousQuery?.queryKey.slice(0, key.length).join('\n') === key.join('\n')
+        ? previous
+        : undefined;
+    },
   });
+
+/**
+ * The list's end reached with nothing older kept: older mails of the folder from the server – the
+ * lists fetched anew once they are here. `more`: still older ones there.
+ */
+export const useOlderMail = (workspaceId: string) => {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({ accountId, folder }: { accountId: string; folder: string }) =>
+      api.post<{ more: boolean; failed: boolean }>(
+        `/workspaces/${workspaceId}/mail/older?account=${encodeURIComponent(accountId)}&folder=${encodeURIComponent(folder)}`,
+      ),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: mailKeys.threads(workspaceId) }),
+  });
+};
 
 /** Fetched ahead (the other mailboxes' Posteingang): switched to, its mails stand there at once. */
 export const prefetchMailFolder = (
@@ -587,6 +658,7 @@ export function useFileMailAttachment(workspaceId: string, threadId: string) {
       attachmentId: string;
       areaId?: string | null;
       parentId?: string | null;
+      newFolder?: string | null;
     }) => api.post<{ nodeId: string; name: string }>(`/mail/threads/${threadId}/file`, input),
     onMutate: async ({ attachmentId }) => {
       await queryClient.cancelQueries({ queryKey: key });
@@ -607,6 +679,34 @@ export function useFileMailAttachment(workspaceId: string, threadId: string) {
       if (context?.before) queryClient.setQueryData(key, context.before);
     },
     onSettled: () => queryClient.invalidateQueries({ queryKey: mailKeys.all(workspaceId) }),
+  });
+}
+
+/**
+ * „Termin anlegen“: the meeting the AI found in a conversation, into a calendar – the button turns
+ * into the event at once (`eventId` `''` until the server's comes).
+ */
+export function useAddMailEvent(workspaceId: string, threadId: string) {
+  const queryClient = useQueryClient();
+  const key = mailKeys.thread(workspaceId, threadId);
+  const withEvent = (eventId: string) => (now: MailThread | undefined) =>
+    now?.context?.event
+      ? { ...now, context: { ...now.context, event: { ...now.context.event, eventId } } }
+      : now;
+  return useMutation({
+    mutationFn: (calendarId: string) =>
+      api.post<CalendarEvent>(`/mail/threads/${threadId}/event`, { calendarId }),
+    onMutate: async () => {
+      await queryClient.cancelQueries({ queryKey: key });
+      const before = queryClient.getQueryData<MailThread>(key);
+      queryClient.setQueryData<MailThread>(key, withEvent(''));
+      return { before };
+    },
+    onSuccess: (event) => queryClient.setQueryData<MailThread>(key, withEvent(event.id)),
+    onError: (_error, _input, context) => {
+      if (context?.before) queryClient.setQueryData(key, context.before);
+    },
+    onSettled: () => queryClient.invalidateQueries({ queryKey: calendarKeys.events(workspaceId) }),
   });
 }
 

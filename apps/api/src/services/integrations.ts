@@ -175,7 +175,11 @@ async function toDto(deps: AppDeps, place: Place): Promise<Integrations> {
     place ? keyRows(deps, null) : Promise.resolve([]),
     place
       ? deps.db
-          .select({ aiName: workspaces.aiName, callNotes: workspaces.callNotes })
+          .select({
+            aiName: workspaces.aiName,
+            callNotes: workspaces.callNotes,
+            callModel: workspaces.callModel,
+          })
           .from(workspaces)
           .where(eq(workspaces.id, place))
           .then(([found]) => found)
@@ -240,6 +244,7 @@ async function toDto(deps: AppDeps, place: Place): Promise<Integrations> {
     },
     aiName: place ? aiNameOf(workspace?.aiName) : null,
     callNotes: place ? (workspace?.callNotes ?? true) : null,
+    callModel: place ? (workspace?.callModel ?? 'review') : null,
   };
 }
 
@@ -267,7 +272,10 @@ export async function getIntegrations(
   return toDto(deps, place);
 }
 
-/** Names the workspace's AI (an empty name gives it back its default), turns call notes on or off. */
+/**
+ * Names the workspace's AI (an empty name gives it back its default), turns call notes on or off,
+ * picks the model a call's agent thinks on.
+ */
 export async function updateWorkspaceAi(
   deps: AppDeps,
   viewer: Viewer,
@@ -279,6 +287,7 @@ export async function updateWorkspaceAi(
   const changes = {
     ...(name !== undefined && { aiName: name && name !== DEFAULT_AI_NAME ? name : null }),
     ...(input.callNotes !== undefined && { callNotes: input.callNotes }),
+    ...(input.callModel !== undefined && { callModel: input.callModel }),
   };
   if (Object.keys(changes).length > 0)
     await deps.db.update(workspaces).set(changes).where(eq(workspaces.id, workspaceId));

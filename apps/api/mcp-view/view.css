@@ -1,0 +1,44 @@
+/* Slider's look (apps/web/design-system.md): dark only, the slide the one bright thing, white at
+   fixed steps. System fonts – the sandbox loads none from outside. */
+:root {
+  /* No color-scheme: dark – in a light host a dark iframe gets an opaque canvas round the card.
+     A2UI's light-dark() values used here are set below instead. */
+  --a2ui-color-secondary: rgb(255 255 255 / 0.08);
+  --a2ui-color-secondary-hover: rgb(255 255 255 / 0.15);
+  --a2ui-color-on-secondary: rgb(255 255 255 / 0.9);
+  --a2ui-color-input: #2a2a2a;
+  --a2ui-color-on-input: rgb(255 255 255 / 0.9);
+  --a2ui-font-family: system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+  --a2ui-color-background: transparent;
+  --a2ui-color-surface: #141414;
+  --a2ui-color-on-surface: rgb(255 255 255 / 0.9);
+  --a2ui-color-on-background: rgb(255 255 255 / 0.9);
+  --a2ui-text-color-text: rgb(255 255 255 / 0.9);
+  --a2ui-text-color: rgb(255 255 255 / 0.9);
+  --a2ui-text-caption-color: rgb(255 255 255 / 0.5);
+  --a2ui-color-primary: #fff;
+  --a2ui-color-on-primary: #000;
+  --a2ui-color-border: rgb(255 255 255 / 0.12);
+  --a2ui-border-radius: 12px;
+  --a2ui-spacing-xs: 4px;
+  --a2ui-spacing-s: 8px;
+  --a2ui-spacing-m: 12px;
+  --a2ui-spacing-l: 16px;
+  /* Compact buttons in one row – three fit a narrow chat column (360 px). */
+  --a2ui-button-margin: 0;
+  --a2ui-button-padding: 8px 14px;
+  --a2ui-row-gap: 8px;
+}
+
+html,
+body {
+  margin: 0;
+  background: transparent;
+  font-family: var(--a2ui-font-family);
+  color: rgb(255 255 255 / 0.9);
+  -webkit-font-smoothing: antialiased;
+}
+
+#root {
+  padding: 0;
+}

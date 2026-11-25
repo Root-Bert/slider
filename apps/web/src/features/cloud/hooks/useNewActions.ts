@@ -60,6 +60,11 @@ export function useCloudNewActions(): MenuAction[] {
       icon: 'event',
       onSelect: () => event.create({ day: new Date().toLocaleDateString('sv-SE') }),
     },
+    {
+      label: 'Neues Meeting',
+      icon: 'videocam',
+      onSelect: () => event.create({ day: new Date().toLocaleDateString('sv-SE'), meeting: true }),
+    },
     ...(makes
       ? [
           {

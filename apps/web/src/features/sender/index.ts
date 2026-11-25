@@ -16,6 +16,7 @@ export { NotifyOffer, NotifyPreferences } from './components/NotifyOffer';
 export { SenderToast } from './components/SenderToast';
 export {
   SummaryAside,
+  SummaryBody,
   UnreadRow,
   usePlace as useConversationPlace,
   type FileSummaryPart,
@@ -38,7 +39,6 @@ export { MailAccounts, NewMailbox, NewMailboxButton } from './components/mail/Ma
 export {
   MailBody,
   MailboxTabs,
-  MailSyncButton,
   MailToolbar,
   UnreadFilter,
 } from './components/mail/MailView';

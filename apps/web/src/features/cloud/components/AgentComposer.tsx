@@ -1,8 +1,9 @@
 import { useId } from 'react';
 import { MAX_MATERIAL_CHAT_MESSAGE, type Attachment } from '@slider/shared';
-import { useAttachments } from '@/features/attachments';
+import type { Attachments } from '@/features/attachments';
 import { Composer } from '@/features/sender';
 import type { DraftTarget } from '@/lib/drafts';
+import { useAgentAttachments } from '../hooks/useAgentAttachments';
 
 /**
  * The field an agent is written to: Sender's (`Composer`) – a chat with an agent is written as one
@@ -18,6 +19,7 @@ export function AgentComposer({
   inline = false,
   top = false,
   typeInto = false,
+  attach: given,
   ...props
 }: {
   /** Where files put on the message go up – with it, the clip, pasting and recording are there. */
@@ -50,11 +52,14 @@ export function AgentComposer({
   onEditLast?: () => void;
   /** Typing with the focus on no field (the chat just picked in the side bar) writes here. */
   typeInto?: boolean;
+  /**
+   * The files on the message, where the page holds them (`useAgentAttachments`) – files dropped on the
+   * whole chat go there. Otherwise its own.
+   */
+  attach?: Attachments;
 }) {
-  const attach = useAttachments({
-    workspaceId,
-    keep: keep ? `agent:${keep.key}` : undefined,
-  });
+  const own = useAgentAttachments(given ? undefined : workspaceId, keep?.key);
+  const attach = given ?? own;
   // Nothing kept: a key of its own, so the field never shows another one's draft.
   const unkept = useId();
   return (

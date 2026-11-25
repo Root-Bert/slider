@@ -12,8 +12,12 @@ export function SidePanel({
   side = 'right',
   ...props
 }: ComponentPropsWithRef<'aside'> & {
-  /** `left`: the same card at the left edge, at every width (a menu that slides in). */
-  side?: 'left' | 'right';
+  /**
+   * `left`: the same card at the left edge, at every width (a menu that slides in). `bottom`: the
+   * phone's sheet at every width, half as high (centred, at most 720 px) – where the page needs its
+   * whole width and the upper half stays the page's.
+   */
+  side?: 'left' | 'right' | 'bottom';
 }) {
   return (
     <aside
@@ -25,12 +29,14 @@ export function SidePanel({
         'transition-transform duration-300 ease-out',
         side === 'left'
           ? 'inset-y-3 left-3 w-[min(320px,calc(100vw-24px))] rounded-panel starting:-translate-x-[calc(100%+12px)]'
-          : cn(
-              // Phone: bottom sheet.
-              'inset-x-0 bottom-0 max-h-[85dvh] rounded-t-panel starting:translate-y-full',
-              // Tablet and up: a floating glass card at the right edge.
-              'md:inset-y-3 md:right-3 md:left-auto md:max-h-none md:w-[400px] md:rounded-panel md:starting:translate-x-[calc(100%+12px)] md:starting:translate-y-0',
-            ),
+          : side === 'bottom'
+            ? 'inset-x-0 bottom-0 mx-auto max-h-[50dvh] w-full max-w-[720px] rounded-t-panel starting:translate-y-full'
+            : cn(
+                // Phone: bottom sheet.
+                'inset-x-0 bottom-0 max-h-[85dvh] rounded-t-panel starting:translate-y-full',
+                // Tablet and up: a floating glass card at the right edge.
+                'md:inset-y-3 md:right-3 md:left-auto md:max-h-none md:w-[400px] md:rounded-panel md:starting:translate-x-[calc(100%+12px)] md:starting:translate-y-0',
+              ),
         className,
       )}
     />

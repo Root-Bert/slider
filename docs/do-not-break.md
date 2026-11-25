@@ -299,6 +299,12 @@ Parity script (from `apps/web`): `bun --tsconfig-override=tsconfig.app.json scri
 - **A message shows as written** – formatting and links only rendered, never changed in the text;
   words with underscores and web addresses stay whole. Where: `MessageText.tsx`, `LinkedText.tsx`.
   Check: e2e `15-sender.spec.ts`.
+- **The field shows a message as it will stand, and keeps its text** – `RichField` (Lexical) reads
+  and writes the message's text (`lib/markup.ts`): what it wrote reads back the same (other
+  spellings come back in its own: `* a` → `- a`, `*x*` → `_x_`), a „Bearbeiten“ left untouched is
+  not saved, what it shows bold/italic/… the message shows the same; a mail's reply stays a
+  textarea (plain text goes out). Where: `RichField.tsx`, `lib/rich-markup.ts`, `Composer.tsx`. Check: web
+  `markup.test.ts`, e2e `15-sender.spec.ts`.
 
 ## Calls
 

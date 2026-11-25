@@ -40,7 +40,14 @@ export function useCalendars(workspaceId: string, enabled = true) {
 }
 
 /** The events overlapping [from, to) (ISO instants); the last range stays while the next loads. */
-export function useCalendarEvents(workspaceId: string, from: string, to: string, enabled = true) {
+export function useCalendarEvents(
+  workspaceId: string,
+  from: string,
+  to: string,
+  enabled = true,
+  /** Asked again this often while shown (the header's meeting: a mailbox's change shows). */
+  refetchInterval?: number,
+) {
   return useQuery({
     queryKey: calendarKeys.range(workspaceId, from, to),
     queryFn: () =>
@@ -48,8 +55,41 @@ export function useCalendarEvents(workspaceId: string, from: string, to: string,
         `/workspaces/${workspaceId}/calendar-events?from=${encodeURIComponent(from)}&to=${encodeURIComponent(to)}`,
       ),
     enabled,
+    ...(refetchInterval && { refetchInterval }),
     staleTime: 30_000,
     placeholderData: keepPreviousData,
+  });
+}
+
+/**
+ * A page of the calendar (a day, a week, a month, a year): its events, and while they load what
+ * any other range already holds of them – zoomed from the month into a week, its events are
+ * there at once and move to their places instead of popping in.
+ */
+export function useCalendarPage(workspaceId: string, from: string, to: string) {
+  const queryClient = useQueryClient();
+  return useQuery({
+    queryKey: calendarKeys.range(workspaceId, from, to),
+    queryFn: () =>
+      api.get<CalendarEvent[]>(
+        `/workspaces/${workspaceId}/calendar-events?from=${encodeURIComponent(from)}&to=${encodeURIComponent(to)}`,
+      ),
+    staleTime: 30_000,
+    placeholderData: () => {
+      // A day's slack on either side: whole-day events are kept by their dates, not instants.
+      const first = Date.parse(from) - 86_400_000;
+      const last = Date.parse(to) + 86_400_000;
+      const seen = new Map<string, CalendarEvent>();
+      for (const [, list] of queryClient.getQueriesData<CalendarEvent[]>({
+        queryKey: calendarKeys.events(workspaceId),
+      })) {
+        for (const event of list ?? []) {
+          if (Date.parse(event.end) >= first && Date.parse(event.start) <= last)
+            seen.set(event.id, event);
+        }
+      }
+      return seen.size ? [...seen.values()] : undefined;
+    },
   });
 }
 

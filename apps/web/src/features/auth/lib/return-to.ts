@@ -61,6 +61,11 @@ const LOGIN_ERROR_COPY: Record<LoginError, { title: string; message: string }> =
     message:
       'Dieses Konto wurde von der Person gesperrt, die Office hier betreibt. Wende dich an sie, wenn du glaubst, dass das ein Irrtum ist.',
   },
+  sso_required: {
+    title: 'Nur Firmen-Login',
+    message:
+      'Für Adressen eurer Firma gilt nur der Firmen-Login. Melde dich mit „Mit Firmen-Login anmelden“ an.',
+  },
   failed: {
     title: 'Anmeldung fehlgeschlagen',
     message: 'Bei der Anmeldung ist etwas schiefgelaufen. Bitte versuche es erneut.',

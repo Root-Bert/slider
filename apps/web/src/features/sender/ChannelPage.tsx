@@ -36,10 +36,11 @@ import {
   useSendSenderScheduledNow,
   useSenderScheduled,
 } from '@/lib/api';
-import { draftOf, setDraft } from '@/lib/drafts';
+import { draftOf, setDraft, useDraftText } from '@/lib/drafts';
 import { routes } from '@/lib/routes';
+import { hereQuote, useCallHere } from '@/lib/call-here';
 import { CallBoxes, CallButtons, useChannelCall } from '@/features/calls';
-import { AgentAvatar, AreaDot, AsideToggle, useAgentAside } from '@/features/cloud';
+import { AgentAvatar, AreaDot, AsideToggle, useAgentAside, useAsideRoom } from '@/features/cloud';
 import { useAgentAvatars, ViewSearch, WorkspaceMark } from '@/features/workspaces';
 import {
   AvatarStack,
@@ -54,7 +55,7 @@ import {
 } from '@/ui';
 import { AddPeople } from './components/AddPeople';
 import { Composer, type TagAgent } from './components/Composer';
-import { useAttachments } from '@/features/attachments';
+import { FileDropHint, useAttachments, useFileDrop, useHandedToChat } from '@/features/attachments';
 import { MessageList } from './components/MessageList';
 import { ReplyQuote } from './components/ReplyQuote';
 import { ScheduledLines } from './components/ScheduledLine';
@@ -226,7 +227,8 @@ export function Conversation({
   // „KI zum Chat“: its agents beside the messages, as the AI beside a mail – where there is room.
   const [aiOpen, setAiOpen] = useChatAside();
   const ai = wide && aiOpen;
-  const aside = useAgentAside(wide && (!!inCall || ai), 360, asideRef);
+  const [pageRef, room] = useAsideRoom();
+  const aside = useAgentAside(wide && room && (!!inCall || ai), 360, asideRef);
 
   const messages = useMemo(() => messagesOf(query.data), [query.data]);
   const replying =
@@ -286,6 +288,28 @@ export function Conversation({
     document.addEventListener('visibilitychange', mark);
     return () => document.removeEventListener('visibilitychange', mark);
   }, [channelId, lastSeq, read]);
+
+  // What the agent of one's call hears one has in front: the conversation and what one writes into
+  // it – never the others' messages (it reads the conversation by its id, with one's rights).
+  const written = useDraftText(channelId).trim();
+  useCallHere(
+    'sender',
+    channel
+      ? [
+          `Sender: Unterhaltung ${channel.kind === 'channel' ? `#${channel.name}` : channel.name} (Unterhaltungs-ID ${channelId})`,
+          written ? `Nachricht, die ${ui.me.name} gerade schreibt: ${hereQuote(written, 600)}` : '',
+        ]
+          .filter(Boolean)
+          .join('\n')
+      : null,
+  );
+
+  const toField = () =>
+    composerRef.current?.querySelector<HTMLElement>('textarea, [contenteditable="true"]')?.focus();
+  // Files dropped anywhere on the conversation (not its „Dateien“): on the message being written.
+  const drop = useFileDrop(channel?.canWrite && tab !== 'files' ? attach : undefined, toField);
+  // Dropped on its row in Cloud's side bar: on the field as it opens.
+  useHandedToChat(`channel:${channelId}`, attach, toField);
 
   if (query.isError && !query.data) {
     return (
@@ -386,7 +410,7 @@ export function Conversation({
     });
   const reply = (message: SenderMessage) => {
     setReplyingTo(message);
-    composerRef.current?.querySelector<HTMLElement>('textarea, [contenteditable="true"]')?.focus();
+    toField();
   };
   const lastOwn = [...messages]
     .reverse()
@@ -467,7 +491,7 @@ export function Conversation({
   const typing = ui.typingIn(channelId);
 
   return (
-    <section aria-label={shownName} className="flex min-h-0 flex-1 flex-col gap-3">
+    <section ref={pageRef} aria-label={shownName} className="flex min-h-0 flex-1 flex-col gap-3">
       <header className={cn(PAGE_HEADER, 'max-sm:flex-wrap', compact && 'min-h-8')}>
         <MenuButton />
         {!compact && <Mark channel={channel} />}
@@ -543,7 +567,8 @@ export function Conversation({
         <AddPeople channel={channel} onDone={() => setAdding(false)} />
       )}
       <div className={cn('flex min-h-0 flex-1', !aside.handle && 'gap-5')}>
-        <div className="flex min-h-0 min-w-0 flex-1 flex-col gap-3">
+        <div {...drop.props} className="relative flex min-h-0 min-w-0 flex-1 flex-col gap-3">
+          {drop.over && <FileDropHint />}
           {tab === 'files' ? (
             <ChatFiles
               channelId={channelId}

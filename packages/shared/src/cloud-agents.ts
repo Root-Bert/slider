@@ -33,7 +33,21 @@ export const cloudAgentInputSchema = z.object({
   mailThreadId: z.string().min(1).max(100).optional(),
   /** „Antworten“: a message of that chat, quoted above it (the agent is told it too). */
   replyTo: z.string().min(1).max(100).optional(),
+  /** Written under an overview: the agent is told what it shows now (`CloudAgentOverview`). */
+  overview: z
+    .object({
+      of: z.enum(['sender', 'cloud']),
+      mailbox: z.string().min(1).max(100).optional(),
+    })
+    .optional(),
 });
+/**
+ * The overview a question or an order was written under – Sender's „Aktuell“ (`sender`), one
+ * mailbox's „Übersicht“ (`sender` with its `mailbox`), Cloud's „Für dich“ (`cloud`). The server
+ * tells the agent what it shows at that moment, by id, with each message (its chat keeps the
+ * person's words alone) – in one's own private agent only.
+ */
+export type CloudAgentOverview = NonNullable<z.infer<typeof cloudAgentInputSchema>['overview']>;
 /** One of an agent's chats (left out: its first) – to stop it, or to say one is typing there. */
 export const cloudAgentChatRefSchema = z.object({ chatId: z.string().min(1).max(100).optional() });
 /**
@@ -67,7 +81,7 @@ export const cloudAgentTitleSchema = z.object({
  * workspace is theirs from the start, one under „Agenten“ › „Meine“ its owner's alone.
  */
 export const cloudAgentOrderSchema = cloudAgentInputSchema
-  .pick({ text: true, attachments: true, zone: true, mailThreadId: true })
+  .pick({ text: true, attachments: true, zone: true, mailThreadId: true, overview: true })
   .extend({
     areaId: z.string().min(1).max(100).nullable().optional(),
     shared: z.boolean().optional(),

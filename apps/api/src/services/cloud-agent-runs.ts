@@ -2,7 +2,7 @@
  * The agents at work right now – in memory only: a server that starts anew has none running.
  * Apart from `cloud-agents.ts`, so the files can ask who is at work without knowing the agents.
  */
-import type { Attachment, Viewer } from '@slider/shared';
+import type { Attachment, CallModel, Viewer } from '@slider/shared';
 
 /** A message written while the agent worked: kept in the chat at once, taken up by it next. */
 export interface Waiting {
@@ -40,6 +40,11 @@ export interface Waiting {
   prompt?: string;
   /** „Antworten“: the message of the chat it answers (kept with it; quoted in `prompt`). */
   replyTo?: string;
+  /**
+   * A call's turn (`CallHub`): the model the workspace picked for its agent to think on
+   * (`callModelConnection`) – for the run it begins; unset, the review model.
+   */
+  model?: CallModel;
   /** Files the person put on it: taken as it is kept (`attachments`), read by the agent. */
   attachmentIds?: readonly string[];
   attachments?: Attachment[];

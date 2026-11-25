@@ -59,6 +59,7 @@ import {
   mailAccounts,
   mailInsights,
   mailMessages,
+  mailThreads,
   mailUploads,
   senderDrafts,
   senderMessages,
@@ -75,6 +76,7 @@ import type {
   MailLogin,
   MailMove,
   MailServers,
+  OlderWanted,
   OutgoingMail,
   SeenFlag,
   SeenMark,
@@ -91,6 +93,7 @@ import { SEALED_PREFIX } from '../src/crypto/content-crypto';
 import { dkimDomains } from '../src/mail/dkim';
 import { MAIL_TOOLS, preparedMailbox } from '../src/services/mail-agent';
 import { besideMail, runMailTool } from '../src/services/mail-agent-run';
+import { triageContext } from '../src/services/sender-triage';
 import { askPin, askText } from '../src/services/cloud-agent-asks';
 import {
   foldersToRead,
@@ -100,6 +103,7 @@ import {
   mailFailure,
   mailHostAddress,
   readFolder,
+  readOlder,
   type Round,
   tooLargeMail,
 } from '../src/mail/servers';
@@ -116,7 +120,9 @@ import {
 import { workspaceStorage } from '../src/services/workspace-storage';
 import {
   lookUpQuestion,
+  mailEvent,
   mailLinks,
+  newFolderName,
   searchWords,
   spamAfterLook,
   todoLinks,
@@ -159,6 +165,9 @@ const marked: SeenMark[] = [];
 const movedOnServer: MailMove[] = [];
 /** The header fields the server gives when asked again, by UID (any folder). */
 const serverHeaders = new Map<number, string>();
+/** Older mails on the server than all read – fetched when asked (`older`), as asked. */
+const olderOnServer: FetchedMail[] = [];
+const olderAsked: OlderWanted[] = [];
 const servers: MailServers = {
   check: async (login) => {
     seen.push(login);
@@ -184,6 +193,23 @@ const servers: MailServers = {
   move: async (_login, moves) => {
     movedOnServer.push(...moves);
     return moves.map((one) => ({ ...one, newUid: one.uid + 50_000 }));
+  },
+  older: async (_login, wanted) => {
+    olderAsked.push(wanted);
+    const text = (one: FetchedMail) => new TextDecoder().decode(one.raw).toLowerCase();
+    const hits = olderOnServer
+      .filter(
+        (one) =>
+          one.uid < wanted.below && (wanted.words ?? []).every((word) => text(one).includes(word)),
+      )
+      .toSorted((a, b) => b.uid - a.uid);
+    const taken = hits.slice(0, wanted.count);
+    return {
+      mails: taken,
+      validity: wanted.validity,
+      oldest: wanted.words ? wanted.below : (taken.at(-1)?.uid ?? wanted.below),
+      more: hits.length > taken.length,
+    };
   },
   headers: async (_login, wanted) =>
     wanted.flatMap((one) => {
@@ -1628,6 +1654,102 @@ describe('Sender – the workspace’s messages', () => {
     expect(pdf).toMatchObject({ name: 'Plan.pdf', type: 'application/pdf' });
     const bytes = await send('GET', `/mail/threads/${offer.id}/attachments/${pdf?.id}`);
     expect(new TextDecoder().decode(await bytes.arrayBuffer())).toBe('%PDF-1.4\n');
+    // „KI zur Mail“ as the AI left it: a meeting goes into the calendar once and becomes the
+    // event; the attachment goes into the new folder it named – one folder for every time, shown
+    // as there once made.
+    const [untold] = await ctx.deps.db
+      .select({ context: mailThreads.context, contextState: mailThreads.contextState })
+      .from(mailThreads)
+      .where(eq(mailThreads.id, offer.id));
+    await ctx.deps.db
+      .update(mailThreads)
+      .set({
+        contextState: 'done',
+        context: {
+          summary: '',
+          kind: 'Anfrage',
+          verdict: 'ok',
+          warning: null,
+          todo: null,
+          needsInfo: false,
+          facts: [],
+          links: [],
+          documents: [],
+          filing: [
+            {
+              attachmentId: pdf!.id,
+              areaId: null,
+              parentId: null,
+              place: 'Meine Dateien',
+              why: '',
+              newFolder: 'Messe Acme',
+              nodeId: null,
+            },
+          ],
+          event: {
+            title: 'Termin mit Acme',
+            location: '',
+            allDay: false,
+            start: '2099-01-02T09:00:00.000Z',
+            end: '2099-01-02T10:00:00.000Z',
+            eventId: null,
+          },
+        },
+      })
+      .where(eq(mailThreads.id, offer.id));
+    const filingOf = async () =>
+      (await ok<MailInsights>(send('GET', `/mail/threads/${offer.id}/insights`))).filing[0];
+    expect(await filingOf()).toMatchObject({ place: 'Meine Dateien', newFolder: 'Messe Acme' });
+    const ownCalendar = (
+      await ok<Calendar[]>(send('GET', `/workspaces/${ctx.workspaceId}/calendars`))
+    ).find((one) => one.kind === 'private' && !one.parentId)!;
+    // Asked twice at once (two tabs): one event, the other refused.
+    const twice = await Promise.all(
+      [0, 1].map(() =>
+        send('POST', `/mail/threads/${offer.id}/event`, { calendarId: ownCalendar.id }),
+      ),
+    );
+    expect(twice.map((one) => one.status).toSorted()).toEqual([201, 400]);
+    const made = (await twice.find((one) => one.status === 201)!.json()) as {
+      id: string;
+      title: string;
+    };
+    expect(made.title).toBe('Termin mit Acme');
+    await ok(send('POST', `/mail/threads/${offer.id}/event`, { calendarId: ownCalendar.id }), 400);
+    expect(
+      (await ok<MailThread>(send('GET', `/mail/threads/${offer.id}`))).context?.event?.eventId,
+    ).toBe(made.id);
+    // Filed twice at once: one new folder all the same.
+    const intoFolder = await Promise.all(
+      [0, 1].map(() =>
+        ok<{ nodeId: string }>(
+          send('POST', `/mail/threads/${offer.id}/file`, {
+            attachmentId: pdf!.id,
+            areaId: null,
+            parentId: null,
+            newFolder: 'Messe Acme',
+          }),
+          201,
+        ),
+      ),
+    );
+    const nodes = await ctx.deps.db
+      .select()
+      .from(cloudNodes)
+      .where(eq(cloudNodes.workspaceId, ctx.workspaceId));
+    const folder = nodes.filter((one) => one.kind === 'folder' && one.name === 'Messe Acme');
+    expect(folder.length).toBe(1);
+    expect(
+      nodes
+        .filter((one) => intoFolder.some((each) => each.nodeId === one.id))
+        .map((one) => one.parentId),
+    ).toEqual([folder[0]!.id, folder[0]!.id]);
+    expect(await filingOf()).toMatchObject({
+      place: 'Meine Dateien / Messe Acme',
+      parentId: folder[0]!.id,
+    });
+    expect((await filingOf())?.newFolder).toBeUndefined();
+    await ctx.deps.db.update(mailThreads).set(untold!).where(eq(mailThreads.id, offer.id));
     // The kept attachment counts toward the workspace's storage – as the files put on messages do.
     const uploaded = (
       await ctx.deps.db
@@ -1638,6 +1760,93 @@ describe('Sender – the workspace’s messages', () => {
     expect(
       (await workspaceStorage(ctx.deps.db, [ctx.workspaceId])).get(ctx.workspaceId)?.other,
     ).toBe(9 + uploaded);
+    // The list's end: older mails than all read come from the server. A mailbox kept before
+    // `oldest` counts from its lowest mail here – UID 1: none older asked for.
+    const older = (query = '') =>
+      ok<{ more: boolean; failed: boolean }>(
+        send('POST', `/workspaces/${ctx.workspaceId}/mail/older${query}`),
+      );
+    const setSync = (sync: Record<string, { validity: string; next: number; oldest?: number }>) =>
+      ctx.deps.db.update(mailAccounts).set({ sync }).where(eq(mailAccounts.id, account.id));
+    const [unsynced] = await ctx.deps.db
+      .select({ sync: mailAccounts.sync })
+      .from(mailAccounts)
+      .where(eq(mailAccounts.id, account.id));
+    await setSync({ inbox: { validity: '1', next: 2000 } });
+    expect([await older(), olderAsked.splice(0)]).toEqual([{ more: false, failed: false }, []]);
+    const oldMail = (uid: number, subject: string) => ({
+      folder: 'inbox',
+      uid,
+      seen: true,
+      raw: new TextEncoder().encode(
+        [
+          'From: Lieferant <info@lieferant.de>',
+          'To: robert@firma.de',
+          `Subject: ${subject}`,
+          `Date: Mon, 3 Mar 2025 09:${uid / 10}:00 +0100`,
+          `Message-ID: <old-${uid}@lieferant.de>`,
+          '',
+          'Anbei.',
+        ].join('\r\n'),
+      ),
+    });
+    // Mia's, signed, fetched from below all read: an old mail – no chat message from her now.
+    const oldFromMia = await sign(
+      mail('Mia Berg <mia@firma.de>', 'Messe 2025', 'Wie letztes Jahr.', [
+        'Message-ID: <m-old@firma.de>',
+      ]),
+    );
+    olderOnServer.push(oldMail(300, 'Rechnung März'), oldMail(200, 'Lieferschein'));
+    await setSync({ inbox: { validity: '1', next: 2000, oldest: 500 } });
+    // A search asks the server too: its hits older than all read come in (in every folder but the
+    // trash), the search here finds them; what is read stays as it was.
+    await ok(send('POST', `/workspaces/${ctx.workspaceId}/mail/search?q=RECHNUNG`), 204);
+    expect(olderAsked.splice(0).map((one) => [one.folder, one.below, one.words])).toEqual([
+      ['inbox', 500, ['rechnung']],
+    ]);
+    const subjects = async (query = '') =>
+      (
+        await ok<MailThreadSummary[]>(
+          send('GET', `/workspaces/${ctx.workspaceId}/mail/threads${query}`),
+        )
+      ).map((one) => one.subject);
+    expect(await subjects('?q=rechnung')).toEqual(['Rechnung März']);
+    // Asked at the list's end: the newest older ones, at the list's end (older), read as on the
+    // server; none left – none asked again.
+    expect(await older()).toEqual({ more: false, failed: false });
+    expect(olderAsked.splice(0).map((one) => [one.below, one.count])).toEqual([[500, 50]]);
+    const [accountRow] = await ctx.deps.db
+      .select()
+      .from(mailAccounts)
+      .where(eq(mailAccounts.id, account.id));
+    await ingestMail(ctx.deps, accountRow as never, { ...oldFromMia, uid: 250, seen: true }, true);
+    const [miaOld] = await ctx.deps.db
+      .select()
+      .from(mailMessages)
+      .where(eq(mailMessages.messageId, '<m-old@firma.de>'));
+    expect([miaOld?.auth, miaOld?.senderMessageId, !!miaOld?.threadId]).toEqual([
+      'pass',
+      null,
+      true,
+    ]);
+    await ctx.deps.db.execute(sql`delete from mail_threads where id = ${miaOld?.threadId}`);
+    expect((await subjects()).slice(-2)).toEqual(['Rechnung März', 'Lieferschein']);
+    // Scrolled down, the list asks for more of the newest – as many as asked for.
+    expect((await subjects('?limit=1')).length).toBe(1);
+    const [synced] = await ctx.deps.db
+      .select()
+      .from(mailAccounts)
+      .where(eq(mailAccounts.id, account.id));
+    expect(synced?.sync.inbox?.oldest).toBe(1);
+    expect([await older(), olderAsked]).toEqual([{ more: false, failed: false }, []]);
+    // Deleted here, they stay deleted – nothing below `oldest` is asked again.
+    for (const one of await ok<MailThreadSummary[]>(
+      send('GET', `/workspaces/${ctx.workspaceId}/mail/threads?q=lieferant`),
+    ))
+      await ok(send('DELETE', `/mail/threads/${one.id}`), 204);
+    await older();
+    expect([olderAsked, await subjects('?q=lieferant')]).toEqual([[], []]);
+    await setSync(unsynced?.sync ?? {});
     // The server's read state is mirrored each round: read in another mail program – read here,
     // marked unread there – unread here. Read here: set read on the server (`\Seen` by UID), in
     // the background.
@@ -2196,6 +2405,13 @@ describe('Sender – the workspace’s messages', () => {
     );
     expect(beside).toMatch(new RegExp(`^Was will er\\?\\n\\n\\[Beside .*thread id ${offer.id}`));
     expect(beside).not.toContain('Bitte um ein Angebot');
+    // Under a mailbox's „Übersicht“ with all read, the agent still gets the mailbox by its address
+    // and the read mails the headline may speak of, by id – no calendar, no AI asked.
+    const underBox = await triageContext(ctx.deps, ctx.ownerId, ctx.workspaceId, account.id);
+    expect([
+      underBox.includes(`mailbox robert@firma.de (account ${account.id})`),
+      underBox.includes(`Mail conversation ${offer.id}`),
+    ]).toEqual([true, true]);
     expect(
       (
         await send(
@@ -3411,7 +3627,8 @@ describe('Sender – the workspace’s messages', () => {
     expect(firstRound.mails.map((each) => [each.uid, each.seen])).toEqual(
       uids.map((uid) => [uid, uid === 900]),
     );
-    expect(firstRound.state.inbox).toEqual({ validity: '7', next: 77_001 });
+    // What lies below the first mail read is older: fetched only when asked (`readOlder`).
+    expect(firstRound.state.inbox).toEqual({ validity: '7', next: 77_001, oldest: 5 });
     // The inbox's mails read before: their read state asked again each round – without CONDSTORE
     // of the latest few, with it only what changed since the change counter kept.
     const reread: Round = { mails: [], state: { ...firstRound.state } };
@@ -3439,7 +3656,7 @@ describe('Sender – the workspace’s messages', () => {
     await readFolder(counting(50n), 'INBOX', 'inbox', counted);
     expect([changedSince.splice(0), counted.state.inbox]).toEqual([
       [undefined],
-      { validity: '7', next: 77_001, modseq: '50' },
+      { validity: '7', next: 77_001, modseq: '50', oldest: 5 },
     ]);
     await readFolder(counting(50n), 'INBOX', 'inbox', counted);
     await readFolder(counting(51n), 'INBOX', 'inbox', counted);
@@ -3461,7 +3678,7 @@ describe('Sender – the workspace’s messages', () => {
         ['archive', 5],
         ['archive', 900],
       ],
-      { validity: '7', next: 901 },
+      { validity: '7', next: 901, oldest: 5 },
       { mails: 0, bytes: 980 },
     ]);
     await readFolder(fakeImap, 'Archiv', 'archive', {
@@ -3471,8 +3688,46 @@ describe('Sender – the workspace’s messages', () => {
     });
     expect(tight.state).toEqual({
       inbox: { validity: '7', next: 77_001 },
-      archive: { validity: '7', next: 77_001 },
+      archive: { validity: '7', next: 77_001, oldest: 5 },
     });
+    // Older ones asked for: the newest below `below` (IMAP SEARCH by UID, each word on its own,
+    // in the subject or people), nothing of another numbering.
+    const searched: unknown[] = [];
+    const olderImap = {
+      ...fakeImap,
+      mailbox: { exists: uids.length, uidNext: 77_001, uidValidity: 7n },
+      search: async (query: { uid: string; or?: unknown[] }) => {
+        searched.push(query);
+        const high = Number(query.uid.split(':')[1]);
+        return uids.filter((uid) => uid <= high && (!query.or || uid !== 5));
+      },
+    } as unknown as Parameters<typeof readOlder>[0];
+    const wanted = { path: 'INBOX', folder: 'inbox', validity: '7', below: 40_000, count: 1 };
+    const one = await readOlder(olderImap, wanted);
+    expect([one.mails.map((each) => [each.uid, each.seen]), one.oldest, one.more]).toEqual([
+      [[900, true]],
+      900,
+      true,
+    ]);
+    const hit = await readOlder(olderImap, { ...wanted, count: 5, words: ['acme'] });
+    expect([hit.mails.map((each) => each.uid), hit.oldest, searched.at(-1)]).toEqual([
+      [900],
+      40_000,
+      {
+        uid: '1:39999',
+        or: [{ subject: 'acme' }, { from: 'acme' }, { to: 'acme' }, { cc: 'acme' }],
+      },
+    ]);
+    expect(await readOlder(olderImap, { ...wanted, validity: '8' })).toEqual({
+      mails: [],
+      validity: '7',
+      oldest: 40_000,
+      more: false,
+    });
+    // The search refused (imapflow: false): a failure, never „none older“ kept for good.
+    await expect(
+      readOlder({ ...olderImap, search: async () => false } as never, wanted),
+    ).rejects.toThrow('refused');
     // A mail too large for a round stays on the server.
     expect(
       await ingestMail(ctx.deps, account as never, {
@@ -3497,6 +3752,44 @@ describe('Sender – the workspace’s messages', () => {
       'konto',
       'verbunden',
     ]);
+    // A new folder the AI would start for an attachment: a name a folder may have, else none.
+    expect(newFolderName('  RWI-GEO   Datenlieferung ')).toBe('RWI-GEO Datenlieferung');
+    expect(newFolderName('Kunden/Acme')).toBeNull();
+    expect(newFolderName('')).toBeNull();
+    expect(newFolderName(42)).toBeNull();
+    // A meeting the mails fix, as the calendar takes it: Berlin time to instants, an hour without
+    // an end, a whole day by its days; none for words, one past or one ending before it starts.
+    const nov25 = new Date('2026-11-25T16:30:00Z');
+    expect(
+      mailEvent({ title: ' Gespräch mit  Timm Teubner', start: '2026-11-27T14:00' }, nov25),
+    ).toEqual({
+      title: 'Gespräch mit Timm Teubner',
+      location: '',
+      allDay: false,
+      start: '2026-11-27T13:00:00.000Z',
+      end: '2026-11-27T14:00:00.000Z',
+    });
+    expect(
+      mailEvent(
+        { title: 'Messe', start: '2026-12-01', end: '2026-12-03', location: 'Köln' },
+        nov25,
+      ),
+    ).toEqual({
+      title: 'Messe',
+      location: 'Köln',
+      allDay: true,
+      start: '2026-12-01',
+      end: '2026-12-04',
+    });
+    expect(mailEvent({ title: 'Call', start: 'Freitag 14 Uhr' }, nov25)).toBeNull();
+    expect(mailEvent({ title: 'Call', start: '2026-11-18T09:00' }, nov25)).toBeNull();
+    expect(
+      mailEvent({ title: 'Call', start: '2026-11-27T14:00', end: '2026-11-27T13:00' }, nov25),
+    ).toBeNull();
+    expect(mailEvent(null, nov25)).toBeNull();
+    expect(mailEvent({ title: 'Call', start: '2026-11-27T14:00:00+01:00' }, nov25)?.start).toBe(
+      '2026-11-27T13:00:00.000Z',
+    );
     // The to-do's page is picked from the mail's own https links: words from the HTML, once each,
     // no unsubscribing, no http or mailto; a plain mail's addresses without trailing stops.
     expect(

@@ -73,7 +73,10 @@ export interface CallOrder {
   agentId: string | null;
   /** Who sent it – it works with their rights. */
   sentBy: AccountAuthor | null;
-  /** What its agent does right now, while it runs. */
+  /**
+   * What its agent does right now, while it runs; done, what came of it where „Fertig“ says too
+   * little (Slider's AI on the slide asks back, changed nothing).
+   */
   doing: string | null;
   /** Why it could not be sent. */
   error: string | null;
@@ -230,9 +233,17 @@ export const callHushSchema = z.object({
   heard: z.string().max(64).nullable(),
 });
 
+/**
+ * What the person had in front of them as they spoke (`callHere` on the page): the app, the file
+ * or folder, the slide, what is picked, marked or being written – as lines, with links
+ * (`[[presentation:ID|Name]]`) for agents sent off. Only for the agent, never in the notes.
+ */
+export const MAX_CALL_HERE = 3000;
+
 export const callTranscriptSchema = z.object({
   peerId: peerIdSchema,
   text: z.string().trim().min(1).max(MAX_CALL_UTTERANCE),
+  here: z.string().max(MAX_CALL_HERE).optional(),
 });
 
 export const callMediaSchema = z.object({

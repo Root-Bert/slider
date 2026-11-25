@@ -1,4 +1,13 @@
-import { useEffect, useId, useLayoutEffect, useRef, useState, type MouseEvent } from 'react';
+import {
+  useEffect,
+  useId,
+  useLayoutEffect,
+  useRef,
+  useState,
+  type ClipboardEvent,
+  type KeyboardEvent,
+  type MouseEvent,
+} from 'react';
 import {
   EVERYONE_TAG,
   MAX_SENDER_MESSAGE,
@@ -9,7 +18,7 @@ import {
 import {
   AttachButton,
   AttachmentChips,
-  useCloudDrop,
+  useFileDrop,
   type Attachments,
 } from '@/features/attachments';
 import { AgentAvatar } from '@/features/cloud';
@@ -36,6 +45,9 @@ import {
 import { dayInput, fromInputs, laterChoices, timeInput } from '../lib/later';
 import { ROW_MENU_CLASS, useRowMenu } from '../hooks/useRowMenu';
 import { draftOf, setDraft, useDrafts, type DraftTarget } from '@/lib/drafts';
+import { markupTrim } from '../lib/markup';
+import { RichField } from './LazyRichField';
+import type { RichFieldHandle } from './RichField';
 const SUGGESTIONS = 8;
 
 /** A recorded (and cut) video as the file put on the message: „Aufnahme 2026-11-24 21.05.mp4“. */
@@ -106,6 +118,7 @@ export function Composer({
   typeInto = true,
   signature,
   everyone = false,
+  rich = true,
 }: {
   /** Drafts are kept per conversation. */
   conversationId: string;
@@ -180,8 +193,19 @@ export function Composer({
   signature?: string | null;
   /** „@alle“ offered first among the people (a conversation's field). */
   everyone?: boolean;
+  /**
+   * Typed as it will show (`RichField`): bold, lists, headings… – off where the words go out as
+   * plain text (a mail's reply).
+   */
+  rich?: boolean;
 }) {
   const fieldRef = useRef<HTMLTextAreaElement>(null);
+  // The rich field: its editable element (measured, typed into from outside) and its handle.
+  const richElementRef = useRef<HTMLDivElement>(null);
+  const richRef = useRef<RichFieldHandle>(null);
+  const elementRef = rich ? richElementRef : fieldRef;
+  const focusField = () =>
+    rich ? richRef.current?.focus() : fieldRef.current?.focus({ preventScroll: true });
   const pickerRef = useRef<HTMLInputElement>(null);
   const listId = useId();
   // What was written and not sent – back when one returns to the conversation (`Entwürfe`).
@@ -189,6 +213,8 @@ export function Composer({
   const [body, setBody] = useState(() => draftIn(conversationId) || (prefill?.text ?? ''));
   const [mention, setMention] = useState<{ start: number; query: string } | null>(null);
   const [picked, setPicked] = useState(0);
+  // „Aa“: the format bar stands in the field.
+  const [formatting, setFormatting] = useState(false);
   // Another conversation: its draft, and the caret in the field.
   const [shown, setShown] = useState(conversationId);
   // What the field shows that is kept: taken in, or taken by the server – typed on since, not yet.
@@ -213,7 +239,8 @@ export function Composer({
     }
   }
   useEffect(() => {
-    if (focusOnOpen) fieldRef.current?.focus({ preventScroll: true });
+    if (focusOnOpen) focusField();
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- on another conversation only
   }, [conversationId, focusOnOpen]);
   // A picked example lies in the field at once: taken while rendering, not an effect later.
   const [taken, setTaken] = useState(prefill);
@@ -222,9 +249,10 @@ export function Composer({
     if (prefill) setBody(prefill.text);
   }
   useEffect(() => {
-    if (prefill) fieldRef.current?.focus({ preventScroll: true });
+    if (prefill) focusField();
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- on another example only
   }, [prefill]);
-  useTypeInto(fieldRef, typeInto);
+  useTypeInto(elementRef, typeInto);
   // Written past one line: the buttons go below the words.
   // A video being recorded to send: the recorder floats over the field on its own, as wide as
   // it is – the field stays as it was. Only its ✕/discard or the camera button close it (a press
@@ -234,9 +262,9 @@ export function Composer({
   const filmRef = useRef<HTMLElement>(null);
   useFocusLoop(filmRef, filming);
   // Files on it too: they stand under the words, the buttons below them.
-  const tall = useTallField(fieldRef, body) || (attach?.items.length ?? 0) > 0 || !!attach?.error;
-  // Cloud files and folders dropped on the field: pointed to, not copied.
-  const drop = useCloudDrop(attach);
+  const tall = useTallField(elementRef, body) || (attach?.items.length ?? 0) > 0 || !!attach?.error;
+  // Files dropped on the field: from the computer up and on it, from Cloud pointed to.
+  const drop = useFileDrop(attach, focusField);
   // Where the caret goes once a change of the text is on screen – before the next key.
   const caretAfter = useRef<number | null>(null);
   useLayoutEffect(() => {
@@ -295,6 +323,14 @@ export function Composer({
     setPicked(0);
   };
   const pick = (named: Named) => {
+    if (rich) {
+      setMention(null);
+      if (named.kind === 'new')
+        // Made first: its name (`Agent 2`) takes the place of the `@…` once it is there.
+        void onNewAgent?.().then((name) => name && richRef.current?.replaceMention(name));
+      else richRef.current?.replaceMention(nameOf(named));
+      return;
+    }
     const field = fieldRef.current;
     if (!field || !mention) return;
     const caret = field.selectionStart;
@@ -318,9 +354,9 @@ export function Composer({
   };
   const files = attach?.ready ?? [];
   // Words or files – and nothing still on its way up.
-  const sendable = (!!body.trim() || files.length > 0) && !attach?.busy && !busy;
+  const sendable = (!!markupTrim(body) || files.length > 0) && !attach?.busy && !busy;
   const deliver = (go: (text: string, files: Attachment[]) => void | Promise<boolean>) => {
-    const text = body.trim();
+    const text = rich ? markupTrim(body) : body.trim();
     if (!sendable) return;
     change('');
     setMention(null);
@@ -348,11 +384,12 @@ export function Composer({
     if (!onSchedule) return;
     setPicking(null);
     deliver((text, sent) => onSchedule(text, sent, at));
-    fieldRef.current?.focus({ preventScroll: true });
+    focusField();
   };
   const pickedAt = picking ? fromInputs(picking.day, picking.time) : null;
   const pickedLate = !!pickedAt && pickedAt.getTime() > pickedNow;
   const atSign = () => {
+    if (rich) return richRef.current?.insertMentionSign();
     const field = fieldRef.current;
     if (!field) return;
     const caret = field.selectionStart;
@@ -373,6 +410,7 @@ export function Composer({
     setAssisting(true);
     try {
       await assist(body, (text) => {
+        if (rich) return richRef.current?.replaceAll(text);
         // Typed in as if by hand, so ⌘Z gives the notes back (no toast for it).
         const field = fieldRef.current;
         if (field && typeof document.execCommand === 'function') {
@@ -390,6 +428,57 @@ export function Composer({
   };
 
   const open = suggestions.length > 0;
+  // The page's keys are not meant while one writes – ⌘F, ⇧⌘F (the searches) and ⌘K are.
+  const pageKeys = (event: KeyboardEvent<HTMLElement>) => {
+    if (!(isModKey(event) && 'fk'.includes(event.key.toLowerCase()))) event.stopPropagation();
+  };
+  /** The field's own keys: the @ list, Esc, ↑ to change one's last, Enter to send. */
+  const fieldKeys = (event: KeyboardEvent<HTMLElement>) => {
+    if (event.nativeEvent.isComposing) return;
+    if (open) {
+      if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
+        event.preventDefault();
+        const step = event.key === 'ArrowDown' ? 1 : -1;
+        setPicked((now) => (now + step + suggestions.length) % suggestions.length);
+        return;
+      }
+      if (event.key === 'Enter' || event.key === 'Tab') {
+        event.preventDefault();
+        const named = suggestions[picked];
+        if (named) pick(named);
+        return;
+      }
+      if (event.key === 'Escape') {
+        event.preventDefault();
+        setMention(null);
+        return;
+      }
+    }
+    if (event.key === 'Escape' && onEscape) {
+      event.preventDefault();
+      onEscape();
+      return;
+    }
+    if (event.key === 'ArrowUp' && !body && onEditLast) {
+      event.preventDefault();
+      onEditLast();
+      return;
+    }
+    if (event.key !== 'Enter' || event.shiftKey) return;
+    if (sendKey === 'mod-enter' && !isModEnter(event)) return;
+    // In a list Enter makes a new point (on an empty one: the list ends) – as on a sticker; ⌘↵
+    // sends from there too.
+    if (rich && !isModEnter(event) && richRef.current?.inList()) return;
+    event.preventDefault();
+    send();
+  };
+  const paste = (event: ClipboardEvent<HTMLElement>) => {
+    if (attach) return attach.onPaste(event);
+    const files = [...event.clipboardData.files];
+    if (!onFiles || files.length === 0) return;
+    event.preventDefault();
+    onFiles(files);
+  };
   return (
     <>
       {picking && (
@@ -402,7 +491,7 @@ export function Composer({
               event.preventDefault();
               event.stopPropagation();
               setPicking(null);
-              fieldRef.current?.focus({ preventScroll: true });
+              focusField();
             }
             // Enter on ✕ or „Planen“ is that button's own press, not a second plan.
             if (event.target instanceof HTMLButtonElement) return;
@@ -446,7 +535,7 @@ export function Composer({
             variant="subtle"
             onClick={() => {
               setPicking(null);
-              fieldRef.current?.focus({ preventScroll: true });
+              focusField();
             }}
           />
         </div>
@@ -557,7 +646,7 @@ export function Composer({
                 onDone: (file) => {
                   attach.add([videoFile(file)]);
                   setFilming(false);
-                  fieldRef.current?.focus({ preventScroll: true });
+                  focusField();
                 },
                 autoCut: attach.workspaceId
                   ? (speech, signal) => suggestVideoCuts(attach.workspaceId ?? '', speech, signal)
@@ -567,78 +656,75 @@ export function Composer({
           </PopoverPanel>
         )}
         <div className={cn('flex min-w-0 flex-1 flex-col py-[5px]', tall && 'basis-full pr-2')}>
-          <AutosizeTextarea
-            ref={fieldRef}
-            aria-label="Nachricht"
-            role="combobox"
-            aria-expanded={open}
-            aria-controls={open ? listId : undefined}
-            aria-activedescendant={open ? `${listId}-${picked}` : undefined}
-            aria-autocomplete="list"
-            placeholder={placeholder}
-            maxLength={maxLength}
-            maxHeight={maxHeight}
-            readOnly={assisting}
-            aria-busy={assisting || undefined}
-            value={body}
-            onChange={(event) => {
-              change(event.target.value);
-              if (event.target.value.trim()) onTyping?.();
-              look();
-            }}
-            onSelect={look}
-            onBlur={() => setMention(null)}
-            onPaste={(event) => {
-              if (attach) return attach.onPaste(event);
-              const files = [...event.clipboardData.files];
-              if (!onFiles || files.length === 0) return;
-              event.preventDefault();
-              onFiles(files);
-            }}
-            onKeyDown={(event) => {
-              // The page's keys are not meant while one writes – ⌘F, ⇧⌘F (the searches) and ⌘K are.
-              if (!(isModKey(event) && 'fk'.includes(event.key.toLowerCase())))
-                event.stopPropagation();
-              if (event.nativeEvent.isComposing) return;
-              if (open) {
-                if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
-                  event.preventDefault();
-                  const step = event.key === 'ArrowDown' ? 1 : -1;
-                  setPicked((now) => (now + step + suggestions.length) % suggestions.length);
-                  return;
-                }
-                if (event.key === 'Enter' || event.key === 'Tab') {
-                  event.preventDefault();
-                  const named = suggestions[picked];
-                  if (named) pick(named);
-                  return;
-                }
-                if (event.key === 'Escape') {
-                  event.preventDefault();
-                  setMention(null);
-                  return;
-                }
-              }
-              if (event.key === 'Escape' && onEscape) {
-                event.preventDefault();
-                onEscape();
-                return;
-              }
-              if (event.key === 'ArrowUp' && !body && onEditLast) {
-                event.preventDefault();
-                onEditLast();
-                return;
-              }
-              if (event.key !== 'Enter' || event.shiftKey) return;
-              if (sendKey === 'mod-enter' && !isModEnter(event)) return;
-              event.preventDefault();
-              send();
-            }}
-            className={cn(
-              variant === 'top' ? 'text-sm' : 'text-body',
-              'leading-4.5 text-fg placeholder:text-fg-subtle',
-            )}
-          />
+          {rich ? (
+            <RichField
+              ref={richRef}
+              fieldRef={richElementRef}
+              label="Nachricht"
+              placeholder={placeholder}
+              value={body}
+              onChange={(text) => {
+                change(text);
+                if (text.trim()) onTyping?.();
+              }}
+              onMention={(query) => {
+                setMention(query === null ? null : { start: -1, query });
+                setPicked(0);
+              }}
+              combobox={{
+                expanded: open,
+                controls: open ? listId : undefined,
+                activeDescendant: open ? `${listId}-${picked}` : undefined,
+              }}
+              readOnly={assisting}
+              maxLength={maxLength}
+              maxHeight={maxHeight}
+              // A field at a page's top: the bar under it.
+              barSide={variant === 'top' ? 'bottom' : 'top'}
+              barOpen={formatting}
+              onKeyDownCapture={(event) => {
+                fieldKeys(event);
+                // Taken here: not the editor's too.
+                if (event.defaultPrevented) event.stopPropagation();
+              }}
+              onKeyDown={pageKeys}
+              onPasteCapture={paste}
+              onBlur={() => setMention(null)}
+              className={cn(variant === 'top' ? 'text-sm' : 'text-body', 'leading-4.5 text-fg')}
+            />
+          ) : (
+            <AutosizeTextarea
+              ref={fieldRef}
+              aria-label="Nachricht"
+              role="combobox"
+              aria-expanded={open}
+              aria-controls={open ? listId : undefined}
+              aria-activedescendant={open ? `${listId}-${picked}` : undefined}
+              aria-autocomplete="list"
+              placeholder={placeholder}
+              maxLength={maxLength}
+              maxHeight={maxHeight}
+              readOnly={assisting}
+              aria-busy={assisting || undefined}
+              value={body}
+              onChange={(event) => {
+                change(event.target.value);
+                if (event.target.value.trim()) onTyping?.();
+                look();
+              }}
+              onSelect={look}
+              onBlur={() => setMention(null)}
+              onPaste={paste}
+              onKeyDown={(event) => {
+                pageKeys(event);
+                fieldKeys(event);
+              }}
+              className={cn(
+                variant === 'top' ? 'text-sm' : 'text-body',
+                'leading-4.5 text-fg placeholder:text-fg-subtle',
+              )}
+            />
+          )}
           {signature && body.trim() && (
             <p
               aria-label="Signatur"
@@ -700,6 +786,20 @@ export function Composer({
               onClick={() => void write()}
             />
           ))}
+        {rich && (
+          <IconButton
+            icon="textFormat"
+            label="Formatieren"
+            size="compact"
+            aria-pressed={formatting}
+            className={cn(formatting && 'bg-selected text-fg')}
+            onPointerDown={(event) => event.preventDefault()}
+            onClick={() => {
+              setFormatting((on) => !on);
+              focusField();
+            }}
+          />
+        )}
         {/* Only where someone can be named (a mail's reply has no one). */}
         {(agents.length > 0 || people.length > 0) && (
           <IconButton

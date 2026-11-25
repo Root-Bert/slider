@@ -9,6 +9,7 @@ import {
   type KeyboardEvent as ReactKeyboardEvent,
 } from 'react';
 import { isApplePlatform } from '@/lib/platform';
+import { hereQuote, useCallHere } from '@/lib/call-here';
 import { suggestVideoCuts, useCreateComment, useDeleteComment } from '@/lib/api';
 import {
   Avatar,
@@ -107,6 +108,13 @@ function ComposerPopover({ draft }: { draft: Draft }) {
   const sketchAspect =
     slides.find((slide) => slide.id === draft.slideId)?.aspectRatio ?? DEFAULT_SKETCH_ASPECT;
   const mentions = useMentions(body, setBody, commentRef);
+  // In a call, its agent knows what is being written here („stimmt das so?“).
+  useCallHere(
+    'slider:composer',
+    body.trim()
+      ? `Kommentar, den ${viewer.author.name} gerade schreibt: ${hereQuote(body, 600)}`
+      : null,
+  );
   // Closed (sent, Esc): back to what had the focus, e.g. the drawing's badge.
   useRestoreFocus();
 

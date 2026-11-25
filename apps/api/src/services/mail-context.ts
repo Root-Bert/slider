@@ -5,9 +5,13 @@ import {
   type MailAuth,
   type MailContext,
   type MailContextDocument,
+  type MailContextEvent,
   type MailContextFiling,
   type MailContextLink,
   type MailVerdict,
+  cloudNameSchema,
+  MAX_EVENT_LOCATION,
+  MAX_EVENT_TITLE,
 } from '@slider/shared';
 import {
   mailAccounts,
@@ -21,9 +25,12 @@ import type { AppDeps } from '../deps';
 import { badRequest, notFound } from '../http/errors';
 import { CONTENT_IS_NOT_INSTRUCTION, todayForPrompt } from './ai-prompt-parts';
 import { anthropicClient, quickModelOf, runToolCall, type AiConnection } from './ai-providers';
-import { ancestorsOf, cloudContext } from './cloud/context';
+import { zonedToUtc } from './calendar/ical';
+import { createEvent } from './calendars';
+import { ancestorsOf, cloudContext, type CloudCtx } from './cloud/context';
 import { storeUpload } from './cloud/files';
-import { searchNodes } from './cloud/nodes';
+import { createFolder, searchNodes } from './cloud/nodes';
+import { findByName, resolveTarget, siblingsIn } from './cloud/tree';
 import { workspaceAiConnection } from './integration-keys';
 import { ATTACHMENTS_ARE_DATA, attachmentsText } from './mail-attachment-text';
 import { freshPart, getMailThread, mailAttachment, onNewMail, threadMessages } from './mail';
@@ -38,6 +45,8 @@ import { senderLive } from './sender';
 
 const MAX_MAIL_CHARS = 8_000;
 const MAX_CANDIDATES = 25;
+/** Folders right in the tops (one's own files, the areas) the AI is shown to file into. */
+const MAX_TOP_FOLDERS = 40;
 const STOP = new Set(
   'aber alle also auch beim bitte dass dein deine denn dich dies diese diesem dieser doch eine einem einen einer eines euch fuer für gerne habe haben hallo heute hier ihnen ihre ihrem ihren ihrer immer neue neuen neuer neues wurde wurden jetzt kann kein keine mehr mein meine mich mit nach nicht noch oder schon sehr sein sind über unser unsere vielen viele vom von war waren weil wenn werden wie wir wird woche zum zur danke grüße gruss gruß liebe lieber herr frau with from that this have your about will would there their what when were which please thanks regards dear hello'.split(
     ' ',
@@ -51,7 +60,14 @@ const SYSTEM = [
   'not; a newsletter the person may have asked for is not spam. Pick only files from the list',
   'that truly belong to this mail (same project, customer, order, event) – none is fine. For each',
   'attachment pick the folder from the list where it belongs best – where files of the same',
-  'matter lie; the person’s own files when nothing fits.',
+  'matter lie. When none fits but it starts a matter more files will follow of (a project, a',
+  'customer, a contract, an application), name a new folder for it (new_folder: short, as people',
+  'name folders, e.g. the project or firm) and pick as folder the one it goes into. Else the',
+  'person’s own files („Meine Dateien“).',
+  'When the mails fix a meeting, call or appointment the person takes part in – a day and time',
+  'agreed or set, not only proposed –, give it as event, its time as the person reads it',
+  '(Berlin): days like „Freitag“ or „morgen“ count from the mail that says them. No event for an',
+  'invitation sent as a calendar file (.ics: it is in the calendar already) nor for one past.',
   'Then say whether background helps the person here (needs_info): yes for a request, offer,',
   'order, complaint, application or meeting from a customer, partner, supplier or company, or a',
   'matter to look into; no for newsletters, notifications, receipts, automatic mails, spam and',
@@ -109,6 +125,26 @@ const TOOL = {
           required: ['file', 'why'],
         },
       },
+      event: {
+        type: 'object',
+        description: 'Only when the mails fix a meeting or appointment; else leave it out.',
+        properties: {
+          title: {
+            type: 'string',
+            description: 'As it would stand in a calendar, short: „Gespräch mit Timm Teubner“.',
+          },
+          start: {
+            type: 'string',
+            description: 'YYYY-MM-DDTHH:MM, Berlin time; a whole day: YYYY-MM-DD.',
+          },
+          end: {
+            type: 'string',
+            description: 'Same form; empty when the mails say no end (an hour then).',
+          },
+          location: { type: 'string', description: 'Where, as the mails say; else empty.' },
+        },
+        required: ['title', 'start'],
+      },
       filing: {
         type: 'array',
         items: {
@@ -116,6 +152,11 @@ const TOOL = {
           properties: {
             attachment: { type: 'string', description: 'The attachment’s id.' },
             folder: { type: 'integer', description: 'Number of the folder in the list.' },
+            new_folder: {
+              type: 'string',
+              description:
+                'Only when no folder fits: the name of a new folder to make inside that one. Else empty.',
+            },
             why: { type: 'string', description: 'Why there, a few words.' },
           },
           required: ['attachment', 'folder', 'why'],
@@ -536,6 +577,9 @@ async function candidates(deps: AppDeps, account: MailAccountRow, words: string[
     string,
     { id: string; name: string; place: string; snippet: string; parent: Place }
   >();
+  const folders = new Map<string, Place>();
+  const may = (areaId: string | null) =>
+    areaId === null || ['edit', 'manage'].includes(ctx.areas.get(areaId)?.access ?? '');
   for (const word of words) {
     if (files.size >= MAX_CANDIDATES) break;
     const found = await searchNodes(deps, account.userId, account.workspaceId, {
@@ -544,6 +588,16 @@ async function candidates(deps: AppDeps, account: MailAccountRow, words: string[
       in: 'all',
     });
     for (const node of found.nodes) {
+      if (node.kind === 'folder' && may(node.areaId) && !folders.has(`${node.areaId}:${node.id}`)) {
+        const above = await ancestorsOf(deps.db, node);
+        folders.set(`${node.areaId}:${node.id}`, {
+          areaId: node.areaId,
+          parentId: node.id,
+          place: [areaName(node.areaId), ...above.reverse().map((one) => one.name), node.name].join(
+            ' / ',
+          ),
+        });
+      }
       if (node.kind !== 'file' || files.has(node.id) || files.size >= MAX_CANDIDATES) continue;
       const above = await ancestorsOf(deps.db, node);
       const place = [areaName(node.areaId), ...above.reverse().map((folder) => folder.name)].join(
@@ -558,18 +612,51 @@ async function candidates(deps: AppDeps, account: MailAccountRow, words: string[
       });
     }
   }
-  const folders = new Map<string, Place>();
-  const may = (areaId: string | null) =>
-    areaId === null || ['edit', 'manage'].includes(ctx.areas.get(areaId)?.access ?? '');
   for (const file of files.values())
     if (may(file.parent.areaId))
       folders.set(`${file.parent.areaId}:${file.parent.parentId}`, file.parent);
+  // The tops and the folders right in them – what is there already, to see whether one fits or a
+  // new one is due.
+  // One's own files first: the shared budget never leaves them out.
+  const own: Place = { areaId: null, parentId: null, place: 'Meine Dateien' };
+  const tops: Place[] = [own];
   for (const [areaId, entry] of ctx.areas)
-    if (may(areaId) && entry.access)
-      folders.set(`${areaId}:null`, { areaId, parentId: null, place: entry.row.name });
-  folders.set('null:null', { areaId: null, parentId: null, place: 'Meine Dateien' });
+    if (may(areaId) && entry.access) tops.push({ areaId, parentId: null, place: entry.row.name });
+  let inTops = 0;
+  for (const top of tops) {
+    folders.set(`${top.areaId}:null`, top);
+    const inside = await siblingsIn(deps.db, {
+      workspaceId: account.workspaceId,
+      areaId: top.areaId,
+      ownerId: top.areaId ? null : account.userId,
+      parentId: null,
+    });
+    for (const folder of inside) {
+      if (folder.kind !== 'folder' || inTops >= MAX_TOP_FOLDERS) continue;
+      inTops += 1;
+      folders.set(`${top.areaId}:${folder.id}`, {
+        areaId: top.areaId,
+        parentId: folder.id,
+        place: `${top.place} / ${folder.name}`,
+      });
+    }
+  }
+  // One's own files last: where an attachment goes when the AI names no folder.
+  folders.delete('null:null');
+  folders.set('null:null', own);
   return { files: [...files.values()], folders: [...folders.values()] };
 }
+
+/** When a mail was sent as its person read it – the weekday too, so „Freitag“ in it resolves. */
+const SENT = new Intl.DateTimeFormat('de-DE', {
+  timeZone: 'Europe/Berlin',
+  weekday: 'long',
+  day: 'numeric',
+  month: 'numeric',
+  year: 'numeric',
+  hour: '2-digit',
+  minute: '2-digit',
+});
 
 function conversationText(rows: MailMessageRow[]): string {
   const lines = rows.map((row) => {
@@ -577,7 +664,7 @@ function conversationText(rows: MailMessageRow[]): string {
       ? 'Die Person selbst'
       : `${row.from.name || row.from.address} <${row.from.address}>`;
     const auth = row.outgoing ? '' : ` [Absender-Domain bestätigt: ${row.auth}]`;
-    return `--- ${row.sentAt.toISOString().slice(0, 16)} von ${who}${auth}\nBetreff: ${row.subject}\n${freshPart(row.text) || row.text}`;
+    return `--- ${SENT.format(row.sentAt)} von ${who}${auth}\nBetreff: ${row.subject}\n${freshPart(row.text) || row.text}`;
   });
   let text = lines.join('\n\n');
   if (text.length > MAX_MAIL_CHARS) text = `…${text.slice(-MAX_MAIL_CHARS)}`;
@@ -585,6 +672,89 @@ function conversationText(rows: MailMessageRow[]): string {
 }
 
 const str = (value: unknown) => (typeof value === 'string' ? value.trim() : '');
+
+/**
+ * The meeting as the AI gave it, as a calendar takes it – `null`: none, a time that is none, or
+ * one past (`now`).
+ */
+export function mailEvent(value: unknown, now: Date): Omit<MailContextEvent, 'eventId'> | null {
+  if (!value || typeof value !== 'object') return null;
+  const raw = value as { title?: unknown; start?: unknown; end?: unknown; location?: unknown };
+  const title = str(raw.title).replace(/\s+/g, ' ').slice(0, MAX_EVENT_TITLE);
+  const start = str(raw.start);
+  const form = /^\d{4}-\d{2}-\d{2}(T\d{2}:\d{2}(:\d{2})?(Z|[+-]\d{2}:\d{2})?)?$/;
+  if (!title || !form.test(start)) return null;
+  const given = str(raw.end);
+  const end = form.test(given) ? given : null;
+  const location = str(raw.location).slice(0, MAX_EVENT_LOCATION);
+  const day = (text: string) => !text.includes('T');
+  if (day(start)) {
+    // A whole day (or days): the end as a calendar keeps it, the day after the last.
+    if (end && !day(end)) return null;
+    const last = end ?? start;
+    const after = new Date(Date.parse(`${last}T00:00:00Z`) + 24 * 60 * 60 * 1000);
+    if (Number.isNaN(after.getTime()) || last < start || after.getTime() <= now.getTime())
+      return null;
+    return { title, location, allDay: true, start, end: after.toISOString().slice(0, 10) };
+  }
+  if (end && day(end)) return null;
+  const from = berlinTime(start);
+  const to = end ? berlinTime(end) : from + 60 * 60 * 1000;
+  if (Number.isNaN(from) || Number.isNaN(to) || to <= from || to <= now.getTime()) return null;
+  return {
+    title,
+    location,
+    allDay: false,
+    start: new Date(from).toISOString(),
+    end: new Date(to).toISOString(),
+  };
+}
+
+/** `YYYY-MM-DDTHH:MM[:SS]` as read in Berlin (or with its own offset) – NaN for none. */
+function berlinTime(text: string): number {
+  if (/(Z|[+-]\d{2}:\d{2})$/.test(text)) return Date.parse(text);
+  const [date = '', clock = ''] = text.split('T');
+  const [year = NaN, month = NaN, day = NaN] = date.split('-').map(Number);
+  const [hour = NaN, minute = NaN, second = 0] = clock.split(':').map(Number);
+  if (month < 1 || month > 12 || day < 1 || day > 31 || hour > 23 || minute > 59) return NaN;
+  return zonedToUtc(Date.UTC(year, month - 1, day, hour, minute, second), 'Europe/Berlin');
+}
+
+/** A new folder's name as the AI gave it – `null`: none, or not one a folder may have. */
+export function newFolderName(value: unknown): string | null {
+  const name = str(value).replace(/\s+/g, ' ');
+  if (!name || name.length > 60) return null;
+  const parsed = cloudNameSchema.safeParse(name);
+  return parsed.success ? parsed.data : null;
+}
+
+/** The folder called `name` right in a place (names compare without case), if there is one. */
+export async function folderNamed(
+  deps: AppDeps,
+  ctx: CloudCtx,
+  place: { areaId: string | null; parentId: string | null },
+  name: string,
+) {
+  const target = await resolveTarget(deps, ctx, place, 'edit');
+  const found = findByName(await siblingsIn(deps.db, target.place), name);
+  return found?.kind === 'folder' ? found : null;
+}
+
+/**
+ * Per conversation, one change of what is kept of it at a time (`context`, its attachments'
+ * notes): each reads it afresh and writes it whole, so two at once (two attachments filed, a
+ * meeting put in from two tabs, the AI's look ending) would undo one another.
+ */
+const changing = new Map<string, Promise<unknown>>();
+function oneAtATime<T>(threadId: string, work: () => Promise<T>): Promise<T> {
+  const run = (changing.get(threadId) ?? Promise.resolve()).catch(() => {}).then(work);
+  changing.set(threadId, run);
+  const done = () => {
+    if (changing.get(threadId) === run) changing.delete(threadId);
+  };
+  run.then(done, done);
+  return run;
+}
 
 async function lookAt(deps: AppDeps, threadId: string): Promise<void> {
   const found = await owner(deps, threadId);
@@ -614,6 +784,7 @@ async function lookAt(deps: AppDeps, threadId: string): Promise<void> {
   const ownLinks = lastIn ? todoLinks(lastIn) : [];
 
   const user = [
+    `Heute ist ${SENT.format(deps.clock.now())}.`,
     `Postfach der Person: ${account.address}`,
     ...(thread.spam && thread.spamBy === 'server'
       ? [
@@ -680,7 +851,7 @@ async function lookAt(deps: AppDeps, threadId: string): Promise<void> {
   const filing: MailContextFiling[] = attachments.map((attachment) => {
     const picked = (Array.isArray(input.filing) ? input.filing : []).find(
       (one: { attachment?: unknown }) => one.attachment === attachment.id,
-    ) as { folder?: unknown; why?: unknown } | undefined;
+    ) as { folder?: unknown; new_folder?: unknown; why?: unknown } | undefined;
     const folder =
       (typeof picked?.folder === 'number' ? folders[picked.folder] : undefined) ?? folders.at(-1)!;
     return {
@@ -688,10 +859,18 @@ async function lookAt(deps: AppDeps, threadId: string): Promise<void> {
       areaId: folder.areaId,
       parentId: folder.parentId,
       place: folder.place,
+      newFolder: newFolderName(picked?.new_folder),
       why: str(picked?.why),
       nodeId: before.find((one) => one.attachmentId === attachment.id)?.nodeId ?? null,
     };
   });
+  // A meeting the mails fix – not on spam, not one an invitation's calendar file brings; put into
+  // the calendar already as long as its time stays.
+  const invited = attachments.some(
+    (one) => /^text\/calendar/i.test(one.type) || /\.ics$/i.test(one.name),
+  );
+  const meeting =
+    verdict === 'ok' && !thread.spam && !invited ? mailEvent(input.event, deps.clock.now()) : null;
   const context: MailContext = {
     summary: str(input.summary).slice(0, 600),
     kind: str(input.kind).slice(0, 40) || 'Mail',
@@ -707,25 +886,39 @@ async function lookAt(deps: AppDeps, threadId: string): Promise<void> {
     links: known.links,
     documents,
     filing,
+    event: null,
   };
   // Into spam or out of the provider's (the person can take it back) – as it lies now: its person
   // may have decided while the AI looked.
-  const [now] = await deps.db
-    .select({ spam: mailThreads.spam, spamBy: mailThreads.spamBy })
-    .from(mailThreads)
-    .where(eq(mailThreads.id, threadId));
-  const moved = now
-    ? spamAfterLook(
-        now,
-        verdict,
-        rows.some((row) => row.outgoing),
-        lastIn?.auth ?? null,
-      )
-    : null;
-  await deps.db
-    .update(mailThreads)
-    .set({ context, contextState: 'done', ...moved })
-    .where(eq(mailThreads.id, threadId));
+  await oneAtATime(threadId, async () => {
+    const [now] = await deps.db
+      .select({ spam: mailThreads.spam, spamBy: mailThreads.spamBy, context: mailThreads.context })
+      .from(mailThreads)
+      .where(eq(mailThreads.id, threadId));
+    const was = now?.context?.event ?? thread.context?.event;
+    context.event = meeting
+      ? { ...meeting, eventId: was && was.start === meeting.start ? was.eventId : null }
+      : null;
+    // Filed while the AI looked: it stays filed.
+    const filed = now?.context?.filing ?? [];
+    context.filing = context.filing.map((one) => ({
+      ...one,
+      nodeId:
+        one.nodeId ?? filed.find((each) => each.attachmentId === one.attachmentId)?.nodeId ?? null,
+    }));
+    const moved = now
+      ? spamAfterLook(
+          now,
+          verdict,
+          rows.some((row) => row.outgoing),
+          lastIn?.auth ?? null,
+        )
+      : null;
+    await deps.db
+      .update(mailThreads)
+      .set({ context, contextState: 'done', ...moved })
+      .where(eq(mailThreads.id, threadId));
+  });
   await tellThread(deps, threadId);
 }
 
@@ -733,11 +926,26 @@ async function lookAt(deps: AppDeps, threadId: string): Promise<void> {
  * Puts an attachment into Cloud: where the person said, else where the AI said, else into their
  * own files. A file of that name there already: both are kept.
  */
-export async function fileMailAttachment(
+export function fileMailAttachment(
   deps: AppDeps,
   userId: string,
   threadId: string,
-  input: { attachmentId: string; areaId?: string | null; parentId?: string | null },
+  input: {
+    attachmentId: string;
+    areaId?: string | null;
+    parentId?: string | null;
+    newFolder?: string | null;
+  },
+): Promise<{ nodeId: string; name: string }> {
+  // One at a time: two filed into the same new folder find one folder, both stay noted.
+  return oneAtATime(threadId, () => fileAttachment(deps, userId, threadId, input));
+}
+
+async function fileAttachment(
+  deps: AppDeps,
+  userId: string,
+  threadId: string,
+  input: Parameters<typeof fileMailAttachment>[3],
 ): Promise<{ nodeId: string; name: string }> {
   const thread = await getMailThread(deps, userId, threadId);
   const found = await owner(deps, threadId);
@@ -745,8 +953,25 @@ export async function fileMailAttachment(
   const attachment = await mailAttachment(deps, userId, threadId, input.attachmentId);
   const said = thread.context?.filing.find((one) => one.attachmentId === input.attachmentId);
   const picked = input.areaId !== undefined || input.parentId !== undefined;
-  const areaId = picked ? (input.areaId ?? null) : (said?.areaId ?? null);
-  const parentId = picked ? (input.parentId ?? null) : (said?.parentId ?? null);
+  let areaId = picked ? (input.areaId ?? null) : (said?.areaId ?? null);
+  let parentId = picked ? (input.parentId ?? null) : (said?.parentId ?? null);
+  const newFolder = picked ? (input.newFolder ?? null) : (said?.newFolder ?? null);
+  if (newFolder) {
+    // The folder the AI would start: the one of that name there by now (the attachment before
+    // made it), else made – beside a file of that name as „Name 2“.
+    const workspaceId = found.account.workspaceId;
+    const ctx = await cloudContext(deps.db, workspaceId, userId);
+    const folder =
+      (await folderNamed(deps, ctx, { areaId, parentId }, newFolder)) ??
+      (await createFolder(deps, userId, workspaceId, {
+        name: newFolder,
+        numbered: true,
+        areaId,
+        parentId,
+      }));
+    areaId = folder.areaId;
+    parentId = folder.id;
+  }
   const bytes = attachment.bytes;
   const { node } = await storeUpload(
     deps,
@@ -791,4 +1016,35 @@ export async function fileMailAttachment(
   }
   await tellThread(deps, threadId);
   return { nodeId: node.id, name: node.name };
+}
+
+/**
+ * „Termin anlegen“: the meeting the AI found in a conversation, into a calendar the person may
+ * edit – noted on the conversation, so the button becomes the event.
+ */
+export function addMailEvent(deps: AppDeps, userId: string, threadId: string, calendarId: string) {
+  // One at a time: a second ask (another tab) finds the event there and is refused.
+  return oneAtATime(threadId, () => addEvent(deps, userId, threadId, calendarId));
+}
+
+async function addEvent(deps: AppDeps, userId: string, threadId: string, calendarId: string) {
+  const thread = await getMailThread(deps, userId, threadId);
+  const event = thread.context?.event;
+  if (!thread.context || !event) throw notFound('Zu dieser Mail gibt es keinen Termin.');
+  if (event.eventId) throw badRequest('Der Termin steht schon im Kalender.');
+  const made = await createEvent(deps, userId, {
+    calendarId,
+    title: event.title,
+    location: event.location,
+    notes: `Aus der Mail „${thread.subject}“`,
+    allDay: event.allDay,
+    start: event.start,
+    end: event.end,
+  });
+  await deps.db
+    .update(mailThreads)
+    .set({ context: { ...thread.context, event: { ...event, eventId: made.id } } })
+    .where(eq(mailThreads.id, threadId));
+  await tellThread(deps, threadId);
+  return made;
 }

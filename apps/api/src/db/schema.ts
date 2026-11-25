@@ -17,6 +17,7 @@ import {
 } from 'drizzle-orm/pg-core';
 import { sql } from 'drizzle-orm';
 import type {
+  CallModel,
   Attachment,
   SenderFileFiling,
   CloudAreaColor,
@@ -203,6 +204,11 @@ export const users = pgTable('users', {
    * „Dateiendungen zeigen“); off: „Bericht“, the symbol beside it tells what it is.
    */
   showExtensions: boolean('show_extensions').notNull().default(false),
+  /**
+   * How many minutes before a meeting it shows beside the date in the header (Einstellungen ›
+   * Kalender, migration 0190); `null`: never.
+   */
+  meetingNoticeMinutes: integer('meeting_notice_minutes').default(5),
 });
 
 /**
@@ -539,6 +545,8 @@ export const workspaces = pgTable('workspaces', {
   aiName: text('ai_name'),
   /** An agent writes along in every call and sends notes and tasks afterwards (admins turn it off). */
   callNotes: boolean('call_notes').notNull().default(true),
+  /** Which of the AI's models a call's agent thinks on (`CALL_MODELS`), picked by its admins. */
+  callModel: text('call_model').$type<CallModel>().notNull().default('review'),
   /** How its agents look (`AGENT_AVATAR_STYLES`), picked by its admins. */
   agentAvatars: text('agent_avatars').notNull().default('flowers'),
   /**
@@ -585,6 +593,11 @@ export const workspaceSso = pgTable('workspace_sso', {
   /** The domain the TXT record was found for, and when. */
   verifiedDomain: text('verified_domain'),
   verifiedAt: timestamptz('verified_at'),
+  /**
+   * „Nur Firmen-Login“: addresses at the domain sign in through the provider alone – no mailed
+   * link, Google, Microsoft, Nextcloud or passkey – while the login is active.
+   */
+  required: boolean('required').notNull().default(false),
   createdAt: createdAt(),
   updatedAt: timestamptz('updated_at').notNull().defaultNow(),
 });
@@ -2738,10 +2751,12 @@ export const senderChannelAgents = pgTable(
 /**
  * Where a mailbox's folders were read up to (IMAP `UIDVALIDITY` and the next UID); `modseq`: the
  * folder's change counter then (CONDSTORE, only where mails count unread) – the next round asks
- * the read state only of what changed since.
+ * the read state only of what changed since. `oldest`: the lowest UID read – what lies below is
+ * older and not read yet (the list's end and a search fetch it, `readOlderMail`); 1: none left.
+ * Missing (kept before it was kept): the lowest UID of the folder's mails here.
  */
 export interface MailSyncState {
-  [folder: string]: { validity: string; next: number; modseq?: string };
+  [folder: string]: { validity: string; next: number; modseq?: string; oldest?: number };
 }
 
 /** A folder of a mailbox as kept: its key (a special one's role, else its path), name, role. */
@@ -3357,13 +3372,22 @@ export const calendars = pgTable(
     remoteId: encryptedText('calendars', 'remote_id'),
     /** Empty for an area's own (it is called as the area) and one's private one („Privat“). */
     name: encryptedText('calendars', 'name').notNull(),
-    /** `null`: the area's colour (an area's own), blue (private). */
+    /**
+     * `null`: the colour of the one it stands under – an area's, or one's own („Deine Farbe“) for
+     * one's private ones. A mail calendar's: its provider's.
+     */
     color: text('color'),
     /**
      * A mail account's calendar (0163): what may be done with it there – its provider's word and
      * what the sign-in lets (`calendar/mail-calendars.ts`); `null`: everything may be tried.
      */
     remoteRights: jsonb('remote_rights').$type<MailCalendarRights>(),
+    /**
+     * A mail calendar's name and colour in Slider alone (0191), over the provider's – the compare
+     * never touches them: renamed here where the provider won't, coloured here always.
+     */
+    localName: encryptedText('calendars', 'local_name'),
+    localColor: text('local_color'),
     createdBy: text('created_by').references(() => users.id, { onDelete: 'set null' }),
     createdAt: createdAt(),
     updatedAt: timestamptz('updated_at').notNull().defaultNow(),
@@ -3398,6 +3422,15 @@ export const calendarEvents = pgTable(
     title: encryptedText('calendar_events', 'title').notNull(),
     location: encryptedText('calendar_events', 'location').notNull(),
     notes: encryptedText('calendar_events', 'notes').notNull(),
+    /**
+     * A meeting (migration 0190): a call in this conversation of Sender (an area's channel, a
+     * group, a direct one) – joined from the event and the header …
+     */
+    callChannelId: text('call_channel_id').references(() => senderChannels.id, {
+      onDelete: 'set null',
+    }),
+    /** … or held elsewhere (Zoom, Meet, Teams): its link, opened to join. */
+    meetingUrl: encryptedText('calendar_events', 'meeting_url'),
     /** Files put on it (`services/attachments.ts`), in their order. */
     attachments: encryptedJsonList<Attachment>('calendar_events', 'attachments')
       .notNull()

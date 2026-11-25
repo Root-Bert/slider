@@ -1,6 +1,7 @@
 import type { Author, CommentSource } from '@slider/shared';
 import type { ReactNode } from 'react';
 import { ringColor } from '@/lib/accent';
+import { AI_ICON } from './ai-icon';
 import { generatedAvatar } from '@/lib/generated-avatar';
 import { usePersonPicture } from '@/lib/people-pictures';
 import { GoogleSlidesMark } from './brand/GoogleSlidesMark';
@@ -56,7 +57,7 @@ export function Avatar({
     >
       {author.type === 'ai' ? (
         <span className="flex size-full items-center justify-center rounded-full bg-logo-grey">
-          <Icon name="autoAwesome" size={Math.round(size * 0.6)} className="text-white" />
+          <Icon name={AI_ICON} size={Math.round(size * 0.6)} className="text-white" />
         </span>
       ) : author.type === 'deleted' ? (
         <span

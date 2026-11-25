@@ -101,6 +101,8 @@ function eventLine(event: CalendarEvent, byId: Map<string, Calendar>) {
   return [
     `[${event.id}] ${whenOf(event)} · ${promptName(event.title)}`,
     event.location ? ` · at ${promptName(event.location)}` : '',
+    event.meeting?.kind === 'link' ? ` · meeting ${event.meeting.url}` : '',
+    event.meeting?.kind === 'call' ? ' · meeting: a call in Sender' : '',
     calendar ? ` · in „${promptName(calendar.name)}“ (${calendar.id})` : '',
     event.canEdit ? '' : ' · read only',
   ].join('');
@@ -199,6 +201,7 @@ export async function runCalendarTool(
         title: input.title,
         location: input.location,
         notes: input.notes,
+        ...(input.meeting_link && { meeting: { kind: 'link' as const, url: input.meeting_link } }),
         ...span(input.start, input.end),
       });
       return `Made: ${eventLine(event, byId)}`;
@@ -224,6 +227,9 @@ export async function runCalendarTool(
         title: input.title,
         location: input.location,
         notes: input.notes,
+        ...(input.meeting_link !== undefined && {
+          meeting: input.meeting_link ? { kind: 'link' as const, url: input.meeting_link } : null,
+        }),
         ...times,
       });
       return `Changed: ${eventLine(changed, byId)}`;

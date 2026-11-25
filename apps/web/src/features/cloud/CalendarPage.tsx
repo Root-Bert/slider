@@ -1,6 +1,14 @@
-import { useEffect, useEffectEvent, useState, useSyncExternalStore } from 'react';
+import type { Calendar, Todo } from '@slider/shared';
+import {
+  useEffect,
+  useEffectEvent,
+  useLayoutEffect,
+  useRef,
+  useState,
+  useSyncExternalStore,
+} from 'react';
 import { useSearchParams } from 'react-router';
-import { useCalendarEvents, useCalendars, useTodos } from '@/lib/api';
+import { useCalendarPage, useCalendars, useTodos } from '@/lib/api';
 import { isTextTarget } from '@/lib/dom';
 import { createStoredStore } from '@/lib/storage';
 import {
@@ -32,7 +40,8 @@ import {
   YearView,
   type ViewProps,
 } from './components/calendar/CalendarViews';
-import { at, iso, todayNoon } from './components/calendar/days';
+import { CalendarStrip, type StripHandle } from './components/calendar/CalendarStrip';
+import { at, iso, startOfWeek, todayNoon } from './components/calendar/days';
 import {
   CALENDAR_VIEWS,
   stepped,
@@ -43,7 +52,15 @@ import {
   viewTitle,
   type CalendarView,
 } from './components/calendar/entries';
-import { useShownEvent } from './components/calendar/EventPanel';
+import { useShownEvent, type NewEvent } from './components/calendar/EventPanel';
+import {
+  finishZoom,
+  startZoom,
+  useZoomGestures,
+  ZOOM_CHAIN,
+  zoomLevel,
+  type ZoomStart,
+} from './components/calendar/zoom';
 import { useBusyDays } from './components/calendar/useBusyDays';
 import { useCloud } from './hooks/useCloud';
 import { useStoredChoice } from './hooks/useStoredChoice';
@@ -83,9 +100,8 @@ export function Component() {
   const view = asked && CALENDAR_VIEWS.includes(asked) ? asked : lastView;
   const day = params.get(CLOUD_DAY_PARAM);
   const anchor = day && /^\d{4}-\d{2}-\d{2}$/.test(day) ? at(day) : todayNoon();
+  const anchorDay = iso(anchor);
   const calendars = useCalendars(workspaceId);
-  const range = viewRange(view, anchor);
-  const events = useCalendarEvents(workspaceId, range.from, range.to);
   const todos = useTodos(workspaceId);
   const { hidden, toggle } = useHiddenCalendars(workspaceId);
   useCalendarOAuthOutcome();
@@ -136,7 +152,81 @@ export function Component() {
       { replace: true },
     );
   };
-  const step = (by: 1 | -1) => go({ day: iso(stepped(view, anchor, by)) });
+  const frameRef = useRef<HTMLDivElement>(null);
+  const overlayRef = useRef<HTMLDivElement>(null);
+  const stripRef = useRef<StripHandle>(null);
+  const zooming = useRef<ZoomStart | null>(null);
+  /** The day a slide is for (a day picked in the next month stays picked, not the month's 1st). */
+  const sliding = useRef<{ by: 1 | -1; day: string | null } | null>(null);
+  /**
+   * Another view or day, as everything asks for it (the views' switch, their keys, a day's number,
+   * a pinch, the column's month): another view zooms (`zoom.ts`), the page beside slides in,
+   * anything further is there at once.
+   */
+  const navigate = (nextView: CalendarView, nextDay: Date) => {
+    // A slide cut short by this (a zoom, a day further away) is for nothing any more.
+    sliding.current = null;
+    const day = iso(nextDay) === iso(todayNoon()) ? null : iso(nextDay);
+    if (nextView === view) {
+      const target = pageKey(view, nextDay);
+      if (target === pageKey(view, anchor)) return go({ day });
+      for (const by of [1, -1] as const) {
+        if (target !== pageKey(view, stepped(view, anchor, by))) continue;
+        sliding.current = { by, day };
+        if (stripRef.current?.slide(by)) return;
+        sliding.current = null;
+      }
+      return go({ day });
+    }
+    const frame = frameRef.current;
+    const pane = frame?.querySelector<HTMLElement>('[data-pane="0"]');
+    if (frame && overlayRef.current && pane) {
+      zooming.current = startZoom({
+        frame,
+        overlay: overlayRef.current,
+        pane,
+        from: view,
+        to: nextView,
+        day: nextDay,
+      });
+    }
+    go({ view: nextView, day });
+  };
+  useLayoutEffect(() => {
+    const start = zooming.current;
+    if (!start) return;
+    zooming.current = null;
+    const pane = frameRef.current?.querySelector<HTMLElement>('[data-pane="0"]');
+    if (pane) finishZoom(start, pane);
+    else start.overlay.replaceChildren();
+  }, [view, anchorDay]);
+  useZoomGestures(frameRef, (direction, x, y) => {
+    const level = zoomLevel(view);
+    const nextView = level === undefined ? undefined : ZOOM_CHAIN[level - direction];
+    if (!nextView) return false;
+    // In: what is under the fingers (a day, a year's month); out: around the day one is on.
+    const hit =
+      direction === 1
+        ? document.elementFromPoint(x, y)?.closest<HTMLElement>('[data-day], [data-month]')
+        : null;
+    // The day one is on stays picked where it lies in the month pinched (its own month, say).
+    const day = hit?.dataset.day
+      ? at(hit.dataset.day)
+      : hit?.dataset.month && hit.dataset.month !== iso(anchor).slice(0, 7)
+        ? at(`${hit.dataset.month}-01`)
+        : anchor;
+    navigate(nextView, day);
+    return true;
+  });
+  const step = (by: 1 | -1) => {
+    sliding.current = null;
+    if (!stripRef.current?.slide(by)) go({ day: iso(stepped(view, anchor, by)) });
+  };
+  const onStep = (by: 1 | -1) => {
+    const asked = sliding.current;
+    sliding.current = null;
+    go({ day: asked?.by === by ? asked.day : iso(stepped(view, anchor, by)) });
+  };
   const onKeyDown = useEffectEvent((event: KeyboardEvent) => {
     if (event.defaultPrevented || event.metaKey || event.ctrlKey || event.altKey) return;
     if (isTextTarget(event.target) || document.querySelector('dialog[open], [role="menu"]')) return;
@@ -147,8 +237,8 @@ export function Component() {
       )
         return;
       step(key === 'arrowleft' ? -1 : 1);
-    } else if (key === 't') go({ day: null });
-    else if (VIEW_KEYS[key]) go({ view: VIEW_KEYS[key] });
+    } else if (key === 't') navigate(view, todayNoon());
+    else if (VIEW_KEYS[key]) navigate(VIEW_KEYS[key], anchor);
     else return;
     event.preventDefault();
   });
@@ -157,8 +247,6 @@ export function Component() {
     return () => window.removeEventListener('keydown', onKeyDown);
   }, []);
   const canPut = (calendars.data ?? []).some((each) => each.canEdit);
-  const entries = toEntries(events.data ?? [], calendars.data ?? [], todos.data ?? [], hidden);
-  const View = VIEWS[view];
   const isToday = iso(anchor) === iso(todayNoon());
   return (
     <CloudPage
@@ -188,7 +276,7 @@ export function Component() {
                 <SegmentedControl
                   label="Ansicht"
                   value={view}
-                  onChange={(next) => go({ view: next })}
+                  onChange={(next) => navigate(next, anchor)}
                   segments={CALENDAR_VIEWS.map((each) => ({
                     value: each,
                     label: VIEW_LABELS[each],
@@ -210,6 +298,15 @@ export function Component() {
                   Neuer Termin
                 </Button>
               )}
+              {canPut && (
+                <Button
+                  variant="soft"
+                  icon="videocam"
+                  onClick={() => shownEvent.create({ day: iso(anchor), meeting: true })}
+                >
+                  Neues Meeting
+                </Button>
+              )}
             </div>
             <h2
               className="ml-auto min-w-40 flex-1 truncate text-right text-lg font-semibold text-fg"
@@ -223,7 +320,7 @@ export function Component() {
                   variant="ghost"
                   size="sm"
                   disabled={isToday}
-                  onClick={() => go({ day: null })}
+                  onClick={() => navigate(view, todayNoon())}
                   title="Heute (T)"
                 >
                   Heute
@@ -251,22 +348,48 @@ export function Component() {
             {/* A panel over the column (400 + 12 from the edge) reaches 44px past it (24 page edge
                 + 320 column + 24 gap): the days give way that far and 12px more – the room every
                 page keeps beside a panel – as it slides in. */}
+            {/* The pages side by side (swiped through), pinched for another view; what flies
+                between two views flies over them (`overlayRef`, `zoom.ts`). */}
             <div
-              className={`flex min-w-0 flex-1 flex-col transition-[margin] duration-300 ease-out ${
+              ref={frameRef}
+              className={`relative flex min-w-0 flex-1 touch-pan-x touch-pan-y flex-col transition-[margin] duration-300 ease-out ${
                 wide && shown ? '[body:has([data-cloud-panel])_&]:mr-14' : ''
               }`}
             >
-              {!calendars.data || !events.data ? (
+              {!calendars.data ? (
                 <LoadingState padding="lg" />
               ) : (
-                <View
-                  anchor={anchor}
-                  days={viewDays(view, anchor)}
-                  entries={entries}
-                  onOpen={(nextView, nextDay) => go({ view: nextView, day: nextDay })}
-                  onNew={canPut ? shownEvent.create : null}
+                <CalendarStrip
+                  ref={stripRef}
+                  onStep={onStep}
+                  onStay={() => (sliding.current = null)}
+                  pages={
+                    ([-1, 0, 1] as const).map((by) => {
+                      const day = by ? stepped(view, anchor, by as 1 | -1) : anchor;
+                      return {
+                        key: pageKey(view, day),
+                        node: (
+                          <CalendarPane
+                            workspaceId={workspaceId}
+                            view={view}
+                            anchor={day}
+                            calendars={calendars.data}
+                            todos={todos.data ?? []}
+                            hidden={hidden}
+                            onOpen={(nextView, nextDay) => navigate(nextView, at(nextDay))}
+                            onNew={canPut ? shownEvent.create : null}
+                          />
+                        ),
+                      };
+                    }) as [StripPageNode, StripPageNode, StripPageNode]
+                  }
                 />
               )}
+              <div
+                ref={overlayRef}
+                aria-hidden
+                className="pointer-events-none absolute inset-0 z-20 overflow-hidden"
+              />
             </div>
             {shown && (
               <aside
@@ -280,7 +403,7 @@ export function Component() {
                 <CalendarAside
                   anchor={anchor}
                   onPick={(next) => {
-                    go({ day: next });
+                    navigate(view, at(next));
                     if (!wide) setNarrowOpen(false);
                   }}
                   busy={busy}
@@ -294,6 +417,56 @@ export function Component() {
         </div>
       )}
     </CloudPage>
+  );
+}
+
+type StripPageNode = { key: string; node: React.ReactNode };
+
+/** A page's name in the strip: the same page keeps it while it moves from beside to the middle. */
+function pageKey(view: CalendarView, day: Date) {
+  switch (view) {
+    case 'woche':
+      return `woche:${iso(startOfWeek(day))}`;
+    case 'monat':
+      return `monat:${iso(day).slice(0, 7)}`;
+    case 'jahr':
+      return `jahr:${day.getFullYear()}`;
+    default:
+      return `${view}:${iso(day)}`;
+  }
+}
+
+/** A page of the calendar: its days, and its events asked for alone (the ones beside ahead). */
+function CalendarPane({
+  workspaceId,
+  view,
+  anchor,
+  calendars,
+  todos,
+  hidden,
+  onOpen,
+  onNew,
+}: {
+  workspaceId: string;
+  view: CalendarView;
+  anchor: Date;
+  calendars: readonly Calendar[];
+  todos: readonly Todo[];
+  hidden: ReadonlySet<string>;
+  onOpen: ViewProps['onOpen'];
+  onNew: ((draft: NewEvent) => void) | null;
+}) {
+  const range = viewRange(view, anchor);
+  const events = useCalendarPage(workspaceId, range.from, range.to);
+  const View = VIEWS[view];
+  return (
+    <View
+      anchor={anchor}
+      days={viewDays(view, anchor)}
+      entries={toEntries(events.data ?? [], calendars, todos, hidden)}
+      onOpen={onOpen}
+      onNew={onNew}
+    />
   );
 }
 

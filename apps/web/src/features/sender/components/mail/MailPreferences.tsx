@@ -130,7 +130,7 @@ export function MailPreferences() {
             <span className="text-sm text-fg">
               Abrufen
               <span className="block text-xs text-fg-subtle">
-                So oft holt Office neue Mails – „Abrufen“ über der Liste holt sie jederzeit. Gilt
+                So oft holt Office neue Mails – die Liste herunterziehen holt sie jederzeit. Gilt
                 für alle deine Postfächer
               </span>
             </span>

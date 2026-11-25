@@ -1,6 +1,6 @@
 import { useLayoutEffect } from 'react';
 import type { CallState } from '@slider/shared';
-import { useCallsOrNull } from '../CallProvider';
+import { useCallsOrNull, type CallHost } from '../CallProvider';
 import { CallDock } from './CallDock';
 import { CallOrders } from './CallOrders';
 
@@ -26,15 +26,23 @@ export function useChannelCall(channelId: string): CallState | null {
  * when there are some); the corner's dock stands back meanwhile. Elsewhere, and for any other
  * call, the dock shows as always.
  */
-export function CallBoxes({ call, className }: { call: CallState; className?: string }) {
+export function CallBoxes({
+  call,
+  place = 'page',
+  className,
+}: {
+  call: CallState;
+  place?: CallHost;
+  className?: string;
+}) {
   const calls = useCallsOrNull();
   const host = calls?.host;
   // Before paint: the corner's dock never shows beside the card.
-  useLayoutEffect(() => host?.(call.id), [host, call.id]);
+  useLayoutEffect(() => host?.(call.id, place), [host, call.id, place]);
   if (!calls) return null;
   return (
     <div className={className}>
-      <CallDock call={call} place="box" />
+      <CallDock call={call} place="box" inPanel={place === 'panel'} />
       <CallOrders
         place="box"
         orders={call.orders}
@@ -43,4 +51,19 @@ export function CallBoxes({ call, className }: { call: CallState; className?: st
       />
     </div>
   );
+}
+
+/**
+ * The call one is in, wherever the AI's side panel is open (its chat in Cloud, Sender, Slider):
+ * the same card and orders at the panel's top. Closed, the call goes on in it unseen (✨ turns
+ * into its sign) – it floats in the corner only once let float („Schweben lassen“).
+ */
+export function CurrentCallBoxes({ className }: { className?: string }) {
+  const calls = useCallsOrNull();
+  const active = calls?.snap.active;
+  const call = active ? calls.snap.calls.get(active.callId) : undefined;
+  // The page under the panel shows it already (the agent's page, the conversation): not twice.
+  // Let float, it floats beside the panel instead.
+  if (!calls || !call || calls.onPage(call.id) || calls.floating) return null;
+  return <CallBoxes call={call} place="panel" className={className} />;
 }

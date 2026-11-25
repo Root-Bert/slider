@@ -280,6 +280,9 @@ export const iconPaths = {
   /** Own drawing: a dotted line. */
   lineDotted: 'M3 11h2v2H3zm4 0h2v2H7zm4 0h2v2h-2zm4 0h2v2h-2zm4 0h2v2h-2z',
   textFields: 'M2.5 4v3h5v12h3V7h5V4h-13zm19 5h-9v3h3v7h3v-7h3V9z',
+  /** „Aa“ under a message field: its format bar shown (Material Symbols `match_case`). */
+  textFormat:
+    'M3.275 17.7l4.125-11h1.975l4.125 11h-1.9l-0.975-2.8H6.175l-1 2.8h-1.9Zm3.475-4.4h3.275l-1.6-4.55h-0.1l-1.575 4.55Zm9.875 4.65q-1.275 0-2.025-0.688T13.85 15.45q0-1.1 0.863-1.812T16.925 12.925q0.575 0 1.125 0.1t0.95 0.275v-0.3q0-0.725-0.513-1.175T17.125 11.375q-0.575 0-1.05 0.238T15.25 12.3l-1.175-0.875q0.6-0.725 1.363-1.075t1.713-0.35q1.725 0 2.575 0.812t0.85 2.438v4.45h-1.575v-0.925h-0.1q-0.35 0.575-0.95 0.875t-1.325 0.3Zm0.3-1.35q0.875 0 1.488-0.6t0.613-1.4q-0.35-0.2-0.838-0.312T17.225 14.175q-0.8 0-1.25 0.35t-0.45 0.975q0 0.55 0.4 0.9t1 0.35Z',
   /** A sticker's text a size larger. */
   formatSize: 'M9 4v3h5v12h3V7h5V4H9zm-6 8h3v7h3v-7h3V9H3v3z',
   /** A sticker's text as a heading. */
@@ -288,6 +291,8 @@ export const iconPaths = {
   formatBold:
     'M15.6 10.79c.97-.67 1.65-1.77 1.65-2.79 0-2.26-1.75-4-4-4H7v14h7.04c2.09 0 3.71-1.7 3.71-3.79 0-1.52-.86-2.82-2.15-3.42zM10 6.5h3c.83 0 1.5.67 1.5 1.5s-.67 1.5-1.5 1.5h-3v-3zm3.5 9H10v-3h3.5c.83 0 1.5.67 1.5 1.5s-.67 1.5-1.5 1.5z',
   formatItalic: 'M10 4v3h2.21l-3.42 8H6v3h8v-3h-2.21l3.42-8H18V4z',
+  /** Material Icons „format_quote“: a quote in a message. */
+  formatQuote: 'M6 17h3l2-4V7H5v6h3zm8 0h3l2-4V7h-6v6h3z',
   formatUnderlined:
     'M12 17c3.31 0 6-2.69 6-6V3h-2.5v8c0 1.93-1.57 3.5-3.5 3.5S8.5 12.93 8.5 11V3H6v8c0 3.31 2.69 6 6 6zm-7 2v2h14v-2H5z',
   formatAlignJustify: 'M3 21h18v-2H3v2zm0-4h18v-2H3v2zm0-4h18v-2H3v2zm0-4h18V7H3v2zm0-6v2h18V3H3z',

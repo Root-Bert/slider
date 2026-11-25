@@ -3,8 +3,9 @@ import { act, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { AccountAuthor, CallState, MeResponse } from '@slider/shared';
 import { api } from '@/lib/api-client';
+import { HAND_OVER_EVENT, handOverName } from '@/lib/call-handover';
 import { queryKeys } from '@/lib/api/keys';
-import { CallProvider } from './CallProvider';
+import { CallProvider, useCallsOrNull, usePanelForCalls } from './CallProvider';
 import type { CallsSnapshot } from './lib/call-client';
 
 const me: AccountAuthor = { id: 'u1', name: 'Robert Hofmann', type: 'owner', color: 'red' };
@@ -55,6 +56,7 @@ const fake = vi.hoisted(() => ({
   snap: null as unknown,
   listeners: new Set<() => void>(),
   declined: [] as string[],
+  taken: [] as string[],
 }));
 vi.mock('./lib/call-client', () => ({
   CallClient: class {
@@ -69,6 +71,9 @@ vi.mock('./lib/call-client', () => ({
     decline(callId: string) {
       fake.declined.push(callId);
     }
+    takeOver(state: CallState) {
+      fake.taken.push(state.id);
+    }
   },
 }));
 // A ringing card that breaks on one call („kaputt“), to see the guard around it; no ring tone.
@@ -81,6 +86,17 @@ vi.mock('./components/IncomingCall', () => ({
 vi.mock('./lib/sounds', () => ({ ring: () => () => {}, ringBack: () => () => {} }));
 
 afterEach(() => vi.restoreAllMocks());
+
+/** A page with an AI's side panel (closed), and a way to let the call float from its card. */
+function PanelPage({ panel }: { panel: boolean }) {
+  usePanelForCalls(panel);
+  const calls = useCallsOrNull();
+  return (
+    <button type="button" onClick={() => calls?.setFloating(true)}>
+      Schweben
+    </button>
+  );
+}
 
 describe('CallProvider', () => {
   it('shows the call one is in around the router – no router hook in the dock (it blanked the app)', async () => {
@@ -99,20 +115,44 @@ describe('CallProvider', () => {
     );
     const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
     queryClient.setQueryData<Partial<MeResponse>>(queryKeys.me, {
-      user: { ...me, email: 'r@example.test', isInstanceAdmin: false, showExtensions: false },
+      user: {
+        ...me,
+        email: 'r@example.test',
+        isInstanceAdmin: false,
+        showExtensions: false,
+        meetingNoticeMinutes: 5,
+      },
       workspaces: [],
     } as Partial<MeResponse>);
     fake.snap = snapshot(call);
+    // Opened by another window of one's own to take its call over (`windowForApp`).
+    window.name = 'slider-call:c1';
     // No <Router> on purpose: the provider sits around it in `App.tsx`.
-    render(
+    const page = (panel: boolean) => (
       <QueryClientProvider client={queryClient}>
         <CallProvider navigate={() => {}} pathname={() => '/'}>
           <p>Seite</p>
+          <PanelPage panel={panel} />
         </CallProvider>
-      </QueryClientProvider>,
+      </QueryClientProvider>
     );
+    const { rerender } = render(page(false));
     expect(screen.getByText('Seite')).toBeTruthy();
     expect(screen.getByRole('region', { name: 'Anruf: Anna Beck' })).toBeTruthy();
+    // Taken over once it is heard of, the name read once; a window opened from here takes it on.
+    expect(fake.taken).toEqual(['c1']);
+    expect(window.name).toBe('');
+    expect(handOverName()).toBe('slider-call:c1');
+    // The desktop app reads it off the page and names its tab in front later, again and again
+    // (`desktop/tabs.mjs`): each naming is one more takeover; unmuted, nothing shared, it may move.
+    expect(document.documentElement.dataset.call).toBe('c1');
+    expect('callStays' in document.documentElement.dataset).toBe(false);
+    act(() => {
+      window.name = 'slider-call:c1';
+      window.dispatchEvent(new Event(HAND_OVER_EVENT));
+    });
+    expect(fake.taken).toEqual(['c1', 'c1']);
+    expect(window.name).toBe('');
     expect(screen.getByRole('button', { name: 'Auflegen' })).toBeTruthy();
     // „Hinzufügen“: a new agent first, marked on open; then the members not in the call.
     fireEvent.click(screen.getByRole('button', { name: 'Hinzufügen' }));
@@ -164,6 +204,37 @@ describe('CallProvider', () => {
       'Gast 19',
       'Gast 20',
     ]);
+
+    // A page with the AI's side panel, closed: the call stays in it – no dock over the page, Anna
+    // heard all the same. „Schweben lassen“ floats it („In die Seitenleiste“ sends it back,
+    // kept); a page without a panel lets it float as before.
+    fireEvent.click(screen.getByRole('button', { name: 'Verkleinern' }));
+    vi.spyOn(HTMLMediaElement.prototype, 'play').mockResolvedValue(undefined);
+    fake.snap = {
+      ...snapshot(call),
+      remote: new Map([
+        [
+          'p2',
+          { audio: new MediaStream(), camera: null, screen: null, state: 'connected' as const },
+        ],
+      ]),
+    };
+    act(() => fake.listeners.forEach((listener) => listener()));
+    const dock = () => screen.queryByRole('region', { name: 'Anruf: Anna Beck' });
+    expect(dock()).toBeTruthy();
+    rerender(page(true));
+    expect(dock()).toBeNull();
+    expect(document.querySelectorAll('audio[data-call-audio]')).toHaveLength(1);
+    fireEvent.click(screen.getByRole('button', { name: 'Schweben' }));
+    expect(dock()).toBeTruthy();
+    expect(document.querySelectorAll('audio[data-call-audio]')).toHaveLength(1);
+    expect(localStorage.getItem('slider:call-floating')).toBe('1');
+    fireEvent.click(screen.getByRole('button', { name: 'In die Seitenleiste' }));
+    expect(dock()).toBeNull();
+    expect(localStorage.getItem('slider:call-floating')).toBeNull();
+    rerender(page(false));
+    expect(dock()).toBeTruthy();
+    expect(screen.queryByRole('button', { name: 'In die Seitenleiste' })).toBeNull();
 
     // A ringing card that breaks with no call going on: declined and said – and the next call
     // that rings shows again (the guard once stayed blank for good).

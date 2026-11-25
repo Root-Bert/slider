@@ -66,7 +66,7 @@ export function CallOrders({
                     ? (order.doing ??
                       `Läuft${order.sentBy ? ` | von ${firstName(order.sentBy.name)}` : ''}`)
                     : order.state === 'done'
-                      ? 'Fertig'
+                      ? (order.doing ?? 'Fertig')
                       : (order.error ?? 'Ließ sich nicht losschicken')}
               </p>
             </div>

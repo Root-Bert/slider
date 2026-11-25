@@ -11,6 +11,7 @@ import { formatRelativeTime } from '@/lib/format';
 import { cn, Icon, ListRow, Spinner } from '@/ui';
 import { useSender } from '../hooks/useSender';
 import { mailGroupsOf } from '../lib/mail';
+import { markupPlain } from '../lib/markup';
 import { dayOf, timeOf } from '../lib/time';
 import { ConversationMark } from './ConversationSearch';
 import { Unread } from './SenderSidebar';
@@ -61,7 +62,13 @@ export function UnreadRow({ item }: { item: SenderUnreadItem }) {
   const place = usePlace();
   // Who wrote it, unless the conversation is theirs (a direct one, an agent's).
   const who = item.last?.who && !item.last.who.startsWith(item.name) ? item.last.who : null;
-  const line = item.last ? (who ? `${who}: ${item.last.text}` : item.last.text) : '';
+  // A chat's words without their marks (as in „Aktuell“); a mail's as written.
+  const words = item.last
+    ? item.kind === 'mail'
+      ? item.last.text
+      : markupPlain(item.last.text)
+    : '';
+  const line = item.last ? (who ? `${who}: ${words}` : words) : '';
   return (
     <ListRow
       variant="hover"
@@ -173,7 +180,8 @@ export function SummaryAside({
   );
 }
 
-function SummaryBody({
+/** What `SummaryAside` shows, without its card – Cloud's widget brings its own (`home/`). */
+export function SummaryBody({
   summary,
   pending,
   error,

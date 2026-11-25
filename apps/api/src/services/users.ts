@@ -92,6 +92,11 @@ export async function setShowExtensions(db: Database, userId: string, shown: boo
   await db.update(users).set({ showExtensions: shown }).where(eq(users.id, userId));
 }
 
+/** Minutes before a meeting it shows in the header (Einstellungen › Kalender); `null`: never. */
+export async function setMeetingNotice(db: Database, userId: string, minutes: number | null) {
+  await db.update(users).set({ meetingNoticeMinutes: minutes }).where(eq(users.id, userId));
+}
+
 /** The account's address, e.g. to name who asks in Nextcloud's grant page. */
 export async function userEmail(db: Executor, userId: string): Promise<string | null> {
   const [row] = await db.select({ email: users.email }).from(users).where(eq(users.id, userId));

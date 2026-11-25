@@ -16,6 +16,7 @@ import { Avatar, cn, Icon, Kbd, TextField, useDebounced } from '@/ui';
 import { useSender } from '../hooks/useSender';
 import { searchConversations } from '../lib/search';
 import { MailHitRows, useMailHits } from './mail/MailHits';
+import { markupPlain } from '../lib/markup';
 
 /** A hit in a side bar's search – ↑↓ step through them all, files and chats alike. */
 export const HIT = 'data-bar-hit';
@@ -207,7 +208,7 @@ function MessageHitRows({
         type="button"
         role="listitem"
         {...{ [HIT]: '' }}
-        title={`${channel.name} | ${who}: ${hit.text}`}
+        title={`${channel.name} | ${who}: ${markupPlain(hit.text)}`}
         className={hitClass}
         onClick={() => {
           onPicked();
@@ -217,7 +218,7 @@ function MessageHitRows({
         <span className="flex size-[18px] shrink-0 items-center justify-center">
           <ConversationMark conversation={channel} />
         </span>
-        <span className="min-w-0 flex-1 truncate">{hit.text}</span>
+        <span className="min-w-0 flex-1 truncate">{markupPlain(hit.text)}</span>
         <span className="max-w-[40%] shrink-0 truncate text-xs text-fg-subtle">{channel.name}</span>
       </button>,
     ];

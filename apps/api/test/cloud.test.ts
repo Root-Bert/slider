@@ -73,6 +73,8 @@ import { nextRun } from '../src/services/cloud-agent-repeat';
 import { askText, mustAsk } from '../src/services/cloud-agent-asks';
 import { runs } from '../src/services/cloud-agent-runs';
 import { messageCloudAgent, runDueCloudAgents, summaryOf } from '../src/services/cloud-agents';
+import { focusContext } from '../src/services/cloud-focus';
+import { triageContext } from '../src/services/sender-triage';
 import { workspaceStorageUsage } from '../src/services/workspace-storage';
 import { sendDueScheduled } from '../src/services/sender-scheduled';
 import type { FetchLike } from '../src/sources/safe-fetch';
@@ -3017,6 +3019,58 @@ describe('Cloud – the workspace’s files', () => {
       memoShared(focusTold)[0]?.line,
     ]).toEqual(['done', 'Schau dir die geteilte Notiz an.', 1, 'Neue Notiz ansehen']);
     expect(focusAsked).toContain('Notiz.txt');
+    // Asked under „Für dich“ (or „Aktuell“), her agent is told what it shows, by id – the AI's
+    // kept words, never asked anew; only in her own private agent.
+    const asHer = {
+      kind: 'owner',
+      author: { type: 'owner', id: anna.user.id, name: 'Anna', color: 'blue' },
+    } as Viewer;
+    const underFocus = await focusContext(ctx.deps, asHer, ctx.workspaceId);
+    expect([
+      underFocus.startsWith('[Written under „Für dich“'),
+      underFocus.endsWith(']'),
+      underFocus.includes('Headline: Schau dir die geteilte Notiz an.'),
+      underFocus.includes(`node ${memo.node.id}`),
+      underFocus.includes('Neue Notiz ansehen'),
+    ]).toEqual([true, true, true, true, true]);
+    expect(await triageContext(ctx.deps, anna.user.id, ctx.workspaceId, undefined)).toMatch(
+      /^\[Written under „Aktuell“[\s\S]*\]$/,
+    );
+    expect(
+      (
+        await post(
+          `/workspaces/${ctx.workspaceId}/cloud/agents`,
+          { text: 'Was steht an?', shared: true, overview: { of: 'cloud' } },
+          anna.cookie,
+        )
+      ).status,
+    ).toBe(400);
+    let overviewAsked = '';
+    answers = [
+      (body: Sent) => {
+        overviewAsked = JSON.stringify(body.messages);
+        return { stop_reason: 'end_turn', content: [{ type: 'text', text: 'Die Notiz.' }] };
+      },
+    ];
+    const underOrdered = await post(
+      `/workspaces/${ctx.workspaceId}/cloud/agents`,
+      { text: 'Was steht an?', overview: { of: 'cloud' } },
+      anna.cookie,
+    );
+    expect(underOrdered.status).toBe(201);
+    const underId = ((await underOrdered.json()) as CloudAgentDetail).id;
+    await ctx.deps.background?.idle();
+    expect([
+      overviewAsked.includes('Written under „Für dich“'),
+      overviewAsked.includes('Schau dir die geteilte Notiz an.'),
+    ]).toEqual([true, true]);
+    const underChat = (await (
+      await ctx.request(`/api/cloud/agents/${underId}`, { cookie: anna.cookie })
+    ).json()) as CloudAgentDetail;
+    expect(underChat.chats[0]?.messages.map((each) => each.text)).toEqual([
+      'Was steht an?',
+      'Die Notiz.',
+    ]);
     await list({ scope: 'shared' }, anna.cookie);
     expect(memoShared(await focusOf(false))).toEqual([]);
     // A comment naming him on a document in the area stands in his „Für dich“ until he answers;

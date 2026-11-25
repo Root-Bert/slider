@@ -69,7 +69,6 @@ import { attachmentRoutes } from './routes/attachments';
 import { todoRoutes } from './routes/todos';
 import { calendarRoutes } from './routes/calendars';
 import { draftsRoutes } from './routes/drafts';
-import { writeCallNotes } from './services/call-notes';
 import { CallHub } from './services/calls';
 import { livekitSfu } from './services/call-sfu';
 import { keepCall } from './services/call-records';
@@ -93,7 +92,6 @@ export function createApp(appDeps: AppDeps) {
   // Calls: who is in which, and the signals between their browsers – in memory.
   const calls = new CallHub(appDeps.config.calls?.iceServers ?? [], {
     // `deps` is made below; the hook runs only once a call is over.
-    afterCall: (call) => void writeCallNotes(deps, call),
     keep: (call) =>
       runInBackground(deps, () =>
         keepCall(deps, call).catch((error: unknown) =>

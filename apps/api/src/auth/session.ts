@@ -6,6 +6,7 @@ import { sessions, users, type UserRow } from '../db/schema';
 import type { AppDeps } from '../deps';
 import { ApiError } from '../http/errors';
 import { markActive } from '../services/users';
+import { companyLoginRequired } from '../services/workspaces/sso';
 import { readCookie, removeCookie, writeCookie } from './cookies';
 
 /**
@@ -91,11 +92,33 @@ export async function createSession(
   return { token, now, expiresAt };
 }
 
+/** The address's workspace allows its company login alone („Nur Firmen-Login“). */
+export const companyLoginOnly = () =>
+  new ApiError(
+    403,
+    'sso_required',
+    'Für Adressen eurer Firma gilt nur der Firmen-Login. Melde dich mit „Mit Firmen-Login anmelden“ an.',
+  );
+
 /**
  * Signs `userId` in on this browser (see {@link createSession}). Another account signed in here
  * stays, to switch back to; this account's older session here ends (not the desktop app's).
+ * Any way in but the company login (`companyLogin`) is refused for an address whose workspace
+ * allows that alone („Nur Firmen-Login“) – the one place every login passes.
  */
-export async function startSession(c: Context, deps: AppDeps, userId: string): Promise<void> {
+export async function startSession(
+  c: Context,
+  deps: AppDeps,
+  userId: string,
+  { companyLogin = false }: { companyLogin?: boolean } = {},
+): Promise<void> {
+  if (!companyLogin) {
+    const [user] = await deps.db
+      .select({ email: users.email })
+      .from(users)
+      .where(eq(users.id, userId));
+    if (user && (await companyLoginRequired(deps, user.email))) throw companyLoginOnly();
+  }
   const previous = readCookie(c, deps.config, SESSION_COOKIE);
   const { token } = await createSession(deps, userId, c.req.header('user-agent'));
   setSessionCookie(c, deps, token);

@@ -1,3 +1,4 @@
+import { meetingLinkIn } from '@slider/shared';
 import { describe, expect, it } from 'vitest';
 import { parseIcsEvents } from '../src/services/calendar/ical';
 import {
@@ -507,6 +508,14 @@ describe('remote calendars', () => {
               summary: 'Planung',
               location: 'Büro',
               description: 'Agenda:<br>Punkt &amp; Punkt',
+              // The meeting's link: the video entry, not the phone's.
+              conferenceData: {
+                entryPoints: [
+                  { entryPointType: 'phone', uri: 'tel:+49-30-1234' },
+                  { entryPointType: 'video', uri: 'https://meet.google.com/abc-defg-hij' },
+                ],
+              },
+              hangoutLink: 'https://meet.google.com/old',
               start: { dateTime: '2026-10-12T09:00:00+02:00' },
               end: { dateTime: '2026-10-12T10:00:00+02:00' },
             },
@@ -549,6 +558,7 @@ describe('remote calendars', () => {
         allDay: false,
         start: '2026-10-12T07:00:00.000Z',
         end: '2026-10-12T08:00:00.000Z',
+        meetingUrl: 'https://meet.google.com/abc-defg-hij',
       },
       {
         id: 'day',
@@ -717,6 +727,7 @@ describe('remote calendars', () => {
               subject: 'Review',
               location: { displayName: 'Teams' },
               body: { content: 'Bitte vorbereiten\r\n' },
+              onlineMeeting: { joinUrl: 'https://teams.microsoft.com/l/meetup-join/19%3a1' },
               isAllDay: false,
               start: { dateTime: '2026-10-26T08:00:00.0000000', timeZone: 'UTC' },
               end: { dateTime: '2026-10-26T09:30:00.0000000', timeZone: 'UTC' },
@@ -766,6 +777,7 @@ describe('remote calendars', () => {
         title: 'Review',
         location: 'Teams',
         notes: 'Bitte vorbereiten',
+        meetingUrl: 'https://teams.microsoft.com/l/meetup-join/19%3a1',
         allDay: false,
         start: '2026-10-26T08:00:00.000Z',
         end: '2026-10-26T09:30:00.000Z',
@@ -775,6 +787,7 @@ describe('remote calendars', () => {
     ]);
     expect(seen.at(-1)!.headers.get('prefer')).toContain('outlook.timezone="UTC"');
     expect(seen.at(-1)!.url).toContain('/me/calendars/AAK%3D/calendarView?startDateTime=');
+    expect(decodeURIComponent(seen.at(-1)!.url)).toContain('onlineMeeting');
     // The token never follows a next page off Graph.
     expect(seen.some((s) => s.url.includes('evil'))).toBe(false);
 
@@ -870,5 +883,15 @@ describe('remote calendars', () => {
       method: 'DELETE',
       url: 'https://graph.microsoft.com/v1.0/me/calendars/AAN%3D',
     });
+
+    // Where a provider names no meeting (CalDAV, an invitation's text): the first link to a
+    // meeting service in the place or the notes – https only, never any other page.
+    expect(meetingLinkIn('Büro', 'Einwahl: https://firma.zoom.us/j/987?pwd=x.\nDanke')).toBe(
+      'https://firma.zoom.us/j/987?pwd=x',
+    );
+    expect(meetingLinkIn('https://teams.microsoft.com/l/meetup-join/1', '')).toBe(
+      'https://teams.microsoft.com/l/meetup-join/1',
+    );
+    expect(meetingLinkIn('https://example.com/zoom.us', 'http://zoom.us/j/1')).toBeNull();
   });
 });

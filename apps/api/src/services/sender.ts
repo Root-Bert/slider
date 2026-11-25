@@ -1586,6 +1586,31 @@ export async function keepCallInConversation(
 }
 
 /**
+ * A call's notes were written (after its entry was posted): the entry – in a conversation or one's
+ * chat with an agent – shows their start without a reload.
+ */
+export async function announceCallNotes(deps: Deps, callId: string): Promise<void> {
+  const [message] = await deps.db
+    .select()
+    .from(senderMessages)
+    .where(eq(senderMessages.callId, callId));
+  if (!message) return;
+  const [row] = await deps.db
+    .select()
+    .from(senderChannels)
+    .where(eq(senderChannels.id, message.channelId));
+  if (!row) return;
+  const [dto] = await fullDtos(
+    deps.db,
+    await peopleOf(deps.db, row.workspaceId),
+    new Map(),
+    await callBriefs(deps, [callId]),
+    [message],
+  );
+  if (dto) await announce(deps, row, { type: 'changed', channelId: row.id, message: dto });
+}
+
+/**
  * A colleague's mail to a mailbox here, signed by their domain: it lands in the direct
  * conversation of the two, written by the colleague, its subject saying it came as a mail.
  */

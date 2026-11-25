@@ -1,4 +1,5 @@
 import type Anthropic from '@anthropic-ai/sdk';
+import { createHash } from 'node:crypto';
 import { and, asc, desc, eq, inArray, isNotNull, isNull, lte, ne, or } from 'drizzle-orm';
 import { read as readSheet, write as writeSheet } from 'xlsx';
 import { ZodError, z } from 'zod';
@@ -18,9 +19,11 @@ import {
   MAX_MATERIAL_CHAT_MESSAGES,
   MAX_MATERIAL_CHAT_TEXT,
   type Attachment,
+  type CallModel,
   type Author,
   type CloudAgentChat,
   type CloudAgentDetail,
+  type CloudAgentOverview,
   type CloudAgentFile,
   type CloudAgentFileContent,
   COMMENT_REACTIONS,
@@ -138,7 +141,7 @@ import { runs, runsOf, tagChatId, type Run, type Waiting } from './cloud-agent-r
 import { deckPlaces, fileIdsToMove, followMoved, setDeckAccess } from './deck-places';
 import { deleteDeck, trashDeck } from './decks';
 import { editedFile } from './edits/state';
-import { workspaceAiConnection } from './integration-keys';
+import { callModelConnection, workspaceAiConnection } from './integration-keys';
 import { atLeast } from './workspaces/roles';
 import { MCP_TOOLS, memberNamed, runMcpTool } from './mcp';
 import { listMembers } from './workspaces/members';
@@ -2404,6 +2407,8 @@ async function work(
   taken: Attachment[] = [],
   /** „Antworten“: a message of the chat (`Waiting.replyTo`). */
   replyTo?: string,
+  /** A call's turn: the model it thinks on (`Waiting.model`). */
+  model?: CallModel,
 ) {
   if (!text.trim() && attachmentIds.length === 0 && taken.length === 0)
     throw badRequest('Schreib etwas.');
@@ -2418,7 +2423,7 @@ async function work(
       throw badRequest('Diese Nachricht gibt es nicht (mehr).');
     prompt = `${quoted(answered.text)}\n\n${prompt ?? text}`;
   }
-  const found = await workspaceAiConnection(deps, agent.workspaceId);
+  const found = await callModelConnection(deps, agent.workspaceId, model);
   if (!found.connection) throw new ApiError(409, 'ai_not_configured', found.error);
   const message: Waiting = {
     id: crypto.randomUUID(),
@@ -2433,6 +2438,7 @@ async function work(
     replyTo,
     attachmentIds,
     attachments: taken,
+    ...(model && { model }),
   };
   const busy = runs.get(chat.id);
   if (busy) {
@@ -2505,7 +2511,7 @@ async function goOn(deps: AppDeps, agentId: string, chat: AgentChatRow, waiting:
   runs.set(chat.id, run);
   try {
     const [agent] = await deps.db.select().from(cloudAgents).where(eq(cloudAgents.id, agentId));
-    const found = await workspaceAiConnection(deps, agent?.workspaceId ?? '');
+    const found = await callModelConnection(deps, agent?.workspaceId ?? '', first.model);
     // The agent deleted meanwhile, or the AI taken away: nothing to go on with.
     if (!agent || !found.connection) {
       runs.delete(chat.id);
@@ -3118,6 +3124,33 @@ async function begin(
   });
 }
 
+/**
+ * Written under an overview (`CloudAgentOverview`): what it shows now goes along to the agent with
+ * each message – its chat keeps the person's words alone. In one's own private agent only: a
+ * shared one's chat others read, and the overview is made of one's own mail and calendar.
+ */
+async function underOverview(
+  deps: AppDeps,
+  viewer: Viewer,
+  workspaceId: string,
+  overview: CloudAgentOverview,
+  text: string,
+): Promise<string> {
+  // Loaded when asked: both stand on `sender`, which stands on this file.
+  const told = await (
+    overview.of === 'cloud'
+      ? import('./cloud-focus').then((focus) => focus.focusContext(deps, viewer, workspaceId))
+      : import('./sender-triage').then((triage) =>
+          triage.triageContext(deps, viewer.author.id, workspaceId, overview.mailbox),
+        )
+  ).catch((failure: unknown) => {
+    // Not read: the words go all the same – the agent looks itself.
+    deps.log.info(`Overview for an agent failed: ${String(failure)}`);
+    return `[Written under ${overview.of === 'cloud' ? '„Für dich“ on Cloud' : 'Sender'}'s overview – what it shows could not be read now: look it up with your tools.]`;
+  });
+  return `${text}\n\n${told}`;
+}
+
 /** A new agent with its order; it starts working at once. */
 export async function createCloudAgent(
   deps: AppDeps,
@@ -3136,15 +3169,21 @@ export async function createCloudAgent(
   attachmentIds: readonly string[] = [],
   /** Given to its area's people (in none the workspace's) from the start, not its owner's alone. */
   shared = false,
+  /** Written under an overview (`underOverview`): what it shows is told. */
+  overview?: CloudAgentOverview,
+  /** Made for a call's turn (the agent that writes along): its model (`Waiting.model`). */
+  model?: CallModel,
 ): Promise<CloudAgentDetail> {
   const userId = viewer.author.id;
   await membersWork(deps, workspaceId, userId);
   if (areaId) await areaToWorkIn(deps, workspaceId, userId, areaId);
   // Beside a mail only in one's own private agent: a shared one's chat others read.
   if (mailThreadId && shared) throw notFound('Diese Mail gibt es nicht.');
-  const prompt = mailThreadId
+  if (overview && shared) throw badRequest('Zur Übersicht fragt nur ein eigener Agent.');
+  let prompt = mailThreadId
     ? await besideMail(deps, userId, workspaceId, mailThreadId, text)
     : undefined;
+  if (overview) prompt = await underOverview(deps, viewer, workspaceId, overview, prompt ?? text);
   // Refused before anything is kept: no agent without an AI to run it.
   const found = await workspaceAiConnection(deps, workspaceId);
   if (!found.connection) throw new ApiError(409, 'ai_not_configured', found.error);
@@ -3180,6 +3219,9 @@ export async function createCloudAgent(
       prompt,
       foreign,
       attachmentIds,
+      [],
+      undefined,
+      model,
     );
   } catch (error) {
     // Nothing kept in its chat yet: no files on it.
@@ -3201,6 +3243,8 @@ export async function createIdleCloudAgent(
   workspaceId: string,
   title: string,
   areaId: string | null = null,
+  /** One's own agent (`ownCloudAgent`): its id, its name kept. */
+  own?: { id: string },
 ): Promise<CloudAgentDetail> {
   const userId = viewer.author.id;
   await membersWork(deps, workspaceId, userId);
@@ -3208,14 +3252,58 @@ export async function createIdleCloudAgent(
   const found = await workspaceAiConnection(deps, workspaceId);
   if (!found.connection) throw new ApiError(409, 'ai_not_configured', found.error);
   const now = deps.clock.now();
-  const id = crypto.randomUUID();
+  const id = own?.id ?? crypto.randomUUID();
   await deps.db.transaction(async (tx) => {
-    await tx
+    const made = await tx
       .insert(cloudAgents)
-      .values({ id, workspaceId, userId, areaId, title, createdAt: now, updatedAt: now });
-    await openAgentChat(tx, { id, workspaceId }, { id, userId, at: now });
+      .values({
+        id,
+        workspaceId,
+        userId,
+        areaId,
+        title,
+        named: !!own,
+        createdAt: now,
+        updatedAt: now,
+      })
+      .onConflictDoNothing()
+      .returning({ id: cloudAgents.id });
+    // Made at the same moment elsewhere (one's own, asked twice): that one stands.
+    if (made.length > 0) await openAgentChat(tx, { id, workspaceId }, { id, userId, at: now });
   });
   return getCloudAgent(deps, viewer.author, id);
+}
+
+/**
+ * One's own agent in a workspace: the one the AI's side panel calls („Anrufen“) – named as the
+ * workspace names its AI, the same one every time (its id from workspace and person), so its chat
+ * and what it knows go on from call to call. Made at the first call; deleted, the next is new.
+ */
+export async function ownCloudAgent(
+  deps: AppDeps,
+  viewer: Viewer,
+  workspaceId: string,
+): Promise<CloudAgentDetail> {
+  const id = ownAgentId(workspaceId, viewer.author.id);
+  const [found] = await deps.db
+    .select({ id: cloudAgents.id })
+    .from(cloudAgents)
+    .where(and(eq(cloudAgents.id, id), eq(cloudAgents.userId, viewer.author.id)));
+  if (found) return getCloudAgent(deps, viewer.author, id);
+  const [workspace] = await deps.db
+    .select({ aiName: workspaces.aiName })
+    .from(workspaces)
+    .where(eq(workspaces.id, workspaceId));
+  if (!workspace) throw notFound('Workspace nicht gefunden.');
+  return createIdleCloudAgent(deps, viewer, workspaceId, workspace.aiName?.trim() || 'KI', null, {
+    id,
+  });
+}
+
+/** One's own agent's id in a workspace – shaped as a UUID, the same for the same two. */
+export function ownAgentId(workspaceId: string, userId: string): string {
+  const hex = createHash('sha256').update(`own-agent:${workspaceId}:${userId}`).digest('hex');
+  return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-5${hex.slice(13, 16)}-a${hex.slice(17, 20)}-${hex.slice(20, 32)}`;
 }
 
 /**
@@ -3364,6 +3452,10 @@ export async function messageCloudAgent(
   taken: Attachment[] = [],
   /** „Antworten“: a message of that chat. */
   replyTo?: string,
+  /** A call's turn: the model it thinks on (`Waiting.model`). */
+  model?: CallModel,
+  /** Written under an overview (`underOverview`): what it shows is told. */
+  overview?: CloudAgentOverview,
 ): Promise<CloudAgentDetail> {
   const row = await agentFor(deps, viewer.author.id, agentId);
   await membersWork(deps, row.workspaceId, viewer.author.id);
@@ -3371,8 +3463,13 @@ export async function messageCloudAgent(
   // shared with reads – the mailbox and the subject would reach them. As besideMail: no such mail.
   if (mailThreadId && (row.userId !== viewer.author.id || row.shared))
     throw notFound('Diese Mail gibt es nicht.');
+  // Refused as forbidden: the overview then forgets that agent and asks a fresh one of its own.
+  if (overview && (row.userId !== viewer.author.id || row.shared))
+    throw forbidden('Zur Übersicht fragt nur ein eigener Agent.');
   if (mailThreadId && !prompt)
     prompt = await besideMail(deps, viewer.author.id, row.workspaceId, mailThreadId, text);
+  if (overview)
+    prompt = await underOverview(deps, viewer, row.workspaceId, overview, prompt ?? text);
   // Called in a conversation, it works for that one, apart from its chats: nothing is kept but
   // what it posts there (`Waiting.tag`) – a run of its own per conversation.
   const chat: AgentChatRow = tag
@@ -3400,6 +3497,7 @@ export async function messageCloudAgent(
     attachmentIds,
     taken,
     replyTo,
+    model,
   );
   return getCloudAgent(deps, viewer.author, row.id);
 }

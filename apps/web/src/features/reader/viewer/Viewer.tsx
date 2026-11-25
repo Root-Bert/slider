@@ -26,6 +26,7 @@ import { pluralize } from '@/lib/format';
 import { isModKey } from '@/lib/keyboard';
 import { isApplePlatform } from '@/lib/platform';
 import { routes } from '@/lib/routes';
+import { hereLink, hereQuote, useCallHere } from '@/lib/call-here';
 import { CenteredMessage } from '@/shell/CenteredMessage';
 import {
   Avatar,
@@ -599,6 +600,22 @@ function Open({
       read.cancel();
     };
   }, []);
+  // What the agent of one's call hears one has in front: the PDF, the page, one's own pick and
+  // what a comment being written marks – never the PDF's text beyond that (it reads the file).
+  useCallHere(
+    'reader',
+    [
+      `Reader: PDF ${hereLink('file', id, pdf.title || pdf.fileName)}, Seite ${current + 1} von ${sizes.length}`,
+      chosen?.anchor.quote ? `Ausgewählt: ${hereQuote(chosen.anchor.quote, 400)}` : '',
+      draft
+        ? `Markiert für einen Kommentar auf Seite ${draft.page + 1}: ${
+            draft.quote ? hereQuote(draft.quote, 400) : 'ein Bereich'
+          }`
+        : '',
+    ]
+      .filter(Boolean)
+      .join('\n'),
+  );
   const commentOn = (anchor: ReaderAnchor) => {
     setDraft(anchor);
     setActive(null);

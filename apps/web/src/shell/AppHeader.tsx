@@ -6,6 +6,7 @@ import {
   AppSwitcher,
   CloudChatButton,
   DateButton,
+  MeetingNotice,
   CloudLogo,
   SenderLogo,
   ReaderLogo,
@@ -187,6 +188,8 @@ export function AppHeader({
         {/* Every app: whoever writes reaches one, wherever one is. */}
         <NotifyOffer />
         {/* Today, and from it the calendar – where one's to-dos are (Cloud, Sender). */}
+        {/* A meeting coming up, left of the date: joined from here. */}
+        {(inCloud || inSender) && workspace && <MeetingNotice workspaceId={workspace.id} />}
         {(inCloud || inSender) && workspace && <DateButton workspaceId={workspace.id} />}
         {(inCloud || inSender) && <CloudChatButton name={workspace?.aiName} />}
         {atSliderStart && <HomeChatButton name={workspace?.aiName} />}

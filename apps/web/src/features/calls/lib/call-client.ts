@@ -11,6 +11,7 @@ import {
 } from '@slider/shared';
 import { api, ApiError, apiRequest } from '@/lib/api-client';
 import { Levels } from './levels';
+import { callHere } from '@/lib/call-here';
 import type { CallListener } from './listener';
 import { camera, MediaRefused, microphone, screen } from './media';
 import { Mesh, type RemoteMedia, type Slot, type Transport } from './mesh';
@@ -256,6 +257,18 @@ export class CallClient {
     return this.enter(call.id, `/calls/${call.id}/join`, { video, agentId: null });
   }
 
+  /**
+   * Takes over a call one is in with another window (one opened for another app): joined here the
+   * way one got into it – its conversation, one's own call with an agent, or as its guest; the
+   * server hands the other window's place over, the call goes on.
+   */
+  takeOver(call: CallState) {
+    if (this.snap.active?.callId === call.id) return;
+    if (!call.channelId && call.agent && call.startedBy.id === this.snap.me)
+      return this.callAgent(call.agent.id);
+    return this.answer(call, { video: false });
+  }
+
   /** Calls a Cloud agent: it hears what one says and answers aloud. */
   callAgent(agentId: string) {
     if (this.snap.active?.agentId === agentId) return;
@@ -263,6 +276,28 @@ export class CallClient {
       video: false,
       agentId,
     });
+  }
+
+  /**
+   * Calls one's own agent of the workspace – the AI's side panel's „Anrufen“: named as the
+   * workspace names its AI, the same one each time, made at the first call.
+   */
+  async callOwnAgent(workspaceId: string) {
+    if (this.snap.joining || this.snap.active) return;
+    this.set({ joining: `own:${workspaceId}` });
+    let agentId: string;
+    try {
+      agentId = (await api.post<{ id: string }>(`/workspaces/${workspaceId}/cloud/agents/own`)).id;
+    } catch (error) {
+      this.tell(
+        error instanceof ApiError ? error.message : 'Der Anruf ließ sich nicht starten.',
+        'danger',
+      );
+      return;
+    } finally {
+      this.set({ joining: null });
+    }
+    return this.callAgent(agentId);
   }
 
   private async enter(
@@ -666,6 +701,7 @@ export class CallClient {
               .post(`/calls/${callId}/transcript`, {
                 peerId,
                 text: text.slice(0, MAX_CALL_UTTERANCE),
+                here: callHere() || undefined,
               })
               .catch(() => {});
           },
@@ -674,6 +710,9 @@ export class CallClient {
             // after the other, so the turns stay in the order they were said.
             const form = new FormData();
             form.append('audio', new Blob([wav], { type: 'audio/wav' }), 'turn.wav');
+            // What was in front of the person as they spoke – read now, not once it is written.
+            const here = callHere();
+            if (here) form.append('here', here);
             this.lastTurn = this.lastTurn.then(() =>
               api
                 .post(`/calls/${callId}/heard?peer=${encodeURIComponent(peerId)}`, form)

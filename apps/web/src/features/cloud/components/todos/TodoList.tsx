@@ -311,25 +311,39 @@ function todosSaying(todos: readonly Todo[], query: string) {
 }
 
 /**
- * „Deine Aufgaben“ on „Zuletzt“: the few most pressing of one's own and those given to one, each
- * changed where it stands as in the list; there only while there is some.
+ * „Deine Aufgaben“ on „Zuletzt“ (a widget): the few most pressing of one's own and those given to
+ * one, each changed where it stands as in the list.
  */
-export function MyTodos({ shown = 5 }: { shown?: number }) {
+export function MyTodos({
+  shown = 5,
+  head,
+  empty = null,
+}: {
+  shown?: number;
+  /** The widget's heading with this link at its end (`home/`). */
+  head: (link: ReactNode) => ReactNode;
+  /** Shown while there is none. */
+  empty?: ReactNode;
+}) {
   const ui = useCloud();
   const todos = useTodos(ui.workspace.id);
   const panel = useShownTodo();
   const mine = (todos.data ?? []).filter((todo) => isMine(todo, ui.userId)).sort(byUrgency);
-  if (mine.length === 0) return null;
+  const link = (
+    <TextLink to={routes.cloudTodos(ui.workspace.id)} size="body">
+      {mine.length > shown ? `Alle ${mine.length}` : 'Alle Aufgaben'}
+    </TextLink>
+  );
+  if (mine.length === 0)
+    return (
+      <>
+        {head(link)}
+        {empty}
+      </>
+    );
   return (
-    <section aria-labelledby="cloud-todos" className="flex min-w-0 flex-col gap-2">
-      <div className="flex items-baseline justify-between">
-        <h2 id="cloud-todos" className="text-base font-semibold text-fg">
-          Deine Aufgaben
-        </h2>
-        <TextLink to={routes.cloudTodos(ui.workspace.id)} size="body">
-          {mine.length > shown ? `Alle ${mine.length}` : 'Alle Aufgaben'}
-        </TextLink>
-      </div>
+    <>
+      {head(link)}
       <ul className="flex flex-col">
         {mine.slice(0, shown).map((todo) => (
           <TodoRow
@@ -341,7 +355,7 @@ export function MyTodos({ shown = 5 }: { shown?: number }) {
           />
         ))}
       </ul>
-    </section>
+    </>
   );
 }
 
@@ -1829,7 +1843,7 @@ function ProjectPicker({ todo, onChange }: { todo: Todo; onChange: (change: Todo
 
 /** One's own to-dos stand under one's own picture, as „Meine Dateien“ are one's own. */
 const MINE = 'Meine Aufgaben';
-function MeAvatar() {
+export function MeAvatar() {
   const me = useMe().data?.viewer.author;
   return me ? (
     <Avatar author={me} size={18} nativeTitle={false} />

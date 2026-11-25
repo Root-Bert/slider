@@ -1,11 +1,21 @@
-import type { Calendar } from '@slider/shared';
-import { useState, type CSSProperties, type ReactNode } from 'react';
+import type { Calendar, CloudAreaColor } from '@slider/shared';
+import { useId, useState, type CSSProperties, type MouseEvent, type ReactNode } from 'react';
 import { Link } from 'react-router';
 import { useCreateCalendar, useDeleteCalendar, useUpdateCalendar } from '@/lib/api';
 import { routes } from '@/lib/routes';
 import { readJson, writeString } from '@/lib/storage';
-import { ConfirmDialog, Icon, IconButton, Menu, Tooltip, cn, type MenuAction } from '@/ui';
+import {
+  ConfirmDialog,
+  ContextMenu,
+  Icon,
+  IconButton,
+  Menu,
+  Tooltip,
+  cn,
+  type MenuAction,
+} from '@/ui';
 import { useCloud } from '../../hooks/useCloud';
+import { AreaColorPicker } from '../AreaColorPicker';
 import { useCalendarAccounts, type CalendarAccount } from './CalendarAccounts';
 import { colorOf, TODOS } from './entries';
 
@@ -79,8 +89,10 @@ function tree(
 /**
  * The calendars one sees, beside the calendar as Apple's: the workspace's areas, one's private
  * ones, each account's under its name, the to-dos – each shown or hidden with its box. A
- * sub-calendar is made where it goes (its parent's „+“), typed in place. The accounts themselves –
- * connected, signed in anew, renamed, deleted – are on „Konten“.
+ * sub-calendar is made where it goes (its parent's „+“), typed in place. A calendar's „…“ or a
+ * right click on it renames it in place, colours it (not an area's: the area's colour; not one's
+ * private one: one's own) and deletes it. The accounts themselves – connected, signed in anew,
+ * renamed, deleted – are on „Konten“.
  */
 export function CalendarList({
   calendars,
@@ -258,6 +270,7 @@ function Check({
   depth = 0,
   lead,
   trailing,
+  onContextMenu,
 }: {
   label: string;
   color: string;
@@ -266,11 +279,14 @@ function Check({
   depth?: number;
   lead?: ReactNode;
   trailing?: ReactNode;
+  /** A right click: the row's „…“ at the pointer. */
+  onContextMenu?: (event: MouseEvent) => void;
 }) {
   return (
     <li
       className="group flex h-8 min-w-0 items-center rounded-control hover:bg-hover"
       style={{ paddingLeft: 8 + depth * 16 }}
+      onContextMenu={onContextMenu}
     >
       <button
         type="button"
@@ -316,6 +332,8 @@ function Row({
   const { calendar } = node;
   const [adding, setAdding] = useState(false);
   const [renaming, setRenaming] = useState(false);
+  const [coloring, setColoring] = useState(false);
+  const [menuAt, setMenuAt] = useState<{ x: number; y: number } | null>(null);
   /** Deleted – or, someone else's at a mailbox's provider, only taken off one's list there. */
   const [deleting, setDeleting] = useState<'delete' | 'remove' | null>(null);
   const fail = (error: Error) => ui.notify(error.message, 'danger');
@@ -324,9 +342,17 @@ function Row({
   if (calendar.canManage) {
     actions.push({
       label: 'Umbenennen',
-      icon: 'driveFileRename',
+      icon: 'edit',
       onSelect: () => setRenaming(true),
     });
+    // An area's calendars are in the area's colour.
+    if (calendar.kind !== 'area') {
+      actions.push({
+        label: 'Farbe …',
+        icon: 'palette',
+        onSelect: () => setColoring(true),
+      });
+    }
   }
   if (calendar.canDelete) {
     actions.push({
@@ -365,6 +391,15 @@ function Row({
           checked={!hidden.has(calendar.id)}
           onChange={() => onToggle(calendar.id)}
           depth={depth}
+          onContextMenu={
+            actions.length > 0
+              ? (event) => {
+                  if (event.shiftKey) return;
+                  event.preventDefault();
+                  setMenuAt({ x: event.clientX, y: event.clientY });
+                }
+              : undefined
+          }
           trailing={
             (canAdd || actions.length > 0) && (
               <span className="flex items-center opacity-0 group-focus-within:opacity-100 group-hover:opacity-100">
@@ -404,6 +439,26 @@ function Row({
           }}
         />
       )}
+      {menuAt && (
+        <ContextMenu
+          label={`Aktionen für ${calendar.name}`}
+          at={menuAt}
+          onClose={() => setMenuAt(null)}
+          actions={actions}
+        />
+      )}
+      {coloring && (
+        <CalendarColorDialog
+          calendar={calendar}
+          onClose={() => setColoring(false)}
+          onPick={(color) => {
+            setColoring(false);
+            if (color !== calendar.color) {
+              update.mutate({ id: calendar.id, change: { color } }, { onError: fail });
+            }
+          }}
+        />
+      )}
       {deleting && (
         <ConfirmDialog
           onClose={() => setDeleting(null)}
@@ -430,6 +485,40 @@ function Row({
         />
       )}
     </>
+  );
+}
+
+/** „Farbe …“: a calendar's colour – one on offer or one of one's own, as a folder's. */
+function CalendarColorDialog({
+  calendar,
+  onClose,
+  onPick,
+}: {
+  calendar: Calendar;
+  onClose: () => void;
+  onPick: (color: CloudAreaColor) => void;
+}) {
+  const label = useId();
+  const [color, setColor] = useState<CloudAreaColor>(calendar.color as CloudAreaColor);
+  return (
+    <ConfirmDialog
+      onClose={onClose}
+      title="Farbe des Kalenders"
+      tone="primary"
+      confirmLabel="Sichern"
+      onConfirm={() => onPick(color)}
+    >
+      <div className="flex flex-col gap-2">
+        <span id={label} className="truncate text-xs text-fg-subtle">
+          {calendar.name}
+        </span>
+        <AreaColorPicker
+          value={color}
+          onChange={(next) => next && setColor(next)}
+          labelledBy={label}
+        />
+      </div>
+    </ConfirmDialog>
   );
 }
 

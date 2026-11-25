@@ -2,6 +2,7 @@ import { useMemo, type ReactNode } from 'react';
 import { EVERYONE_TAG, MENTION_NOT_AFTER, type AccountAuthor } from '@slider/shared';
 import { cn } from '@/ui';
 import { LinkedText } from './LinkedText';
+import { MARKUP_LOOK, markupLines, markupRuns, type MarkupRun } from '../lib/markup';
 
 const escape = (text: string) => text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 /** The pattern of @ with someone's name; addresses, mails and phones are `LinkedText`'s. */
@@ -63,12 +64,68 @@ function Mentioned({
   return <>{parts}</>;
 }
 
-/**
- * Inline marks as one types them in a chat: `Code`, **fett**, _kursiv_ (or *kursiv*),
- * ~~durchgestrichen~~ – not inside a word, never across a line.
- */
-const INLINE =
-  /`([^`\n]+)`|\*\*([^*\n]+?)\*\*|~~([^~\n]+?)~~|(?<![\p{L}\p{N}_])_([^_\n]+?)_(?![\p{L}\p{N}_])|(?<![\p{L}\p{N}*])\*([^*\s][^*\n]*?)\*(?![\p{L}\p{N}*])/gu;
+/** A line's runs: marks around more runs, links (http(s) only), the words between. */
+function Runs({
+  runs,
+  pattern,
+  me,
+  linked = true,
+}: {
+  runs: MarkupRun[];
+  pattern: RegExp | null;
+  me: AccountAuthor;
+  /** Off inside a link: no link in a link. */
+  linked?: boolean;
+}) {
+  return (
+    <>
+      {runs.map((run, index) => {
+        const inner = (more: MarkupRun[], inLink = !linked) => (
+          <Runs runs={more} pattern={pattern} me={me} linked={!inLink} />
+        );
+        switch (run.kind) {
+          case 'text':
+            return linked ? (
+              <Mentioned key={index} text={run.text} pattern={pattern} me={me} />
+            ) : (
+              run.text
+            );
+          case 'code':
+            return (
+              <code key={index} className={MARKUP_LOOK.code}>
+                {run.text}
+              </code>
+            );
+          case 'bold':
+            return (
+              <strong key={index} className="font-semibold">
+                {inner(run.runs)}
+              </strong>
+            );
+          case 'italic':
+            return <em key={index}>{inner(run.runs)}</em>;
+          case 'strike':
+            return <s key={index}>{inner(run.runs)}</s>;
+          case 'underline':
+            return <u key={index}>{inner(run.runs)}</u>;
+          case 'link':
+            return (
+              <a
+                key={index}
+                href={run.url}
+                title={run.url}
+                target="_blank"
+                rel="noopener noreferrer"
+                className={MARKUP_LOOK.link}
+              >
+                {inner(run.runs, true)}
+              </a>
+            );
+        }
+      })}
+    </>
+  );
+}
 
 function Inline({
   text,
@@ -79,97 +136,59 @@ function Inline({
   pattern: RegExp | null;
   me: AccountAuthor;
 }) {
-  const parts: ReactNode[] = [];
-  let at = 0;
-  for (const match of text.matchAll(INLINE)) {
-    const index = match.index;
-    if (index > at)
-      parts.push(
-        <Mentioned key={`p${at}`} text={text.slice(at, index)} pattern={pattern} me={me} />,
-      );
-    const [, code, bold, strike, em, star] = match;
-    const inner = (words: string) => <Inline text={words} pattern={pattern} me={me} />;
-    parts.push(
-      code !== undefined ? (
-        <code key={index} className="rounded-mark bg-surface-2 px-1 font-mono text-[0.9em]">
-          {code}
-        </code>
-      ) : bold !== undefined ? (
-        <strong key={index} className="font-semibold">
-          {inner(bold)}
-        </strong>
-      ) : strike !== undefined ? (
-        <s key={index}>{inner(strike)}</s>
-      ) : (
-        <em key={index}>{inner(em ?? star ?? '')}</em>
-      ),
-    );
-    at = index + match[0].length;
-  }
-  if (at < text.length)
-    parts.push(<Mentioned key={`p${at}`} text={text.slice(at)} pattern={pattern} me={me} />);
-  return <>{parts}</>;
+  const runs = useMemo(() => markupRuns(text), [text]);
+  return <Runs runs={runs} pattern={pattern} me={me} />;
 }
 
 type Block =
   | { kind: 'lines'; text: string }
   | { kind: 'code'; text: string }
-  | { kind: 'list'; ordered: boolean; items: string[] };
+  | { kind: 'list'; ordered: boolean; start: number; items: string[] }
+  | { kind: 'heading'; level: 1 | 2; text: string }
+  | { kind: 'quote'; text: string };
 
-const BULLET = /^\s*[-*•]\s+(.*)$/;
-const NUMBERED = /^\s*\d+[.)]\s+(.*)$/;
-
-/** The text in blocks: ```code```, lists of „- “ or „1. “ lines, and the lines between. */
+/** The lines in blocks: a code block, a list, a heading, a quote, and the lines between. */
 function blocksOf(text: string): Block[] {
   const blocks: Block[] = [];
-  const lines = text.split('\n');
-  let plain: string[] = [];
-  const flush = () => {
-    if (plain.length > 0) blocks.push({ kind: 'lines', text: plain.join('\n') });
-    plain = [];
-  };
-  for (let i = 0; i < lines.length; i++) {
-    const line = lines[i] ?? '';
-    if (line.trimStart().startsWith('```')) {
-      const end = lines.findIndex((each, at) => at > i && each.trim().startsWith('```'));
-      if (end !== -1) {
-        flush();
-        const first = line.trimStart().slice(3);
-        blocks.push({
-          kind: 'code',
-          text: [
-            ...(first.trim() && !/^\w+$/.test(first.trim()) ? [first] : []),
-            ...lines.slice(i + 1, end),
-          ].join('\n'),
-        });
-        i = end;
-        continue;
-      }
-    }
-    const bullet = BULLET.exec(line);
-    const numbered = bullet ? null : NUMBERED.exec(line);
-    const item = bullet ?? numbered;
-    if (item) {
-      const ordered = !bullet;
-      const last = blocks.at(-1);
-      if (plain.length === 0 && last?.kind === 'list' && last.ordered === ordered)
-        last.items.push(item[1] ?? '');
-      else {
-        flush();
-        blocks.push({ kind: 'list', ordered, items: [item[1] ?? ''] });
-      }
+  let code: string[] | null = null;
+  for (const line of markupLines(text)) {
+    const last = blocks.at(-1);
+    if (line.kind === 'code') {
+      if (line.edge === 'open') {
+        // Words after the opening ``` are code too – a language's name is not.
+        const first = line.text.trimStart().slice(3);
+        code = first.trim() && !/^\w+$/.test(first.trim()) ? [first] : [];
+      } else if (line.edge === 'close') {
+        blocks.push({ kind: 'code', text: (code ?? []).join('\n') });
+        code = null;
+      } else code?.push(line.text);
       continue;
     }
-    plain.push(line);
+    if (line.kind === 'bullet' || line.kind === 'number') {
+      const ordered = line.kind === 'number';
+      if (last?.kind === 'list' && last.ordered === ordered) last.items.push(line.text);
+      else
+        blocks.push({
+          kind: 'list',
+          ordered,
+          start: line.kind === 'number' ? line.number : 1,
+          items: [line.text],
+        });
+    } else if (line.kind === 'heading') blocks.push(line);
+    else if (line.kind === 'quote') {
+      if (last?.kind === 'quote') last.text += `\n${line.text}`;
+      else blocks.push({ kind: 'quote', text: line.text });
+    } else if (last?.kind === 'lines') last.text += `\n${line.text}`;
+    else blocks.push({ kind: 'lines', text: line.text });
   }
-  flush();
   return blocks;
 }
 
 /**
  * A message's text as written – lines kept, web addresses, mails and phone numbers as links
- * (`LinkedText`), @-names marked (one's own more strongly), and the little formatting one types
- * in a chat: **fett**, _kursiv_, ~~durch~~, `Code`, ```Codeblock```, „- “ / „1. “ lists.
+ * (`LinkedText`), @-names marked (one's own more strongly), and its formatting (`markup.ts`):
+ * **fett**, _kursiv_, <u>unterstrichen</u>, ~~durch~~, `Code`, [Links](…), ```Codeblock```,
+ * „- “ / „1. “ lists, „# “ / „## “ headings, „> “ quotes – as `RichField` shows it while typed.
  */
 export function MessageText({
   text,
@@ -187,23 +206,23 @@ export function MessageText({
     return <Inline text={blocks[0].text} pattern={pattern} me={me} />;
   return (
     <>
-      {blocks.map((block, index) =>
-        block.kind === 'code' ? (
-          <pre
-            key={index}
-            className="my-1 overflow-x-auto rounded-control bg-surface-2 px-2.5 py-2 font-mono text-[0.9em] whitespace-pre"
-          >
-            <code>{block.text}</code>
-          </pre>
-        ) : block.kind === 'list' ? (
-          (() => {
+      {blocks.map((block, index) => {
+        switch (block.kind) {
+          case 'code':
+            return (
+              <pre key={index} className={MARKUP_LOOK.codeBlock}>
+                <code>{block.text}</code>
+              </pre>
+            );
+          case 'list': {
             const List = block.ordered ? 'ol' : 'ul';
             return (
               <List
                 key={index}
+                start={block.ordered && block.start !== 1 ? block.start : undefined}
                 className={cn(
-                  'my-0.5 flex flex-col gap-0.5 pl-5 whitespace-normal',
-                  block.ordered ? 'list-decimal' : 'list-disc',
+                  block.ordered ? MARKUP_LOOK.ol : MARKUP_LOOK.ul,
+                  'flex flex-col gap-0.5 whitespace-normal',
                 )}
               >
                 {block.items.map((item, at) => (
@@ -213,13 +232,27 @@ export function MessageText({
                 ))}
               </List>
             );
-          })()
-        ) : (
-          <span key={index} className="block">
-            <Inline text={block.text} pattern={pattern} me={me} />
-          </span>
-        ),
-      )}
+          }
+          case 'heading':
+            return (
+              <span key={index} className={cn('block', MARKUP_LOOK[`h${block.level}`])}>
+                <Inline text={block.text} pattern={pattern} me={me} />
+              </span>
+            );
+          case 'quote':
+            return (
+              <span key={index} className={cn('block', MARKUP_LOOK.quote)}>
+                <Inline text={block.text} pattern={pattern} me={me} />
+              </span>
+            );
+          case 'lines':
+            return (
+              <span key={index} className="block">
+                <Inline text={block.text} pattern={pattern} me={me} />
+              </span>
+            );
+        }
+      })}
     </>
   );
 }
