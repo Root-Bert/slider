@@ -6,6 +6,7 @@ import {
   type SenderFile,
   type SenderFileFiling,
   type SenderFilePlace,
+  type SuggestedVideoCut,
 } from '@slider/shared';
 import { api, apiRequest, uploadWithProgress } from '../api-client';
 
@@ -24,6 +25,21 @@ export const uploadAttachment = (
     onProgress,
     signal,
   );
+};
+
+/** A video just put up, as the AI reads it: its stills and sound (`videoDigestForm`). */
+export const digestVideo = (id: string, form: FormData, signal?: AbortSignal) =>
+  apiRequest<void>(`/attachments/${id}/digest`, { method: 'POST', body: form, signal });
+
+/** „KI-Schnitt“ (Beta): where a recorded video's pauses and slips are, from its sound (WAV). */
+export const suggestVideoCuts = (workspaceId: string, speech: Blob, signal?: AbortSignal) => {
+  const form = new FormData();
+  form.append('file', speech, 'ton.wav');
+  return apiRequest<SuggestedVideoCut[]>(`/workspaces/${workspaceId}/video-cuts`, {
+    method: 'POST',
+    body: form,
+    signal,
+  });
 };
 
 /** Takes a waiting file off again – gone on the server too (never awaited by the field). */

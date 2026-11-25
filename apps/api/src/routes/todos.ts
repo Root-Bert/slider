@@ -2,6 +2,8 @@ import { Hono } from 'hono';
 import {
   milestoneChangeSchema,
   milestoneInputSchema,
+  projectChangeSchema,
+  projectInputSchema,
   todoChangeSchema,
   todoInputSchema,
   type AccountAuthor,
@@ -14,22 +16,26 @@ import { assertWithinLimit } from '../http/rate-limit';
 import { readJson } from '../http/validate';
 import {
   createMilestone,
+  createProject,
   createTodo,
   deleteMilestone,
+  deleteProject,
   deleteTodo,
   getTodo,
   listMilestones,
+  listProjects,
   listTodos,
   newTodoAgent,
   sendTodoAgent,
   updateMilestone,
+  updateProject,
   updateTodo,
 } from '../services/todos';
 
 /**
  * To-dos (`services/todos.ts`): a workspace's overview (one's own and the areas' one sees), an
  * area's list, one to-do; making, changing, deleting them; a new agent for one, the agent given
- * one sent on it; the milestones they lead to. Account members only.
+ * one sent on it; the milestones they lead to; an area's projects. Account members only.
  */
 export function todoRoutes(deps: AppDeps) {
   const viewer = viewerMiddleware(deps);
@@ -93,6 +99,25 @@ export function todoRoutes(deps: AppDeps) {
     })
     .delete('/todo-milestones/:milestoneId', viewer, async (c) => {
       await deleteMilestone(deps, me(c), c.req.param('milestoneId'));
+      return c.body(null, 204);
+    })
+    .get('/workspaces/:workspaceId/todo-projects', viewer, async (c) =>
+      c.json(
+        await listProjects(deps, me(c), c.req.param('workspaceId'), {
+          areaId: c.req.query('area') || undefined,
+        }),
+      ),
+    )
+    .post('/workspaces/:workspaceId/todo-projects', viewer, async (c) => {
+      const input = await readJson(c, projectInputSchema);
+      return c.json(await createProject(deps, me(c), c.req.param('workspaceId'), input), 201);
+    })
+    .patch('/todo-projects/:projectId', viewer, async (c) => {
+      const change = await readJson(c, projectChangeSchema);
+      return c.json(await updateProject(deps, me(c), c.req.param('projectId'), change));
+    })
+    .delete('/todo-projects/:projectId', viewer, async (c) => {
+      await deleteProject(deps, me(c), c.req.param('projectId'));
       return c.body(null, 204);
     });
 }

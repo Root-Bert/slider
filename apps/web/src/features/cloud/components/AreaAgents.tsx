@@ -36,7 +36,7 @@ export function AreaAgents({ area }: { area: CloudArea }) {
   );
   const orders =
     canCreateDecks(ui.workspace.role) && (area.root || cloudAccessAtLeast(area.access, 'edit'));
-  // The page's own field (⌘K), as on „Agenten“.
+  // The page's own field (⌘F), as on „Agenten“.
   const [query, setQuery] = useState('');
   const found = agentsSaying(list, query);
   return (

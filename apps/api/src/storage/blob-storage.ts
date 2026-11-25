@@ -170,6 +170,9 @@ export const blobKeys = {
     `workspaces/${workspaceId}/cloud/${nodeId}/${versionId}.thumb.jpg`,
   cloudPreview: (workspaceId: string, nodeId: string, versionId: string) =>
     `workspaces/${workspaceId}/cloud/${nodeId}/${versionId}.preview.pdf`,
+  /** The presentation file's PDF is drawn as its deck is, with these fonts (`services/cloud/pictures.ts`). */
+  cloudPreviewAsDeck: (workspaceId: string, nodeId: string, versionId: string) =>
+    `workspaces/${workspaceId}/cloud/${nodeId}/${versionId}.preview.deck`,
   /** A page of the version (a PDF, or an office file drawn as one) as a picture, 1-based. */
   cloudPage: (workspaceId: string, nodeId: string, versionId: string, page: number) =>
     `workspaces/${workspaceId}/cloud/${nodeId}/${versionId}.page-${page}.jpg`,

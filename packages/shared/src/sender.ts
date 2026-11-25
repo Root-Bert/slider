@@ -20,9 +20,10 @@ import { attachmentIdsSchema, type Attachment } from './attachments';
 
 /**
  * `area`: the one every area has (named as the area is); `channel`: one more inside an area;
- * `group`: a few people, no area; `direct`: two people.
+ * `group`: a few people, no area; `direct`: two people; `agent`: a chat with an agent (seen by
+ * who sees the agent – its first chat has the agent's id, further ones are opened beside it).
  */
-export const SENDER_CHANNEL_KINDS = ['area', 'channel', 'group', 'direct'] as const;
+export const SENDER_CHANNEL_KINDS = ['area', 'channel', 'group', 'direct', 'agent'] as const;
 export type SenderChannelKind = (typeof SENDER_CHANNEL_KINDS)[number];
 
 export const MAX_SENDER_MESSAGE = 8000;
@@ -230,7 +231,9 @@ export type SenderEvent =
   /** Calendars or events one sees changed: the calendar is fetched anew. */
   | { type: 'calendar' }
   /** The start's AI look („Aktuell“) was made anew in the background: it is fetched again. */
-  | { type: 'triage' };
+  | { type: 'triage' }
+  /** One's planned messages of a conversation changed (planned, sent, refused): fetched anew. */
+  | { type: 'scheduled'; channelId: string };
 
 /**
  * Sender's start („Neuigkeiten“): a conversation with something unread – an area's channel, a
@@ -361,6 +364,33 @@ export const senderPostSchema = senderEditSchema.extend({
   attachments: attachmentIdsSchema,
   /** „Antworten“: a message of the same conversation. */
   replyTo: z.string().min(1).optional(),
+});
+
+/** Longest ahead a message is planned („Später senden“): a year. */
+export const MAX_SCHEDULE_DAYS = 365;
+
+/**
+ * A message planned to go later („Später senden“, a right click on „Senden“) – seen by who planned
+ * it alone, above their field, until it goes. Then it is posted as if sent that moment: every
+ * check again, agents named in it start.
+ */
+export interface SenderScheduled {
+  id: string;
+  channelId: string;
+  text: string;
+  attachments: Attachment[];
+  replyTo: string | null;
+  sendAt: string;
+  /** `failed`: refused when due – `error` says why; kept until sent again or deleted. */
+  state: 'waiting' | 'sending' | 'failed';
+  error: string | null;
+  /** Planned by one's agent: it goes in the agent's name. */
+  agent: { id: string; title: string } | null;
+}
+
+/** „Später senden“: a message as `senderPostSchema`, and when it goes. */
+export const senderScheduleSchema = senderPostSchema.extend({
+  sendAt: z.iso.datetime({ offset: true }),
 });
 
 export const senderCreateChannelSchema = z.object({

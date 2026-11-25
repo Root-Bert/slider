@@ -18,3 +18,17 @@ export const isModEnter = (event: Modifiers & { key: string }): boolean =>
  */
 export const typesCharacter = (event: Modifiers & { key: string; altKey: boolean }): boolean =>
   event.key.length === 1 && !event.metaKey && (!event.ctrlKey || event.altKey);
+
+/**
+ * The searches' keys, everywhere in the apps (the user's call 2026-11-24): ⌘F / Strg F the page's
+ * own – its field, or what a presentation, PDF or document says –, ⇧⌘F / Strg ⇧ F the whole
+ * app's (the side bar's field). ⌘K stays free for the command panel.
+ */
+export const isSearchKey = (
+  event: Modifiers & { key: string; altKey: boolean; shiftKey: boolean },
+  search: 'page' | 'main',
+): boolean =>
+  event.key.toLowerCase() === 'f' &&
+  isModKey(event) &&
+  !event.altKey &&
+  event.shiftKey === (search === 'main');

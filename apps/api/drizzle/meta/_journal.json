@@ -1268,6 +1268,62 @@
       "when": 1800360000000,
       "tag": "0180_cloud_agent_asks",
       "breakpoints": true
+    },
+    {
+      "idx": 181,
+      "version": "7",
+      "when": 1800446400000,
+      "tag": "0181_todo_projects",
+      "breakpoints": true
+    },
+    {
+      "idx": 182,
+      "version": "7",
+      "when": 1800532800000,
+      "tag": "0182_todo_own_projects",
+      "breakpoints": true
+    },
+    {
+      "idx": 183,
+      "version": "7",
+      "when": 1800619200000,
+      "tag": "0183_sender_scheduled",
+      "breakpoints": true
+    },
+    {
+      "idx": 184,
+      "version": "7",
+      "when": 1800705600000,
+      "tag": "0184_todo_dependencies",
+      "breakpoints": true
+    },
+    {
+      "idx": 185,
+      "version": "7",
+      "when": 1800792000000,
+      "tag": "0185_agent_chats_in_sender",
+      "breakpoints": true
+    },
+    {
+      "idx": 186,
+      "version": "7",
+      "when": 1800878400000,
+      "tag": "0186_user_picture",
+      "breakpoints": true
+    },
+    {
+      "idx": 187,
+      "version": "7",
+      "when": 1800964800000,
+      "tag": "0187_todo_position",
+      "breakpoints": true
+    },
+    {
+      "idx": 188,
+      "version": "7",
+      "when": 1801051200000,
+      "tag": "0188_user_show_extensions",
+      "breakpoints": true
     }
   ]
 }

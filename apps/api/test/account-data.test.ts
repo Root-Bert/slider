@@ -1,7 +1,15 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import { count, eq, sql } from 'drizzle-orm';
+import { count, eq, inArray, sql } from 'drizzle-orm';
 import JSZip from 'jszip';
-import { DELETED_ACCOUNT_NAME, type Author, type WorkspaceRole } from '@slider/shared';
+import { createCanvas } from '@napi-rs/canvas';
+import {
+  DELETED_ACCOUNT_NAME,
+  type Author,
+  type MePicture,
+  type MeResponse,
+  type PeoplePictures,
+  type WorkspaceRole,
+} from '@slider/shared';
 import {
   appConnections,
   blobDeletions,
@@ -21,9 +29,7 @@ import {
   mailInsights,
   mailMessages,
   mailThreads,
-  cloudAgentChats,
   cloudAgentFiles,
-  cloudAgentMessages,
   cloudAgents,
   materialChatMessages,
   materialChats,
@@ -35,17 +41,22 @@ import {
   revisions,
   senderChannels,
   senderDrafts,
+  senderScheduled,
   senderMessages,
   sessions,
   showRuns,
   slides,
   slideVersions,
+  todoMilestones,
+  todoProjects,
   userIdentities,
   users,
   workspaceInvites,
   workspaceMembers,
   workspaces,
+  attachments as attachmentRows,
 } from '../src/db/schema';
+import { keepAgentMessage, openAgentChat } from '../src/services/agent-chats';
 import { hashToken } from '../src/auth/session';
 import { encryptToken } from '../src/auth/token-crypto';
 import { ensurePersonalWorkspace } from '../src/services/workspaces';
@@ -54,6 +65,8 @@ import { deleteAccount } from '../src/services/account-deletion';
 import { sweepUnusedAccounts } from '../src/services/unused-accounts';
 import { setUnusedDeletionSince, unusedDeletionSince } from '../src/services/unused-deletion';
 import { blobKeys } from '../src/storage/blob-storage';
+import { loadImage } from '../src/import/load-image';
+import { aiLimits } from '../src/http/ai-limits';
 import {
   createReadyDeck,
   createTestContext,
@@ -215,7 +228,22 @@ const rowCount = async (query: Promise<{ count: number }[]>) => (await query)[0]
 describe('data export (BER-145)', () => {
   it('zips profile, own and taken-over decks with their files, own comments and recordings – no secrets; uploads passed on with a removal stay out', async () => {
     const person = await anna();
+    let plannedFile: string;
     await ctx.deps.db.update(users).set({ callVoice: 'paul' }).where(eq(users.id, person.user.id));
+    // „Dateiendungen zeigen“ is the account's: off until switched on, then on wherever one signs in.
+    const meNow = async () =>
+      ((await (await ctx.request('/api/me', { cookie: person.cookie })).json()) as MeResponse).user;
+    expect((await meNow())?.showExtensions).toBe(false);
+    expect(
+      (
+        await ctx.request('/api/me', {
+          method: 'PATCH',
+          json: { showExtensions: true },
+          cookie: person.cookie,
+        })
+      ).status,
+    ).toBe(200);
+    expect((await meNow())?.showExtensions).toBe(true);
     const own = await createReadyDeck(ctx, { title: 'Annas Deck' });
     const pptxKey = blobKeys.pptx(own.deckId, own.revisionId);
     await ctx.deps.storage.put(pptxKey, new TextEncoder().encode('PPTX'));
@@ -308,6 +336,27 @@ describe('data export (BER-145)', () => {
         cookie,
       });
       expect(kept.status).toBe(200);
+    }
+    // Her message planned for later, with a file: in the archive; gone with her when she leaves.
+    {
+      const form = new FormData();
+      form.append('file', new File(['Plan'], 'Plan.txt', { type: 'text/plain' }));
+      const up = await ctx.request(`/api/workspaces/${ctx.workspaceId}/attachments`, {
+        method: 'POST',
+        body: form,
+        cookie: person.cookie,
+      });
+      plannedFile = ((await up.json()) as { id: string }).id;
+      const planned = await ctx.request(`/api/sender/channels/${direct.id}/scheduled`, {
+        method: 'POST',
+        json: {
+          text: 'Morgen früh',
+          attachments: [plannedFile],
+          sendAt: new Date(ctx.deps.clock.now().getTime() + 86_400_000).toISOString(),
+        },
+        cookie: person.cookie,
+      });
+      expect(planned.status).toBe(201);
     }
     // Writer and Reader: her comments, a reaction, what she and Robert filled in, her signature.
     const [documentId, pdfId] = [crypto.randomUUID(), crypto.randomUUID()];
@@ -426,27 +475,23 @@ describe('data export (BER-145)', () => {
       userId: person.user.id,
       title: 'Schreib einen Bericht',
     });
-    await ctx.deps.db
-      .insert(cloudAgentChats)
-      .values({ id: agentId, agentId, userId: person.user.id });
-    await ctx.deps.db.insert(cloudAgentMessages).values({
-      id: crypto.randomUUID(),
-      agentId,
-      chatId: agentId,
-      seq: 1,
-      role: 'user',
-      text: 'Schreib einen Bericht',
-    });
+    const chatOf = (agent: string, userId: string) =>
+      openAgentChat(
+        ctx.deps.db,
+        { id: agent, workspaceId: ctx.workspaceId },
+        { id: agent, userId, at: ctx.deps.clock.now() },
+      );
+    const tell = (
+      chat: Awaited<ReturnType<typeof chatOf>>,
+      userId: string | null,
+      text: string,
+      byAgent = false,
+    ) => keepAgentMessage(ctx.deps.db, chat, ctx.deps.clock.now(), { userId, text, byAgent });
+    // From before agents were shared, her own message had nobody: hers.
+    const hersChat = await chatOf(agentId, person.user.id);
+    await tell(hersChat, null, 'Schreib einen Bericht');
     // Robert wrote to her agent too; she wrote to his.
-    await ctx.deps.db.insert(cloudAgentMessages).values({
-      id: crypto.randomUUID(),
-      agentId,
-      chatId: agentId,
-      userId: ctx.ownerId,
-      seq: 2,
-      role: 'user',
-      text: 'Mit Zahlen bitte',
-    });
+    await tell(hersChat, ctx.ownerId, 'Mit Zahlen bitte');
     const robertsAgent = crypto.randomUUID();
     await ctx.deps.db.insert(cloudAgents).values({
       id: robertsAgent,
@@ -454,29 +499,9 @@ describe('data export (BER-145)', () => {
       userId: ctx.ownerId,
       title: 'Roberts Agent',
     });
-    await ctx.deps.db
-      .insert(cloudAgentChats)
-      .values({ id: robertsAgent, agentId: robertsAgent, userId: ctx.ownerId });
-    await ctx.deps.db.insert(cloudAgentMessages).values([
-      {
-        id: crypto.randomUUID(),
-        agentId: robertsAgent,
-        chatId: robertsAgent,
-        userId: ctx.ownerId,
-        seq: 1,
-        role: 'user',
-        text: 'Von Robert an seinen',
-      },
-      {
-        id: crypto.randomUUID(),
-        agentId: robertsAgent,
-        chatId: robertsAgent,
-        userId: person.user.id,
-        seq: 2,
-        role: 'user',
-        text: 'Von Anna an Roberts',
-      },
-    ]);
+    const robertsChat = await chatOf(robertsAgent, ctx.ownerId);
+    await tell(robertsChat, ctx.ownerId, 'Von Robert an seinen');
+    await tell(robertsChat, person.user.id, 'Von Anna an Roberts');
     await ctx.deps.db.insert(cloudAgentFiles).values({
       id: crypto.randomUUID(),
       agentId,
@@ -484,39 +509,6 @@ describe('data export (BER-145)', () => {
       name: 'Bericht.md',
       content: '# Bericht',
     });
-    // Tagged in conversations: hers what was said in one she reads – not in a group she is not in.
-    const secretGroup = crypto.randomUUID();
-    await ctx.deps.db
-      .insert(senderChannels)
-      .values({ id: secretGroup, workspaceId: ctx.workspaceId, kind: 'group', name: 'Geheim' });
-    await ctx.deps.db.insert(cloudAgentChats).values([
-      { id: `${agentId}:${direct.id}`, agentId, userId: person.user.id },
-      { id: `${agentId}:${secretGroup}`, agentId, userId: person.user.id },
-      { id: `${robertsAgent}:${secretGroup}`, agentId: robertsAgent, userId: person.user.id },
-    ]);
-    const said = (
-      to: string,
-      chat: string,
-      seq: number,
-      role: 'user' | 'assistant',
-      text: string,
-    ) => ({
-      id: crypto.randomUUID(),
-      agentId: to,
-      chatId: `${to}:${chat}`,
-      userId: role === 'user' ? person.user.id : null,
-      seq,
-      role,
-      text,
-    });
-    await ctx.deps.db
-      .insert(cloudAgentMessages)
-      .values([
-        said(agentId, direct.id, 3, 'user', 'Gerufen im Direkten'),
-        said(agentId, secretGroup, 4, 'user', 'Gerufen, zuvor: Ben: Geheim aus der Gruppe'),
-        said(agentId, secretGroup, 5, 'assistant', 'Geheim beantwortet'),
-        said(robertsAgent, secretGroup, 3, 'user', 'Ben: Geheim bei Robert'),
-      ]);
     // Her agent of an area she no longer sees: only what she wrote to it.
     const board = crypto.randomUUID();
     await ctx.deps.db.insert(cloudAreas).values({
@@ -536,26 +528,10 @@ describe('data export (BER-145)', () => {
       shared: true,
       title: 'Agent',
     });
-    await ctx.deps.db
-      .insert(cloudAgentChats)
-      .values({ id: areaAgent, agentId: areaAgent, userId: person.user.id });
-    await ctx.deps.db.insert(cloudAgentMessages).values(
-      (
-        [
-          [person.user.id, 'user', 'Meins im Bereich'],
-          [ctx.ownerId, 'user', 'Von Robert im Bereich'],
-          [null, 'assistant', 'Antwort im Bereich'],
-        ] as const
-      ).map(([from, role, text], at) => ({
-        id: crypto.randomUUID(),
-        agentId: areaAgent,
-        chatId: areaAgent,
-        userId: from,
-        seq: at + 1,
-        role,
-        text,
-      })),
-    );
+    const areaChat = await chatOf(areaAgent, person.user.id);
+    await tell(areaChat, person.user.id, 'Meins im Bereich');
+    await tell(areaChat, ctx.ownerId, 'Von Robert im Bereich');
+    await tell(areaChat, null, 'Antwort im Bereich', true);
     // Her private one there stays hers in full.
     const privateThere = crypto.randomUUID();
     await ctx.deps.db.insert(cloudAgents).values({
@@ -565,28 +541,9 @@ describe('data export (BER-145)', () => {
       areaId: board,
       title: 'Privat',
     });
-    await ctx.deps.db
-      .insert(cloudAgentChats)
-      .values({ id: privateThere, agentId: privateThere, userId: person.user.id });
-    await ctx.deps.db.insert(cloudAgentMessages).values([
-      {
-        id: crypto.randomUUID(),
-        agentId: privateThere,
-        chatId: privateThere,
-        userId: person.user.id,
-        seq: 1,
-        role: 'user',
-        text: 'Nur für mich',
-      },
-      {
-        id: crypto.randomUUID(),
-        agentId: privateThere,
-        chatId: privateThere,
-        seq: 2,
-        role: 'assistant',
-        text: 'Gern',
-      },
-    ]);
+    const privateChat = await chatOf(privateThere, person.user.id);
+    await tell(privateChat, person.user.id, 'Nur für mich');
+    await tell(privateChat, null, 'Gern', true);
     await ctx.deps.db.insert(cloudAgentFiles).values({
       id: crypto.randomUUID(),
       agentId: areaAgent,
@@ -689,6 +646,7 @@ describe('data export (BER-145)', () => {
       name: 'Anna Schmidt',
       email: 'anna@firma.de',
       callVoice: 'paul',
+      showExtensions: true,
     });
     expect(account.workspaces).toEqual([
       expect.objectContaining({ id: ctx.workspaceId, role: 'member' }),
@@ -743,7 +701,6 @@ describe('data export (BER-145)', () => {
         messages: [
           expect.objectContaining({ role: 'du', text: 'Schreib einen Bericht' }),
           expect.objectContaining({ role: 'andere Person', text: 'Mit Zahlen bitte' }),
-          expect.objectContaining({ role: 'du', text: 'Gerufen im Direkten' }),
         ],
         files: [expect.objectContaining({ name: 'Bericht.md', kind: 'new', content: '# Bericht' })],
       }),
@@ -814,6 +771,14 @@ describe('data export (BER-145)', () => {
         key: direct.id,
         kind: 'conversation',
         text: 'Und die Zahlen …',
+      }),
+    ]);
+    expect(await read('geplant.json')).toEqual([
+      expect.objectContaining({
+        conversationId: direct.id,
+        text: 'Morgen früh',
+        attachments: ['Plan.txt'],
+        state: 'waiting',
       }),
     ]);
     // Her calls: her words, not Robert's, and the notes.
@@ -897,6 +862,17 @@ describe('data export (BER-145)', () => {
       .values({ id: elsewhereId, name: 'Privat', slug: 'privat' });
     await join(person.user.id, elsewhereId, 'admin');
     const keptBox = await mailbox(person.user.id, elsewhereId);
+    // Her own projects and milestones here go with her own to-dos – back again, none show.
+    for (const kind of ['todo-projects', 'todo-milestones'])
+      expect(
+        (
+          await ctx.request(`/api/workspaces/${ctx.workspaceId}/${kind}`, {
+            method: 'POST',
+            json: { name: 'Privatplan' },
+            cookie: person.cookie,
+          })
+        ).status,
+      ).toBe(201);
     const removed = await ctx.request(
       `/api/workspaces/${ctx.workspaceId}/members/${person.user.id}`,
       { method: 'DELETE' },
@@ -911,6 +887,10 @@ describe('data export (BER-145)', () => {
       ).map((row) => row.id),
     ).toEqual([keptBox]);
     expect(await ctx.deps.storage.list(`mail/${box}/`)).toEqual([]);
+    for (const table of [todoProjects, todoMilestones])
+      expect(
+        await ctx.deps.db.select().from(table).where(eq(table.ownerId, person.user.id)),
+      ).toEqual([]);
     expect(await ctx.deps.storage.list(`mail/${keptBox}/`)).toHaveLength(2);
     await ctx.deps.background?.idle();
     expect(revoked).toEqual([
@@ -932,6 +912,10 @@ describe('data export (BER-145)', () => {
     expect(after.file(ownEntry.file)).toBeNull();
     // Her drafts and pins there go with her: nobody could see or delete them any more.
     expect(JSON.parse((await after.file('entwuerfe.json')?.async('string')) ?? '')).toEqual([]);
+    expect(JSON.parse((await after.file('geplant.json')?.async('string')) ?? '')).toEqual([]);
+    expect(
+      await ctx.deps.db.select().from(attachmentRows).where(eq(attachmentRows.id, plannedFile)),
+    ).toEqual([]);
     expect(
       JSON.parse((await after.file('konto.json')?.async('string')) ?? '').senderPinned,
     ).toEqual([]);
@@ -939,7 +923,7 @@ describe('data export (BER-145)', () => {
 });
 
 describe('own account settings', () => {
-  it('removing a login signs out everywhere else; renaming renames the comments, an empty name is refused', async () => {
+  it('removing a login signs out everywhere else; renaming renames the comments, an empty name is refused; an own picture is drawn anew and seen by colleagues', async () => {
     const here = await anna();
     const elsewhere = await signedInUser(ctx, { name: 'Anna Schmidt', email: 'anna@firma.de' });
     await ctx.deps.db.insert(userIdentities).values([
@@ -971,6 +955,91 @@ describe('own account settings', () => {
     expect(((await renamed.json()) as { user: { name: string } }).user.name).toBe('Anna Becker');
     const [row] = await ctx.deps.db.select().from(comments).where(eq(comments.id, commentId));
     expect((row?.author as Author).name).toBe('Anna Becker');
+
+    // An own picture (Konto › Profil): drawn by us as a square JPEG, seen by colleagues only.
+    const wide = new Uint8Array(await createCanvas(30, 20).encode('png'));
+    const sent = (bytes: Uint8Array, name: string) => {
+      const body = new FormData();
+      body.append('file', new File([bytes.slice()], name));
+      return body;
+    };
+    const putPicture = (bytes: Uint8Array, name = 'ich.png') =>
+      ctx.request('/api/me/picture', {
+        method: 'PUT',
+        body: sent(bytes, name),
+        cookie: here.cookie,
+      });
+    expect((await putPicture(new TextEncoder().encode('kein Bild'), 'notiz.txt')).status).toBe(400);
+    const put = await putPicture(wide);
+    expect(put.status).toBe(200);
+    const mine = (await put.json()) as MePicture;
+    expect(mine).toEqual({ url: expect.stringMatching(/^\/files\/users\/.+\.jpg\?/), ai: false });
+    const pictureKey = async () =>
+      (
+        await ctx.deps.db
+          .select({ picture: users.picture })
+          .from(users)
+          .where(eq(users.id, here.user.id))
+      )[0]?.picture ?? null;
+    const first = (await pictureKey())!;
+    const served = await ctx.request(mine.url!, { cookie: here.cookie });
+    expect(served.headers.get('content-type')).toBe('image/jpeg');
+    const drawn = await loadImage(new Uint8Array(await served.arrayBuffer()));
+    expect([drawn.width, drawn.height]).toEqual([512, 512]);
+    const peopleOf = async (cookie?: string) =>
+      (await (await ctx.request('/api/people/pictures', { cookie })).json()) as PeoplePictures;
+    expect((await peopleOf())[here.user.id]).toBe(mine.url);
+    const outsider = await signedInUser(ctx, { name: 'Olaf Berg', email: 'olaf@woanders.de' });
+    expect(await peopleOf(outsider.cookie)).toEqual({});
+    const exported = await JSZip.loadAsync(
+      await (await ctx.request('/api/me/export', { cookie: here.cookie })).arrayBuffer(),
+    );
+    expect(exported.file('profilbild.jpg')).not.toBeNull();
+    // Without an image model that goes after a photo: no „Profibild mit KI“, said so.
+    const professional = await ctx.request('/api/me/picture/professional', {
+      method: 'POST',
+      body: sent(wide, 'foto.png'),
+      cookie: here.cookie,
+    });
+    expect(professional.status).toBe(400);
+    expect(JSON.stringify(await professional.json())).toContain('Bildgenerierung');
+    // A new picture's file replaces the old one's; deleting goes back to the name's.
+    expect((await putPicture(wide)).status).toBe(200);
+    expect(await pictureKey()).not.toBe(first);
+    expect(await ctx.deps.storage.get(first)).toBeNull();
+    const second = (await pictureKey())!;
+    expect(
+      (await ctx.request('/api/me/picture', { method: 'DELETE', cookie: here.cookie })).status,
+    ).toBe(204);
+    expect(await (await ctx.request('/api/me/picture', { cookie: here.cookie })).json()).toEqual({
+      url: null,
+      ai: false,
+    });
+    expect(await ctx.deps.storage.get(second)).toBeNull();
+    expect(await peopleOf()).not.toHaveProperty(here.user.id);
+    // A small file claiming more pixels than any phone's photo is not decoded.
+    const huge = wide.slice();
+    new DataView(huge.buffer).setUint32(16, 8000);
+    new DataView(huge.buffer).setUint32(20, 6000);
+    const tooBig = await putPicture(huge);
+    expect(tooBig.status).toBe(400);
+    expect(JSON.stringify(await tooBig.json())).toContain('Megapixel');
+    // Each upload or photo for the AI is decoded whole: six a minute per person together (five
+    // sent above, the photo among them), then both refused.
+    expect((await putPicture(wide)).status).toBe(200);
+    expect((await putPicture(wide)).status).toBe(429);
+    const photoAgain = await ctx.request('/api/me/picture/professional', {
+      method: 'POST',
+      body: sent(wide, 'foto.png'),
+      cookie: here.cookie,
+    });
+    expect(photoAgain.status).toBe(429);
+    // …without using up the AI's budget, which every other AI feature shares (one photo above).
+    const aiLeft = Array.from(
+      { length: 19 },
+      () => aiLimits(ctx.deps).aiRequests.hit(here.user.id).allowed,
+    );
+    expect(aiLeft.every(Boolean)).toBe(true);
   });
 });
 
@@ -1103,6 +1172,39 @@ describe('deleting an account (BER-145)', () => {
       text: 'Noch nicht abgeschickt',
       updatedAt: new Date(),
     });
+    // Her message planned for later goes unsent, its file with it – not the file of one stuck
+    // after it went out (posted under the plan's id): the message has it.
+    const planKey = `workspaces/${ctx.workspaceId}/attachments/plan-file`;
+    for (const id of ['plan-file', 'posted-file'])
+      await ctx.deps.db.insert(attachmentRows).values({
+        id,
+        workspaceId: ctx.workspaceId,
+        userId: annaId,
+        name: 'Plan.txt',
+        type: 'text/plain',
+        size: 4,
+        key: `workspaces/${ctx.workspaceId}/attachments/${id}`,
+        takenAt: new Date(),
+      });
+    await ctx.deps.db.insert(senderScheduled).values({
+      id: hers,
+      workspaceId: ctx.workspaceId,
+      channelId: direct.id,
+      userId: annaId,
+      text: 'Hallo Robert',
+      attachments: [{ id: 'posted-file', name: 'Plan.txt', type: 'text/plain', size: 4 }],
+      sendAt: new Date(),
+      state: 'failed',
+    });
+    await ctx.deps.db.insert(senderScheduled).values({
+      id: crypto.randomUUID(),
+      workspaceId: ctx.workspaceId,
+      channelId: direct.id,
+      userId: annaId,
+      text: 'Später',
+      attachments: [{ id: 'plan-file', name: 'Plan.txt', type: 'text/plain', size: 4 }],
+      sendAt: new Date(Date.now() + 86_400_000),
+    });
     // Then two more in the workspace: another Anna, and her namesake. Their mentions stay theirs.
     const berg = await signedInUser(ctx, { name: 'Anna Berg', email: 'berg@firma.de' });
     await join(berg.user.id, ctx.workspaceId, 'member');
@@ -1183,6 +1285,39 @@ describe('deleting an account (BER-145)', () => {
       expiresAt: new Date(Date.now() + 86_400_000),
     });
 
+    // Her agent goes with her, its chats with it – and the file Robert sent there, its bytes too.
+    const herAgent = crypto.randomUUID();
+    await ctx.deps.db.insert(cloudAgents).values({
+      id: herAgent,
+      workspaceId: ctx.workspaceId,
+      userId: annaId,
+      title: 'Ablage',
+    });
+    const fileKey = `workspaces/${ctx.workspaceId}/attachments/agent-file`;
+    await ctx.deps.db.insert(attachmentRows).values({
+      id: 'agent-file',
+      workspaceId: ctx.workspaceId,
+      userId: ctx.ownerId,
+      name: 'Liste.txt',
+      type: 'text/plain',
+      size: 5,
+      key: fileKey,
+      takenAt: new Date(),
+    });
+    await keepAgentMessage(
+      ctx.deps.db,
+      await openAgentChat(
+        ctx.deps.db,
+        { id: herAgent, workspaceId: ctx.workspaceId },
+        { id: herAgent, userId: annaId, at: ctx.deps.clock.now() },
+      ),
+      ctx.deps.clock.now(),
+      {
+        userId: ctx.ownerId,
+        text: 'Hier die Liste',
+        attachments: [{ id: 'agent-file', name: 'Liste.txt', type: 'text/plain', size: 5 }],
+      },
+    );
     // Her files are noted for deletion with the rows: a crash after the commit leaves them to
     // the sweep. Gone, the notes go too.
     const transaction = ctx.deps.db.transaction.bind(ctx.deps.db);
@@ -1201,8 +1336,16 @@ describe('deleting an account (BER-145)', () => {
         run.recordingKey,
         blobKeys.deckPrefix(linked.deckId),
         ...mailboxes.map((id) => `mail/${id}/`),
+        fileKey,
+        planKey,
       ]),
     );
+    expect(
+      await ctx.deps.db
+        .select()
+        .from(attachmentRows)
+        .where(inArray(attachmentRows.id, ['agent-file', 'plan-file', 'posted-file'])),
+    ).toEqual([expect.objectContaining({ id: 'posted-file' })]);
     expect(await ctx.deps.db.select().from(blobDeletions)).toEqual([]);
     // The services are asked to forget her grants after that, in the background.
     await ctx.deps.background?.idle();

@@ -1,11 +1,19 @@
-import { eq } from 'drizzle-orm';
+import { asc, eq } from 'drizzle-orm';
 import { afterEach, describe, expect, it } from 'vitest';
 import { OdpDocument, isOdpBytes } from '@slider/odp';
 import { deckSchema, slideSchema, type Slide } from '@slider/shared';
-import { revisions } from '../src/db/schema';
-import { createLibreOfficePdf, findSoffice } from '../src/import/libreoffice';
+import {
+  cloudNodes,
+  cloudVersions,
+  revisions,
+  slideVersions,
+  workspaceFonts,
+} from '../src/db/schema';
+import { createLibreOfficePdf, findSoffice, type PptxToPdf } from '../src/import/libreoffice';
+import { blobKeys } from '../src/storage/blob-storage';
 import { createTestContext, type TestContext } from './helpers';
 import { DEMO_ODP, fakeOdpPdf, odpForm } from './odp-helpers';
+import { makeSlidesPdf } from './pdf';
 
 /*
  * ODP decks (BER-177): imported as they are – an ODP that stays an ODP – with ids on every
@@ -117,6 +125,140 @@ describe('an ODP deck', () => {
       });
       expect(res.status).toBe(400);
       expect(await res.text()).toContain('nicht lesen');
+    }
+    // A file Cloud drew already opens on those pictures until LibreOffice's come (here it
+    // fails, so they stay); pages that do not fit the visible slides leave the SVG previews.
+    // Cloud draws it as its deck is drawn (the workspace's fonts, LibreOffice's table); one
+    // drawn the old way is drawn anew when listed – its small picture with it – and opens on
+    // that one.
+    for (const cloudPages of [5, 4]) {
+      await ctx?.cleanup();
+      const broken = async () => {
+        throw new Error('LibreOffice fehlt');
+      };
+      const pdfOf = (pages: number) =>
+        makeSlidesPdf(
+          Array.from({ length: pages }, (_, i) => ({
+            texts: [{ text: `Cloud ${i + 1}`, x: 80, y: 60, size: 40 }],
+          })),
+        );
+      const drawn: { kind: string; fonts: unknown; priority?: string }[] = [];
+      let unreadable = false;
+      ctx = await createTestContext({
+        libreOfficePdf: Object.assign(broken, { pages: broken }) as PptxToPdf,
+        materialPdf: async (_bytes, kind, options) => {
+          drawn.push({ kind, fonts: options?.fonts, priority: options?.priority });
+          return unreadable ? new Uint8Array([1, 2, 3]) : pdfOf(cloudPages);
+        },
+      });
+      const query = new URLSearchParams({ name: 'Strategie.odp' });
+      const up = await ctx.request(`/api/workspaces/${ctx.workspaceId}/cloud/files?${query}`, {
+        method: 'POST',
+        body: DEMO_ODP,
+        headers: { 'Content-Type': 'application/octet-stream' },
+      });
+      expect(up.status).toBe(201);
+      const { node } = (await up.json()) as { node: { id: string } };
+      await ctx.deps.background?.idle();
+      const [version] = await ctx.deps.db
+        .select()
+        .from(cloudVersions)
+        .where(eq(cloudVersions.nodeId, node.id));
+      expect(version!.preview).toBe('ready');
+      expect(drawn.splice(0)).toEqual([{ kind: 'odp', fonts: [], priority: 'background' }]);
+      // As drawn before: in the pool, unmarked.
+      await ctx.deps.storage.delete(
+        blobKeys.cloudPreviewAsDeck(ctx.workspaceId, node.id, version!.id),
+      );
+      await ctx.deps.storage.put(
+        blobKeys.cloudPreview(ctx.workspaceId, node.id, version!.id),
+        pdfOf(9 - cloudPages),
+      );
+      await ctx.deps.storage.put(
+        blobKeys.cloudThumbnail(ctx.workspaceId, node.id, version!.id),
+        new Uint8Array([1, 2, 3]),
+      );
+      const picture = `/api/cloud/nodes/${node.id}/thumbnail?v=${version!.id}`;
+      const before = (await ctx.request(picture)).headers.get('ETag')!;
+      const list = `/api/workspaces/${ctx.workspaceId}/cloud/nodes?scope=folder`;
+      expect((await ctx.request(list)).status).toBe(200);
+      await ctx.deps.background?.idle();
+      expect(drawn.splice(0)).toEqual([{ kind: 'odp', fonts: [], priority: 'background' }]);
+      const after = await ctx.request(picture, { headers: { 'If-None-Match': before } });
+      expect(after.status).toBe(200);
+      expect(after.headers.get('ETag')).not.toBe(before);
+      // Once: listed again, nothing is drawn.
+      await ctx.request(list);
+      await ctx.deps.background?.idle();
+      expect(drawn).toEqual([]);
+      // A workspace font it names, added later, has it drawn anew once; one it does not name not.
+      // A PDF drawn anew whose first page cannot be drawn changes nothing.
+      const thumbnailNow = async () =>
+        (await ctx!.deps.db.select().from(cloudNodes).where(eq(cloudNodes.id, node.id)))[0]!
+          .thumbnail;
+      const kept = blobKeys.cloudThumbnail(ctx.workspaceId, node.id, version!.id);
+      for (const [id, family] of [
+        ['font-other', 'Abril Fatface'],
+        ['font-named', 'Calibri Light'],
+        ['font-unreadable', 'Calibri'],
+      ] as const) {
+        unreadable = id === 'font-unreadable';
+        if (unreadable) await ctx.deps.storage.put(kept, new Uint8Array([9, 9, 9]));
+        await ctx.deps.db.insert(workspaceFonts).values({
+          id,
+          workspaceId: ctx.workspaceId,
+          family,
+          weight: 400,
+          italic: false,
+          format: 'ttf',
+          sizeBytes: 1,
+          upm: 1000,
+          ascent: 800,
+          descent: -200,
+          storageKey: `fonts/${id}.ttf`,
+        });
+        await ctx.request(list);
+        await ctx.deps.background?.idle();
+        expect(drawn.splice(0)).toEqual(
+          id === 'font-other' ? [] : [{ kind: 'odp', fonts: [], priority: 'background' }],
+        );
+        expect(await thumbnailNow()).toBe('ready');
+      }
+      expect([...((await ctx.deps.storage.get(kept)) ?? [])]).toEqual([9, 9, 9]);
+      unreadable = false;
+      await ctx.request(list);
+      await ctx.deps.background?.idle();
+      expect(drawn).toEqual([]);
+      // A file without a small picture gets one when listed – not while it was just changed (a
+      // Writer document typed in saves anew).
+      for (const ago of [0, 120_000]) {
+        await ctx.deps.db
+          .update(cloudNodes)
+          .set({ thumbnail: 'none', updatedAt: new Date(ctx.deps.clock.now().getTime() - ago) })
+          .where(eq(cloudNodes.id, node.id));
+        await ctx.request(list);
+        await ctx.deps.background?.idle();
+        expect(await thumbnailNow()).toBe(ago ? 'ready' : 'none');
+      }
+      expect(drawn).toEqual([]);
+      const opened = await ctx.request(`/api/cloud/nodes/${node.id}/present`, { method: 'POST' });
+      expect(opened.status).toBe(201);
+      const deck = deckSchema.parse(await opened.json());
+      await ctx.deps.queue.idle();
+      const rows = await ctx.deps.db
+        .select()
+        .from(slideVersions)
+        .innerJoin(revisions, eq(revisions.id, slideVersions.revisionId))
+        .where(eq(revisions.deckId, deck.id))
+        .orderBy(asc(slideVersions.position));
+      const kinds = rows.map(({ slide_versions: row }) => row.imageKey.split('.').pop());
+      expect(kinds).toEqual(
+        cloudPages === 5
+          ? ['webp', 'webp', 'webp', 'webp', 'svg', 'webp'] // the hidden one has no page
+          : ['svg', 'svg', 'svg', 'svg', 'svg', 'svg'],
+      );
+      // The `fresh` re-render ran (and found no better renderer).
+      expect(rows.map(({ slide_versions: row }) => row.renderer)).toEqual(Array(6).fill('svg'));
     }
   });
 });

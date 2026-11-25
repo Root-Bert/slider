@@ -65,7 +65,7 @@ export function MailAvatar({
       author={author}
       size={size}
       nativeTitle={nativeTitle}
-      picture={generatedInitials(author.name)}
+      picture={generatedInitials(author.name, person.address)}
     >
       {src && logo === 'loading' && (
         // Loaded unseen over the initials; then the logo stands alone (above).

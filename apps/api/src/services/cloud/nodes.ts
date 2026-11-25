@@ -54,7 +54,7 @@ import {
   looksOnly,
 } from './context';
 import { recordEvent } from './events';
-import { searchText } from './pictures';
+import { healThumbnails, searchText } from './pictures';
 import {
   assertDepth,
   descendantsOf,
@@ -379,6 +379,7 @@ async function listFolder(
 ): Promise<CloudListing> {
   const target = await resolveTarget(deps, ctx, { parentId: query.folder, areaId: query.area });
   const rows = (await siblingsIn(deps.db, target.place)).sort(byName);
+  healThumbnails(deps, rows);
   // A share on a single thing in here can only add to the folder's right.
   const own =
     target.access === 'manage'
@@ -486,6 +487,7 @@ async function listRecent(deps: CloudDeps, ctx: CloudCtx): Promise<CloudNode[]> 
     .sort((a, b) => (at.get(b.id) ?? 0) - (at.get(a.id) ?? 0))
     .slice(0, RECENT_LIMIT);
   const seen = await withAccess(deps, ctx, sorted);
+  healThumbnails(deps, seen.rows);
   const nodes = await toNodeDtos(deps, ctx, seen.rows, {
     access: (row) => seen.access.get(row.id) ?? 'view',
     location: true,

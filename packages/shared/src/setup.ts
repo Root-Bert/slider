@@ -109,9 +109,14 @@ export type SaveSetupResult = z.infer<typeof saveSetupResultSchema>;
 
 /**
  * `GET /health`. `bootId` is new with every start of the server process: after saving, the setup
- * page knows the restarted server by it. Servers from before it leave it out.
+ * page knows the restarted server by it. `version`: the release it runs (`null` from a checkout) –
+ * an app left open takes a new one over by it (`lib/app-version.ts`). Older servers leave both out.
  */
-export const healthSchema = z.object({ ok: z.boolean(), bootId: z.string().optional() });
+export const healthSchema = z.object({
+  ok: z.boolean(),
+  bootId: z.string().optional(),
+  version: z.string().nullable().optional(),
+});
 export type Health = z.infer<typeof healthSchema>;
 
 /** `POST /setup/claim` – the signed-in account is now instance admin. */

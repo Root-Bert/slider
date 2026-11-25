@@ -2,24 +2,38 @@ import type Anthropic from '@anthropic-ai/sdk';
 import { and, eq, gte, inArray, isNull, lt } from 'drizzle-orm';
 import { imageSize } from '@slider/odp';
 import {
+  attachmentLimit,
   cloudReference,
   isCloudReference,
   isPictureAttachment,
-  MAX_ATTACHMENT_BYTES,
+  isVideoAttachment,
   MAX_ATTACHMENTS,
   type Attachment,
 } from '@slider/shared';
 import type { Executor } from '../db/client';
-import { attachments, cloudAgentMessages, cloudNodes, type CloudNodeRow } from '../db/schema';
+import {
+  attachments,
+  cloudNodes,
+  senderChannels,
+  senderMessages,
+  type CloudNodeRow,
+} from '../db/schema';
 import type { AppDeps } from '../deps';
 import { ApiError, badRequest } from '../http/errors';
 import { blobKeys } from '../storage/blob-storage';
-import { deleteBlobs, storageBlobs, type BlobDeletionDeps } from './blob-deletions';
+import {
+  deleteBlobs,
+  noteBlobs,
+  storageBlobs,
+  type BlobDeletion,
+  type BlobDeletionDeps,
+} from './blob-deletions';
 import { assertStorageFor } from './plans';
 import { accessOf, cloudContext } from './cloud/context';
 import { versionToServe } from './cloud/files';
 import { requireRole } from './workspaces/roles';
 import { attachmentText } from './mail-attachment-text';
+import { VIDEO_DIGEST_SUFFIX, videoBlocks } from './video-digest';
 
 /*
  * Files put on what one writes (see `@slider/shared` attachments): up at once, waiting as the
@@ -90,8 +104,12 @@ export async function uploadAttachment(
 ): Promise<Attachment> {
   await requireRole(deps.db, workspaceId, userId);
   if (file.bytes.byteLength === 0) throw badRequest('Diese Datei ist leer.');
-  if (file.bytes.byteLength > MAX_ATTACHMENT_BYTES) {
-    throw badRequest('Diese Datei ist zu groß – höchstens 25 MB je Datei.');
+  if (file.bytes.byteLength > attachmentLimit(file.type)) {
+    throw badRequest(
+      isVideoAttachment(file.type)
+        ? 'Dieses Video ist zu groß – höchstens 200 MB.'
+        : 'Diese Datei ist zu groß – höchstens 25 MB je Datei.',
+    );
   }
   // They count towards the workspace's storage as its other files do: early, before the bytes
   // are stored; the binding check runs again under the workspace's lock with the row.
@@ -124,13 +142,17 @@ export async function uploadAttachment(
   return { id, name, type, size: file.bytes.byteLength };
 }
 
+/** A file's blobs: its bytes, and a video's digest beside them (`video-digest.ts`). */
+const attachmentBlobs = (keys: readonly string[]) =>
+  storageBlobs(keys.flatMap((key) => [key, key + VIDEO_DIGEST_SUFFIX]));
+
 /** Takes a waiting file off again: gone, bytes and all. Taken ones stay (they are a message's). */
 export async function dropAttachment(deps: AppDeps, userId: string, id: string): Promise<void> {
   const [gone] = await deps.db
     .delete(attachments)
     .where(and(eq(attachments.id, id), eq(attachments.userId, userId), isNull(attachments.takenAt)))
     .returning({ key: attachments.key });
-  if (gone) await deleteBlobs(deps, storageBlobs([gone.key]));
+  if (gone) await deleteBlobs(deps, attachmentBlobs([gone.key]));
 }
 
 /**
@@ -245,7 +267,30 @@ export async function deleteAttachments(
     )
     .returning({ key: attachments.key });
   // Storage failing after the rows went: noted and tried again, never a failed request.
-  await deleteBlobs(deps, storageBlobs(gone.map((one) => one.key)));
+  await deleteBlobs(deps, attachmentBlobs(gone.map((one) => one.key)));
+}
+
+/**
+ * The rows of files on something deleted in the same transaction (an account, a chat moved away):
+ * gone with it, their bytes noted for after the commit (`noteBlobs`, else the hourly sweep).
+ * Returns the notes, for `deleteNotedBlobs` once committed.
+ */
+export async function dropAttachmentRows(
+  db: Executor,
+  all: readonly Pick<Attachment, 'id' | 'nodeId'>[],
+): Promise<BlobDeletion[]> {
+  const ids = all.filter((one) => !isCloudReference(one)).map((one) => one.id);
+  const keys: string[] = [];
+  for (let from = 0; from < ids.length; from += 500) {
+    const gone = await db
+      .delete(attachments)
+      .where(inArray(attachments.id, ids.slice(from, from + 500)))
+      .returning({ key: attachments.key });
+    keys.push(...gone.map((one) => one.key));
+  }
+  const blobs = attachmentBlobs(keys);
+  await noteBlobs(db, blobs);
+  return blobs;
 }
 
 /**
@@ -321,9 +366,16 @@ export async function dropUnkeptCopies(
 ): Promise<void> {
   if (copies.every(isCloudReference)) return;
   const kept = await deps.db
-    .select({ attachments: cloudAgentMessages.attachments })
-    .from(cloudAgentMessages)
-    .where(and(eq(cloudAgentMessages.agentId, agentId), gte(cloudAgentMessages.createdAt, since)));
+    .select({ attachments: senderMessages.attachments })
+    .from(senderMessages)
+    .innerJoin(senderChannels, eq(senderChannels.id, senderMessages.channelId))
+    .where(
+      and(
+        eq(senderChannels.kind, 'agent'),
+        eq(senderChannels.agentId, agentId),
+        gte(senderMessages.createdAt, since),
+      ),
+    );
   const held = new Set(kept.flatMap((row) => (row.attachments ?? []).map((one) => one.id)));
   await deleteAttachments(
     deps,
@@ -337,15 +389,25 @@ export async function attachmentFile(
   userId: string,
   id: string,
 ): Promise<{ name: string; type: string; bytes: Uint8Array }> {
+  const row = await attachmentRow(deps, userId, id);
+  const bytes = await deps.storage.get(row.key);
+  if (!bytes) throw notThere();
+  return { name: row.name, type: row.type, bytes };
+}
+
+/** A file's row, for a member of its workspace (a waiting one: its writer only) – to stream it. */
+export async function attachmentRow(
+  deps: AppDeps,
+  userId: string,
+  id: string,
+): Promise<{ name: string; type: string; size: number; key: string }> {
   const [row] = await deps.db.select().from(attachments).where(eq(attachments.id, id));
   if (!row) throw notThere();
   if (!row.takenAt && row.userId !== userId) throw notThere();
   await requireRole(deps.db, row.workspaceId, userId).catch(() => {
     throw notThere();
   });
-  const bytes = await deps.storage.get(row.key);
-  if (!bytes) throw notThere();
-  return { name: row.name, type: row.type, bytes };
+  return { name: row.name, type: row.type, size: row.size, key: row.key };
 }
 
 /** Files put on things never sent: gone after seven days (the hourly retention job). */
@@ -355,7 +417,7 @@ export async function sweepAttachments(deps: AppDeps): Promise<void> {
     .delete(attachments)
     .where(and(isNull(attachments.takenAt), lt(attachments.createdAt, before)))
     .returning({ key: attachments.key });
-  await deleteBlobs(deps, storageBlobs(old.map((one) => one.key)));
+  await deleteBlobs(deps, attachmentBlobs(old.map((one) => one.key)));
 }
 
 /**
@@ -464,6 +526,13 @@ export async function attachmentBlocks(
       if (picture) {
         blocks.push({ type: 'text', text: `<datei name="${name}" art="Bild"></datei>` });
         blocks.push(picture);
+        continue;
+      }
+    }
+    if (isVideoAttachment(row.type)) {
+      const video = await videoBlocks(deps, row, name);
+      if (video) {
+        blocks.push(...video);
         continue;
       }
     }

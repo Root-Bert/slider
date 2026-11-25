@@ -1,6 +1,7 @@
 import type { CallVoices, MeResponse, UpdateMeInput } from '@slider/shared';
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { api, apiFile, pageIsFor } from '../api-client';
+import { useMutation, useQuery, useQueryClient, type QueryClient } from '@tanstack/react-query';
+import { api, apiFile, isStoredAnswer, pageIsFor } from '../api-client';
+import { sawVersion } from '../app-version';
 import { queryKeys } from './keys';
 
 export const useMe = () =>
@@ -9,6 +10,8 @@ export const useMe = () =>
     queryFn: async () => {
       const me = await api.get<MeResponse>('/me');
       pageIsFor(me.user?.id ?? null);
+      // From the offline store it may name a release long gone.
+      if (!isStoredAnswer(me)) sawVersion(me.version);
       return me;
     },
     staleTime: Infinity,
@@ -41,6 +44,38 @@ export function useUpdateMe() {
       void queryClient.invalidateQueries({ queryKey: queryKeys.decks });
     },
   });
+}
+
+/**
+ * Einstellungen › Dateien › „Dateiendungen zeigen“, kept with the account: every list shows the
+ * change at once (the account's answer changed in place), a refusal puts it back.
+ */
+export function useSetShowExtensions() {
+  const queryClient = useQueryClient();
+  const put = (shown: boolean) =>
+    queryClient.setQueryData<MeResponse>(queryKeys.me, (me) =>
+      me?.user ? { ...me, user: { ...me.user, showExtensions: shown } } : me,
+    );
+  return useMutation({
+    scope: { id: 'me' },
+    mutationFn: (shown: boolean) => api.patch<MeResponse>('/me', { showExtensions: shown }),
+    onMutate: (shown) => {
+      const before = queryClient.getQueryData<MeResponse>(queryKeys.me)?.user?.showExtensions;
+      put(shown);
+      return { before };
+    },
+    onError: (_error, _shown, context) => {
+      if (context?.before !== undefined) put(context.before);
+    },
+  });
+}
+
+/** A browser's choice from before the account kept it, saved to the account once. */
+export async function saveShowExtensions(queryClient: QueryClient, shown: boolean) {
+  queryClient.setQueryData(
+    queryKeys.me,
+    await api.patch<MeResponse>('/me', { showExtensions: shown }),
+  );
 }
 
 const CALL_VOICE = ['call-voice'] as const;

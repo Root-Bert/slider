@@ -381,9 +381,6 @@ export function ChatAnswer({
   onCopied: (ok: boolean) => void;
 }) {
   const writing = entry.state === 'answering';
-  // While it is written, a source half come is left out until it is whole.
-  const text = writing ? entry.text.replace(/\[\[[^\]]*\]?$/, '') : entry.text;
-  const rich = useMemo(() => (text.trim() ? markdownToRich(text) : null), [text]);
   return (
     <article aria-label="Antwort der KI" className="group/message flex flex-col gap-2">
       <div className="roll-away -mb-1 flex min-h-6 min-w-0 items-center gap-1.5 text-xs text-fg-subtle">
@@ -396,15 +393,44 @@ export function ChatAnswer({
           />
         )}
       </div>
+      <AnswerBody entry={entry} renderText={renderText} />
+    </article>
+  );
+}
+
+/**
+ * An answer's words (markdown) and how it stands – what it does while it writes, stopped, why it
+ * failed: in the AI's chat, and an agent's answer in the list every conversation has.
+ */
+export function AnswerBody({
+  entry,
+  renderText,
+  rollAway = true,
+}: {
+  entry: Pick<ChatEntry, 'text' | 'state' | 'reading' | 'readingIn' | 'error'>;
+  renderText?: (run: string) => ReactNode;
+  /** Its parts shrink away at the top of the AI's chat (`roll-away`); in a conversation, none. */
+  rollAway?: boolean;
+}) {
+  const roll = rollAway ? 'roll-away' : undefined;
+  const writing = entry.state === 'answering';
+  // While it is written, a source half come is left out until it is whole.
+  const text = writing ? entry.text.replace(/\[\[[^\]]*\]?$/, '') : entry.text;
+  const rich = useMemo(() => (text.trim() ? markdownToRich(text) : null), [text]);
+  return (
+    <>
       {rich && (
         <RichText
           rich={rich}
-          className="flex flex-col gap-2 text-body leading-[1.45] break-words text-fg *:roll-away [&_li+li]:mt-1"
+          className={cn(
+            'flex flex-col gap-2 text-body leading-[1.45] break-words text-fg [&_li+li]:mt-1',
+            rollAway && '*:roll-away',
+          )}
           {...(renderText ? { renderText } : {})}
         />
       )}
       {writing && (
-        <div className="roll-away flex items-center gap-2">
+        <div className={cn(roll, 'flex items-center gap-2')}>
           <p
             className="flex min-w-0 flex-1 items-center gap-2 text-caption text-fg-subtle"
             aria-live="polite"
@@ -421,9 +447,9 @@ export function ChatAnswer({
         </div>
       )}
       {entry.state === 'stopped' && (
-        <p className="roll-away text-caption text-fg-subtle">Gestoppt</p>
+        <p className={cn(roll, 'text-caption text-fg-subtle')}>Gestoppt</p>
       )}
-      {entry.error && <p className="roll-away text-caption text-danger">{entry.error}</p>}
-    </article>
+      {entry.error && <p className={cn(roll, 'text-caption text-danger')}>{entry.error}</p>}
+    </>
   );
 }

@@ -9,7 +9,7 @@ import {
   type KeyboardEvent as ReactKeyboardEvent,
 } from 'react';
 import { isApplePlatform } from '@/lib/platform';
-import { useCreateComment, useDeleteComment } from '@/lib/api';
+import { suggestVideoCuts, useCreateComment, useDeleteComment } from '@/lib/api';
 import {
   Avatar,
   Button,
@@ -456,6 +456,14 @@ function ComposerPopover({ draft }: { draft: Draft }) {
           autoFocus
           onDiscard={discardVideo}
           onSend={sendNow}
+          editor={{
+            doneLabel: 'Schnitt übernehmen',
+            // The AI's cuts go through the workspace's keys: for its members, not a link's guests.
+            autoCut:
+              viewer.author.type === 'owner'
+                ? (speech, signal) => suggestVideoCuts(deck.workspaceId, speech, signal)
+                : undefined,
+          }}
         />
       )}
 

@@ -1,6 +1,6 @@
 import { useRef } from 'react';
 import { cn, IconButton, Kbd, Spinner, TextField } from '@/ui';
-import { isApplePlatform } from '@/lib/platform';
+import { searchKeyLabel } from '@/lib/platform';
 import { useSearchShortcut } from '../hooks/useSearchShortcut';
 
 interface ViewSearchProps {
@@ -27,7 +27,7 @@ interface ViewSearchProps {
  * A page's own search (Präsentationen, Bibliothek, Post, Gelöscht), in the toolbar left of the
  * sort select. By default it filters the names; the button in the field adds the contents –
  * a deck's slides and comments (BER-175), a template's layouts, a font's stand-ins and origin.
- * ⌘K / Strg K focuses it (⌘F is the side bar's), Escape clears it.
+ * ⌘F / Strg F focuses it (⇧⌘F is the side bar's), Escape clears it.
  */
 export function ViewSearch({
   label,
@@ -47,7 +47,7 @@ export function ViewSearch({
       inputRef.current?.select();
     },
     true,
-    'k',
+    'page',
   );
 
   return (
@@ -71,7 +71,7 @@ export function ViewSearch({
             {searching ? (
               <Spinner size={16} className="text-fg-subtle" label="Sucht in den Inhalten" />
             ) : (
-              <Kbd className="max-sm:hidden">{isApplePlatform() ? '⌘K' : 'Strg K'}</Kbd>
+              <Kbd className="max-sm:hidden">{searchKeyLabel('page')}</Kbd>
             )}
             {contentLabel && onContentChange && (
               <IconButton

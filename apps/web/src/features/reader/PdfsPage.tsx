@@ -8,6 +8,7 @@ import { isTextTarget } from '@/lib/dom';
 import { withCount } from '@/lib/format';
 import { isOnControl } from '@/lib/marquee-select';
 import { routes } from '@/lib/routes';
+import { usePageCommands } from '@/features/commands';
 import { useAccount } from '@/features/auth';
 import { useDeckContextMenu, useStoredChoice } from '@/features/reviews';
 import {
@@ -186,10 +187,13 @@ export function Component() {
     if (event.defaultPrevented || isOnControl(event.target)) return;
     pageMenu.onContextMenu(event);
   };
+  // What is brought here – the page's menu and the command panel (⌘K) alike.
+  const makeActions: MenuAction[] = mayCreate
+    ? [{ label: 'PDF hinzufügen', icon: 'upload', onSelect: pickFiles }]
+    : [];
+  usePageCommands({ group: 'PDFs', actions: makeActions, workspaceId: workspace.id });
   const pageActions: MenuAction[] = [
-    ...(mayCreate
-      ? [{ label: 'PDF hinzufügen', icon: 'upload', onSelect: pickFiles } satisfies MenuAction]
-      : []),
+    ...makeActions,
     {
       label: 'Einstellungen',
       icon: 'settings',

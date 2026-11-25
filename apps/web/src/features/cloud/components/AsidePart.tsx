@@ -236,8 +236,8 @@ function AsideAgentThread({
   useEffect(() => {
     if (gone) forget();
   }, [gone]);
-  const send = (text: string, chatId: string, attachments: Attachment[]) =>
-    message.mutateAsync({ text, attachments, chatId, mailThreadId }).then(
+  const send = (text: string, chatId: string, attachments: Attachment[], replyTo?: string) =>
+    message.mutateAsync({ text, attachments, chatId, mailThreadId, replyTo }).then(
       () => true,
       (error: Error) => {
         if (refused(error)) return onAsk(text, attachments);

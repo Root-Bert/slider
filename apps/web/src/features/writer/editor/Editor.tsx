@@ -11,6 +11,7 @@ import {
 } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
 import { useNavigate, useSearchParams } from 'react-router';
+import { usePageCommands } from '@/features/commands';
 import {
   isWriterMarkdown,
   MAX_WRITER_PICTURE_BYTES,
@@ -881,6 +882,16 @@ export function Editor({
 
   const inApp = inWriterDesktopBar();
   useWriterDesktopBar({ export: true, exportOpen: false });
+  // ⌘K: what the document's pill offers – printing, the file, ✕ (in the app its tab bar's).
+  usePageCommands({
+    group: 'Dokument',
+    workspaceId,
+    actions: [
+      { label: 'Drucken', icon: 'print', onSelect: () => window.print() },
+      { label: 'Exportieren', icon: 'iosShare', onSelect: download },
+      { label: 'Dokument schließen', icon: 'close', onSelect: close },
+    ],
+  });
   // „Neues Dokument“ and „Öffnen …“ in the app's menu bar work from an open document too.
   const create = useCreateDocument(workspaceId);
   const importFile = useImportDocument(workspaceId);

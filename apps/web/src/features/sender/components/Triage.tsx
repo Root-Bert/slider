@@ -617,7 +617,7 @@ function AgentForm({
         onRead(pending.items);
         onDone();
         ui.notify('Der Agent arbeitet daran.', 'neutral', {
-          label: 'Ansehen',
+          label: 'Öffnen',
           run: () => void navigate(ui.agentPath(agent.id)),
         });
       },

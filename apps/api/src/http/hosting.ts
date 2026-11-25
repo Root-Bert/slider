@@ -31,11 +31,15 @@ export function trustProxy() {
 export const BOOT_ID = randomUUID();
 
 /** `GET /api/health` for Docker and uptime checks: 200 when the database answers, else 503. */
-export function healthCheck(deps: { db: Database; log: Logger }): Handler {
+export function healthCheck(deps: {
+  db: Database;
+  log: Logger;
+  config: { version?: string | null };
+}): Handler {
   return async (c) => {
     try {
       await deps.db.execute(sql`select 1`);
-      return c.json<Health>({ ok: true, bootId: BOOT_ID });
+      return c.json<Health>({ ok: true, bootId: BOOT_ID, version: deps.config.version ?? null });
     } catch (error) {
       deps.log.error('Health check: database unreachable', error);
       return c.json<Health>({ ok: false }, 503);

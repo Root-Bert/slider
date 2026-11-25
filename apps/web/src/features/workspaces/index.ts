@@ -14,6 +14,7 @@ export { ViewTitles, VIEW_NAMES, WorkspaceViews } from './components/WorkspaceVi
 export { startViewSwitch, useViewSwitchTop, VIEW_LINK_CLASS } from './components/viewSwitch';
 export { useActiveWorkspace, useStartWorkspace, useWorkspace } from './hooks/useWorkspace';
 export { useAgentAvatars, useWorkspaceAgentAvatars } from './hooks/useAgentAvatars';
+export { useSignOut } from './hooks/useSignOut';
 export { pickWorkspace, readLastWorkspaceId, rememberWorkspace } from './lib/last-workspace';
 export {
   deckLimitMessage,

@@ -30,7 +30,7 @@ import { useMailRuleActions } from '../../hooks/useMailRuleActions';
 import { usePinAction } from '../../hooks/usePinAction';
 import { ROW_MENU_CLASS, useRowMenu } from '../../hooks/useRowMenu';
 import { useSender } from '../../hooks/useSender';
-import { mailGroupName, mailName, spamActions, spamMarkOf } from '../../lib/mail';
+import { mailGroupName, mailName, OVERVIEW, spamActions, spamMarkOf } from '../../lib/mail';
 import { pinnedFirst } from '../../lib/pins';
 import { PinnedMark } from '../PinnedMark';
 import { Unread } from '../SenderSidebar';
@@ -82,7 +82,12 @@ export function MailInbox({ view }: { view: MailViewState }) {
   const [look] = useMailListLook();
   const queryClient = useQueryClient();
   const { account, folder } = view;
-  const threads = useMailFolder(ui.workspace.id, account?.id ?? '', folder);
+  // „Übersicht“ is no folder on the server: there the list only stands for a search.
+  const threads = useMailFolder(
+    ui.workspace.id,
+    folder === OVERVIEW ? '' : (account?.id ?? ''),
+    folder,
+  );
   // Searched (the toolbar's field): what the words find in this mailbox, whatever its folder –
   // in what the mails say too.
   const query = useDebounced(view.query.trim(), 150);

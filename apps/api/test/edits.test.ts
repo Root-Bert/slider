@@ -5,6 +5,7 @@ import { OdpDocument, OdpError } from '@slider/odp';
 import {
   applyEditResultSchema,
   cloudPaths,
+  cloudBatchResultSchema,
   cloudUploadResultSchema,
   deckEditStateSchema,
   deckNotesSchema,
@@ -201,7 +202,7 @@ describe('editing an ODP deck', () => {
 
     // „In Cloud ablegen …“: kept as it downloads, here in one's own files; kept again, it is that
     // file's next version – only by who may export it. In Cloud, the presentation's file
-    // „Als PDF ablegen …“ is its export.
+    // „Als PDF ablegen“ is its export, beside it.
     ctx.clock.advance(60_000);
     const keep = (body: unknown, as?: string) =>
       ctx.request(`/api/decks/${deckId}/edit/keep`, { method: 'POST', json: body, cookie: as });
@@ -223,41 +224,61 @@ describe('editing an ODP deck', () => {
       .select({ nodeId: decks.cloudNodeId })
       .from(decks)
       .where(eq(decks.id, deckId));
-    const asPdf = (as?: string) =>
-      ctx.request(`/api/cloud/nodes/${placed!.nodeId}/pdf`, {
-        method: 'POST',
-        json: {},
-        cookie: as,
-      });
-    const pdfRes = await asPdf();
-    expect(pdfRes.status).toBe(201);
-    expect(cloudUploadResultSchema.parse(await pdfRes.json()).node).toMatchObject({
-      name: 'Strategie.pdf',
-      parentId: null,
-    });
-    expect((await asPdf(cookie)).status).toBe(404);
-    // Any other office file: the PDF Cloud's preview shows of it.
-    const letter = Buffer.from('ein Brief');
-    const uploaded = await ctx.request(
-      `/api/workspaces/${ctx.workspaceId}/cloud/files?name=Brief.docx`,
-      {
-        method: 'POST',
-        body: letter,
-        headers: {
-          'Content-Type': 'application/octet-stream',
-          'Content-Length': String(letter.length),
+    const asPdf = (ids: string[], as?: string) =>
+      ctx.request('/api/cloud/nodes/pdf', { method: 'POST', json: { ids }, cookie: as });
+    const pdfRes = await asPdf([placed!.nodeId!]);
+    expect(pdfRes.status).toBe(200);
+    expect(cloudBatchResultSchema.parse(await pdfRes.json()).nodes).toMatchObject([
+      { name: 'Strategie.pdf', parentId: null },
+    ]);
+    expect(
+      cloudBatchResultSchema.parse(await (await asPdf([placed!.nodeId!], cookie)).json()),
+    ).toMatchObject({ nodes: [], skipped: [{ id: placed!.nodeId }] });
+    // Any other office file: the PDF Cloud's preview shows of it; two of one name give one PDF.
+    const upload = async (name: string) => {
+      const letter = Buffer.from('ein Brief');
+      const uploaded = await ctx.request(
+        `/api/workspaces/${ctx.workspaceId}/cloud/files?name=${name}`,
+        {
+          method: 'POST',
+          body: letter,
+          headers: {
+            'Content-Type': 'application/octet-stream',
+            'Content-Length': String(letter.length),
+          },
         },
-      },
-    );
-    const docx = cloudUploadResultSchema.parse(await uploaded.json());
-    const letterPdf = await ctx.request(`/api/cloud/nodes/${docx.node.id}/pdf`, {
-      method: 'POST',
-      json: { parentId: null },
+      );
+      return cloudUploadResultSchema.parse(await uploaded.json()).node;
+    };
+    const docx = await upload('Brief.docx');
+    const odt = await upload('Brief.odt');
+    const letterPdf = await asPdf([docx.id, odt.id]);
+    const letters = cloudBatchResultSchema.parse(await letterPdf.json());
+    expect(letters.skipped).toMatchObject([{ id: odt.id, name: 'Brief.odt' }]);
+    // A few per request: a large pick goes in several, none held open for minutes.
+    expect((await asPdf(Array.from({ length: 11 }, () => docx.id))).status).toBe(400);
+    // Two of one name are known by the PDF's own name: a presentation's is its deck's, whatever
+    // its file is called now.
+    await ctx.request(`/api/cloud/nodes/${placed!.nodeId}`, {
+      method: 'PATCH',
+      json: { name: 'Anders.odp' },
     });
-    expect(letterPdf.status).toBe(201);
-    const letterNode = cloudUploadResultSchema.parse(await letterPdf.json()).node;
-    expect(letterNode.name).toBe('Brief.pdf');
-    const letterBytes = await ctx.request(`/api${cloudPaths.content(letterNode.id)}`);
+    const sameName = await upload('Strategie.docx');
+    expect(
+      cloudBatchResultSchema.parse(await (await asPdf([placed!.nodeId!, sameName.id])).json()),
+    ).toMatchObject({ nodes: [{ name: 'Strategie.pdf' }], skipped: [{ id: sameName.id }] });
+    // Each PDF drawn counts against the five a minute; once over, the rest are skipped.
+    expect((await asPdf([sameName.id])).status).toBe(200);
+    const over = cloudBatchResultSchema.parse(await (await asPdf([docx.id, odt.id])).json());
+    expect(over.nodes).toEqual([]);
+    expect(over.skipped.map((each) => each.reason)).toEqual([
+      expect.stringMatching(/Zu viele PDFs/),
+      expect.stringMatching(/Zu viele PDFs/),
+    ]);
+    ctx.clock.advance(60_000);
+    const [letterNode] = letters.nodes;
+    expect(letterNode!.name).toBe('Brief.pdf');
+    const letterBytes = await ctx.request(`/api${cloudPaths.content(letterNode!.id)}`);
     expect(
       Buffer.compare(Buffer.from(await letterBytes.arrayBuffer()), Buffer.from(DOCUMENT_PDF)),
     ).toBe(0);

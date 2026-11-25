@@ -1,6 +1,6 @@
 import { useCallback, useState, type MouseEvent } from 'react';
 import { ContextMenu, IconButton } from '@/ui';
-import { presenterShortcut } from './lib/presentation';
+import { presentActions, presenterShortcut } from './lib/presentation';
 
 /**
  * Button in the deck pill: starts the slide show on the active slide (also P). A right click (a
@@ -41,10 +41,7 @@ export function PresentButton({
           label="Präsentieren"
           at={menuAt}
           onClose={close}
-          actions={[
-            { label: 'Präsentieren', icon: 'slideshow', onSelect: onPresent },
-            { label: 'Referentenansicht', icon: 'notes', onSelect: onPresenterView },
-          ]}
+          actions={presentActions(onPresent, onPresenterView)}
         />
       )}
     </>

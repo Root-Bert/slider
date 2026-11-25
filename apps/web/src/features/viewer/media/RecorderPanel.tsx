@@ -24,11 +24,13 @@ import { formatDuration, formatFileSize } from '@/lib/format';
 import { canShareScreen, type VideoSource } from './lib/recording';
 import { useMediaUsage } from './hooks/useMediaComment';
 import { useRecorder, type Recording } from './hooks/useRecorder';
+import { VideoEditor, type SuggestedCut } from './VideoEditor';
 import { isModKey } from '@/lib/keyboard';
 
 interface RecorderPanelProps {
   kind: MediaKind;
-  deckId: string;
+  /** The deck it goes to – its storage is told; none (a message in Sender): only the limit. */
+  deckId?: string;
   /** The finished recording, or `null` while there is none (again). */
   onChange: (recording: Recording | null) => void;
   /** Whether a recording is running or paused – it isn't finished (`onChange`) until stopped. */
@@ -47,6 +49,16 @@ interface RecorderPanelProps {
    * there is one). Without it the running take has a stop button there instead.
    */
   onSend?: { run: (askAi: boolean) => void; ai: boolean };
+  /**
+   * A finished video is cut before it goes (`VideoEditor`): its main button (`doneLabel`) hands
+   * the file over as kept (`onDone`) – without `onDone` the cut take replaces the recorded one
+   * (reported by `onChange`, sent as the panel's take is). `autoCut` offers the AI's cuts.
+   */
+  editor?: {
+    doneLabel: string;
+    onDone?: (file: Blob, recording: Recording) => void;
+    autoCut?: (speech: Blob, signal: AbortSignal) => Promise<SuggestedCut[]>;
+  };
 }
 
 const NO_SCREEN = 'Bildschirm teilen geht in diesem Browser nicht';
@@ -101,16 +113,15 @@ function RecorderBody({
   autoFocus = false,
   onDiscard,
   onSend,
+  editor,
   source,
   onSourceChange,
 }: RecorderPanelProps & {
   source: VideoSource;
   onSourceChange?: (source: VideoSource) => void;
 }) {
-  const { state, stream, levels, elapsedMs, start, stop, pause, resume, reset } = useRecorder(
-    kind,
-    { autoStart: autoStart && kind === 'audio', source },
-  );
+  const { state, stream, levels, elapsedMs, start, stop, pause, resume, reset, replace } =
+    useRecorder(kind, { autoStart: autoStart && kind === 'audio', source });
   const [screenSupported] = useState(canShareScreen);
   const rootRef = useRef<HTMLDivElement>(null);
   const recordButtonRef = useRef<HTMLButtonElement>(null);
@@ -275,6 +286,36 @@ function RecorderBody({
           {again}
           {discard}
         </div>
+      ) : recording && editor ? (
+        <VideoEditor
+          // A cut take is a take of its own: the editor starts over on it.
+          key={recording.url}
+          blob={recording.blob}
+          url={recording.url}
+          durationMs={recording.durationMs}
+          peaks={recording.peaks}
+          doneLabel={editor.doneLabel}
+          onlyWhenCut={!editor.onDone}
+          onDone={(file, kept) => {
+            if (editor.onDone) return editor.onDone(file, recording);
+            if (file === recording.blob) return;
+            replace({
+              ...recording,
+              blob: file,
+              url: URL.createObjectURL(file),
+              mimeType: file.type,
+              durationMs: kept.durationMs,
+              peaks: kept.peaks,
+            });
+          }}
+          autoCut={editor.autoCut}
+          actions={
+            <>
+              {again}
+              {discard}
+            </>
+          }
+        />
       ) : recording ? (
         <div className="flex flex-col gap-1.5">
           <VideoPlayer src={recording.url} />
@@ -307,8 +348,19 @@ function RecorderBody({
             {formatDuration(elapsedMs)} / {formatDuration(MAX_MEDIA_DURATION_MS)}
           </span>
           {onSend ? (
-            // As the composer's own: ✨ sends and asks the AI, the arrow only sends.
+            // As the composer's own: ✨ sends and asks the AI, the arrow only sends. With the
+            // editor, the take can end first, to be cut before it goes.
             <span className="flex shrink-0 items-center gap-1">
+              {editor && (
+                <IconButton
+                  size="sm"
+                  variant="subtle"
+                  icon="stop"
+                  label="Aufnahme beenden"
+                  title="Beenden und schneiden"
+                  onClick={stop}
+                />
+              )}
               {onSend.ai && (
                 <IconButton
                   size="sm"
@@ -349,9 +401,13 @@ function RecorderBody({
       )}
 
       {/* The limit before the start (the running time shows it then), the storage until a take. */}
-      {!recording && state.status !== 'error' && (
-        <StorageHint deckId={deckId} limit={!recordingNow} />
-      )}
+      {!recording &&
+        state.status !== 'error' &&
+        (deckId ? (
+          <StorageHint deckId={deckId} limit={!recordingNow} />
+        ) : (
+          !recordingNow && <p className="text-caption text-fg-faint">Max. 5 Min.</p>
+        ))}
     </div>
   );
 }

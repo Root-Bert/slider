@@ -30,6 +30,8 @@ function createWindows(deps: AppDeps) {
     apiCalls: perMinute(60),
     // Connecting or checking a service asks a server outside (and its sign-in) each time.
     connectionChecks: perMinute(20),
+    // An own picture or a photo for „Profibild mit KI“ is decoded whole – up to 160 MB each.
+    pictureUploads: perMinute(6),
   };
 }
 

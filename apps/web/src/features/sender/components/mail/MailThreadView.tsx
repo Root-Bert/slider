@@ -887,7 +887,7 @@ export function MailThreadView({ threadId }: { threadId: string }) {
       // A mail's reply grows with its words under the mail (`MailCards`); a group's keeps its cap.
       maxHeight={group ? undefined : Infinity}
       // Under the mail in its column (which cuts what sticks out): no shadow to be cut.
-      flat={!group}
+      variant={group ? 'float' : 'flat'}
       // Letters are the mail's keys here (R, A, F; j/k in the list).
       typeInto={false}
       // A mail goes out on ⌘↵ (as a new one), Enter breaks the line.

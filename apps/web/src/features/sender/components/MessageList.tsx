@@ -119,17 +119,16 @@ function Editor({
  * same plain tools beside it on its free side.
  */
 function Tools({
-  message,
   own,
   mine,
   deletable,
   inLine,
   reaction,
+  copyText,
   onReply,
   onEdit,
   onDelete,
 }: {
-  message: SenderMessage;
   own: boolean;
   mine: boolean;
   /** One's own, or anyone's where one manages the conversation. */
@@ -138,6 +137,8 @@ function Tools({
   inLine: boolean;
   /** 👍 / 👎 / egal, before the rest (not on one's own). */
   reaction?: ReactionState;
+  /** What „Kopieren“ copies (its words as they read). */
+  copyText: string;
   onReply?: () => void;
   onEdit: () => void;
   onDelete: () => void;
@@ -148,6 +149,13 @@ function Tools({
     <div
       className={cn(
         'invisible flex items-center gap-0.5 group-hover/message:visible group-focus-within/message:visible',
+        // In the line, where the list is narrow (a column beside the calendar or a mail) the line
+        // has no room to keep for them: over its end, on glass.
+        inLine &&
+          cn(
+            '@max-[30rem]/messages:absolute @max-[30rem]/messages:-top-0.5 @max-[30rem]/messages:z-(--z-raised) @max-[30rem]/messages:glass-elevated @max-[30rem]/messages:rounded-control @max-[30rem]/messages:p-0.5',
+            own ? '@max-[30rem]/messages:left-0' : '@max-[30rem]/messages:right-0',
+          ),
         // Plain beside it on its free side; a phone has no room there – over it, on glass.
         !inLine &&
           cn(
@@ -185,7 +193,7 @@ function Tools({
         size="xs"
         iconSize={16}
         variant="subtle"
-        onClick={() => void copy(message.text)}
+        onClick={() => void copy(copyText)}
       />
       {mine && (
         <IconButton
@@ -238,6 +246,11 @@ export function MessageList({
   below,
   callHref,
   search,
+  body,
+  writing,
+  copyOf,
+  inline = false,
+  after,
 }: {
   conversationId: string;
   messages: SenderMessage[];
@@ -271,6 +284,16 @@ export function MessageList({
   callHref?: (callId: string) => string;
   /** The chat's search: only the messages it finds, marked (`lib/chat-search.ts`). */
   search?: { query: string; clear: () => void };
+  /** In place of a message's words, where it has more (an agent's answer: how it stands). */
+  body?: (message: SenderMessage) => ReactNode | undefined;
+  /** Still being written (an agent's answer): nothing to react to, answer or copy yet. */
+  writing?: (message: SenderMessage) => boolean;
+  /** What „Kopieren“ copies of a message; its words by default. */
+  copyOf?: (message: SenderMessage) => string;
+  /** A part of a column that scrolls as one (`MailAside`): no scroll of its own. */
+  inline?: boolean;
+  /** Under the last message (what an agent noticed where it watches). */
+  after?: ReactNode;
 }) {
   const listRef = useRef<HTMLDivElement>(null);
   const newRef = useRef<HTMLDivElement>(null);
@@ -351,7 +374,9 @@ export function MessageList({
     const own = !message.agent && !message.call && message.author?.id === me.id;
     const mine = !readOnly && own;
     const notSent = isPending(message) ? failed?.(message) : undefined;
-    const reactable = !message.call && !message.deleted && !isPending(message);
+    const settled = !isPending(message) && !writing?.(message);
+    const reactable = !message.call && !message.deleted && settled;
+    const custom = message.deleted || editing === message.id ? undefined : body?.(message);
     const reaction = reactable
       ? reactionState(message.reactions ?? [], me.id, Boolean(onReact), (kind) =>
           onReact?.(message, kind),
@@ -369,15 +394,15 @@ export function MessageList({
     );
     const tools = (inLine: boolean) =>
       !message.deleted &&
-      !isPending(message) &&
+      settled &&
       editing !== message.id && (
         <Tools
-          message={message}
           own={own}
           mine={mine}
           deletable={mine || (!readOnly && moderate && !message.call)}
           inLine={inLine}
           reaction={!own && reaction?.canReact ? reaction : undefined}
+          copyText={copyOf?.(message) ?? message.text}
           onReply={reactable && onReply ? () => onReply(message) : undefined}
           onEdit={() => onEditing(message.id)}
           onDelete={() => onDelete(message)}
@@ -481,6 +506,8 @@ export function MessageList({
               />
             ) : message.deleted ? (
               <p className="text-body leading-[1.45] text-fg-subtle italic">Nachricht gelöscht</p>
+            ) : custom !== undefined ? (
+              custom
             ) : message.call && callHref ? (
               // A call here, over: one entry that opens its page.
               <div>
@@ -541,13 +568,16 @@ export function MessageList({
   }
 
   return (
-    <div className="relative flex min-h-0 flex-1 flex-col">
+    <div className={cn('@container/messages relative flex flex-col', !inline && 'min-h-0 flex-1')}>
       <div
         ref={listRef}
-        onScroll={onScroll}
+        onScroll={inline ? undefined : onScroll}
         role="log"
         aria-label="Nachrichten"
-        className="flex min-h-0 flex-1 flex-col overflow-y-auto overscroll-contain pb-3"
+        className={cn(
+          'flex flex-col pb-3',
+          !inline && 'min-h-0 flex-1 overflow-y-auto overscroll-contain',
+        )}
       >
         <div className="flex-1" />
         {!older.more && !searching && intro}
@@ -560,8 +590,9 @@ export function MessageList({
         {searching && rows.length === 0 && !older.more && (
           <p className="m-auto py-3 text-body text-fg-muted">Nichts gefunden.</p>
         )}
+        {!searching && after}
       </div>
-      {away && (
+      {away && !inline && (
         <Button
           size="sm"
           variant="secondary"

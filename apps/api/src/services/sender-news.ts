@@ -1,5 +1,5 @@
 import { withFileNames } from './attachments';
-import { and, desc, eq, gt, isNull, ne, notLike, or, sql } from 'drizzle-orm';
+import { and, desc, eq, gt, isNull, ne, or, sql } from 'drizzle-orm';
 import type {
   SenderChannel,
   SenderHome,
@@ -8,13 +8,7 @@ import type {
   SenderUnread,
   SenderUnreadItem,
 } from '@slider/shared';
-import {
-  cloudAgentMessages,
-  senderAgentReads,
-  senderMembers,
-  senderMessages,
-  users,
-} from '../db/schema';
+import { senderChannels, senderMembers, senderMessages, users } from '../db/schema';
 import type { AppDeps } from '../deps';
 import {
   CONTENT_IS_NOT_INSTRUCTION,
@@ -24,10 +18,9 @@ import {
   withoutSemicolons,
 } from './ai-prompt-parts';
 import { runToolCall } from './ai-providers';
-import { TAG_CHATS } from './cloud-agent-runs';
 import { workspaceAiConnection } from './integration-keys';
 import { listMailAccounts, listMailThreads } from './mail';
-import { joinedAt, senderHome } from './sender';
+import { joinedAt, senderHome, unreadAnswers } from './sender';
 
 /*
  * Sender's start („Aktuell“): what is unread in the conversations the caller reads, and the
@@ -217,7 +210,7 @@ async function unreadChannelLines(
   return result;
 }
 
-/** Unread answers of these agents, outside tag chats – as `agentUnread` counts them. */
+/** Unread answers of these agents – as `agentUnread` counts them (`unreadAnswers`). */
 async function unreadAgentLines(
   deps: Deps,
   userId: string,
@@ -227,27 +220,18 @@ async function unreadAgentLines(
   await Promise.all(
     agentIds.map(async (agentId) => {
       const rows = await deps.db
-        .select({ text: cloudAgentMessages.text, createdAt: cloudAgentMessages.createdAt })
-        .from(cloudAgentMessages)
+        .select({ text: senderMessages.text, createdAt: senderMessages.createdAt })
+        .from(senderMessages)
+        .innerJoin(senderChannels, eq(senderChannels.id, senderMessages.channelId))
         .leftJoin(
-          senderAgentReads,
+          senderMembers,
           and(
-            eq(senderAgentReads.agentId, cloudAgentMessages.agentId),
-            eq(senderAgentReads.userId, userId),
+            eq(senderMembers.channelId, senderMessages.channelId),
+            eq(senderMembers.userId, userId),
           ),
         )
-        .where(
-          and(
-            eq(cloudAgentMessages.agentId, agentId),
-            eq(cloudAgentMessages.role, 'assistant'),
-            // A tag chat's answers are read in its conversation – and only by who reads that.
-            notLike(cloudAgentMessages.chatId, TAG_CHATS),
-            // One's own call with it is no news to oneself (as `agentUnread`).
-            or(isNull(cloudAgentMessages.callId), ne(cloudAgentMessages.userId, userId)),
-            gt(cloudAgentMessages.seq, sql`coalesce(${senderAgentReads.readSeq}, 0)`),
-          ),
-        )
-        .orderBy(desc(cloudAgentMessages.seq))
+        .where(and(eq(senderChannels.agentId, agentId), unreadAnswers(userId)))
+        .orderBy(desc(senderMessages.createdAt))
         .limit(LINES_PER_CONVERSATION);
       result.set(
         agentId,

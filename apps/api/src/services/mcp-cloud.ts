@@ -14,6 +14,7 @@ import {
   isOpenTodo,
   MAX_CLOUD_AGENT_FILE_CHARS,
   MAX_MILESTONE_NAME,
+  MAX_PROJECT_NAME,
   MAX_TODO_DESCRIPTION,
   MAX_TODO_TITLE,
   searchFold,
@@ -27,7 +28,7 @@ import {
 } from '@slider/shared';
 import { senderChannels } from '../db/schema';
 import type { AppDeps } from '../deps';
-import { ApiError } from '../http/errors';
+import { ApiError, forbidden } from '../http/errors';
 import { runSettingsTool, SETTINGS_TOOLS, type SettingsToolName } from './agent-settings';
 import {
   agentFor,
@@ -39,6 +40,7 @@ import {
 import { MAIL_INPUTS, MAIL_TOOLS, type MailToolName } from './mail-agent';
 import { runMailTool } from './mail-agent-run';
 import { listMessages, postMessage, senderHome } from './sender';
+import { scheduleForTool } from './sender-scheduled';
 import {
   cloudContext,
   copyNodes,
@@ -63,7 +65,16 @@ import {
   updateArea,
 } from './cloud';
 import { runTool, target, TEXT_EXTENSIONS, TOOLS as CLOUD_TOOLS } from './cloud-chat';
-import { createTodo, listTodos, milestoneNamed, todoByRef, todoLine, updateTodo } from './todos';
+import {
+  createTodo,
+  listTodos,
+  milestoneNamed,
+  projectNamed,
+  positionBefore,
+  todoByRef,
+  todoLine,
+  updateTodo,
+} from './todos';
 import { deckPlaces, followArea, followMoved, followShares } from './deck-places';
 import {
   changeSchema,
@@ -224,6 +235,7 @@ const todoInput = {
     .nullable()
     .optional(),
   milestone: z.string().trim().min(1).max(MAX_MILESTONE_NAME).nullable().optional(),
+  project: z.string().trim().min(1).max(MAX_PROJECT_NAME).nullable().optional(),
 };
 const todoProperties = {
   description: {
@@ -247,7 +259,12 @@ const todoProperties = {
   milestone: {
     type: ['string', 'null'],
     description:
-      'The milestone it leads to, by name: one of its place’s (made if there is none of that name yet); null: none.',
+      'The milestone it leads to, by name: one of its place’s – area and project – (made if there is none of that name yet); null: none.',
+  },
+  project: {
+    type: ['string', 'null'],
+    description:
+      'The project it stands in, by name – of its area, or of the person’s own to-dos (made if there is none of that name yet); „Allgemein“ or null: the place’s own list. Moved to another place without one: „Allgemein“.',
   },
 } as const;
 
@@ -311,6 +328,7 @@ const INPUTS = {
     title: todoTitle.optional(),
     area: id.nullable().optional(),
     ...todoInput,
+    before: id.nullable().optional(),
   }),
 };
 type MoreName = keyof typeof INPUTS;
@@ -587,6 +605,11 @@ const MORE_TOOLS: McpTool[] = [
       title: { type: 'string' },
       area: { type: ['string', 'null'] },
       ...todoProperties,
+      before: {
+        type: ['string', 'null'],
+        description:
+          'Its place on the timeline: before this to-do (id or number) of the milestone and place it ends up in; null: last there. list_todos lists them in that order. Put into another milestone or place without it: last.',
+      },
     },
     ['todo'],
   ),
@@ -599,7 +622,11 @@ const MORE_TOOLS: McpTool[] = [
 const PERSON_INPUTS = {
   list_conversations: z.object({}),
   read_conversation: z.object({ conversation: id }),
-  post_message: z.object({ conversation: id, text: senderPostSchema.shape.text }),
+  post_message: z.object({
+    conversation: id,
+    text: senderPostSchema.shape.text,
+    send_at: z.iso.datetime({ offset: true }).optional(),
+  }),
   list_agents: z.object({}),
   read_agent: z.object({ agent: id }),
   message_agent: z.object({
@@ -697,7 +724,15 @@ const PERSON_TOOLS: McpTool[] = [
     'post_message',
     'Write in a conversation',
     `Writes a message (at most ${MAX_SENDER_MESSAGE} characters, plain text, „@first name“ names someone) into a Sender conversation under the person's name – everyone there reads it at once. Only when the person asks for exactly this message.`,
-    { conversation: { type: 'string' }, text: { type: 'string' } },
+    {
+      conversation: { type: 'string' },
+      text: { type: 'string' },
+      send_at: {
+        type: 'string',
+        description:
+          'Optional: when it goes instead of now – an ISO date-time with its offset (2026-12-01T09:00:00+01:00), later than now and at most a year ahead. Until then only the person sees it, above their field (they can send it at once or delete it); then it is posted as if sent that moment.',
+      },
+    },
     ['conversation', 'text'],
   ),
   personTool(
@@ -899,6 +934,8 @@ async function runTodoTool(
       return (
         list
           .filter((todo) => !input.open_only || isOpenTodo(todo.status))
+          // As on the timeline: each milestone's lines in their order.
+          .sort((a, b) => a.position - b.position || a.number - b.number)
           .map(line)
           .join('\n') || 'No to-dos.'
       );
@@ -914,6 +951,13 @@ async function runTodoTool(
     }
     case 'create_todo': {
       const input = INPUTS.create_todo.parse(raw);
+      const projectId = await projectNamed(
+        deps,
+        userId,
+        workspaceId,
+        input.area ?? null,
+        input.project,
+      );
       const todo = await createTodo(
         deps,
         userId,
@@ -922,30 +966,7 @@ async function runTodoTool(
           title: input.title,
           description: input.description,
           areaId: input.area ?? null,
-          status: input.status,
-          priority: input.priority as TodoPriority | undefined,
-          assigneeId: await who(input.assignee),
-          startOn: input.start,
-          dueOn: input.due,
-          milestoneId: input.milestone
-            ? await milestoneNamed(deps, userId, workspaceId, input.area ?? null, input.milestone)
-            : undefined,
-        },
-        {},
-      );
-      return `Made: ${line(todo)}`;
-    }
-    case 'update_todo': {
-      const input = INPUTS.update_todo.parse(raw);
-      const todo = await todoByRef(deps, userId, workspaceId, input.todo);
-      const changed = await updateTodo(
-        deps,
-        userId,
-        todo.id,
-        {
-          title: input.title,
-          description: input.description,
-          areaId: input.area,
+          projectId,
           status: input.status,
           priority: input.priority as TodoPriority | undefined,
           assigneeId: await who(input.assignee),
@@ -956,14 +977,54 @@ async function runTodoTool(
                 deps,
                 userId,
                 workspaceId,
-                input.area !== undefined ? input.area : todo.areaId,
+                input.area ?? null,
                 input.milestone,
+                projectId,
               )
+            : undefined,
+        },
+        {},
+      );
+      return `Made: ${line(todo)}`;
+    }
+    case 'update_todo': {
+      const input = INPUTS.update_todo.parse(raw);
+      const todo = await todoByRef(deps, userId, workspaceId, input.todo);
+      // One it may only see is refused before a project or milestone is made for it.
+      if (!todo.canEdit) throw forbidden('In diesem Bereich darfst du nur ansehen.');
+      // Its place after the change – a milestone named is looked for (or made) there.
+      const areaId = input.area !== undefined ? input.area : todo.areaId;
+      const projectId =
+        input.project !== undefined
+          ? await projectNamed(deps, userId, workspaceId, areaId, input.project)
+          : areaId !== todo.areaId
+            ? null
+            : (todo.project?.id ?? null);
+      const changed = await updateTodo(
+        deps,
+        userId,
+        todo.id,
+        {
+          title: input.title,
+          description: input.description,
+          areaId: input.area,
+          projectId: input.project !== undefined ? projectId : undefined,
+          status: input.status,
+          priority: input.priority as TodoPriority | undefined,
+          assigneeId: await who(input.assignee),
+          startOn: input.start,
+          dueOn: input.due,
+          milestoneId: input.milestone
+            ? await milestoneNamed(deps, userId, workspaceId, areaId, input.milestone, projectId)
             : input.milestone,
         },
         {},
       );
-      return `Changed: ${line(changed)}`;
+      if (input.before === undefined) return `Changed: ${line(changed)}`;
+      const placed = await updateTodo(deps, userId, todo.id, {
+        position: await positionBefore(deps, userId, changed, input.before),
+      });
+      return `Changed: ${line(placed)}`;
     }
   }
 }
@@ -1198,7 +1259,9 @@ async function runMore(call: Call, name: MoreName, raw: unknown): Promise<string
       }
       const { label } = INPUTS.label_version.parse(raw);
       const version = await labelVersion(deps, userId, input.version, label);
-      return label ? `Version ${version.number} is „${label}“ now.` : `Version ${version.number} has no name now.`;
+      return label
+        ? `Version ${version.number} is „${label}“ now.`
+        : `Version ${version.number} has no name now.`;
     }
     case 'delete_area': {
       const input = INPUTS.delete_area.parse(raw);
@@ -1404,6 +1467,12 @@ async function runPerson(
     case 'post_message': {
       const input = PERSON_INPUTS.post_message.parse(raw);
       await conversationIn(input.conversation);
+      if (input.send_at) {
+        return scheduleForTool(deps, userId, input.conversation, {
+          text: input.text,
+          sendAt: input.send_at,
+        });
+      }
       await postMessage(deps, userId, input.conversation, input.text, viewer);
       return 'Posted.';
     }

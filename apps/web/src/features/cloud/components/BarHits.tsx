@@ -16,6 +16,7 @@ import { Icon, useDebounced } from '@/ui';
 import { useCloud } from '../hooks/useCloud';
 import { AreaMark } from './AreaMark';
 import { FileIcon } from './FileIcon';
+import { FileName } from './FileName';
 
 const Line = () => <div role="separator" className="mx-2 my-2 shrink-0 border-t border-hairline" />;
 
@@ -61,7 +62,7 @@ export function BarHits({ query, onPicked }: { query: string; onPicked: () => vo
           onClick={go(() => (node.kind === 'file' ? ui.openFile(node.id) : ui.open(node)))}
         >
           <FileIcon kind={node.kind} type={node.fileType} size={20} className="-mx-px" />
-          <span className="min-w-0 flex-1 truncate">{node.name}</span>
+          <FileName node={node} className="flex-1" />
         </button>
       )),
     areas.length > 0 &&

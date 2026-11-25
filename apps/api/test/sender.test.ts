@@ -21,6 +21,7 @@ import type {
   SenderHome,
   SenderMessage,
   SenderMessagePage,
+  SenderScheduled,
   SenderSummary,
   SenderUnread,
   SenderTriage,
@@ -49,10 +50,9 @@ import {
   mentionsIn,
   type Viewer,
 } from '@slider/shared';
-import { and, eq, inArray, sql } from 'drizzle-orm';
+import { and, count, eq, inArray, sql } from 'drizzle-orm';
 import {
   attachments,
-  cloudAgentChats,
   cloudAgents,
   cloudNodes,
   integrationKeys,
@@ -61,11 +61,15 @@ import {
   mailMessages,
   mailUploads,
   senderDrafts,
+  senderMessages,
+  senderScheduled,
   users,
   workspaceMembers,
   workspaces,
   type MailFolderEntry,
 } from '../src/db/schema';
+import { openAgentChat } from '../src/services/agent-chats';
+import { attachmentsOf } from '../src/services/purge-attachments';
 import type {
   FetchedMail,
   MailLogin,
@@ -126,6 +130,8 @@ import { firmSite, foundWhy, mailParties, sweepMailInsights } from '../src/servi
 import { safeSvg, sweepMailLogos, type SenderLogoNetwork } from '../src/services/mail-logos';
 import { keptMailHtml, MAX_MAIL_HTML } from '../src/services/mail-html';
 import { senderLive } from '../src/services/sender';
+import { sendDueScheduled } from '../src/services/sender-scheduled';
+import { sweepAttachments } from '../src/services/attachments';
 import {
   createTestContext,
   fakeJwt,
@@ -752,9 +758,11 @@ describe('Sender – the workspace’s messages', () => {
       userId: ctx.ownerId,
       title: 'Angebote',
     });
-    await ctx.deps.db
-      .insert(cloudAgentChats)
-      .values({ id: offers, agentId: offers, userId: ctx.ownerId });
+    await openAgentChat(
+      ctx.deps.db,
+      { id: offers, workspaceId: ctx.workspaceId },
+      { id: offers, userId: ctx.ownerId, at: ctx.deps.clock.now() },
+    );
     const shareInto = (areaId: string | null) =>
       ok(send('PATCH', `/cloud/agents/${offers}`, { shared: true, areaId }), 204);
     await shareInto(secretChannel.areaId);
@@ -834,6 +842,40 @@ describe('Sender – the workspace’s messages', () => {
       served.headers.get('content-type'),
       served.headers.get('content-disposition')?.split(';')[0],
     ]).toEqual(['application/octet-stream', 'attachment']);
+    // A video (a recording) plays in the message: inline, a byte range at a time; past what mail
+    // carries it may still go up (up to 200 MB), anything else may not.
+    const videoForm = new FormData();
+    videoForm.append('file', new File(['0123456789'], 'Aufnahme.mp4', { type: 'video/mp4' }));
+    const video = await ok<Attachment>(
+      ctx.request(`/api/workspaces/${ctx.workspaceId}/attachments`, {
+        method: 'POST',
+        body: videoForm,
+      }),
+      201,
+    );
+    const part = await ctx.request(`/api/attachments/${video.id}`, {
+      headers: { Range: 'bytes=2-5' },
+    });
+    expect([
+      part.status,
+      part.headers.get('content-type'),
+      part.headers.get('content-range'),
+      part.headers.get('content-disposition')?.split(';')[0],
+      await part.text(),
+    ]).toEqual([206, 'video/mp4', 'bytes 2-5/10', 'inline', '2345']);
+    expect(
+      (await ctx.request(`/api/attachments/${video.id}?download=1`)).headers.get('content-type'),
+    ).toBe('application/octet-stream');
+    const bigForm = new FormData();
+    bigForm.append('file', new File([new Uint8Array(26 * 1024 * 1024)], 'Groß.bin'));
+    expect(
+      (
+        await ctx.request(`/api/workspaces/${ctx.workspaceId}/attachments`, {
+          method: 'POST',
+          body: bigForm,
+        })
+      ).status,
+    ).toBe(400);
     // Sent in an area's chat, it lies in Cloud too – in the area's „Chat-Dateien“; the
     // conversation's „Dateien“ say where. Anna does not see that area: neither.
     const [chatFile] = await ok<SenderFile[]>(
@@ -942,6 +984,175 @@ describe('Sender – the workspace’s messages', () => {
         )
       )[0]?.node,
     ).toBeNull();
+    // „Später senden“: planned, only who planned it sees it and hears of it, the conversation
+    // nothing yet; a past time or one beyond a year refused. Due, it is posted as if sent then –
+    // its file with it. „Löschen“ answers what it was. Refused when due (the writer only reads
+    // along by then), it stays with why until „Erneut senden“.
+    const inMs = (ms: number) => new Date(ctx.deps.clock.now().getTime() + ms).toISOString();
+    const plans = (cookie?: string) =>
+      ok<SenderScheduled[]>(
+        send('GET', `/sender/channels/${salesChannel.id}/scheduled`, undefined, cookie),
+      );
+    const plan = (body: object, cookie?: string) =>
+      send('POST', `/sender/channels/${salesChannel.id}/scheduled`, body, cookie);
+    const agendaForm = new FormData();
+    agendaForm.append('file', new File(['Agenda'], 'Agenda.txt', { type: 'text/plain' }));
+    const agenda = await ok<Attachment>(
+      ctx.request(`/api/workspaces/${ctx.workspaceId}/attachments`, {
+        method: 'POST',
+        body: agendaForm,
+      }),
+      201,
+    );
+    const planned = await ok<SenderScheduled>(
+      plan({ text: ' Bis gleich ', attachments: [agenda.id], sendAt: inMs(3_600_000) }),
+      201,
+    );
+    expect(planned).toMatchObject({
+      text: 'Bis gleich',
+      state: 'waiting',
+      agent: null,
+      attachments: [{ name: 'Agenda.txt' }],
+    });
+    expect(heard.get(ctx.ownerId)?.at(-1)).toEqual({
+      type: 'scheduled',
+      channelId: salesChannel.id,
+    });
+    expect(heard.get(anna.user.id)?.some((event) => event.type === 'scheduled')).toBe(false);
+    expect(await plans(anna.cookie)).toEqual([]);
+    expect((await plan({ text: 'X', sendAt: inMs(-1000) })).status).toBe(400);
+    expect((await plan({ text: 'X', sendAt: inMs(400 * 86_400_000) })).status).toBe(400);
+    expect((await plan({ text: 'X', sendAt: inMs(60_000) }, vera.cookie)).status).toBe(403);
+    expect(
+      (await send('DELETE', `/sender/scheduled/${planned.id}`, undefined, anna.cookie)).status,
+    ).toBe(404);
+    await sendDueScheduled(ctx.deps);
+    expect((await page(salesChannel.id)).messages.some((one) => one.text === 'Bis gleich')).toBe(
+      false,
+    );
+    ctx.clock.advance(3_600_000);
+    await sendDueScheduled(ctx.deps);
+    expect(
+      (await page(salesChannel.id)).messages.find((one) => one.text === 'Bis gleich'),
+    ).toMatchObject({
+      id: planned.id,
+      author: { id: ctx.ownerId },
+      attachments: [{ name: 'Agenda.txt' }],
+    });
+    expect(await plans()).toEqual([]);
+    // Posted under its own id: one the server stopped on before the plan went (stuck, „Erneut
+    // senden“ or „Löschen“ later) is not sent twice, nor its file – now the message's – freed.
+    const [onceRow] = await ctx.deps.db
+      .select({ count: count() })
+      .from(senderMessages)
+      .where(eq(senderMessages.id, planned.id));
+    expect(onceRow?.count).toBe(1);
+    const planRow = {
+      id: planned.id,
+      workspaceId: ctx.workspaceId,
+      channelId: salesChannel.id,
+      userId: ctx.ownerId,
+      text: 'Bis gleich',
+      attachments: planned.attachments,
+      sendAt: ctx.deps.clock.now(),
+      state: 'failed' as const,
+      error: 'Unterbrochen',
+    };
+    await ctx.deps.db.insert(senderScheduled).values(planRow);
+    await ok(send('POST', `/sender/scheduled/${planned.id}/send`), 204);
+    await ctx.deps.db.insert(senderScheduled).values(planRow);
+    expect((await send('DELETE', `/sender/scheduled/${planned.id}`)).status).toBe(400);
+    expect(await plans()).toEqual([]);
+    expect(
+      (await page(salesChannel.id)).messages.filter((one) => one.text === 'Bis gleich'),
+    ).toHaveLength(1);
+    const [agendaRow] = await ctx.deps.db
+      .select({ takenAt: attachments.takenAt })
+      .from(attachments)
+      .where(eq(attachments.id, agenda.id));
+    expect(agendaRow?.takenAt).not.toBeNull();
+    // Out, but a step after failed (telling the others): done, not „Nicht gesendet“.
+    const told = await ok<SenderScheduled>(
+      plan({ text: 'Kommt trotzdem', sendAt: inMs(60_000) }),
+      201,
+    );
+    ctx.clock.advance(61_000);
+    vi.spyOn(senderLive, 'publish').mockImplementationOnce(() => {
+      throw new Error('Leitung weg');
+    });
+    await sendDueScheduled(ctx.deps);
+    expect(await plans()).toEqual([]);
+    expect((await page(salesChannel.id)).messages.find((one) => one.id === told.id)?.text).toBe(
+      'Kommt trotzdem',
+    );
+    // While it goes out, „Löschen“ waits: its files are the message's then.
+    await ctx.deps.db
+      .insert(senderScheduled)
+      .values({ ...planRow, id: crypto.randomUUID(), state: 'sending', error: null });
+    const going = (await plans()).find((one) => one.state === 'sending')!;
+    expect((await send('DELETE', `/sender/scheduled/${going.id}`)).status).toBe(400);
+    // A conversation deleted takes what was planned there and its files too.
+    expect(
+      (await attachmentsOf(ctx.deps.db, { channelIds: [salesChannel.id] })).filter(
+        (one) => one.id === agenda.id,
+      ),
+    ).toHaveLength(2);
+    await ctx.deps.db.delete(senderScheduled).where(eq(senderScheduled.id, going.id));
+    const laterForm = new FormData();
+    laterForm.append('file', new File(['Notiz'], 'Notiz.txt', { type: 'text/plain' }));
+    const laterFile = await ok<Attachment>(
+      ctx.request(`/api/workspaces/${ctx.workspaceId}/attachments`, {
+        method: 'POST',
+        body: laterForm,
+      }),
+      201,
+    );
+    const dropped = await ok<SenderScheduled>(
+      plan({ text: 'Doch nicht', attachments: [laterFile.id], sendAt: inMs(60_000) }),
+      201,
+    );
+    // Its file went up over a week ago: put back into the field, it is kept a week from now.
+    await ctx.deps.db
+      .update(attachments)
+      .set({ createdAt: new Date(ctx.deps.clock.now().getTime() - 8 * 86_400_000) })
+      .where(eq(attachments.id, laterFile.id));
+    expect(await ok(send('DELETE', `/sender/scheduled/${dropped.id}`))).toMatchObject({
+      text: 'Doch nicht',
+    });
+    await sweepAttachments(ctx.deps);
+    expect(
+      await ctx.deps.db.select().from(attachments).where(eq(attachments.id, laterFile.id)),
+    ).toHaveLength(1);
+    const annasPlan = await ok<SenderScheduled>(
+      plan({ text: 'Von Anna, später', sendAt: inMs(60_000) }, anna.cookie),
+      201,
+    );
+    await ctx.deps.db
+      .update(workspaceMembers)
+      .set({ role: 'viewer' })
+      .where(eq(workspaceMembers.userId, anna.user.id));
+    ctx.clock.advance(61_000);
+    await sendDueScheduled(ctx.deps);
+    expect((await plans(anna.cookie))[0]).toMatchObject({ id: annasPlan.id, state: 'failed' });
+    expect((await plans(anna.cookie))[0]?.error).toBeTruthy();
+    // Sent again long after it was due: its time is when sending began – what the round's check
+    // for one stuck sending counts from.
+    ctx.clock.advance(10 * 60_000);
+    expect(
+      (await send('POST', `/sender/scheduled/${annasPlan.id}/send`, undefined, anna.cookie)).status,
+    ).toBe(400);
+    const resent = new Date((await plans(anna.cookie))[0]?.sendAt ?? 0).getTime();
+    expect(ctx.deps.clock.now().getTime() - resent).toBeLessThan(1000);
+    await ctx.deps.db
+      .update(workspaceMembers)
+      .set({ role: 'member' })
+      .where(eq(workspaceMembers.userId, anna.user.id));
+    await ok(send('POST', `/sender/scheduled/${annasPlan.id}/send`, undefined, anna.cookie), 204);
+    expect(
+      (await page(salesChannel.id)).messages.some((one) => one.text === 'Von Anna, später'),
+    ).toBe(true);
+    expect(await plans(anna.cookie)).toEqual([]);
+
     for (const leave of leaves) leave();
     // Left and back: the first stream's leave, run once more, keeps the new one's room.
     const back = listen(anna.user.id);

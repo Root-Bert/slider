@@ -7,13 +7,15 @@ import {
   type ClipboardEvent,
 } from 'react';
 import {
+  attachmentLimit,
   isCloudReference,
   isPictureAttachment,
-  MAX_ATTACHMENT_BYTES,
+  isVideoAttachment,
   MAX_ATTACHMENTS,
   type Attachment,
 } from '@slider/shared';
-import { dropAttachment, uploadAttachment } from '@/lib/api';
+import { digestVideo, dropAttachment, uploadAttachment } from '@/lib/api';
+import { videoDigestForm } from './lib/video-digest';
 
 /** A file put on what is being written: up already (`id`), or on its way (`progress`). */
 export interface FieldAttachment {
@@ -120,8 +122,12 @@ export function useAttachments({
       if (taken.length < files.length) say('Hier gehen nur Bilder (PNG, JPEG, GIF, WebP).');
       let count = current.current.length;
       for (const file of taken) {
-        if (file.size > MAX_ATTACHMENT_BYTES) {
-          say(`„${file.name}“ ist zu groß – höchstens 25 MB je Datei.`);
+        if (file.size > attachmentLimit(file.type)) {
+          say(
+            isVideoAttachment(file.type)
+              ? `„${file.name}“ ist zu groß – höchstens 200 MB je Video.`
+              : `„${file.name}“ ist zu groß – höchstens 25 MB je Datei.`,
+          );
           continue;
         }
         if (count >= MAX_ATTACHMENTS) {
@@ -153,30 +159,44 @@ export function useAttachments({
             else kept.delete(field);
           }
         };
+        // A video's stills and sound, taken while it goes up: the AI reads it by them. Up only
+        // once they are handed over – an agent answering at once has them.
+        const digest = isVideoAttachment(type)
+          ? videoDigestForm(file, controller.signal).catch(() => null)
+          : null;
         uploadAttachment(
           workspaceId,
           file,
           (progress) =>
             change((list) => list.map((one) => (one.key === key ? { ...one, progress } : one))),
           controller.signal,
-        ).then(
-          (attachment) => {
-            flying.current.delete(key);
-            change((list) =>
-              list.map((one) =>
-                one.key === key ? { ...one, key: attachment.id, progress: null, attachment } : one,
-              ),
-            );
-          },
-          (reason: unknown) => {
-            flying.current.delete(key);
-            change((list) => list.filter((one) => one.key !== key));
-            if (item.preview) URL.revokeObjectURL(item.preview);
-            if (controller.signal.aborted) return;
-            const why = reason instanceof Error ? reason.message : 'Fehler';
-            say(`„${item.name}“ nicht angehängt: ${why}`);
-          },
-        );
+        )
+          .then(async (attachment) => {
+            const form = await digest;
+            if (form) await digestVideo(attachment.id, form, controller.signal).catch(() => null);
+            controller.signal.throwIfAborted();
+            return attachment;
+          })
+          .then(
+            (attachment) => {
+              flying.current.delete(key);
+              change((list) =>
+                list.map((one) =>
+                  one.key === key
+                    ? { ...one, key: attachment.id, progress: null, attachment }
+                    : one,
+                ),
+              );
+            },
+            (reason: unknown) => {
+              flying.current.delete(key);
+              change((list) => list.filter((one) => one.key !== key));
+              if (item.preview) URL.revokeObjectURL(item.preview);
+              if (controller.signal.aborted) return;
+              const why = reason instanceof Error ? reason.message : 'Fehler';
+              say(`„${item.name}“ nicht angehängt: ${why}`);
+            },
+          );
       }
     },
     [accept, say, update, workspaceId],

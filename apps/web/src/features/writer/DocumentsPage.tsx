@@ -14,6 +14,7 @@ import { withCount } from '@/lib/format';
 import { isOnControl } from '@/lib/marquee-select';
 import { routes } from '@/lib/routes';
 import { useAccount } from '@/features/auth';
+import { usePageCommands } from '@/features/commands';
 import { useDeckContextMenu, useStoredChoice } from '@/features/reviews';
 import {
   canCreateDecks,
@@ -219,17 +220,16 @@ export function Component() {
     if (event.defaultPrevented || isOnControl(event.target)) return;
     pageMenu.onContextMenu(event);
   };
+  // What is made or opened here – the page's menu and the command panel (⌘K) alike.
+  const makeActions: MenuAction[] = mayCreate
+    ? [
+        { label: 'Neues Dokument', icon: 'add', onSelect: () => createFrom('plain') },
+        { label: 'Öffnen …', icon: 'description', onSelect: pickFiles },
+      ]
+    : [];
+  usePageCommands({ group: 'Dokumente', actions: makeActions, workspaceId: workspace.id });
   const pageActions: MenuAction[] = [
-    ...(mayCreate
-      ? [
-          {
-            label: 'Neues Dokument',
-            icon: 'add',
-            onSelect: () => createFrom('plain'),
-          } satisfies MenuAction,
-          { label: 'Öffnen …', icon: 'description', onSelect: pickFiles } satisfies MenuAction,
-        ]
-      : []),
+    ...makeActions,
     {
       label: 'Einstellungen',
       icon: 'settings',

@@ -9,6 +9,7 @@ import {
   useSyncExternalStore,
 } from 'react';
 import { useNavigate, useSearchParams } from 'react-router';
+import { usePageCommands } from '@/features/commands';
 import type {
   Author,
   ReaderAnchor,
@@ -648,6 +649,16 @@ function Open({
     if (action === 'export') void download();
     else if (action === 'print') void print();
     else if (action === 'close') close();
+  });
+  // ⌘K: what the PDF's pill offers – printing, the file with what is filled in, ✕.
+  usePageCommands({
+    group: 'PDF',
+    workspaceId,
+    actions: [
+      { label: 'Drucken', icon: 'print', onSelect: () => void print() },
+      { label: 'Exportieren', icon: 'iosShare', onSelect: () => void download() },
+      { label: 'PDF schließen', icon: 'close', onSelect: close },
+    ],
   });
 
   // ── Keys ──────────────────────────────────────────────────────────────────

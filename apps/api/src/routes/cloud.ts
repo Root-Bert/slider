@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto';
 import { eq } from 'drizzle-orm';
 import { Hono, type Context } from 'hono';
 import {
@@ -10,6 +11,7 @@ import {
   cloudFileType,
   cloudFolderInputSchema,
   cloudIdsInputSchema,
+  cloudPdfInputSchema,
   cloudListQuerySchema,
   cloudMoveInputSchema,
   cloudRenameInputSchema,
@@ -17,7 +19,6 @@ import {
   cloudChangesQuerySchema,
   cloudShareInputSchema,
   cloudShareUpdateSchema,
-  cloudTargetInputSchema,
   cloudColorInputSchema,
   cloudPinInputSchema,
   cloudUploadQuerySchema,
@@ -43,6 +44,7 @@ import type { AppDeps } from '../deps';
 import { aiLimits } from '../http/ai-limits';
 import { ApiError, badRequest, fileTooLarge, notFound } from '../http/errors';
 import { createUploadedDeck, existingDeckDto } from './decks';
+import { cloudFocus } from '../services/cloud-focus';
 import { cloudSummary } from '../services/cloud-news';
 import { parseRange } from '../http/range';
 import { rateLimit } from '../http/rate-limit';
@@ -99,7 +101,7 @@ import {
   linkDeck,
 } from '../services/deck-places';
 import { updateDeckAccess } from '../services/deck-access';
-import { keepNodePdf } from '../services/edits';
+import { keepNodePdfs } from '../services/edits';
 import { blobKeys } from '../storage/blob-storage';
 
 /** A file's name for `Content-Disposition`: plain ASCII, and the real one for browsers that read it. */
@@ -178,8 +180,13 @@ async function sendVersion(
   return body ? c.body(body) : c.body(null);
 }
 
-async function sendPicture(c: Context, bytes: Uint8Array | null, etag: string): Promise<Response> {
+/**
+ * A small picture or page, tagged by `tag` and what it holds: drawn anew (a presentation file's
+ * PDF in its workspace's fonts, `redrawOld`) the browser takes the new one.
+ */
+async function sendPicture(c: Context, bytes: Uint8Array | null, tag: string): Promise<Response> {
   if (!bytes) throw notFound('Davon gibt es kein Bild.');
+  const etag = `"${tag}-${createHash('sha1').update(bytes).digest('base64url').slice(0, 12)}"`;
   c.header('Cache-Control', 'private, no-cache');
   c.header('ETag', etag);
   if (c.req.header('If-None-Match') === etag) return c.body(null, 304);
@@ -250,7 +257,7 @@ export function cloudRoutes(deps: AppDeps) {
       })
       .get('/cloud/public/:token/thumbnail', async (c) => {
         const { node, version } = await publicFile(deps, c.req.param('token'), c.req.query('node'));
-        return sendPicture(c, await thumbnailOf(node), `"${version.id}-t"`);
+        return sendPicture(c, await thumbnailOf(node), `${version.id}-t`);
       })
       .get('/cloud/public/:token/archive', publicArchives, async (c) => {
         const node = await publicNodeRow(deps, c.req.param('token'), c.req.query('node'));
@@ -319,6 +326,15 @@ export function cloudRoutes(deps: AppDeps) {
         const { since } = cloudSummaryQuerySchema.parse(c.req.query());
         return c.json(
           await cloudSummary(deps, userId, c.req.param('id'), c.var.viewer.author.name, since),
+        );
+      })
+      // „Für dich“ on Cloud's start: `?ai=1` said by the AI, else at once as the server finds it.
+      .get('/workspaces/:id/cloud/focus', viewer, async (c) => {
+        user(c);
+        return c.json(
+          await cloudFocus(deps, c.var.viewer, c.req.param('id'), {
+            ai: c.req.query('ai') === '1',
+          }),
         );
       })
       .get('/workspaces/:id/cloud/people', viewer, async (c) =>
@@ -396,6 +412,12 @@ export function cloudRoutes(deps: AppDeps) {
         await followMoved(deps, result.nodes, user(c), before);
         return c.json<CloudBatchResult>(result);
       })
+      // „Als PDF ablegen“: presentations (or other office files) each as a PDF beside it, its few
+      // (`CLOUD_PDF_BATCH`) one after another, each counted against the PDFs a minute.
+      .post('/cloud/nodes/pdf', viewer, async (c) => {
+        const { ids } = await readJson(c, cloudPdfInputSchema);
+        return c.json(await keepNodePdfs(deps, c.var.viewer, ids));
+      })
       .post('/cloud/nodes/copy', viewer, async (c) =>
         c.json<CloudBatchResult>(
           await copyNodes(deps, user(c), await readJson(c, cloudMoveInputSchema)),
@@ -439,7 +461,7 @@ export function cloudRoutes(deps: AppDeps) {
       })
       .get('/cloud/nodes/:nodeId/thumbnail', viewer, async (c) => {
         const { node } = await loadNode(deps, user(c), c.req.param('nodeId'));
-        return sendPicture(c, await thumbnailOf(node), `"${node.currentVersionId}-t"`);
+        return sendPicture(c, await thumbnailOf(node), `${node.currentVersionId}-t`);
       })
       // The file as pages (a PDF, or an office file LibreOffice drew as one): how many …
       .get('/cloud/nodes/:nodeId/pages', viewer, async (c) => {
@@ -456,31 +478,15 @@ export function cloudRoutes(deps: AppDeps) {
         const version = await versionToServe(deps, node, c.req.query('v'));
         const page = Number(c.req.param('page'));
         if (!Number.isInteger(page) || page < 1 || page > 5000) throw notFound();
-        const etag = `"${version.id}-p${page}"`;
-        if (c.req.header('If-None-Match') === etag) {
-          c.header('Cache-Control', 'private, no-cache');
-          c.header('ETag', etag);
-          return c.body(null, 304);
-        }
-        return sendPicture(c, await pagePicture(deps, node, version, page), etag);
+        return sendPicture(
+          c,
+          await pagePicture(deps, node, version, page),
+          `${version.id}-p${page}`,
+        );
       })
       // A presentation (or anything Slider reads) opened in Slider: the presentation this file
       // stands for (`services/deck-places`) – made of its current version the first time, as an
       // upload of it would be, and the same one from then on.
-      // „Als PDF ablegen …“: a presentation (or other office file) as a PDF of its own, where one picked.
-      .post('/cloud/nodes/:nodeId/pdf', viewer, async (c) => {
-        const made = aiLimits(deps).pdfs.hit(user(c));
-        if (!made.allowed) {
-          c.header('Retry-After', String(made.retryAfterS));
-          throw new ApiError(
-            429,
-            'rate_limited',
-            'Zu viele PDFs auf einmal. Bitte warte einen Moment.',
-          );
-        }
-        const input = await readJson(c, cloudTargetInputSchema);
-        return c.json(await keepNodePdf(deps, c.var.viewer, c.req.param('nodeId'), input), 201);
-      })
       .post('/cloud/nodes/:nodeId/present', viewer, async (c) => {
         const { node, sharedRoot } = await loadNode(deps, user(c), c.req.param('nodeId'));
         const placed = await deckOfNode(deps.db, node.id);

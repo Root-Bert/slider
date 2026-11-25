@@ -10,6 +10,7 @@ import { AreaDot, areaColor } from './components/AreaDot';
 import { CloudPage } from './components/CloudPage';
 import { LoadFailed } from './components/Empty';
 import { FileIcon } from './components/FileIcon';
+import { FileName } from './components/FileName';
 import { StorageBar, storageParts } from './components/StorageMeter';
 import { useCloud } from './hooks/useCloud';
 import { FILE_KINDS } from './lib/kinds';
@@ -235,9 +236,7 @@ export function Component() {
                             className="flex h-11 w-full items-center gap-3 rounded-control-sm px-2 text-left transition-colors hover:bg-hover"
                           >
                             <FileIcon kind="file" type={node.fileType} size={20} />
-                            <span className="min-w-0 flex-1 truncate text-body text-fg">
-                              {node.name}
-                            </span>
+                            <FileName node={node} className="flex-1 text-body text-fg" />
                             <span className="truncate text-xs text-fg-subtle">
                               {node.location?.areaName}
                             </span>
@@ -299,9 +298,7 @@ export function Component() {
                       <li key={share.id} className="flex min-h-12 items-center gap-3 py-1.5">
                         <FileIcon kind={node.kind} type={node.fileType} />
                         <span className="flex min-w-0 flex-1 flex-col">
-                          <span className="truncate text-body font-medium text-fg">
-                            {node.name}
-                          </span>
+                          <FileName node={node} className="text-body font-medium text-fg" />
                           <span className="truncate text-xs text-fg-subtle">
                             {node.location?.areaName} | von {share.createdBy.name} |{' '}
                             {pluralize(share.opens, 'Aufruf', 'Aufrufe')}

@@ -21,6 +21,26 @@ export function useScope() {
   return params.get(SCOPE_PARAM) ?? DEFAULT_SCOPE;
 }
 
+/**
+ * The project open in an area's „Aufgaben“ (`?projekt=`): none – or one not of that area – its
+ * „Allgemein“. Kept through a switch of the overview's tabs; an area without it falls back.
+ */
+const PROJECT_PARAM = 'projekt';
+export function useProjectParam() {
+  const [params, setParams] = useSearchParams();
+  const set = (projectId: string | null) =>
+    setParams(
+      (now) => {
+        const after = new URLSearchParams(now);
+        if (projectId) after.set(PROJECT_PARAM, projectId);
+        else after.delete(PROJECT_PARAM);
+        return after;
+      },
+      { replace: true },
+    );
+  return [params.get(PROJECT_PARAM), set] as const;
+}
+
 /** „Mir zugeteilt“ on „Aufgaben“ (`?zugeteilt`): on or off, for every tab – as Post's „Ungelesen“. */
 const ASSIGNED_PARAM = 'zugeteilt';
 export function useAssignedOnly() {

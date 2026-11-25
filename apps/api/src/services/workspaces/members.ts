@@ -13,6 +13,9 @@ import {
   senderDrafts,
   senderMembers,
   senderPins,
+  senderScheduled,
+  todoMilestones,
+  todoProjects,
   todos,
   users,
   workspaceInvites,
@@ -25,7 +28,7 @@ import { badRequest, forbidden, notFound } from '../../http/errors';
 import { assertBillingOwnerMayGo, reassignBillingOwner } from '../billing-owner';
 import { audienceShrank } from '../call-audience';
 import { lockWorkspaceRow } from '../plans';
-import { attachmentsOf } from '../purge-attachments';
+import { attachmentsOf, unsentPlanFiles } from '../purge-attachments';
 import { departDecks } from './departure';
 import { maskEmail } from './invites';
 import { recordRemoval } from './domains';
@@ -320,6 +323,18 @@ export async function removeMember(
     // The files on them go after the commit (`deleteAttachments`), as those of the conversations
     // left empty below.
     const files: Attachment[] = ownTodos.flatMap((each) => each.attachments ?? []);
+    // And the milestones and projects of their own (none of an area): kept, their names showed
+    // again on coming back.
+    for (const table of [todoMilestones, todoProjects])
+      await tx
+        .delete(table)
+        .where(
+          and(
+            eq(table.workspaceId, workspaceId),
+            eq(table.ownerId, targetId),
+            isNull(table.areaId),
+          ),
+        );
     await tx
       .update(todos)
       .set({ assigneeId: null })
@@ -329,6 +344,14 @@ export async function removeMember(
     await tx
       .delete(senderDrafts)
       .where(and(eq(senderDrafts.workspaceId, workspaceId), eq(senderDrafts.userId, targetId)));
+    // What they planned here („Später senden“) goes unsent, with its files.
+    const planned = await tx
+      .delete(senderScheduled)
+      .where(
+        and(eq(senderScheduled.workspaceId, workspaceId), eq(senderScheduled.userId, targetId)),
+      )
+      .returning({ id: senderScheduled.id, attachments: senderScheduled.attachments });
+    files.push(...(await unsentPlanFiles(tx, planned)));
     await tx
       .delete(senderPins)
       .where(

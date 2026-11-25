@@ -13,6 +13,7 @@ import { DeleteAccountSection, ExportDataSection } from './components/DataSectio
 import { StorageSection } from './components/StorageSection';
 import { AppConnectionsSection } from './components/AppConnectionsSection';
 import { LinkedAccountsSection } from './components/LinkedAccountsSection';
+import { ProfilePicture } from './components/ProfilePicture';
 
 /** The groups inside a card, split by hairlines. */
 const GROUPS =
@@ -47,9 +48,10 @@ export function Component() {
 
       <Section
         title="Profil"
-        description="Den Namen sehen die anderen an deinen Kommentaren. Die Adresse kommt von deiner Anmeldung."
+        description="Bild und Namen sehen die anderen an deinen Kommentaren und Nachrichten. Die Adresse kommt von deiner Anmeldung."
       >
-        <div className="grid gap-3 sm:grid-cols-2">
+        <ProfilePicture author={viewer.author} onNotify={showToast} />
+        <div className="mt-5 grid gap-3 sm:grid-cols-2">
           <NameField name={user.name} />
           <TextField label="E-Mail" value={user.email} readOnly />
         </div>

@@ -2,6 +2,7 @@ import type { CloudEvent } from '@slider/shared';
 import { formatDateTime, formatRelativeTime } from '@/lib/format';
 import { Avatar, cn } from '@/ui';
 import { useCloud } from '../hooks/useCloud';
+import { shownName, useShowExtensions } from '../hooks/useShowExtensions';
 
 /** What an event says after the person's name; `name` is the file or folder, set in bold. */
 function sentence(event: CloudEvent): { before: string; after: string } {
@@ -79,6 +80,7 @@ export function ActivityFeed({
   empty?: string;
 }) {
   const ui = useCloud();
+  const extensions = useShowExtensions();
   if (events.length === 0) return <p className="py-3 text-body text-fg-subtle">{empty}</p>;
   const now = new Date();
   const days = events.map((event) => dayOf(event.at, now));
@@ -87,7 +89,14 @@ export function ActivityFeed({
       {events.map((event, index) => {
         const day = days[index];
         const heading = !compact && day !== days[index - 1];
-        const { before, after } = sentence(event);
+        // Names as the lists show them – also the old one of a rename.
+        const shown = (name: string) =>
+          shownName({ name, kind: event.nodeKind ?? 'other' }, extensions);
+        const { before, after } = sentence(
+          event.kind === 'renamed' && event.detail
+            ? { ...event, detail: shown(event.detail) }
+            : event,
+        );
         const opens =
           event.nodeId && event.nodeKind && event.kind !== 'deleted' && event.kind !== 'purged';
         const you = event.actor.id === ui.userId;
@@ -115,10 +124,10 @@ export function ActivityFeed({
                           : ui.openFile(event.nodeId))
                       }
                     >
-                      {event.name}
+                      {shown(event.name)}
                     </button>
                   ) : (
-                    <span className="font-medium text-fg">{event.name}</span>
+                    <span className="font-medium text-fg">{shown(event.name)}</span>
                   )}
                   {after}
                 </p>

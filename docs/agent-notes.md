@@ -137,6 +137,8 @@ Decrypt the deck's blob (`EncryptedBlobStorage` + `.data/data-key`), then from `
   whose command quotes those words (your own wait loop, another agent's multi-line command) and
   never ends. Match only node/bun processes:
   `ps -axo comm=,args= | awk '$1 ~ /(^|\/)(node|bun)$/ && /vitest|tsc --noEmit|playwright/'`.
+- Prettier only on your own files, never on a directory: `prettier --write apps/web/src/features/x`
+  reformatted three other agents' files once (undo with `git diff -- f | git apply -R`).
 
 ## Bun
 
@@ -242,6 +244,30 @@ Decrypt the deck's blob (`EncryptedBlobStorage` + `.data/data-key`), then from `
   (`milestone`, found or made). The timeline („Zeitplan“, `TodoTimeline.tsx`) draws a bar from
   `startOn` to `dueOn` (either alone is one day); a drag counts from where it was grabbed
   (`Drag.origin`) – from the moved span it ran away.
+- To-do projects (`todo_projects`, migrations 0181/0182, user's call 2026-11-24): a place's plans
+  beside its „Allgemein“ (`DEFAULT_PROJECT_NAME`, `project_id` null – what every place had
+  before) – an area's (`area_id`) or one's own (`owner_id`, oneself alone). A to-do and a
+  milestone take only their own place's project, another project (or place) drops the milestone;
+  deleted, the FKs set `project_id` null (back to „Allgemein“). Web: tabs over the list
+  (`ProjectTabs`, `?projekt=`, a stale id falls back) on the area page, the overview's area tabs
+  and „Meine“; „Neues Projekt“ (`NewProject`) sits in the tool row between the new to-do and the
+  search; „Alle“ groups „Bereich | Projekt“. Agents/apps: `project` by name (found or made, „Allgemein“ = null).
+- To-do dependencies (`todo_dependencies`, migration 0184, user's call 2026-11-24): „Wartet auf“
+  (`blockedBy`, set as it should stand) – to-dos of the same place (area + project / own) only, no
+  self, no loop (`checkBlockers`); moved to another place its links go both ways, FKs cascade on
+  delete. Web: `BlockedByPicker` in the panel (under it „#n wartet darauf“); the Zeitplan marks
+  what the dragged/open one holds up (`heldUpBy`, blue) and red what starts on or before an open
+  blocker's due day (`startingTooEarly`, also after the drop) – marked, never moved. The Zeitplan
+  is `data-own-drag` (no page selection box). Not yet in agents' tools (`mcp-cloud.ts`).
+- Zeitplan order (`todos.position`, migration 0187, user's call 2026-11-25): a milestone's lines
+  stand as put by hand – sorted by `position`, then number; the backfill took the old order (by
+  start, the unplanned last). A line dragged up/down (by its name, or its bar pulled vertically
+  first; by touch a long press on its name – let go unmoved it opens the line's menu, moved
+  before it scrolls) goes between its new neighbours (half their positions) and into that
+  group's milestone; one put into another milestone or place without a `position` (panel, agents,
+  new ones) goes last (`lastPosition`, same rule in the optimistic update). Agents/apps: `update_todo`'s
+  `before` (`positionBefore`), `list_todos` in that order. A milestone picked on
+  the Zeitplan (its name clicked) is where „Neue Aufgabe“ puts new ones – of the place made in only.
 - Settings (`services/agent-settings.ts`): only what the server keeps – name, colour (comments
   follow), call voice, mail check interval; mailbox settings are `update_mailbox`, an area's
   `update_area`. Look, notifications, how things open live in the browser – the tool says so.
@@ -358,6 +384,67 @@ Unsplash can revoke the key; production approval needs screenshots of credits.
 - Non-automated: AI only on a human request, ≤ 3 searches per run, a person confirms.
 - Writer: a picked photo's credit rides on `WriterPicture.credit` into the .odt's frame
   (`svg:desc`, odp's `writeCredit` / `readCredit`) and shows in the picked picture's panel.
+
+## Own picture – Konto › Profil (`services/user-pictures.ts`, `routes/user-pictures.ts`)
+
+- `users.picture` (migration 0186) is a blob key, new per picture (`users/<id>/pictures/<uuid>.jpg`);
+  the server redraws every upload as a 512 px square JPEG (no EXIF, nothing foreign kept). Served
+  as signed `/files/…` links; account deletion drops `users/<id>/`, the export has `profilbild.jpg`.
+- Comments keep their author as a snapshot, so the picture is never in `Author`: `GET
+  /people/pictures` (who shares a workspace with one, and oneself) fills a module store
+  (`lib/people-pictures.ts`, by `PeoplePicturesSync` at the router root, hourly – links run out
+  after 6–12 h); `Avatar` and `LiveCursor` look the author's id up there (type `owner` only). No
+  router hook or query in `Avatar`: it stands inside `CallProvider`.
+- „Profibild mit KI“ only where one of the person's workspaces (as admin/member) has an image key
+  whose model takes a photo (`takesImageReferences`: FLUX Kontext, FLUX.2, gpt-image) –
+  `pictureWorkspace`, `MePicture.ai`. Camera, photo, wish („Professionelles Bild“) and result stay
+  in the page; the server wraps the wish in a fixed frame (same face, head and shoulders, square)
+  and answers the JPEG unkept – „Übernehmen“ PUTs it. Tried 2026-11-25 against BFL `flux-2-pro`
+  with a FLUX-made kitchen selfie: the same man in a suit before grey. The fake camera
+  (`--use-fake-device-for-media-stream`) shows a green pattern, no face – feed a photo through
+  „Foto auswählen“ to judge the model.
+
+## Command panel – ⌘K (`features/commands/`, `ui/Palette.tsx`)
+
+- `CommandKey` (at the router root, signed in) takes ⌘K on the window's **capture**, before any
+  field – also those that stop every key (Sender's chat, board stickers). A page where ⌘K means
+  something else claims it with `useCommandKeyClaim(run | null)` (latest wins): Writer's link while
+  text is picked (`FormatBar`), the show while presenting (does nothing). Over another
+  `dialog[open]` nothing opens.
+- A page lends its actions with `usePageCommands({group, actions, workspaceId})` – the same
+  `MenuAction`s its menu shows (Cloud's „Neu“ `useCloudNewActions`, the lists' `makeActions`). An open
+  deck lends its pill's „Präsentieren“ / „Referentenansicht“ (`presentActions`, shared with
+  `PresentButton`) and, editable, „Exportieren“ (`DeckCommands`, off while presenting or the
+  material is open); Writer „Drucken“ / „Exportieren“ / „Dokument schließen“, Reader the same for a
+  PDF – and their workspace, so files search and the AI go there.
+- „Abmelden“ is the account menu's (`useSignOut` in `features/workspaces`: the same rows, labels and
+  questions – unsent edits, the desktop bridge, the cloud account), last under „Konto“.
+- The outer `CommandPanel` stays mounted while the body comes and goes with the panel: it holds the
+  toast and the sign-out questions. Anything that ends after the panel may have closed uses
+  `mutateAsync` and asks the body's `useMounted` ref – closed meanwhile, a toast with „Öffnen“
+  says it instead of navigating away from where one is now.
+- The panel chunk is loaded on idle and kept in a module variable, not `React.lazy`: lazy renders a
+  tick late even when loaded, and the first letters typed after ⌘K missed the field.
+- Typed text searches the workspace's files (`useCloudSearch`, as Cloud's search), its areas
+  (`useCloudHome`'s, by name) and mails (`useMailHits`, five) and offers „An die KI geben“ (⌘↵):
+  `useOrderCloudAgent` – an agent of one's own, opened; the palette `stays` open with a spinner until
+  it exists, a refusal stands under the list. A presentation file opens in Slider as Cloud's „Öffnen“
+  does (`usePresentCloudNode`, the window taken at once for the popup blocker): that row `stays`
+  with a spinner until the deck is there.
+- ⌘K twice at once: `CommandKey` keeps what is shown in a ref (the second key comes before the
+  render), its own still-closing dialog (`aria-label="Befehle"`) does not count as „another
+  dialog“, and `PaletteDialog` drops a `close` event that comes after it opened again.
+- Closing a modal `<dialog>` puts focus back but leaves the selection in the dialog: the page then
+  types nowhere. `PaletteDialog` keeps the selection on open and puts it back on every close – the
+  document range for contenteditable (Writer), `setSelectionRange` for an input/textarea (its range
+  lies beside the field and, put back, swallowed typing with the caret at 0). Not put back: a
+  field typed into before `close` came (a task after the focus), and a contenteditable caret while
+  the focus is elsewhere – `addRange` there pulled the focus from a panel's `<select>` into the
+  slide's text. A template/layout `NameField` does not send on a blur into a `dialog[open]`
+  (sent, its key changed and the field was remounted without the caret).
+- Checked live with LibreOffice (scratch config, 2026-11): ⌘K from a panel's `<select>`, a picked
+  element, typing on a slide, the template editor and the comment field – letters, ⌫, arrows, ⌘K
+  and Esc change nothing on the slide, the focus and caret come back where they were.
 
 ## Presenting
 
@@ -578,12 +665,23 @@ Unsplash can revoke the key; production approval needs screenshots of credits.
 - `mail-agent-run.ts` loads `mail-unsubscribe` with `await import()`: imported at the top it
   closes a ring `mail-context` → `mail.ts` (`onNewMail` before `afterMail` exists) and the API
   does not start.
-- An agent is a shared space with **one chat** (`cloud_agent_chats`, migration 0117; its id is
-  the agent's id, its title the agent's) plus one tag chat per conversation it was called in.
-  Several chats side by side („Neuer Chat“, `POST …/chats`, `list_chats`/`read_chat`/`tell_chat`)
-  are gone since 2026-11-23 (user: a new topic is a new agent); older extra chats and their
-  `from_chat_id` notes stay in the data but no page shows them. Messages carry `chat_id` and the
-  writer (`user_id`). Each chat runs by itself (`runs` keyed by chat id) with the
+- An agent is a shared space with **one chat** (its id is the agent's id, its title the agent's).
+  Since 2026-11-25 (migration 0185, user: „fass wirklich beides zusammen“) a chat with an agent
+  is a Sender conversation: `sender_channels` kind `agent` (`agent_id`, `title`), its messages
+  `sender_messages` (the agent's answer: `agent_id` set, `state`/`error`; a person's: `user_id`),
+  numbered per chat; who read how far is `sender_members.read_seq` (no own read table). The run
+  reads/writes them through `services/agent-chats.ts`. Sender's message routes serve its
+  messages too – react, edit (own words), delete, quote (`replyTo` on `POST …/agents/:id/messages`,
+  the quoted words go into the prompt) – via `seen(…, agentChats = true)`; writing still goes
+  through the agent's route (it runs the AI), so `checkPost`/`postMessage` 404 on kind `agent`.
+  The web shows both with one `MessageList` (`AgentChat` passes `body` for the answer's markdown,
+  `writing`, `below` for asks/choices, `after` for the watching line); the agent detail serves
+  `CloudAgentMessage = SenderMessage + role/state/error/asks` (`agentChatDtos`). Opening the
+  agent reads its chats and tells one's own side bars (`readAgentHere`). `sender_channels.agent_id`
+  is `set null`, so whatever deletes an agent drops its chats first (`dropAgentChats`:
+  `dropAgent`, account deletion). The old tables were moved by `db/move-agent-chats.ts` at start (re-sealed: encrypted
+  columns bind `table.column`) and dropped. Several chats side by side („Neuer Chat“) are gone
+  since 2026-11-23 (user: a new topic is a new agent). Each chat runs by itself (`runs` keyed by chat id) with the
   **writer's** rights; members and admins who see the agent write (`canWrite`), others read;
   taking the desk over stays the owner's. Who is there (`here`) and who types (`typing` per chat)
   is in memory only: reading the agent counts as being there (12 s), `POST …/typing` lasts 5 s.
@@ -759,7 +857,7 @@ Unsplash can revoke the key; production approval needs screenshots of credits.
 - „Agenten“ (`/w/:id/dateien/agenten[/:agentId]`, side bar row under „Zuletzt“): an order to the AI
   that runs in the server (`runInBackground`), not in a request – the page only polls (1.5 s
   while `running`, `lib/api/cloud-agents.ts`). Server: `services/cloud-agents.ts` +
-  `routes/cloud-agents.ts`, tables `cloud_agents`, `cloud_agent_messages`, `cloud_agent_files`
+  `routes/cloud-agents.ts`, tables `cloud_agents`, `cloud_agent_files` (chats: Sender's)
   (migration 0114). There are no guests, only the workspace's roles: who looks or comments (`viewer`, `reviewer`) uses the AI to find and read only: Cloud's chat
   offers them no changing tool (`runTool` refuses too), agents take work from members and admins,
   slides change by AI with the edit right as ever. Everyone in the workspace reads every agent (chat and desk); only who gave
@@ -1109,11 +1207,15 @@ Unsplash can revoke the key; production approval needs screenshots of credits.
   after 30 days, unnamed earlier versions after 180, and own files of accounts that are gone.
 - Files count against the workspace's plan (`StorageBreakdown.files`) and show on `/instanz`
   (tile and column) and in the admins' `…/dateien/uebersicht`.
-- An export kept in Cloud („In Cloud ablegen …“ in „Exportieren“, „Als PDF ablegen …“ on a file,
-  `services/edits/export.ts` `keepInCloud`) goes in without `keepBoth`: one of its name there gets
-  it as its next version. `cloudFreeName` strips a trailing number, so a kept-both second
-  „X – Folie 2.png“ would be called „X – Folie 3.png“. A presentation's file is exported as
-  „Exportieren“ does (workspace fonts) when the caller may edit it, else Cloud's preview PDF.
+- An export kept in Cloud („In Cloud ablegen …“ in „Exportieren“, „Als PDF ablegen“ on files –
+  no dialog, each PDF beside its file, a line in the uploads tray while made (`makePdfs`), its
+  name opens it; `POST /cloud/nodes/pdf` takes `CLOUD_PDF_BATCH` (10) ids, drawn one after
+  another, each a hit on `aiLimits().pdfs` once its place takes it (edit right, room), named as
+  the PDF will be (a presentation's: `fileBase(deck)`) for the same-name check; `services/edits/export.ts` `keepInCloud`) goes in without `keepBoth`:
+  one of its name there gets it as its next version. `cloudFreeName` strips a trailing number,
+  so a kept-both second „X – Folie 2.png“ would be called „X – Folie 3.png“. A presentation's
+  file is exported as „Exportieren“ does (workspace fonts) when the caller may edit it, else
+  Cloud's preview PDF.
 - Scratch look at it: copy `e2e/playwright.config.ts` with own ports and data dir and the real
   `soffice`; the dev login is the workspace's admin. Open: a member removed from a workspace
   leaves their own files behind unreachable (cleared only with the account); content search;
@@ -1150,6 +1252,24 @@ the side bar's counts + mail threads' stamp, so a read one goes) and `UnreadRow`
 Cloud's `SenderProvider` paths. At most 5, newest first, no „all“ link (the side bar has the rest);
 hidden while pending and when nothing is unread. Slider's own start is „Präsentationen“, not
 „Zuletzt“ – nothing there. A colleagues-only mail shows the group mark as in the side bar.
+
+„Zuletzt“'s „Für dich“ (user 2026-11-24: an AI overview „was steht für mich an“ over all apps,
+only what wants something of one): page-wide under the field, Sender's headline look
+(`ForYou.tsx`, `services/cloud-focus.ts`, `GET /cloud/focus?ai=0|1`). The server finds the
+entries, the AI only words them (a line each, a headline, the order; `act: false` drops one) and
+never adds one. Sources, all with a state that ends: Sender's triage groups mentions / direct /
+requests (`triageEntries`, mails only `forAi` into the prompt), open `cloud_agent_asks` for one,
+unseen shares (`newSharesWithMe` – never `listNodes({scope:'shared'})` or `listDocuments`: they
+mark shares seen), to-dos due by tomorrow, today's events, open Slider/Writer threads where the
+last word is not one's own and that name one (`mentionsIn` on the decrypted bodies), answer one,
+or lie on one's own deck/document – one entry per deck/document. Calendars read no attendees,
+so there are no invitations to answer yet. The web shows `plain` at once (every 60 s) and joins
+the AI's lines by key; the server keeps its answer while only some entries went, but once one of
+the two it names first is gone the headline is the count again. A share row opens „Geteilt“
+(listing it marks the share seen); a mailbox calendar slower than 3 s leaves the day out; the
+list is asked anew each time „Zuletzt“ opens.
+„Seit deinem letzten Besuch“ beside the cards is never taller than them (15rem at least), its
+list scrolls in the panel.
 
 ## Writer – text documents (`packages/odt`, `services/documents.ts`, `features/writer/`)
 
@@ -1358,6 +1478,12 @@ hidden while pending and when nothing is unread. Slider's own start is „Präse
   roles (`cloudContext`), groups and direct ones from `sender_members`. Agents are not channels:
   the side bar lists the user's Cloud agents and `AgentChatPage` talks to them over the Cloud
   agent API (`useCloudAgent`), reading marks them read (`readAgent`).
+- A chat with an agent is shown and written as one with people – one code path, no copy: every
+  field is Sender's `Composer` (`AgentComposer` only hands it the agent's attachments, draft key,
+  `variant`), so files, a recorded video, drafts and keys are the same everywhere; every agent
+  chat is Cloud's `AgentChat` (Cloud's page, Sender's `AgentChatPage` with its header/desk around
+  it, beside a mail). `AgentChat` takes what differs from the app it stands in (`useChatPlace`:
+  Cloud opens named files beside, Sender in their app; call links). New chat features go there.
 - Moderation/limits: `manages()` (creator, area manager) deletes anyone's message and takes people
   out of a group (`DELETE /sender/channels/:id/members/:userId`); `routes/sender.ts` caps writes
   (120/min), new conversations (60/h), typing (dropped past 60/min). „Stummschalten“ is
@@ -1368,6 +1494,15 @@ hidden while pending and when nothing is unread. Slider's own start is „Präse
   `sender.ts` pushes only to who has no `senderLive` stream in the workspace (an open tab tells by
   itself), same rule as `worthTelling`. The worker registers only in builds, so pushes never show
   under Vite; `createApp` copies deps, so tests stub global `fetch` to catch them.
+- „Später senden“ (`sender_scheduled` 0183, `services/sender-scheduled.ts`, user's call
+  2026-11-24): right click / menu key on the `Composer`'s „Senden“ (only where `onSchedule` is
+  given – conversations; not agent chats, not a mail's reply, which has the outbox). Rows wait
+  apart from the conversation, seen by their writer alone (`ScheduledLines` above the field, live
+  event `scheduled` to that user only); `sendDueScheduled` (5 s tick in `server.ts`) posts due ones
+  through `postMessage` / `postAsAgent`, so every check runs again then; refused they stay
+  `failed` with the error. Files are `claimAttachments`-taken while waiting (else the 7-day sweep
+  eats them), freed before posting. Agents and apps plan with `post_message`'s `send_at`
+  (cloud-agents.ts / mcp-cloud.ts); an agent's planned row has `agentId` and goes in its name.
 - Message features (2026-11-24): reactions `sender_reactions` (0177, one per person and message,
   not on one's own, deleted messages or call entries; area viewers can't) via `PUT
   /sender/messages/:id/reaction`; answers `sender_messages.reply_to` (0178, set null when the
@@ -1424,21 +1559,15 @@ hidden while pending and when nothing is unread. Slider's own start is „Präse
   area is seen only by who sees the area, owner too; one's private one always (`seesAgent`) –
   repeats/watches run only while the owner still sees it (`ownerWorks`, else cleared); the area's own can't be moved or
   unshared, and `callAgent` takes it only while `shared` in that area (else a new one).
-  A tag runs in the agent's own chat for that conversation (`tagChatId` = `<agent>:<channel>` in
-  `cloud-agent-runs.ts`, made on the first tag; other chats are bare UUIDs, `TAG_CHATS` matches
-  them). The chat keeps only the caller's own words; the briefing (where, how to answer, the lines
-  before) goes to the run as `Waiting.prompt`. The page names it after the conversation and shows
-  `calledIn` („Gerufen in #Kanal“) above the words. Its text (the call, the run) is only for who reads the conversation now –
-  `getCloudAgent` filters them per reader (`readableTagChats`, same rule as the export), chat
-  tools and the card leave them out, `messageCloudAgent` refuses a `chatId` of one (only a call
-  writes there; the pages show them without a composer). They are deleted when others come to
-  read the agent (`shareCloudAgent` sharing it) and with the area's channels (`deleteArea` →
-  `releaseAreaAgents`, which hands its agents back to their owners – or deletes a shared one if
-  the owner no longer saw the area). Tag chats (`isTagChat` in shared) are not shown on the
-  agent's pages – their answer stands in the conversation. Leaving a group/direct one or the
+  A tag runs for that conversation alone (run key `tagChatId` = `<agent>:<channel>` in
+  `cloud-agent-runs.ts`, in memory only): nothing of it is kept in the agent's chats – the
+  caller's words stand in the conversation, the briefing goes to the run as `Waiting.prompt`, its
+  answer is what it posts there. It may not ask to confirm anything (`askFirst` refuses: no chat
+  to ask in). `releaseAreaAgents` still hands an area's agents back to their owners (or deletes a
+  shared one if the owner no longer saw the area). Leaving a group/direct one or the
   workspace takes one's own private agents out of it (`sender_channel_agents` rows). The data export (`account-export.ts`) keeps to the
   same: an owned area agent only while one sees the area (else just one's own lines,
-  `areaLeft`), a tag chat only while one reads its conversation (`audienceOf`). A shared agent
+  `areaLeft`); agent chats are left out of `nachrichten.json`. A shared agent
   read by fewer (unshared, moved to another area, its area deleted) loses others' work
   (`forgetOthers`): chats someone else opened or wrote in go (the first chat only empties –
   answers aren't tied to whose run they were), desk rows the owner can't open go; refused
@@ -1482,24 +1611,26 @@ hidden while pending and when nothing is unread. Slider's own start is „Präse
   (`cloud:<workspace>`) about the whole workspace, with starters of its own.
 - Search, not a form, starts a direct message (the user's call 2026-11-19): each bar has one
   `BarSearchField` under „Neu“, its hits replace the bar's list in place. Sender: chats and
-  people (`ConversationHits`, ⌘F). Cloud: one field for everything, its query in the address
+  people (`ConversationHits`, ⇧⌘F). Cloud: one field for everything, its query in the address
   (`useBarSearch`: `?suche=…&ort=…&von=…`, first letter pushes, „Zurück“ ends it, going anywhere
   ends it). Small searches names only – the bar (`BarHits`: files/folders, areas,
-  `ConversationHitRows`) and ⌘F –; the page (`SearchResults`, in the page's place) always names
+  `ConversationHitRows`) and ⇧⌘F –; the page (`SearchResults`, in the page's place) always names
   and what files say (`in=all`: names first, then text hits, their place a line under the name –
   `FileBrowser` `notes`), „Suche nach: „…““ where the path stands, „Ort“ (all, Meine Dateien, Mit mir geteilt, an area: API `area=own|shared|<id>`)
   and „Von“ (API `owner=<user id>`) as `Select`s – narrowed, areas and chats step aside (the user's
   call 2026-11-19). The bar folded, its search moves into that path row (`CrumbSearch`,
-  `lib/crumb-search.ts`: `BarFolded` from `CloudLayout`, ⌘F/the magnifier `askCrumbSearch`): one
+  `lib/crumb-search.ts`: `BarFolded` from `CloudLayout`, ⇧⌘F/the magnifier `askCrumbSearch`): one
   types after „Suche nach:“ in the page, and the search page's path is the field again. An area found as such hides its own
-  chat from the chat hits. Keys (the user's call 2026-11-23): ⌘F is always the side bar's search,
-  the whole app's – Cloud's `SearchPalette`: the bar's field (`data-cloud-search="bar"`), else the
+  chat from the chat hits. Keys (the user's call 2026-11-24, ⌘K is kept free for a command panel;
+  `isSearchKey` / `searchKeyLabel` in `lib/keyboard.ts`, `lib/platform.ts`): ⌘F is the page's own
+  search – its field, or what a presentation, PDF or document says (their find bars) –; a page
+  without either leaves ⌘F to the browser. ⇧⌘F is always the side bar's search, the whole app's – Cloud's `SearchPalette`: the bar's field (`data-cloud-search="bar"`), else the
   path row (bar folded), else the palette (narrow); Sender's `BarSearchField shortcut`. A page's
-  own field is one component, `ViewSearch`, on ⌘K (its `Kbd` says so), always on the right in the
+  own field is one component, `ViewSearch`, on ⌘F (its `Kbd` says so), always on the right in the
   page's own row (the user's call): Präsentationen, Bibliothek, PDFs, Dokumente (`ViewToolbar`),
   Meine Dateien/areas/folders, Geteilt, Gelöscht (`ListToolbar search`, narrows 352 → 200px
   before wrapping), Post, Agenten and Aufgaben (beside the view toggle). Not on Zuletzt (the
-  bar is its search), Bereiche (tree/net), short lists (Verbindungen, Postfächer, Entwürfe). Mails are in every search: bar, ⌘F palette and `SearchResults` – the bar
+  bar is its search), Bereiche (tree/net), short lists (Verbindungen, Postfächer, Entwürfe). Mails are in every search: bar, ⇧⌘F palette and `SearchResults` – the bar
   and palette by subject, names, addresses; the page and Post's field (`?in=all`) by what the
   mails say too (sealed, so read per search: the newest 20 000 within 3 s, ~1 s for 20 000 of 3 KB;
   the hit's preview is where it says so). Chat order (`lib/search.ts`): named conversations, people
@@ -1921,6 +2052,30 @@ hidden while pending and when nothing is unread. Slider's own start is „Präse
 - Final delete of a presentation, a Writer document or a Reader PDF (`purgeRow`, `deleteDeck`)
   takes the files on its comments and AI chats along (`services/purge-attachments.ts`): the rows
   cascade, the `attachments` rows and blobs would stay orphaned. In „Gelöscht“ they stay.
+- Videos (`isVideoAttachment`: mp4/webm) go up to 200 MB (`attachmentLimit`), the rest 25 MB;
+  the route serves them inline with byte ranges (206/416), `?download=1` still downloads.
+  `SentAttachments` plays them in the message (own `<video>`: attachments may not import viewer –
+  viewer imports attachments). Mail skips attachments over 25 MB anyway.
+- Recorded video (Sender's composer: `RecorderPanel` with `editor`, Slider's video comments) is
+  cut in the browser (`viewer/media/lib/cut-video.ts`, Mediabunny over WebCodecs: decode the
+  kept parts, encode one MP4 again – no ffmpeg on the server, cut parts never leave the device).
+  Needs `VideoEncoder`/`AudioEncoder` (`canCutVideo`; Safari 16.4+, Firefox 130+). „KI-Schnitt“
+  (Beta, `POST /workspaces/:ws/video-cuts`, `services/video-cuts.ts`): the browser sends a 16 kHz
+  mono WAV (`speechOf`), the speech service answers `verbose_json` with times – pauses ≥ 1.2 s
+  become cuts, the workspace AI marks slips by segment. Without times (gpt-4o-transcribe gives
+  none) it refuses; faster-whisper gives segments only, OpenAI Whisper words too, Mistral gets
+  only `segment` asked. Checked with Chrome's fake camera; the AI part only with the test stub.
+  `speechOf` lives in `features/attachments/lib/video-digest.ts` (viewer imports it from there).
+- The AI reads a video on a message (agents, Sender's and Cloud's AI – all via `attachmentBlocks`)
+  by a digest the browser makes while it uploads (`videoDigestForm`: 3–8 JPEG stills 768 px wide,
+  about one per 10 s, plus the first 12 min of sound as 16 kHz WAV) and posts after the upload
+  (`POST /attachments/:id/digest`, uploader only, 204) – the chip is ready only after that, so an
+  agent answering at once has it. `services/video-digest.ts` keeps `<key>.digest` (JSON: stills
+  base64, said-with-times, note) and hears the sound in the background; `videoBlocks` waits up to
+  2 min for that, then gives `<datei art="Video" dauer>` + „Gesprochen: [m:ss] …“ + each still
+  with „[Bild bei m:ss]“. The sound is not kept. Deleting the file deletes the digest
+  (`attachmentBlobs`). No digest (old video, browser without `VideoDecoder`, failed): the old
+  „Inhalt nicht lesbar“. Checked end to end with a real agent on Chrome's fake camera.
 
 ## To-dos – „Aufgaben“ in the UI (`services/todos.ts`, `routes/todos.ts`, `features/cloud/components/todos/`)
 
@@ -2337,6 +2492,15 @@ hidden while pending and when nothing is unread. Slider's own start is „Präse
   check `page.route` the agent's GET (add a message with `call`) and `/api/calls/*/record`.
 
 ## Hosted instance – office.bertro.dev, formerly slider.bertro.dev
+
+- A new release reaches an app left open (an installed one, for days) by `lib/app-version.ts`:
+  the page's release (first `version` seen, `/me` or `/api/health`) against the server's,
+  `/api/health` asked every 5 min and on focus/blur/visibility. It reloads only when quiet –
+  window not in front, 2 min without input, no call (`holdReload` in `CallProvider`), no
+  `beforeunload` guard (a synthetic event asks them all: editor outbox, uploads, reader) and no
+  text in a textarea/contenteditable; till then Einstellungen → Version shows „Neu laden“. A
+  checkout has no `SLIDER_VERSION`, so nothing happens in dev. Desktop on the Mac (ad-hoc signed)
+  does not update itself – the web pages inside do, by the same check.
 
 - Moved with 1.7: `SLIDER_DOMAIN=office.bertro.dev`, `SLIDER_OLD_DOMAINS=slider.bertro.dev` in
   the repo variable `DEPLOY_SETTINGS` (a key there wins over the `DEPLOY_ENV` secret's line,

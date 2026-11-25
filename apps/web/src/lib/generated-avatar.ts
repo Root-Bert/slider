@@ -47,14 +47,16 @@ export function generatedAvatar(name: string): string {
 
 /**
  * Picture of someone from outside who writes mail – no one of the workspace, no agent: their
- * initials (of the address where there is no name) on a ground seeded by the same, so the same
- * sender has the same one everywhere.
+ * initials (of the address where the name has no letter – „1&1“, „11880“, an emoji – DiceBear takes
+ * only letters and would leave the circle blank) on a ground seeded by the same, so the same
+ * sender has the same one everywhere. The letters at 80 % (40 % of the circle, as Outlook's): at
+ * the style's own size „WW“, „WM“, „MM“ ran under the ring.
  */
-export function generatedInitials(name: string): string {
-  const seed = name.trim();
+export function generatedInitials(name: string, address: string): string {
+  const seed = (/\p{L}/u.test(name) ? name : address).trim();
   let uri = initialsCache.get(seed);
   if (!uri) {
-    uri = new Avatar(initialsStyle, { seed, fontWeight: 600 }).toDataUri();
+    uri = new Avatar(initialsStyle, { seed, fontWeight: 600, scale: 0.8 }).toDataUri();
     initialsCache.set(seed, uri);
   }
   return uri;

@@ -4,6 +4,7 @@ import { asc, eq } from 'drizzle-orm';
 import { ODP_MIME, OTP_MIME } from '@slider/odp';
 import {
   cloudBaseName,
+  type CloudBatchResult,
   type CloudTargetInput,
   type CloudUploadResult,
   type KeepExportInput,
@@ -13,7 +14,10 @@ import {
 import type { AppDeps } from '../../deps';
 import { slideVersions, users } from '../../db/schema';
 import { ApiError, badRequest, notFound } from '../../http/errors';
-import { loadNode } from '../cloud/context';
+import { loadNode, type LoadedNode } from '../cloud/context';
+import { resolveTarget } from '../cloud/tree';
+import { assertStorageFor } from '../plans';
+import { aiLimits } from '../../http/ai-limits';
 import { storeUpload, versionToServe } from '../cloud/files';
 import { previewPdfKey } from '../cloud/pictures';
 import { deckOfNode } from '../deck-places';
@@ -254,18 +258,78 @@ export async function keepExport(
 }
 
 /**
- * „Als PDF ablegen …“ on a file in Cloud: a presentation's file the caller may edit as
- * „Exportieren“ makes its PDF (the workspace's fonts in it); any other file LibreOffice reads as
- * the PDF Cloud's preview shows of it.
+ * „Als PDF ablegen“ on files in Cloud, each PDF beside its file: a presentation's file the caller
+ * may edit as „Exportieren“ makes its PDF (the workspace's fonts in it); any other file
+ * LibreOffice reads as the PDF Cloud's preview shows of it (mostly drawn already). One after
+ * another, each counted against the person's PDFs a minute (LibreOffice draws a few files at once
+ * for everyone) – and only once its place is known to take it; what cannot be done is skipped.
  */
-export async function keepNodePdf(
+export async function keepNodePdfs(
   deps: AppDeps,
   viewer: Viewer,
-  nodeId: string,
-  place: CloudTargetInput,
-): Promise<CloudUploadResult> {
+  ids: readonly string[],
+): Promise<CloudBatchResult> {
   const userId = viewer.author.id;
-  const { node } = await loadNode(deps, userId, nodeId);
+  const result: CloudBatchResult = { nodes: [], skipped: [] };
+  // „a.odp“ and „a.pptx“ side by side would both be „a.pdf“: the second its next version.
+  const made = new Set<string>();
+  let limited: ApiError | null = null;
+  for (const id of new Set(ids)) {
+    let name = '';
+    try {
+      if (limited) throw limited;
+      const { node, ctx } = await loadNode(deps, userId, id);
+      name = node.name;
+      // Shared from someone else's own files: beside it is not a place of one's own.
+      if (!node.parentId && !node.areaId && node.ownerId !== userId) {
+        throw badRequest(`Neben „${node.name}“ lässt sich nichts ablegen.`);
+      }
+      const place = node.parentId
+        ? { parentId: node.parentId }
+        : node.areaId
+          ? { areaId: node.areaId }
+          : {};
+      const plan = await pdfPlan(deps, viewer, node);
+      const where = node.parentId ?? node.areaId ?? `own:${userId}`;
+      const key = `${where}/${plan.name.toLowerCase()}`;
+      if (made.has(key)) throw badRequest(`„${plan.name}“ kommt schon aus einer anderen Datei.`);
+      // Before LibreOffice draws it: may it go there, is there room at all?
+      await resolveTarget(deps, ctx, place, 'edit');
+      await deps.db.transaction((tx) =>
+        assertStorageFor(tx, deps.config, node.workspaceId, 0, deps.clock.now()),
+      );
+      if (!aiLimits(deps).pdfs.hit(userId).allowed) {
+        limited = new ApiError(
+          429,
+          'rate_limited',
+          'Zu viele PDFs auf einmal. Bitte warte einen Moment.',
+        );
+        throw limited;
+      }
+      made.add(key);
+      const kept = await keepInCloud(deps, userId, node.workspaceId, await plan.make(), place);
+      result.nodes.push(kept.node);
+    } catch (error) {
+      if (!(error instanceof ApiError)) deps.log.warn(`PDF of cloud node ${id} failed`, error);
+      result.skipped.push({
+        id,
+        name,
+        reason:
+          error instanceof ApiError && error.status < 500
+            ? error.message
+            : 'Aus dieser Datei ließ sich gerade kein PDF machen.',
+      });
+    }
+  }
+  return result;
+}
+
+/** The PDF a file gives: its name in Cloud (known before it is drawn) and how it is made. */
+async function pdfPlan(
+  deps: AppDeps,
+  viewer: Viewer,
+  node: LoadedNode['node'],
+): Promise<{ name: string; make: () => Promise<ExportedFile> }> {
   const deck = await deckOfNode(deps.db, node.id);
   const editable =
     deck &&
@@ -273,15 +337,27 @@ export async function keepNodePdf(
       () => true,
       () => false,
     ));
-  let file: ExportedFile;
   if (deck && editable) {
-    file = await exportedFile(deps, viewer, deck.id, 'pdf', undefined);
-  } else {
-    const version = await versionToServe(deps, node);
-    const key = await previewPdfKey(deps, node, version);
-    const bytes = key ? await deps.storage.get(key) : null;
-    if (!bytes) throw badRequest('Aus dieser Datei lässt sich kein PDF machen.');
-    file = { bytes, fileName: `${cloudBaseName(node.name)}.pdf`, contentType: 'application/pdf' };
+    return {
+      // As `editedPdf` names it, and `keepInCloud` without slashes.
+      name: cloudPdfName(fileBase(deck)),
+      make: () => exportedFile(deps, viewer, deck.id, 'pdf', undefined),
+    };
   }
-  return keepInCloud(deps, userId, node.workspaceId, file, place);
+  return {
+    name: cloudPdfName(cloudBaseName(node.name)),
+    make: async () => {
+      const version = await versionToServe(deps, node);
+      const key = await previewPdfKey(deps, node, version);
+      const bytes = key ? await deps.storage.get(key) : null;
+      if (!bytes) throw badRequest('Aus dieser Datei lässt sich kein PDF machen.');
+      return {
+        bytes,
+        fileName: `${cloudBaseName(node.name)}.pdf`,
+        contentType: 'application/pdf',
+      };
+    },
+  };
 }
+
+const cloudPdfName = (base: string) => `${base}.pdf`.replace(/[/\\]/g, '-');

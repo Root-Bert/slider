@@ -28,6 +28,8 @@ import {
   Tooltip,
 } from '@/ui';
 import { useCloud, type CloudUi } from '../hooks/useCloud';
+import { usePictureRetry } from '../hooks/usePictureRetry';
+import { shownName, useShowExtensions } from '../hooks/useShowExtensions';
 import { folderColor } from '../lib/areas';
 import { useOnThisComputer } from '../lib/computer';
 import { flyStyle } from '../lib/fly';
@@ -39,6 +41,7 @@ import { AgentAvatar } from './AgentAvatar';
 import { AreaDot, areaColor } from './AreaDot';
 import { Fetching } from './Fetching';
 import { FileIcon } from './FileIcon';
+import { FileName } from './FileName';
 import { NodeNameInput } from './NodeNameInput';
 
 /** What the columns beside the name say: in a folder, in a list across folders, in „Gelöscht“. */
@@ -350,6 +353,7 @@ export function NameLink({
   const ui = useCloud();
   const link = useRef<HTMLAnchorElement>(null);
   const renaming = ui.renaming?.where === 'list' && ui.renaming.id === node.id;
+  const extensions = useShowExtensions();
   // Ended with Enter or Escape, the focus goes back to the name – the field it was on is gone.
   const refocus = useRef(false);
   useEffect(() => {
@@ -370,7 +374,7 @@ export function NameLink({
   }
   if (node.deleted) {
     // Deleted things open nowhere – brought back first.
-    return <span className={cn('truncate', className)}>{node.name}</span>;
+    return <FileName node={node} className={className} />;
   }
   return (
     <Link
@@ -396,12 +400,12 @@ export function NameLink({
         if (node.kind === 'file' || onPick) ui.open(node);
       }}
       className={cn(
-        lines === 2 ? 'line-clamp-2 [overflow-wrap:anywhere]' : 'truncate',
+        lines === 2 ? 'line-clamp-2 [overflow-wrap:anywhere]' : 'flex min-w-0',
         'outline-none after:absolute after:inset-0',
         className,
       )}
     >
-      {node.name}
+      {lines === 2 ? shownName(node, extensions) : <FileName node={node} />}
     </Link>
   );
 }
@@ -531,10 +535,10 @@ function MiniSheet({
   file: NonNullable<CloudNode['peek']>[number];
   className: string;
 }) {
-  const [failed, setFailed] = useState(false);
+  const picture = usePictureRetry(`${API_PREFIX}${cloudPaths.thumbnail(file.id, file.versionId)}`);
   const look = FILE_KINDS[file.fileType];
   const pictured =
-    (file.thumbnail || file.fileType === 'image' || file.fileType === 'pdf') && !failed;
+    (file.thumbnail || file.fileType === 'image' || file.fileType === 'pdf') && !picture.failed;
   return (
     <span
       data-peek={file.id}
@@ -546,11 +550,11 @@ function MiniSheet({
     >
       {pictured && (
         <img
-          src={`${API_PREFIX}${cloudPaths.thumbnail(file.id, file.versionId)}`}
+          src={picture.src}
           alt=""
           loading="lazy"
           draggable={false}
-          onError={() => setFailed(true)}
+          onError={picture.onError}
           className="size-full object-cover object-top"
         />
       )}
@@ -856,10 +860,10 @@ function Sheet({
   file: NonNullable<CloudNode['peek']>[number];
   className: string;
 }) {
-  const [failed, setFailed] = useState(false);
+  const picture = usePictureRetry(`${API_PREFIX}${cloudPaths.thumbnail(file.id, file.versionId)}`);
   const look = FILE_KINDS[file.fileType];
   const pictured =
-    (file.thumbnail || file.fileType === 'image' || file.fileType === 'pdf') && !failed;
+    (file.thumbnail || file.fileType === 'image' || file.fileType === 'pdf') && !picture.failed;
   return (
     <span
       data-peek={file.id}
@@ -870,11 +874,11 @@ function Sheet({
     >
       {pictured ? (
         <img
-          src={`${API_PREFIX}${cloudPaths.thumbnail(file.id, file.versionId)}`}
+          src={picture.src}
           alt=""
           loading="lazy"
           draggable={false}
-          onError={() => setFailed(true)}
+          onError={picture.onError}
           className="size-full object-cover object-top"
         />
       ) : (
@@ -942,13 +946,14 @@ function FolderPicture({ node, over }: { node: CloudNode; over: boolean }) {
 
 /** A file's small picture where there is one, else its symbol on a quiet ground. */
 export function FilePicture({ node, className }: { node: CloudNode; className?: string }) {
-  const [failed, setFailed] = useState(false);
+  const { src, failed, onError } = usePictureRetry(
+    `${API_PREFIX}${cloudPaths.thumbnail(node.id, node.versionId)}`,
+  );
   // Dragged away (`useItem`): the frame stays, the file – `data-paper`, the drag's picture – is gone.
   const away = LIFTED_AWAY;
   // Pictures and PDFs draw theirs on first asking; everything else only once it is there.
   const may = node.thumbnail || node.fileType === 'image' || node.fileType === 'pdf';
   if (node.kind === 'file' && may && !failed && !node.deleted) {
-    const src = `${API_PREFIX}${cloudPaths.thumbnail(node.id, node.versionId)}`;
     // A picture fills its tile; a document shows as the top of its first page, lying on it.
     return node.fileType === 'image' ? (
       <img
@@ -957,7 +962,7 @@ export function FilePicture({ node, className }: { node: CloudNode; className?: 
         loading="lazy"
         draggable={false}
         data-paper
-        onError={() => setFailed(true)}
+        onError={onError}
         className={cn('size-full object-cover', className, away)}
       />
     ) : (
@@ -968,7 +973,7 @@ export function FilePicture({ node, className }: { node: CloudNode; className?: 
           loading="lazy"
           draggable={false}
           data-paper
-          onError={() => setFailed(true)}
+          onError={onError}
           className={cn('w-full rounded-t-thumb shadow-float', away)}
         />
       </span>

@@ -26,6 +26,11 @@ export const CLOUD_TUS_PATH = '/cloud/tus';
 export const CLOUD_MAX_DEPTH = 24;
 /** Items one request moves, deletes or restores, at most. */
 export const CLOUD_MAX_BATCH = 500;
+/**
+ * Files one „Als PDF ablegen“ request makes, at most: LibreOffice draws them one after another,
+ * so a large pick goes in several requests, none held open for minutes.
+ */
+export const CLOUD_PDF_BATCH = 10;
 
 // ── Names ───────────────────────────────────────────────────────────────────
 
@@ -416,6 +421,9 @@ export type CloudMoveInput = z.input<typeof cloudMoveInputSchema>;
 export const cloudIdsInputSchema = z.object({ ids: idsSchema });
 export type CloudIdsInput = z.input<typeof cloudIdsInputSchema>;
 
+/** `POST /cloud/nodes/pdf`. */
+export const cloudPdfInputSchema = z.object({ ids: idsSchema.max(CLOUD_PDF_BATCH) });
+
 /** What a batch did: the items as they are now, and those left out with the reason. */
 export const cloudBatchResultSchema = z.object({
   nodes: z.array(cloudNodeSchema),
@@ -665,6 +673,53 @@ export interface CloudSummary {
   /** The oldest news: an unread line, or the last visit when files changed since. */
   since: string | null;
   parts: CloudSummaryPart[];
+  reason: string | null;
+}
+
+/** Where an entry of „Für dich“ opens. */
+export type CloudFocusTarget =
+  | {
+      kind: 'channel';
+      id: string;
+      areaId: string | null;
+      channelKind: SenderSummaryPart['channelKind'];
+    }
+  | { kind: 'mail'; id: string }
+  | { kind: 'agent'; id: string }
+  | { kind: 'event'; day: string }
+  | { kind: 'todo'; id: string }
+  | { kind: 'node'; id: string; nodeKind: CloudNodeKind }
+  | { kind: 'deck'; id: string; slideId: string | null }
+  | { kind: 'document'; id: string; commentId: string | null };
+
+/**
+ * One thing that waits for the person, from any app: named in Sender or written to directly, a
+ * mail that asks something, an agent waiting for a yes, something shared with them, a to-do due,
+ * today's appointments, comments on their presentations and documents (or naming them).
+ */
+export interface CloudFocusItem {
+  /** Stable across asks: `<kind>:<id>`. */
+  key: string;
+  app: 'sender' | 'mail' | 'agent' | 'share' | 'todo' | 'calendar' | 'slider' | 'writer';
+  target: CloudFocusTarget;
+  /** Where it is: the conversation, the presentation, the document, the file. */
+  place: string;
+  /** What it is, as the server says it. */
+  text: string;
+  /** What the AI makes of it: what it is and what to do. */
+  line: string | null;
+  /** When it came or is („Heute 14:00“ for an appointment). */
+  when: string | null;
+  at: string | null;
+}
+
+/** `GET /workspaces/:id/cloud/focus`: „Für dich“ on Cloud's start – plain, or told by the AI. */
+export interface CloudFocus {
+  ai: 'none' | 'done' | 'off' | 'failed';
+  /** One sentence on top: what needs the person now. */
+  headline: string | null;
+  /** The most pressing first; only what wants something of the person. */
+  items: CloudFocusItem[];
   reason: string | null;
 }
 

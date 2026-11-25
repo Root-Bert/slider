@@ -1,6 +1,6 @@
 import { expect, test } from '../support';
 
-test('Sender: a message is formatted, answered with its quote, found from the side bar, the conversation takes a topic, „Aktuell“ opens without the AI and „Direkt“ filters by who', async ({
+test('Sender: a message is formatted, answered with its quote, found from the side bar, a message is planned for later, the conversation takes a topic, „Aktuell“ opens without the AI and „Direkt“ filters by who', async ({
   page,
 }) => {
   const [workspace] = (await (await page.request.get('/api/workspaces')).json()) as {
@@ -33,6 +33,20 @@ test('Sender: a message is formatted, answered with its quote, found from the si
   const answer = page.locator('[data-message]').last();
   await expect(answer).toContainText('Ich bringe die Kabel');
   await expect(answer).toContainText('Aufbau');
+
+  // „Später senden“ (right click on „Senden“): above the field until sent, not in the
+  // conversation; „Bearbeiten“ puts it back into the field.
+  await field.fill('Erinnerung an die Kabel');
+  await page.getByRole('button', { name: 'Senden', exact: true }).click({ button: 'right' });
+  await page.getByRole('menuitem', { name: 'Morgen um 9:00' }).click();
+  const planned = page.getByRole('list', { name: 'Geplante Nachrichten' });
+  await expect(planned).toContainText('Geht morgen um 9:00');
+  await expect(field).toHaveValue('');
+  await expect(page.locator('[data-message]').last()).not.toContainText('Erinnerung');
+  await planned.getByRole('button', { name: 'Bearbeiten' }).click();
+  await expect(field).toHaveValue('Erinnerung an die Kabel');
+  await expect(planned).toBeHidden();
+  await field.fill('');
 
   // The topic: typed where it stands, under the name.
   await page.getByRole('button', { name: `Aktionen für ${chat.name}` }).click();

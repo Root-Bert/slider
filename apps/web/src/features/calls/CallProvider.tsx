@@ -14,6 +14,7 @@ import {
 import { useQueryClient } from '@tanstack/react-query';
 import type { CallState, MeResponse } from '@slider/shared';
 import { queryKeys } from '@/lib/api/keys';
+import { holdReload } from '@/lib/app-version';
 import { mayNotify } from '@/lib/notify-prefs';
 import { Toast, useToast } from '@/ui';
 import { CallDock } from './components/CallDock';
@@ -102,6 +103,8 @@ export function CallProvider({
   }, [client]);
   // A new call opens small.
   const callId = snap.active?.callId ?? null;
+  // A new release waits for the call to end – a reload would leave it.
+  useEffect(() => (callId ? holdReload() : undefined), [callId]);
   const [shownCall, setShownCall] = useState(callId);
   if (shownCall !== callId) {
     setShownCall(callId);

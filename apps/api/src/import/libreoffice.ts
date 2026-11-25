@@ -57,7 +57,12 @@ export type PptxToPdf = ((
 export type OfficeDocumentKind = keyof typeof DOCUMENT_IMPORT_FILTERS;
 
 /** Any other document as a PDF, for files picked in a cloud that are no deck yet. */
-export type DocumentToPdf = (bytes: Uint8Array, kind: OfficeDocumentKind) => Promise<Uint8Array>;
+export type DocumentToPdf = (
+  bytes: Uint8Array,
+  kind: OfficeDocumentKind,
+  /** `background`: nobody waits for it (Cloud's small pictures) – after every `interactive` one. */
+  priority?: PoolPriority,
+) => Promise<Uint8Array>;
 
 /** A conversion that takes longer is killed; the slides keep their SVG preview. */
 export const LIBREOFFICE_TIMEOUT_MS = 120_000;
@@ -479,12 +484,15 @@ export function createLibreOfficePdf(options: LibreOfficeOptions): PptxToPdf {
  */
 export function createLibreOfficeDocumentPdf(options: LibreOfficeOptions): DocumentToPdf {
   const convert = converter(options);
-  return async (bytes, kind) => {
+  return async (bytes, kind, priority) => {
     try {
       return await convert(
         isOoxml(kind) ? await withoutExternalLinks(bytes) : bytes,
         kind,
         DOCUMENT_IMPORT_FILTERS[kind],
+        'pdf',
+        [],
+        priority,
       );
     } catch (error) {
       // The person only hears "broken or locked" or "try again": the cause is in the log.
@@ -514,8 +522,16 @@ export const MATERIAL_PDF_FILTERS = {
 } as const;
 export type MaterialPdfKind = keyof typeof MATERIAL_PDF_FILTERS;
 
-/** A Word or PowerPoint file (or its OpenDocument twin) of a deck's board as a PDF. */
-export type MaterialToPdf = (bytes: Uint8Array, kind: MaterialPdfKind) => Promise<Uint8Array>;
+/**
+ * A Word or PowerPoint file (or its OpenDocument twin) of a deck's board as a PDF. With `fonts`, a
+ * presentation is drawn as its deck is (`PptxToPdf`): by a LibreOffice of its own, with the
+ * replacement table and the workspace's fonts it names – the pool has neither.
+ */
+export type MaterialToPdf = (
+  bytes: Uint8Array,
+  kind: MaterialPdfKind,
+  options?: { fonts?: readonly EmbeddedFont[]; priority?: PoolPriority },
+) => Promise<Uint8Array>;
 
 /**
  * {@link MaterialToPdf} with the pool of running LibreOffices – nobody waits for it on screen, so
@@ -525,7 +541,7 @@ export type MaterialToPdf = (bytes: Uint8Array, kind: MaterialPdfKind) => Promis
  */
 export function createMaterialPdf(options: LibreOfficeOptions): MaterialToPdf {
   const convert = converter(options);
-  return async (bytes, kind) => {
+  return async (bytes, kind, { fonts, priority } = {}) => {
     const [importFilter, exportFilter] = MATERIAL_PDF_FILTERS[kind];
     const ooxml = kind.endsWith('x') || kind.endsWith('m');
     const safe = ooxml
@@ -533,6 +549,7 @@ export function createMaterialPdf(options: LibreOfficeOptions): MaterialToPdf {
       : kind === 'odp'
         ? await withoutOdpLinks(bytes)
         : bytes;
+    if (fonts) return convert(safe, kind, importFilter, 'pdf', fonts, priority ?? 'interactive');
     if (options.pool && !stopping) {
       try {
         return await options.pool.convert(safe, {

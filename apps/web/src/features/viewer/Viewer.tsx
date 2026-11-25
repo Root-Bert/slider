@@ -36,6 +36,7 @@ import { PresentationMode } from './presentation/PresentationMode';
 import { PresenterView } from './presentation/PresenterView';
 import { AudienceShow } from './presentation/AudienceShow';
 import { DesktopBar } from './presentation/DesktopBar';
+import { DeckCommands } from './presentation/DeckCommands';
 import { useIsAudienceWindow } from './presentation/show-hooks';
 import { EditingProvider } from './editing/EditingProvider';
 import { FillRefresh } from './editing/fills/FillRefresh';
@@ -231,6 +232,11 @@ function ViewerMain() {
                 <HandleHint slot={findSlot} />
                 <LeaveGuard />
                 <DesktopBar
+                  active={!presenting && !materialOpen}
+                  onPresent={startPresenting}
+                  onPresenterView={startPresenterView}
+                />
+                <DeckCommands
                   active={!presenting && !materialOpen}
                   onPresent={startPresenting}
                   onPresenterView={startPresenterView}

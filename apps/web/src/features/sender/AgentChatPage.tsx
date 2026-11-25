@@ -1,38 +1,15 @@
 import { useEffect, useRef, useState } from 'react';
 import { useParams } from 'react-router';
-import { isTagChat, type Attachment, type CloudAgentChat } from '@slider/shared';
+import type { CloudAgentChat } from '@slider/shared';
 import { useQueryClient } from '@tanstack/react-query';
-import {
-  senderKeys,
-  tellTypingInCloudAgent,
-  useCloudAgent,
-  useMessageCloudAgent,
-  useStopCloudAgent,
-} from '@/lib/api';
-import { chatMatches, useMarkedMatches, useShowHit } from '@/lib/chat-search';
-import { draftKeys } from '@/lib/drafts';
+import { senderKeys, useCloudAgent } from '@/lib/api';
 import { routes } from '@/lib/routes';
-import {
-  AgentAsks,
-  AgentAvatar,
-  AgentChoices,
-  AgentComposer,
-  AgentDesk,
-  CallEntry,
-  useAgentAside,
-  choicesIn,
-  messageWords,
-  plainNamed,
-  withoutChoices,
-  WithNamed,
-} from '@/features/cloud';
+import { AgentAvatar, AgentChat, AgentDesk, useAgentAside } from '@/features/cloud';
 import { AgentCallButton, CallBoxes, useAgentCall } from '@/features/calls';
-import { ChatAnswer, ChatMessage } from '@/features/viewer';
 import { ViewSearch } from '@/features/workspaces';
-import { Avatar, ButtonLink, cn, EmptyState, Icon, useMediaQuery } from '@/ui';
+import { ButtonLink, cn, EmptyState, useMediaQuery } from '@/ui';
 import { agentFiles, ChatFiles } from './components/ChatFiles';
 import { ChatTitle, useChatView } from './components/ChatTitle';
-import { TypingLine } from './components/TypingLine';
 import { MenuButton } from './components/MenuButton';
 import { useSender } from './hooks/useSender';
 import { PAGE_HEADER } from './lib/title';
@@ -49,8 +26,6 @@ export function Component() {
   const workspaceId = ui.workspace.id;
   const queryClient = useQueryClient();
   const query = useCloudAgent(workspaceId, agentId);
-  const message = useMessageCloudAgent(workspaceId, agentId);
-  const stop = useStopCloudAgent(workspaceId, agentId);
   const agent = query.data;
   // The cards stand beside the chat from xl on (below they are hidden): only there a handle.
   const asideRef = useRef<HTMLDivElement>(null);
@@ -59,16 +34,8 @@ export function Component() {
   const call = useAgentCall(agentId);
   // Its one chat (the chats of calls in conversations stay there).
   const chat: CloudAgentChat | undefined = agent?.chats.find((each) => each.id === agentId);
-  const listRef = useRef<HTMLOListElement>(null);
-  const pinned = useRef(true);
-  const messages = chat?.messages ?? [];
-  const last = messages.at(-1);
   // The chat's search, beside its name; another agent starts without one.
   const [search, setSearch] = useState('');
-  const wanted = search.trim();
-  const searching = wanted !== '';
-  useMarkedMatches(listRef, wanted);
-  const showHit = useShowHit(listRef, searching, () => setSearch(''));
   // The chat or its „Dateien“, beside its name – as a conversation's (in the address).
   const { view, href: viewHref } = useChatView();
 
@@ -78,19 +45,11 @@ export function Component() {
     setShown(agentId);
     setSearch('');
   }
-  useEffect(() => {
-    pinned.current = true;
-  }, [agentId]);
   // Opened, its answers are read (the server notes it when it is fetched): the count goes.
   const seen = agent?.chats.map((each) => each.messages.length).join() ?? '';
   useEffect(() => {
     if (seen) void queryClient.invalidateQueries({ queryKey: senderKeys.home(workspaceId) });
   }, [seen, workspaceId, queryClient]);
-  useEffect(() => {
-    const list = listRef.current;
-    if (list && pinned.current) list.scrollTop = list.scrollHeight;
-  }, [last?.text, chat?.doing, messages.length, chat?.id, view]);
-
   if (query.isError && !agent) {
     return (
       <div className="flex min-h-0 flex-1 flex-col">
@@ -105,29 +64,6 @@ export function Component() {
     );
   }
   if (!agent || !chat) return null;
-
-  // Where it was called in a conversation it is written to only there (`@Agent`).
-  const tagged = isTagChat(chat.id);
-  const canWrite = agent.canWrite && !tagged;
-  const choices =
-    canWrite && !chat.running && last?.role === 'assistant' && last.state === 'done' && !last.call
-      ? choicesIn(last.text)
-      : [];
-  const send = (text: string, attachments: Attachment[] = []) => {
-    pinned.current = true;
-    return message.mutateAsync({ text, attachments, chatId: chat.id }).then(
-      () => true,
-      (error: Error) => {
-        ui.notify(error.message, 'danger');
-        return false;
-      },
-    );
-  };
-  const shownMessages = searching
-    ? messages.filter((each) => chatMatches(messageWords(each), wanted))
-    : messages;
-  const copied = (ok: boolean) =>
-    ui.notify(ok ? 'Kopiert' : 'Nicht kopiert', ok ? 'neutral' : 'danger');
 
   return (
     <section aria-label={agent.title} className="flex min-h-0 flex-1 flex-col gap-3">
@@ -165,123 +101,14 @@ export function Component() {
               notify={ui.notify}
             />
           ) : (
-            <>
-              <ol
-                ref={listRef}
-                aria-label="Nachrichten"
-                onScroll={(event) => {
-                  const list = event.currentTarget;
-                  pinned.current = list.scrollHeight - list.scrollTop - list.clientHeight < 24;
-                }}
-                className="roll-away-list flex min-h-0 flex-1 flex-col gap-4 overflow-y-auto overscroll-contain py-3 pr-1 select-text [&>li:first-child]:mt-auto"
-              >
-                {searching && shownMessages.length === 0 && (
-                  <li className="m-auto text-body text-fg-muted">Nichts gefunden.</li>
-                )}
-                {shownMessages.map((each) => (
-                  <li
-                    key={each.id}
-                    data-message={each.id}
-                    onClick={showHit(each.id)}
-                    className={cn('flex flex-col', searching && 'cursor-pointer')}
-                  >
-                    {each.call ? (
-                      // A call with it: one entry that opens the call's page, as in Cloud.
-                      <CallEntry
-                        call={each.call}
-                        to={routes.messagesAgentCall(workspaceId, agent.id, each.call.id)}
-                      />
-                    ) : each.role === 'user' ? (
-                      <ChatMessage
-                        text={each.text}
-                        attachments={each.attachments}
-                        above={
-                          each.author && (
-                            <>
-                              {chat?.calledIn && (
-                                // Where it was called, before who called it: the chat keeps their words alone.
-                                <span className="flex min-w-0 items-center gap-1">
-                                  <Icon name="at" size={16} />
-                                  <span className="truncate">{chat.calledIn}</span>
-                                  {each.author.id !== ui.me.id && <span aria-hidden>|</span>}
-                                </span>
-                              )}
-                              {each.author.id !== ui.me.id && each.author.name}
-                              <Avatar author={each.author} size={20} nativeTitle={false} />
-                            </>
-                          )
-                        }
-                        onCopied={copied}
-                      />
-                    ) : (
-                      <ChatAnswer
-                        above={
-                          <>
-                            <AgentAvatar id={agent.id} size={22} className="rounded-mark" />
-                            <span className="truncate">
-                              {each.fromChat ? `Aus dem Chat „${each.fromChat}“` : agent.title}
-                            </span>
-                          </>
-                        }
-                        entry={{
-                          id: each.id,
-                          role: 'assistant',
-                          text: withoutChoices(each.text),
-                          state: each.state ?? 'done',
-                          reading: each.state === 'answering' ? chat.doing : null,
-                          readingIn: each.state === 'answering' ? (chat.doingIn ?? null) : null,
-                          error: each.error,
-                        }}
-                        renderText={(run) => <WithNamed text={run} workspaceId={workspaceId} />}
-                        copyText={(text) => plainNamed(withoutChoices(text))}
-                        onCopied={copied}
-                      />
-                    )}
-                    {each.asks && each.asks.length > 0 && !searching && (
-                      <AgentAsks
-                        workspaceId={workspaceId}
-                        agentId={agent.id}
-                        asks={each.asks}
-                        onError={(text) => ui.notify(text, 'danger')}
-                      />
-                    )}
-                    {each === last && !searching && (
-                      <AgentChoices choices={choices} onPick={(text) => void send(text)} />
-                    )}
-                  </li>
-                ))}
-              </ol>
-              <TypingLine people={chat.typing} />
-              {canWrite ? (
-                <AgentComposer
-                  placeholder={`Nachricht an ${agent.title}`}
-                  autoFocus
-                  keep={{
-                    key: draftKeys.agent(agent.id, chat.id),
-                    target: {
-                      kind: 'agent',
-                      workspaceId,
-                      agentId: agent.id,
-                      chatId: chat.id,
-                      name: agent.title,
-                      chat: chat.id === agent.id ? null : chat.title,
-                    },
-                  }}
-                  working={chat.running}
-                  onTyping={() => tellTypingInCloudAgent(agent.id, chat.id)}
-                  onStop={() =>
-                    stop.mutate(chat.id, { onError: (error) => ui.notify(error.message, 'danger') })
-                  }
-                  onSend={send}
-                />
-              ) : (
-                <p className="shrink-0 text-xs text-fg-subtle">
-                  {tagged
-                    ? 'Hier arbeitet der Agent für die Unterhaltung, in der er gerufen wurde – ruf ihn dort mit @Agent.'
-                    : 'Du liest bei diesem Agenten mit.'}
-                </p>
-              )}
-            </>
+            // The one agent chat, as in Cloud: its messages and the field every conversation has.
+            <AgentChat
+              key={agent.id}
+              agent={agent}
+              chat={chat}
+              autoFocus
+              search={{ query: search, clear: () => setSearch('') }}
+            />
           )}
         </div>
         {/* Beside the chat where there is room, as in Cloud – wide enough for two tiles a row;

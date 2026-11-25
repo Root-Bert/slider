@@ -4,7 +4,7 @@ import { askCrumbSearch, crumbSearchAsked } from '../lib/crumb-search';
 
 /**
  * The side bar folded, its search moves into the page: one types where the path stands, after
- * „Suche nach:“ – nothing opens over the page. ⌘F and the bar's magnifier ask for it
+ * „Suche nach:“ – nothing opens over the page. ⇧⌘F and the bar's magnifier ask for it
  * (`SearchPalette`); once a letter is typed the page is the search's (`SearchResults`), whose
  * path is this field again.
  */

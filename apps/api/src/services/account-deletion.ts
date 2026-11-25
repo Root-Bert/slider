@@ -8,6 +8,7 @@ import {
 import { emailHash } from '../crypto/content-crypto';
 import type { Executor } from '../db/client';
 import {
+  cloudAgents,
   cloudConnections,
   cloudNodes,
   comments,
@@ -25,6 +26,7 @@ import {
   pdfComments,
   senderChannels,
   senderMessages,
+  senderScheduled,
   showRuns,
   users,
   workspaceInvites,
@@ -55,6 +57,9 @@ import { departDecks } from './workspaces/departure';
 import { revokeInvitesBy } from './workspaces/members';
 import { getRole, RANK, VIEWER_LAST_RESORT } from './workspaces/roles';
 import { purgeIfEmpty } from './workspaces/workspaces';
+import { dropAgentChats } from './agent-chats';
+import { dropAttachmentRows } from './attachments';
+import { unsentPlanFiles } from './purge-attachments';
 
 /**
  * Deleting an account (BER-145, rules from the deletion concept BER-143). Nothing personal stays
@@ -274,6 +279,23 @@ export async function deleteAccount(
       .select({ id: mailAccounts.id })
       .from(mailAccounts)
       .where(eq(mailAccounts.userId, userId));
+    // Their agents go with the row, their chats with them – and the files in those chats.
+    const agentFiles = await dropAgentChats(
+      tx,
+      inArray(
+        senderChannels.agentId,
+        tx.select({ id: cloudAgents.id }).from(cloudAgents).where(eq(cloudAgents.userId, userId)),
+      ),
+    );
+    // What they planned and did not send yet goes unsent, its files with it.
+    const planned = await tx
+      .delete(senderScheduled)
+      .where(eq(senderScheduled.userId, userId))
+      .returning({ id: senderScheduled.id, attachments: senderScheduled.attachments });
+    const agentBlobs = await dropAttachmentRows(tx, [
+      ...agentFiles,
+      ...(await unsentPlanFiles(tx, planned)),
+    ]);
     await tx.delete(users).where(eq(users.id, userId));
     // Their files go after the commit – noted here with the rows, so that a crash in between
     // leaves them to the hourly sweep rather than nowhere.
@@ -283,6 +305,9 @@ export async function deleteAccount(
       ...storageBlobs(runKeys.map((run) => run.key)),
       ...orphaned.flatMap((deckId) => deckBlobs(blobKeys.deckPrefix(deckId))),
       ...mailBlobs(mailboxes.map((row) => row.id)),
+      // Their picture (`users/<id>/pictures/`, services/user-pictures.ts).
+      { store: 'storage', key: `users/${userId}/`, prefix: true },
+      ...agentBlobs,
     ];
     await noteBlobs(tx, blobs);
     return {

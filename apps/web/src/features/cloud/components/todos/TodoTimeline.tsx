@@ -6,6 +6,7 @@ import {
   type TodoMilestone,
 } from '@slider/shared';
 import {
+  useEffect,
   useLayoutEffect,
   useRef,
   useState,
@@ -19,16 +20,21 @@ import {
   useUpdateMilestone,
   useUpdateTodo,
 } from '@/lib/api';
+import { ROW_MENU_CLASS } from '@/features/sender';
 import { Avatar, Button, ConfirmDialog, Icon, IconButton, Menu, cn, useMediaQuery } from '@/ui';
 import { useCloud } from '../../hooks/useCloud';
 import { at, iso, plus, todayNoon } from '../calendar/days';
 import { TodoActions } from './TodoActions';
 import { StatusMark } from './TodoMarks';
-import { between, rangeOf, spanOf } from './timeline';
+import { between, heldUpBy, rangeOf, spanOf, startingTooEarly } from './timeline';
 
 /** One day's width, one line's height (px). */
 const DAY = 28;
 const LINE = 36;
+/** Press length (ms) that lifts a line by touch – as a row's menu opens on a long press. */
+const HOLD_MS = 500;
+/** Finger travel (px) that turns the press into scrolling (before), or into a move (after). */
+const HOLD_SLOP = 10;
 
 const dayLabel = new Intl.DateTimeFormat('de-DE', { day: 'numeric', month: 'short' });
 const monthLabel = new Intl.DateTimeFormat('de-DE', { month: 'long', year: 'numeric' });
@@ -43,11 +49,25 @@ interface Drag {
   key: string;
   grip: Grip;
   x: number;
+  y: number;
   /** As it stood when grabbed – every move counted from there. */
   origin: [string, string];
   /** As it stands while dragged. */
   span: [string, string];
   moved: boolean;
+}
+
+/** A line dragged up or down – to another place in its group or another's: from where, where to. */
+interface Lift {
+  id: string;
+  y: number;
+  dy: number;
+  /** The group it would go to (`none`: without one); `null`: over none that takes it. */
+  over: string | null;
+  /** The line it would go before there; `null`: last. */
+  before: string | null;
+  /** The timeline's left edge on the screen – where its name follows the pointer. */
+  left: number;
 }
 
 /**
@@ -62,6 +82,8 @@ export function TodoTimeline({
   openId,
   onToggle,
   newIn,
+  picked = null,
+  onPick,
   lead,
 }: {
   todos: readonly Todo[];
@@ -69,7 +91,10 @@ export function TodoTimeline({
   openId: string | null;
   onToggle: (id: string) => void;
   /** Where a new milestone goes (the place shown); `undefined`: none can be made here. */
-  newIn: { areaId: string | null } | undefined;
+  newIn: { areaId: string | null; projectId: string | null } | undefined;
+  /** Where a new to-do goes (a milestone of the place made in; `null`: without one) – picked here. */
+  picked?: string | null;
+  onPick?: (milestoneId: string | null) => void;
   /** Its place's mark beside a milestone – on the overview, where places mix. */
   lead?: (areaId: string | null) => ReactNode;
 }) {
@@ -85,6 +110,14 @@ export function TodoTimeline({
   const scroller = useRef<HTMLDivElement>(null);
   const [drag, setDrag] = useState<Drag | null>(null);
   const [shut, setShut] = useState<Set<string>>(new Set());
+  const [lift, setLift] = useState<Lift | null>(null);
+  // A name pressed (not yet moved); a line let go after a lift is no click.
+  const pressed = useRef<{ id: string; x: number; y: number } | null>(null);
+  const lifted = useRef(false);
+  // A touch on a name: the timer that lifts its line, and whether that line is carried by touch.
+  const hold = useRef<number | null>(null);
+  const byTouch = useRef(false);
+  const groupBoxes = useRef(new Map<string, HTMLDivElement>());
   // A right click on a line: its menu at the pointer, as on a tile or row. The to-do stays when
   // the menu closes, so the question „löschen?“ it may ask has it still.
   const [menu, setMenu] = useState<{ todo: Todo; at: { x: number; y: number } | null } | null>(
@@ -115,10 +148,20 @@ export function TodoTimeline({
     if (event.button !== 0) return;
     event.stopPropagation();
     event.currentTarget.setPointerCapture(event.pointerId);
-    setDrag({ key, grip, x: event.clientX, origin: span, span, moved: false });
+    setDrag({ key, grip, x: event.clientX, y: event.clientY, origin: span, span, moved: false });
   };
   const follow = (event: PointerEvent) => {
+    if (lift) return moveLift(event);
     if (!drag) return;
+    // A bar first pulled up or down goes to another milestone, not to other days (not by touch:
+    // there that is scrolling).
+    const dy = event.clientY - drag.y;
+    const lifting = drag.grip === 'move' && !drag.moved && event.pointerType !== 'touch';
+    const todo = lifting ? byId.get(drag.key) : undefined;
+    if (todo && Math.abs(dy) > 8 && Math.abs(dy) > Math.abs(event.clientX - drag.x)) {
+      setDrag(null);
+      return startLift(todo, drag.y, event.clientY);
+    }
     const by = Math.round((event.clientX - drag.x) / DAY);
     if (by === 0 && !drag.moved) return;
     setDrag({ ...drag, moved: true, span: shifted(drag, by) });
@@ -138,6 +181,7 @@ export function TodoTimeline({
     keep: (span: [string, string]) => void,
     onClick?: () => void,
   ) => {
+    if (lift) return endLift();
     if (!drag) return;
     const by = Math.round((event.clientX - drag.x) / DAY);
     const span = drag.moved ? shifted(drag, by) : drag.span;
@@ -147,9 +191,181 @@ export function TodoTimeline({
     setDrag(null);
   };
   /** The browser took the pointer (a touch turned into scrolling, a system gesture): nothing kept. */
-  const cancel = () => setDrag(null);
+  const cancel = () => {
+    setDrag(null);
+    setLift(null);
+    pressed.current = null;
+    letGo();
+  };
+  /** A touch ended: no lift waiting, the page scrolls again. */
+  const letGo = () => {
+    if (hold.current !== null) clearTimeout(hold.current);
+    hold.current = null;
+    byTouch.current = false;
+  };
+  useEffect(() => letGo, []);
+  // Kept from scrolling while a line is carried by touch – listening from the start, not once
+  // lifted, as Safari heeds only a listener there before the finger came down.
+  useEffect(() => {
+    const box = scroller.current;
+    const still = (event: TouchEvent) => {
+      if (byTouch.current) event.preventDefault();
+    };
+    box?.addEventListener('touchmove', still, { passive: false });
+    return () => box?.removeEventListener('touchmove', still);
+  }, []);
   const preview = (key: string, span: [string, string] | null) =>
     drag?.key === key ? drag.span : span;
+
+  // What waits on what: the one dragged (or open) marks those it holds up and those it waits on;
+  // one starting on or before an open one it waits on is due stands red – while dragged, where it
+  // would go.
+  const byId = new Map(todos.map((todo) => [todo.id, todo]));
+  const late = startingTooEarly(todos, (id) => {
+    const todo = byId.get(id);
+    return todo ? preview(id, spanOf(todo)) : null;
+  });
+  const focus = byId.get(drag?.key ?? openId ?? '');
+  const linked = focus
+    ? new Set([...heldUpBy(todos, focus.id), ...focus.blockedBy.filter((id) => byId.has(id))])
+    : new Set<string>();
+
+  // Lines dragged up or down: to another place among its milestone's, or into another milestone of
+  // its own place (or none).
+  const known = new Set(milestones.map((milestone) => milestone.id));
+  const groupOf = (todo: Todo) =>
+    todo.milestone && known.has(todo.milestone.id) ? todo.milestone.id : 'none';
+  /** A group's lines as they stand: by the place each was put (the same: by number). */
+  const linesOf = (key: string) =>
+    todos
+      .filter((todo) => groupOf(todo) === key)
+      .sort((a, b) => a.position - b.position || a.number - b.number);
+  const takes = (key: string, todo: Todo) => {
+    const milestone = milestones.find((each) => each.id === key);
+    return (
+      key === 'none' ||
+      (!!milestone &&
+        milestone.areaId === todo.areaId &&
+        milestone.projectId === (todo.project?.id ?? null))
+    );
+  };
+  /** Under the pointer: the group that takes it, and before which of its lines (by their halves). */
+  const placeAt = (y: number, todo: Todo): Pick<Lift, 'over' | 'before'> => {
+    for (const [key, box] of groupBoxes.current) {
+      const rect = box.getBoundingClientRect();
+      if (y < rect.top || y >= rect.bottom) continue;
+      if (!takes(key, todo)) break;
+      const lines = [...box.querySelectorAll<HTMLElement>('[data-line]')].filter(
+        (line) => line.dataset.line !== todo.id,
+      );
+      const below = lines.find((line) => {
+        const at = line.getBoundingClientRect();
+        return y < at.top + at.height / 2;
+      });
+      return { over: key, before: below?.dataset.line ?? null };
+    }
+    return { over: null, before: null };
+  };
+  /** Where it would go changes nothing: its own group, right where it stands. */
+  const staysAt = (todo: Todo, place: Pick<Lift, 'over' | 'before'>) => {
+    if (place.over !== groupOf(todo)) return false;
+    const lines = linesOf(place.over);
+    return (lines[lines.findIndex((line) => line.id === todo.id) + 1]?.id ?? null) === place.before;
+  };
+  const startLift = (todo: Todo, from: number, y: number) => {
+    const left = scroller.current?.getBoundingClientRect().left ?? 0;
+    setLift({ id: todo.id, y: from, dy: y - from, left, ...placeAt(y, todo) });
+  };
+  const moveLift = (event: PointerEvent) => {
+    const todo = lift && byId.get(lift.id);
+    if (!lift || !todo) return;
+    setLift({ ...lift, dy: event.clientY - lift.y, ...placeAt(event.clientY, todo) });
+  };
+  /** Let go: between its new neighbours (halfway), into that group's milestone if another. */
+  const endLift = () => {
+    const todo = lift && byId.get(lift.id);
+    setLift(null);
+    if (!todo || !lift.over || staysAt(todo, lift)) return;
+    const lines = linesOf(lift.over).filter((line) => line.id !== todo.id);
+    const at =
+      lift.before === null ? lines.length : lines.findIndex((line) => line.id === lift.before);
+    const [prev, next] = [lines[at - 1], lines[at]];
+    const position =
+      prev && next
+        ? (prev.position + next.position) / 2
+        : prev
+          ? prev.position + 1
+          : next
+            ? next.position - 1
+            : undefined;
+    changeTodo(todo, {
+      ...(lift.over !== groupOf(todo)
+        ? { milestoneId: lift.over === 'none' ? null : lift.over }
+        : {}),
+      ...(position !== undefined ? { position } : {}),
+    });
+  };
+  /**
+   * A name: pressed and pulled up or down, its line goes along; let go unmoved, a click. By touch
+   * a long press lifts it (moved before, the page scrolls): carried, it goes along; let go
+   * unmoved, its menu opens there – as a long press on a phone.
+   */
+  const press = (todo: Todo) => ({
+    onPointerDown: (event: PointerEvent) => {
+      lifted.current = false;
+      letGo();
+      if (event.button !== 0 || !todo.canEdit) return;
+      const from = { id: todo.id, x: event.clientX, y: event.clientY };
+      pressed.current = from;
+      if (event.pointerType !== 'touch') {
+        event.currentTarget.setPointerCapture(event.pointerId);
+        return;
+      }
+      hold.current = window.setTimeout(() => {
+        hold.current = null;
+        pressed.current = null;
+        lifted.current = true;
+        byTouch.current = true;
+        startLift(todo, from.y, from.y);
+      }, HOLD_MS);
+    },
+    onPointerMove: (event: PointerEvent) => {
+      if (lift) return moveLift(event);
+      const from = pressed.current;
+      if (from?.id !== todo.id) return;
+      if (hold.current !== null) {
+        // Moved before the press lifted it: scrolling.
+        if (Math.hypot(event.clientX - from.x, event.clientY - from.y) > HOLD_SLOP) {
+          letGo();
+          pressed.current = null;
+        }
+        return;
+      }
+      if (Math.abs(event.clientY - from.y) > 4) {
+        pressed.current = null;
+        // Let go, the name's click is none.
+        lifted.current = true;
+        startLift(todo, from.y, event.clientY);
+      }
+    },
+    onPointerUp: () => {
+      pressed.current = null;
+      const touched = byTouch.current;
+      letGo();
+      if (!lift) return;
+      if (touched && Math.abs(lift.dy) <= HOLD_SLOP) {
+        setLift(null);
+        setMenu({ todo, at: { x: lift.left + names / 2, y: lift.y } });
+        return;
+      }
+      endLift();
+    },
+    onPointerCancel: cancel,
+    onClick: () => {
+      if (!lifted.current) onToggle(todo.id);
+      lifted.current = false;
+    },
+  });
 
   /** ← → move it a day; with ⇧ only its due day. */
   const nudge = (todo: Todo, span: [string, string] | null) => (event: KeyboardEvent) => {
@@ -163,27 +379,26 @@ export function TodoTimeline({
     changeTodo(todo, asChange(next));
   };
 
-  // Under each milestone (by date), those without one last; in each, by start, the unplanned last.
-  const known = new Set(milestones.map((milestone) => milestone.id));
-  const byStart = (list: Todo[]) =>
-    list
-      .map((todo, index) => ({ todo, index, span: spanOf(todo) }))
-      .sort(
-        (a, b) => (a.span?.[0] ?? '9999').localeCompare(b.span?.[0] ?? '9999') || a.index - b.index,
-      )
-      .map((each) => each.todo);
+  // Under each milestone (by date), those without one last; in each, as put there by hand.
   const groups = [
     ...milestones.map((milestone) => ({
       key: milestone.id,
       milestone,
-      todos: byStart(todos.filter((todo) => todo.milestone?.id === milestone.id)),
+      todos: linesOf(milestone.id),
     })),
-    {
-      key: 'none',
-      milestone: null,
-      todos: byStart(todos.filter((todo) => !todo.milestone || !known.has(todo.milestone.id))),
-    },
-  ].filter((group) => group.milestone || group.todos.length > 0);
+    { key: 'none', milestone: null, todos: linesOf('none') },
+    // Without one: shown while it has some – or new ones go there.
+  ].filter((group) => group.milestone || group.todos.length > 0 || (picked === null && !!onPick));
+  /** A milestone new to-dos may go to: the place's they are made in. */
+  const pickable = (milestone: TodoMilestone | null) =>
+    !!newIn &&
+    !!onPick &&
+    (!milestone || (milestone.areaId === newIn.areaId && milestone.projectId === newIn.projectId));
+  const pick = (key: string, milestone: TodoMilestone | null) => {
+    onPick?.(milestone?.id ?? null);
+    // Picked, it shows what is in it.
+    setShut((now) => (now.has(key) ? new Set([...now].filter((each) => each !== key)) : now));
+  };
 
   const width = names + count * DAY;
   const days = Array.from({ length: count }, (_, index) => plus(from, index));
@@ -192,8 +407,27 @@ export function TodoTimeline({
   return (
     <section
       aria-label="Zeitplan"
+      // Its drags are its own (bars, diamonds, lines drawn on): never the page's selection box.
+      data-own-drag
       className="overflow-hidden rounded-panel border border-hairline bg-canvas"
     >
+      {/* The line lifted: its name under the pointer, over the place it would go. */}
+      {lift && byId.get(lift.id) && (
+        <div
+          aria-hidden
+          className="pointer-events-none fixed z-(--z-popover) flex items-center gap-2 rounded-control bg-canvas pr-3 pl-8 text-sm opacity-90 shadow-lg ring-hairline"
+          style={{
+            top: lift.y + lift.dy - LINE / 2,
+            left: lift.left,
+            width: names,
+            height: LINE,
+          }}
+        >
+          <StatusMark status={byId.get(lift.id)!.status} />
+          <span className="min-w-0 flex-1 truncate text-fg">{byId.get(lift.id)!.title}</span>
+          <span className="text-xs text-fg-faint tabular-nums">#{byId.get(lift.id)!.number}</span>
+        </div>
+      )}
       <div ref={scroller} className="overflow-x-auto overscroll-x-contain">
         <div className="relative" style={{ width }}>
           {/* Behind every line: weekends, today, each milestone's day. */}
@@ -284,14 +518,47 @@ export function TodoTimeline({
           {groups.map((group) => {
             const folded = shut.has(group.key);
             const done = group.todos.filter((todo) => !isOpenTodo(todo.status)).length;
+            const lifting = lift ? byId.get(lift.id) : undefined;
+            const target = !!lifting && lift?.over === group.key && groupOf(lifting) !== group.key;
+            // Where it would go: a line there (not where it stands already).
+            const slot =
+              lifting && lift?.over === group.key && !staysAt(lifting, lift)
+                ? lift.before
+                : undefined;
+            const slotLine = (edge: string) => (
+              <span
+                aria-hidden
+                className={cn(
+                  'pointer-events-none absolute inset-x-0 z-(--z-chrome) h-0.5 bg-fg',
+                  edge,
+                )}
+              />
+            );
             return (
               <div
                 key={group.key}
                 role="group"
                 aria-label={group.milestone?.name ?? 'Ohne Meilenstein'}
+                className="relative"
+                ref={(box) => {
+                  if (box) groupBoxes.current.set(group.key, box);
+                  else groupBoxes.current.delete(group.key);
+                }}
               >
+                {/* Where the line dragged would go. */}
+                {target && (
+                  <div
+                    aria-hidden
+                    className="pointer-events-none absolute inset-0 z-(--z-overlay) bg-selected"
+                  />
+                )}
+                {slot === null && slotLine('bottom-0')}
                 <MilestoneLine
                   milestone={group.milestone}
+                  picked={pickable(group.milestone) && picked === (group.milestone?.id ?? null)}
+                  onPick={
+                    pickable(group.milestone) ? () => pick(group.key, group.milestone) : undefined
+                  }
                   names={names}
                   width={count * DAY}
                   folded={folded}
@@ -388,32 +655,72 @@ export function TodoTimeline({
                     const overdue =
                       isOpenTodo(todo.status) && !!todo.dueOn && todo.dueOn < iso(today);
                     const keep = (next: [string, string]) => changeTodo(todo, asChange(next));
+                    const tooEarly = late.get(todo.id);
+                    const marked = linked.has(todo.id);
+                    const waitWords = tooEarly
+                      ? ` | beginnt, bevor ${tooEarly.map((one) => `#${byId.get(one.id)?.number ?? ''}`).join(', ')} fertig ist`
+                      : '';
                     return (
                       <div
                         key={todo.id}
-                        className="group/line flex"
+                        data-line={todo.id}
+                        className={cn('group/line relative flex')}
                         style={{ height: LINE }}
                         onContextMenu={
                           todo.canEdit
                             ? (event) => {
                                 if (event.shiftKey) return;
                                 event.preventDefault();
+                                // A long press on its name: lifted, its menu once let go unmoved.
+                                if (byTouch.current || hold.current !== null) return;
                                 setMenu({ todo, at: { x: event.clientX, y: event.clientY } });
                               }
                             : undefined
                         }
                       >
+                        {slot === todo.id && slotLine('-top-px')}
+                        {/* Lifted: it stays faint where it stands, its name follows the pointer. */}
+                        {lift?.id === todo.id && (
+                          <span
+                            aria-hidden
+                            className="pointer-events-none absolute inset-0 z-(--z-overlay) bg-canvas/60"
+                          />
+                        )}
                         <button
                           type="button"
                           aria-pressed={open}
-                          onClick={() => onToggle(todo.id)}
+                          {...press(todo)}
+                          title={
+                            todo.canEdit
+                              ? 'Ziehen, um sie zu verschieben – auch in einen anderen Meilenstein'
+                              : undefined
+                          }
                           className={cn(
                             nameCell,
+                            ROW_MENU_CLASS,
                             'gap-2 border-r border-hairline pr-3 pl-8 text-left text-sm',
-                            open ? 'bg-selected' : 'hover:bg-hover',
+                            !open && 'hover:bg-hover',
+                            lift?.id === todo.id && 'cursor-grabbing',
                           )}
                           style={{ width: names }}
                         >
+                          {/* Picked: over its canvas, so the line scrolled under it never shows through. */}
+                          {open && (
+                            <span
+                              aria-hidden
+                              className="pointer-events-none absolute inset-0 bg-selected"
+                            />
+                          )}
+                          {/* Its mark where the bar may be scrolled away: red, or held up. */}
+                          {(tooEarly || (marked && !open)) && (
+                            <span
+                              aria-hidden
+                              className={cn(
+                                'pointer-events-none absolute inset-0',
+                                tooEarly ? 'bg-danger/15' : 'bg-accent-blue/10',
+                              )}
+                            />
+                          )}
                           <StatusMark status={todo.status} />
                           <span
                             className={cn(
@@ -423,6 +730,14 @@ export function TodoTimeline({
                           >
                             {todo.title}
                           </span>
+                          {tooEarly && (
+                            <Icon
+                              name="warning"
+                              size="sm"
+                              label={`Beginnt, bevor ${tooEarly.map((one) => `#${byId.get(one.id)?.number ?? ''}`).join(', ')} fertig ist`}
+                              className="shrink-0 text-danger"
+                            />
+                          )}
                           <span className="text-xs text-fg-faint tabular-nums">#{todo.number}</span>
                         </button>
                         <div
@@ -459,18 +774,22 @@ export function TodoTimeline({
                               role="button"
                               tabIndex={0}
                               aria-label={`${todo.title}: ${dayLabel.format(at(span[0]))} bis ${dayLabel.format(at(span[1]))}`}
-                              title={`${todo.title} | ${span[0] === span[1] ? dayLabel.format(at(span[1])) : `${dayLabel.format(at(span[0]))} – ${dayLabel.format(at(span[1]))}`}`}
+                              title={`${todo.title} | ${span[0] === span[1] ? dayLabel.format(at(span[1])) : `${dayLabel.format(at(span[0]))} – ${dayLabel.format(at(span[1]))}`}${waitWords}`}
                               className={cn(
                                 'absolute top-1.5 bottom-1.5 flex items-center gap-1.5 overflow-hidden rounded-control px-2 text-xs select-none',
-                                todo.status === 'done'
-                                  ? 'bg-success/20 text-fg-muted'
-                                  : todo.status === 'canceled'
-                                    ? 'bg-surface-2 text-fg-faint line-through'
-                                    : todo.status === 'in_progress'
-                                      ? 'bg-warning/25 text-fg'
-                                      : 'bg-surface-3 text-fg',
-                                overdue && 'inset-ring inset-ring-danger/60',
-                                open && 'ring-2 ring-fg',
+                                // Starts before what it waits on is done: red all over.
+                                tooEarly
+                                  ? 'bg-danger/25 text-fg ring-2 ring-danger'
+                                  : todo.status === 'done'
+                                    ? 'bg-success/20 text-fg-muted'
+                                    : todo.status === 'canceled'
+                                      ? 'bg-surface-2 text-fg-faint line-through'
+                                      : todo.status === 'in_progress'
+                                        ? 'bg-warning/25 text-fg'
+                                        : 'bg-surface-3 text-fg',
+                                overdue && !tooEarly && 'inset-ring inset-ring-danger/60',
+                                !tooEarly && marked && 'ring-2 ring-accent-blue',
+                                !tooEarly && open && 'ring-2 ring-fg',
                                 todo.canEdit
                                   ? 'cursor-grab touch-none active:cursor-grabbing'
                                   : 'cursor-pointer',
@@ -520,7 +839,15 @@ export function TodoTimeline({
               </div>
             );
           })}
-          {newIn && <NewMilestone names={names} areaId={newIn.areaId} />}
+          {newIn && (
+            <NewMilestone
+              names={names}
+              areaId={newIn.areaId}
+              projectId={newIn.projectId}
+              // Made, it is where new to-dos go – those to be put into it come next.
+              onMade={(made) => onPick?.(made.id)}
+            />
+          )}
         </div>
       </div>
       {menu && (
@@ -538,6 +865,8 @@ export function TodoTimeline({
 /** A milestone's line: fold, its flag and name (renamed where it stands), done of all, its menu. */
 function MilestoneLine({
   milestone,
+  picked,
+  onPick,
   names,
   width,
   folded,
@@ -547,6 +876,10 @@ function MilestoneLine({
   marker,
 }: {
   milestone: TodoMilestone | null;
+  /** Where new to-dos go: marked. */
+  picked: boolean;
+  /** Its name clicked: new ones go here; none (not the place made in): it folds. */
+  onPick?: () => void;
   names: number;
   width: number;
   folded: boolean;
@@ -576,11 +909,25 @@ function MilestoneLine({
     );
   };
   return (
-    <div className="group/milestone flex border-t border-hairline" style={{ height: LINE }}>
+    <div
+      className={cn('group/milestone flex border-t border-hairline', picked && 'bg-surface-2')}
+      style={{ height: LINE }}
+    >
       <div
         className="sticky left-0 z-(--z-raised) flex shrink-0 items-center gap-1.5 border-r border-hairline bg-canvas pr-1.5 pl-2"
         style={{ width: names }}
       >
+        {/* Where new ones go: over its canvas, as a picked line's – and a bar at its edge, that it
+            is not taken for the to-do open. */}
+        {picked && (
+          <>
+            <span aria-hidden className="pointer-events-none absolute inset-0 bg-surface-2" />
+            <span
+              aria-hidden
+              className="pointer-events-none absolute inset-y-1.5 left-0 w-1 rounded-r-full bg-fg"
+            />
+          </>
+        )}
         <IconButton
           icon="chevronRight"
           label={folded ? 'Aufklappen' : 'Zuklappen'}
@@ -595,7 +942,7 @@ function MilestoneLine({
           size="sm"
           className={cn(
             'shrink-0',
-            milestone ? 'text-fg-muted' : 'text-fg-faint',
+            picked ? 'text-fg' : milestone ? 'text-fg-muted' : 'text-fg-faint',
             lead && 'max-sm:hidden',
           )}
         />
@@ -620,9 +967,17 @@ function MilestoneLine({
           <button
             type="button"
             onDoubleClick={milestone?.canEdit ? startNaming : undefined}
-            onClick={onFold}
-            title={milestone?.canEdit ? 'Doppelklick: umbenennen' : undefined}
-            className="min-w-0 flex-1 truncate text-left text-sm font-medium text-fg"
+            onClick={onPick ?? onFold}
+            aria-pressed={onPick ? picked : undefined}
+            title={
+              [
+                onPick && (picked ? 'Neue Aufgaben kommen hierher' : 'Neue Aufgaben hierher'),
+                milestone?.canEdit && 'Doppelklick: umbenennen',
+              ]
+                .filter(Boolean)
+                .join(' | ') || undefined
+            }
+            className="relative min-w-0 flex-1 truncate text-left text-sm font-medium text-fg"
           >
             {milestone?.name ?? 'Ohne Meilenstein'}
           </button>
@@ -682,7 +1037,17 @@ function MilestoneLine({
 }
 
 /** Typed where it stands, under the last line: Enter makes it – the place's, without a date yet. */
-function NewMilestone({ names, areaId }: { names: number; areaId: string | null }) {
+function NewMilestone({
+  names,
+  areaId,
+  projectId,
+  onMade,
+}: {
+  names: number;
+  areaId: string | null;
+  projectId: string | null;
+  onMade: (milestone: TodoMilestone) => void;
+}) {
   const ui = useCloud();
   const create = useCreateMilestone(ui.workspace.id);
   const [name, setName] = useState('');
@@ -705,8 +1070,8 @@ function NewMilestone({ names, areaId }: { names: number; areaId: string | null 
             const text = name.trim();
             setName('');
             create.mutate(
-              { name: text, areaId },
-              { onError: (error) => ui.notify(error.message, 'danger') },
+              { name: text, areaId, projectId },
+              { onSuccess: onMade, onError: (error) => ui.notify(error.message, 'danger') },
             );
           }}
           className="min-w-0 flex-1 bg-transparent text-fg outline-none placeholder:text-fg-faint"

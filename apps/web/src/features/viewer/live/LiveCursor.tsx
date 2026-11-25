@@ -2,6 +2,7 @@ import type { Author } from '@slider/shared';
 import type { Ref } from 'react';
 import { accentColor, onAccentClass } from '@/lib/accent';
 import { generatedAvatar } from '@/lib/generated-avatar';
+import { usePersonPicture } from '@/lib/people-pictures';
 import { cn } from '@/ui';
 
 /** Avatar cursor size (px); its pointed top-left corner is the hotspot. */
@@ -29,6 +30,7 @@ const firstName = (name: string) => name.trim().split(/\s+/)[0] ?? name;
  */
 export function LiveCursor({ author, ref }: LiveCursorProps) {
   const color = accentColor(author.color);
+  const own = usePersonPicture(author.type === 'owner' ? author.id : undefined);
 
   return (
     <div
@@ -73,7 +75,7 @@ export function LiveCursor({ author, ref }: LiveCursorProps) {
         }}
       >
         <img
-          src={generatedAvatar(author.name)}
+          src={own ?? generatedAvatar(author.name)}
           alt=""
           draggable={false}
           className="size-full bg-placeholder object-cover"

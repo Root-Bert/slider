@@ -87,6 +87,11 @@ export async function updateViewerColor(
   return { ...viewer, author: { ...viewer.author, color } };
 }
 
+/** Einstellungen › Dateien › „Dateiendungen zeigen“: Cloud's file names with their ending. */
+export async function setShowExtensions(db: Database, userId: string, shown: boolean) {
+  await db.update(users).set({ showExtensions: shown }).where(eq(users.id, userId));
+}
+
 /** The account's address, e.g. to name who asks in Nextcloud's grant page. */
 export async function userEmail(db: Executor, userId: string): Promise<string | null> {
   const [row] = await db.select({ email: users.email }).from(users).where(eq(users.id, userId));

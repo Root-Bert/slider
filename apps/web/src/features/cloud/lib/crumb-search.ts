@@ -3,13 +3,13 @@ import { useBarSearch } from '../hooks/useBarSearch';
 
 /*
  * The side bar folded, its search moves into the page's path (`CrumbSearchField`): whether it
- * stands there, and who asks for it (⌘F, the bar's magnifier – `SearchPalette`).
+ * stands there, and who asks for it (⇧⌘F, the bar's magnifier – `SearchPalette`).
  */
 
 /** The bar beside the page is folded to its icons (`CloudLayout`; never below lg). */
 export const BarFolded = createContext(false);
 
-/** Marks the page's place for it, for ⌘F to know the field can stand there. */
+/** Marks the page's place for it, for ⇧⌘F to know the field can stand there. */
 export const CRUMB_SEARCH = 'data-crumb-search';
 
 let asked = false;

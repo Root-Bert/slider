@@ -20,6 +20,7 @@ import { TodoPanel } from './components/todos/TodoList';
 import { EventPanel } from './components/calendar/EventPanel';
 import { CallPanel } from './components/CallPanel';
 import { SearchPalette } from './components/SearchPalette';
+import { CloudCommands } from './components/CloudCommands';
 import { useBarSearch } from './hooks/useBarSearch';
 import { SearchResults } from './SearchResults';
 import { CloudProvider } from './hooks/useCloud';
@@ -122,8 +123,9 @@ export function Component() {
             {/* The details' and the chat's panel (`data-cloud-panel`) stand beside the page, not
               over it – as over Slider's presentations and the header's right end. A page's own
               column beside its content (`data-page-aside`: the calendar's, „KI zur Mail“) is lain
-              over instead: only the content gives way, as far as the panel reaches past it. */}
-            <div className="min-w-0 flex-1 px-4 pt-4 transition-[margin] duration-300 ease-out md:[body:has([data-cloud-panel]):not(:has([data-page-aside]))_&]:mr-[400px] lg:pr-6 lg:pl-9">
+              over instead: only the content gives way, as far as the panel reaches past it.
+              At once, not eased: a grid of tiles drawn anew each frame flickers. */}
+            <div className="min-w-0 flex-1 px-4 pt-4 md:[body:has([data-cloud-panel]):not(:has([data-page-aside]))_&]:mr-[400px] lg:pr-6 lg:pl-9">
               <BarFolded value={!narrow && sidebar === 'icons'}>
                 {/* Below lg the places' button stands at the start of the page's head, as in
                   Sender (`MenuButton`): nothing floats over the page or its composer. */}
@@ -150,6 +152,7 @@ export function Component() {
         <EventPanel />
         <CallPanel />
         <SearchPalette />
+        <CloudCommands />
         <SenderToast />
       </CloudProvider>
     </SenderProvider>

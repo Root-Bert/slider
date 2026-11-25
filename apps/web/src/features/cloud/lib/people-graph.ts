@@ -12,6 +12,12 @@ export const DOT = 46;
 const INNER = 40;
 /** Room the workspace takes in the middle: its picture with its name beneath, clear of an area's name. */
 const HUB = 96;
+/** Where the lines to the areas begin when nobody stands round the workspace. */
+const HUB_EDGE = 52;
+/** The first ring of people round the workspace: clear of its picture and name (`HUB_NAME`). */
+const HUB_RING = 96;
+/** The workspace's name is no wider than this with people round it (px at zoom 1). */
+export const HUB_NAME = 120;
 /** Room between two areas' clouds. */
 const GAP = 72;
 /** The golden angle: clouds on the same spot move apart in different directions. */
@@ -45,7 +51,10 @@ export interface GraphPerson {
 
 export interface PeopleGraph {
   areas: GraphArea[];
+  /** Also those in no area: round the workspace, `areaIds` empty. */
   people: GraphPerson[];
+  /** Where the lines to the areas begin: round the workspace and its people. */
+  hubEdge: number;
   /** Everything lies within. */
   bounds: { left: number; top: number; right: number; bottom: number };
 }
@@ -100,7 +109,50 @@ export function cloudOf(count: number): { x: number; y: number }[] {
   return spots;
 }
 
-export function layoutPeopleGraph(input: readonly GraphAreaInput[]): PeopleGraph {
+/**
+ * Where `count` people stand round the workspace's picture: lined up on as few rings round it as
+ * hold them, each its share by its length, so every ring is evenly full.
+ */
+function hubRingsOf(count: number): { x: number; y: number }[] {
+  const rings: number[] = [];
+  let room = 0;
+  for (let far = HUB_RING; room < count; far += DOT * 0.9) {
+    rings.push(far);
+    room += Math.floor((2 * Math.PI * far) / DOT);
+  }
+  const length = rings.reduce((sum, far) => sum + far, 0);
+  const spots: { x: number; y: number }[] = [];
+  let left = count;
+  rings.forEach((far, index) => {
+    const many =
+      index === rings.length - 1
+        ? left
+        : Math.min(Math.floor((2 * Math.PI * far) / DOT), Math.round((count * far) / length));
+    left -= many;
+    // One ring as a cloud: odd counts point up, even ones stand flat (two: left and right).
+    // Several: every other ring turns by half a step, between the dots of the ring inside.
+    const turn = rings.length === 1 ? (many % 2 === 0 ? 1 : 0) : index % 2;
+    const start = -Math.PI / 2 + (turn * Math.PI) / Math.max(many, 1);
+    for (let i = 0; i < many; i += 1) {
+      const angle = start + (i * 2 * Math.PI) / many;
+      spots.push({ x: Math.cos(angle) * far, y: Math.sin(angle) * far });
+    }
+  });
+  return spots;
+}
+
+/**
+ * `loose`: who is in the workspace but in none of `input`'s areas – lined up round the
+ * workspace in the middle.
+ */
+export function layoutPeopleGraph(
+  input: readonly GraphAreaInput[],
+  loose: readonly string[] = [],
+): PeopleGraph {
+  const onHub = hubRingsOf(loose.length);
+  const ringed = Math.max(0, ...onHub.map((spot) => Math.hypot(spot.x, spot.y)));
+  const hub = onHub.length > 0 ? Math.max(HUB, ringed + DOT / 2 + 10) : HUB;
+  const hubEdge = onHub.length > 0 ? ringed + DOT / 2 + 6 : HUB_EDGE;
   const known = new Set(input.map((area) => area.id));
   const parentOf = (area: GraphAreaInput) =>
     area.parentId !== null && known.has(area.parentId) ? area.parentId : null;
@@ -141,7 +193,7 @@ export function layoutPeopleGraph(input: readonly GraphAreaInput[]): PeopleGraph
   const top = childrenOf(null);
   const around = top.reduce((sum, area) => sum + 2 * area.radius + GAP, 0);
   const widest = Math.max(0, ...top.map((area) => area.radius));
-  const ring = Math.max(around / (2 * Math.PI), HUB + widest + GAP);
+  const ring = Math.max(around / (2 * Math.PI), hub + widest + GAP);
   let turned = -Math.PI / 2;
   for (const area of top) {
     const share = ((2 * area.radius + GAP) / Math.max(around, 1)) * 2 * Math.PI;
@@ -191,7 +243,7 @@ export function layoutPeopleGraph(input: readonly GraphAreaInput[]): PeopleGraph
     for (let i = 0; i < list.length; i += 1) {
       const a = list[i];
       if (!a) continue;
-      if (apart(a, 0, 0, HUB + a.radius + GAP / 2, null)) moved = true;
+      if (apart(a, 0, 0, hub + a.radius + GAP / 2, null)) moved = true;
       for (let j = i + 1; j < list.length; j += 1) {
         const b = list[j];
         if (b && apart(a, b.x, b.y, a.radius + b.radius + GAP, b)) moved = true;
@@ -217,7 +269,13 @@ export function layoutPeopleGraph(input: readonly GraphAreaInput[]): PeopleGraph
     });
   }
 
-  const bounds = { left: -HUB, top: -HUB, right: HUB, bottom: HUB };
+  // Who is in no area: round the workspace.
+  loose.forEach((id, index) => {
+    const spot = onHub[index] ?? { x: 0, y: 0 };
+    people.push({ key: `workspace:${id}`, id, x: spot.x, y: spot.y, areaIds: [] });
+  });
+
+  const bounds = { left: -hub, top: -hub, right: hub, bottom: hub };
   const reach = (x: number, y: number, room: number) => {
     bounds.left = Math.min(bounds.left, x - room);
     bounds.top = Math.min(bounds.top, y - room);
@@ -226,7 +284,7 @@ export function layoutPeopleGraph(input: readonly GraphAreaInput[]): PeopleGraph
   };
   // The area's name stands above its people.
   for (const area of list) reach(area.x, area.y, area.radius + 44);
-  return { areas: list, people, bounds };
+  return { areas: list, people, hubEdge, bounds };
 }
 
 /** How many people a search typed beside the net finds (by name or title) – each once. */

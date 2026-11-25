@@ -116,8 +116,9 @@ export const hostOf = (url: string): string => {
 
 /**
  * Which mailbox and which of its folders the mail page shows: `?postfach=<id>&ordner=<key>` – the
- * folder's key (`inbox`, `sent`, `archive`, `spam`, `trash`, else its path on the server). Left
- * out: the first mailbox, its Posteingang (so `?ordner=spam` from before still opens Spam).
+ * folder's key (`inbox`, `sent`, `archive`, `spam`, `trash`, else its path on the server) or
+ * `uebersicht`. Left out: the first mailbox, its „Übersicht“ (so `?ordner=spam` from before still
+ * opens Spam).
  * „Ungelesen“ is no part of it: on or off, it holds for every mailbox (`useMailView`).
  */
 export interface MailView {
@@ -125,19 +126,22 @@ export interface MailView {
   folder: string;
 }
 
-/** „Übersicht“ before the Posteingang: the mailbox's unread as a to-do list (`Triage`). */
+/**
+ * „Übersicht“ before the Posteingang: the mailbox's unread as a to-do list (`Triage`) – where a
+ * mailbox opens.
+ */
 export const OVERVIEW = 'uebersicht';
 
 export const mailViewOf = (params: URLSearchParams): MailView => ({
   accountId: params.get('postfach'),
-  folder: params.get('ordner') || 'inbox',
+  folder: params.get('ordner') || OVERVIEW,
 });
 
 /** The address's query for a view – what is the default is left out. */
 export function mailViewSearch(view: MailView & { accountId: string }, first: boolean) {
   const params = new URLSearchParams();
   if (!first) params.set('postfach', view.accountId);
-  if (view.folder !== 'inbox') params.set('ordner', view.folder);
+  if (view.folder !== OVERVIEW) params.set('ordner', view.folder);
   const query = params.toString();
   return query ? `?${query}` : '';
 }

@@ -1,19 +1,5 @@
 import type Anthropic from '@anthropic-ai/sdk';
-import {
-  and,
-  asc,
-  desc,
-  eq,
-  inArray,
-  isNotNull,
-  isNull,
-  like,
-  lte,
-  ne,
-  notLike,
-  or,
-  sql,
-} from 'drizzle-orm';
+import { and, asc, desc, eq, inArray, isNotNull, isNull, lte, ne, or } from 'drizzle-orm';
 import { read as readSheet, write as writeSheet } from 'xlsx';
 import { ZodError, z } from 'zod';
 import {
@@ -46,8 +32,10 @@ import {
   type CloudAgentSummary,
   type MaterialChatAnswerState,
   type Viewer,
+  DEFAULT_PROJECT_NAME,
   isOpenTodo,
   MAX_MILESTONE_NAME,
+  MAX_PROJECT_NAME,
   MAX_TODO_DESCRIPTION,
   MAX_TODO_TITLE,
   TODO_STATUSES,
@@ -58,10 +46,8 @@ import { ownerAuthor } from '../authors';
 import { runInBackground } from '../background-work';
 import { requireDeckAccess } from '../auth/access';
 import {
-  cloudAgentChats,
   cloudAgentFiles,
   cloudAgentAsks,
-  cloudAgentMessages,
   cloudAgents,
   cloudNodes,
   decks,
@@ -72,7 +58,6 @@ import {
   users,
   workspaces,
   type CloudAgentAskRow,
-  type CloudAgentChatRow,
   type CloudAgentFileRow,
   type CloudAgentRow,
 } from '../db/schema';
@@ -80,7 +65,16 @@ import { cloudAreaMembers, cloudAreas, workspaceMembers, type CloudAreaRow } fro
 import type { AppDeps } from '../deps';
 import { ApiError, badRequest, forbidden, notFound } from '../http/errors';
 import { claimAttachments, deleteAttachments } from './attachments';
-import { attachmentsOf } from './purge-attachments';
+import {
+  agentChat,
+  agentChatsOf,
+  agentChatsWhere,
+  agentMessagesWhere,
+  dropAgentChats,
+  keepAgentMessage,
+  openAgentChat,
+  type AgentChatRow,
+} from './agent-chats';
 import { fileChatFiles } from './chat-files';
 import { promptName, todayForPrompt } from './ai-prompt-parts';
 import { listProposals, revertProposal } from './ai-proposals';
@@ -126,7 +120,6 @@ import {
 } from './mail-agent';
 import { besideMail, runMailTool } from './mail-agent-run';
 import { fileUrl } from '../storage/file-urls';
-import { callBriefs } from './call-records';
 import {
   AUTO_INPUTS,
   AUTO_TOOLS,
@@ -141,15 +134,7 @@ import {
 } from './cloud-agent-auto';
 import { asAgent } from './cloud/events';
 import { knownZone, nextRun } from './cloud-agent-repeat';
-import {
-  runs,
-  runsOf,
-  TAG_CHATS,
-  tagChatId,
-  tagConversation,
-  type Run,
-  type Waiting,
-} from './cloud-agent-runs';
+import { runs, runsOf, tagChatId, type Run, type Waiting } from './cloud-agent-runs';
 import { deckPlaces, fileIdsToMove, followMoved, setDeckAccess } from './deck-places';
 import { deleteDeck, trashDeck } from './decks';
 import { editedFile } from './edits/state';
@@ -179,6 +164,7 @@ import {
 import { runCalendarTool } from './calendar/agent-tools';
 import {
   addToGroup,
+  agentChatDtos,
   announceAgent,
   createGroup,
   deleteAgentMessage,
@@ -189,18 +175,22 @@ import {
   openDirect,
   postAsAgent,
   reactToMessage,
-  readAgent,
+  readAgentHere,
   readChannel,
   removeFromGroup,
   senderHome,
 } from './sender';
+import { scheduleForTool } from './sender-scheduled';
 import {
   createTodo,
   deleteMilestone,
   deleteTodo,
   listMilestones,
+  listProjects,
   listTodos,
   milestoneNamed,
+  projectNamed,
+  positionBefore,
   todoByRef,
   todoLine,
   updateMilestone,
@@ -353,6 +343,7 @@ const SENDER_INPUTS = {
   post_message: z.object({
     conversation: id,
     text: z.string().trim().min(1).max(MAX_SENDER_POST),
+    send_at: z.iso.datetime({ offset: true }).optional(),
   }),
   edit_message: z.object({ message: id, text: z.string().trim().min(1).max(MAX_SENDER_POST) }),
   delete_message: z.object({ message: id }),
@@ -379,6 +370,7 @@ const todoDue = z
   .regex(/^\d{4}-\d{2}-\d{2}$/)
   .nullable();
 const todoMilestone = z.string().trim().min(1).max(MAX_MILESTONE_NAME).nullable();
+const todoProject = z.string().trim().min(1).max(MAX_PROJECT_NAME).nullable();
 const TODO_INPUTS = {
   list_todos: z.object({ area: id.optional(), open_only: z.boolean().optional() }),
   read_todo: z.object({ todo: id }),
@@ -392,6 +384,7 @@ const TODO_INPUTS = {
     start: todoDue.optional(),
     due: todoDue.optional(),
     milestone: todoMilestone.optional(),
+    project: todoProject.optional(),
   }),
   update_todo: z.object({
     todo: id,
@@ -403,6 +396,8 @@ const TODO_INPUTS = {
     start: todoDue.optional(),
     due: todoDue.optional(),
     milestone: todoMilestone.optional(),
+    project: todoProject.optional(),
+    before: id.nullable().optional(),
   }),
   delete_todo: z.object({ todo: id }),
   list_milestones: z.object({ area: id.optional() }),
@@ -559,7 +554,15 @@ const SENDER_TOOLS: Anthropic.Beta.BetaTool[] = [
     description: `Writes a message (at most ${MAX_SENDER_POST} characters, plain text, „@first name“ names someone) into a Sender conversation, by its id. Everyone there reads it at once under your name. Short, in the conversation's language.`,
     input_schema: {
       type: 'object',
-      properties: { conversation: { type: 'string' }, text: { type: 'string' } },
+      properties: {
+        conversation: { type: 'string' },
+        text: { type: 'string' },
+        send_at: {
+          type: 'string',
+          description:
+            'Optional: when it goes instead of now – an ISO date-time with its offset (2026-12-01T09:00:00+01:00), later than now and at most a year ahead. Until then only the person sees it, above their field (they can send it at once or delete it); then it is posted as if sent that moment.',
+        },
+      },
       required: ['conversation', 'text'],
     },
   },
@@ -688,7 +691,12 @@ const TODO_FIELDS = {
   milestone: {
     type: ['string', 'null'],
     description:
-      'The milestone it leads to, by name: one of its place’s (made if there is none of that name yet); null: none.',
+      'The milestone it leads to, by name: one of its place’s – area and project – (made if there is none of that name yet); null: none.',
+  },
+  project: {
+    type: ['string', 'null'],
+    description:
+      'The project it stands in, by name – of its area, or of the person’s own to-dos (made if there is none of that name yet); „Allgemein“ or null: the place’s own list. Moved to another place without one: „Allgemein“.',
   },
 } as const;
 
@@ -733,7 +741,15 @@ const TODO_TOOLS: Anthropic.Beta.BetaTool[] = [
       'Changes a to-do (by id or number): only the fields given. Set the status as you work on one (in_progress, done).',
     input_schema: {
       type: 'object',
-      properties: { todo: { type: 'string' }, ...TODO_FIELDS },
+      properties: {
+        todo: { type: 'string' },
+        ...TODO_FIELDS,
+        before: {
+          type: ['string', 'null'],
+          description:
+            'Its place on the timeline: before this to-do (id or number) of the milestone and place it ends up in; null: last there. list_todos lists them in that order. Put into another milestone without it: last.',
+        },
+      },
       required: ['todo'],
     },
   },
@@ -857,7 +873,7 @@ ${
 - Sharing and the person's own: share_file (on their „Freigeben“) and unshare_file share a file or folder with a person of the workspace or stop it; list_deleted and restore_files bring back what was deleted („Gelöscht“, 30 days); update_area renames an area or says who sees it, delete_area deletes one (on their „Löschen“); copy_files copies (into an area on their „Kopieren“), set_color colours a folder, pin_folder pins one to their side bar; share_link makes a link for anyone (on their „Freigeben“), end_link ends it; label_version names a version, delete_version deletes one (on their „Löschen“); read_settings and change_settings read and change the person's own settings (name, colour, the voice in calls, how often mail is checked) – only what they ask for. What lives in their browser (look, notifications) they set under „Einstellungen“ themselves.`
     : "- A file's shares and details, the areas' people, sharing files, what was deleted and the person's settings: only in the person's own private agent and on their own message – say so when asked here."
 }
-- To-dos („Aufgaben“ in Office – call them so to the person): list_todos, read_todo, create_todo, update_todo, delete_todo (on their „Löschen“), and list_milestones, update_milestone, delete_milestone (on their „Löschen“) – the person's own and each area's (an area's list is its plan). Sent on a to-do, keep its status up to date. A shared agent, and any run you started by yourself, keeps to the to-dos of areas.
+- To-dos („Aufgaben“ in Office – call them so to the person): list_todos, read_todo, create_todo, update_todo, delete_todo (on their „Löschen“), and list_milestones, update_milestone, delete_milestone (on their „Löschen“) – the person's own and each area's (each place's list is its plan: „Allgemein“ and the projects made beside it, each with its own milestones; project names one). Sent on a to-do, keep its status up to date. A shared agent, and any run you started by yourself, keeps to the to-dos of areas.
 - The calendar („Kalender“): list_calendars (each area's, the person's private one, sub-calendars, their mailboxes' – changed at the provider, as far as it lets), list_events, create_event, update_event, delete_event; create_calendar, update_calendar, delete_calendar (on their „Löschen“) – times are Berlin time. Put events in only when the order asks for it; a shared agent, and any run you started by yourself, keeps to areas' calendars.
 - Sender, the workspace's messages: list_conversations, read_conversation, post_message; edit_message and delete_message for what you wrote there yourself; react_message and mark_read as the person, on their word; open_direct, create_group, add_to_group (on their „Hinzufügen“), remove_from_group and leave_group for their direct conversations and groups. Write there only when asked to, or when the people there are waiting for exactly what you did. A shared agent, and any run you started by yourself (a repeated order, a watch), keeps to the channels of areas – groups and direct conversations are refused there.
 - Working by yourself: when the order says to do something again and again („jeden Montag“, „täglich“) or whenever something happens („wenn sich in … was ändert“, „immer wenn in … etwas Neues liegt“, „sobald …“, „wenn jemand zum Bereich dazukommt“), set that up yourself – repeat_order for a time, watch for a change – as the first thing you do, before the rest of the work and before any question: look up the id you need, call the tool. Never ask for times or forms; where a detail is missing take the sensible one and say which. Something else in the order you cannot do, or are unsure about, is no reason to wait with it: set it up anyway, with an order text for the part you can do, and say what is open. Never say you will keep an eye on something or do it again without having called watch or repeat_order in this very turn – otherwise nothing will happen and the person waits in vain. Then do the work once now, unless the order is clearly only about later („wenn sich was ändert“ with nothing to do yet: just set it up and say so). The person changes it by telling you („lieber dienstags“, „hör auf damit“): replace or end what is set (stop_repeating, stop_watching). A run you start by yourself begins with a message that names what happened or that it is time; work it off and report as always.
@@ -1067,30 +1083,21 @@ async function summaries(
     rows.flatMap((row) => shown(row.id)),
   );
   // In a chat the last word is a person's and nothing runs: the server started anew in the middle.
-  const last = await deps.db
-    .select({
-      agentId: cloudAgentMessages.agentId,
-      chatId: cloudAgentMessages.chatId,
-      role: cloudAgentMessages.role,
-      text: cloudAgentMessages.text,
-      error: cloudAgentMessages.error,
-      callId: cloudAgentMessages.callId,
-    })
-    .from(cloudAgentMessages)
-    .where(
-      and(
-        inArray(
-          cloudAgentMessages.agentId,
-          rows.map((row) => row.id),
-        ),
-        sql`${cloudAgentMessages.seq} = (select max(m.seq) from cloud_agent_messages m where m.chat_id = ${cloudAgentMessages.chatId})`,
-      ),
-    );
+  const last = rows.length
+    ? await agentMessagesWhere(
+        deps.db,
+        and(
+          inArray(
+            senderChannels.agentId,
+            rows.map((row) => row.id),
+          ),
+          eq(senderMessages.seq, senderChannels.lastSeq),
+        )!,
+      )
+    : [];
   /** What it said last, for its card: its first chat's answer before another's. */
   const saidLast = (agentId: string) => {
-    const answers = last.filter(
-      (each) => each.agentId === agentId && each.role === 'assistant' && !isTagChat(each.chatId),
-    );
+    const answers = last.filter((each) => each.agentId === agentId && each.role === 'assistant');
     const answer = answers.find((each) => each.chatId === agentId) ?? answers[0];
     // A call with it: its entry, not what it remembers of it.
     if (answer?.callId) return 'Anruf';
@@ -1110,14 +1117,10 @@ async function summaries(
         mine: row.userId === userId,
         canDelete: row.userId === userId || role === 'admin',
         canWrite: atLeast(role, 'member'),
-        // Tag chats are their conversations' (`readableTagChats`): what happens there shows there.
+        // Called in a conversation (`Waiting.tag`): what happens there shows there.
         running: [...runs].some(([chatId, run]) => run.agentId === row.id && !isTagChat(chatId)),
         interrupted: last.some(
-          (each) =>
-            each.agentId === row.id &&
-            each.role === 'user' &&
-            !isTagChat(each.chatId) &&
-            !runs.has(each.chatId),
+          (each) => each.agentId === row.id && each.role === 'user' && !runs.has(each.chatId),
         ),
         openFiles: open.filter((each) => each.agentId === row.id).length,
         desk: shown(row.id).map(({ id, name, kind, nodeId, deckId }) => ({
@@ -1260,98 +1263,9 @@ async function fileDtos(
   return list;
 }
 
-/** The agent with its chat and its desk. */
-/** A chat of the agent (left out: its first), for everyone who sees the agent. */
-async function chatOf(deps: AppDeps, agent: CloudAgentRow, chatId: string | undefined) {
-  const [chat] = await deps.db
-    .select()
-    .from(cloudAgentChats)
-    .where(and(eq(cloudAgentChats.agentId, agent.id), eq(cloudAgentChats.id, chatId ?? agent.id)));
-  if (!chat) throw notFound('Diesen Chat gibt es nicht.');
-  return chat;
-}
-
 /** What a chat is called: its name, the agent's for the first, else how it began. */
-const chatTitle = (agent: CloudAgentRow, chat: CloudAgentChatRow, first: string | undefined) =>
+const chatTitle = (agent: CloudAgentRow, chat: AgentChatRow, first: string | undefined) =>
   chat.title ?? (chat.id === agent.id ? agent.title : titleOf(first ?? '') || 'Neuer Chat');
-
-/** Where a tag chat's agent was called, as the person reading it names that conversation. */
-interface CalledIn {
-  /** The chat's title: „#Allgemein“, a group's name, „Direkt mit Vera“. */
-  title: string;
-  /** The line above what was said there: „Gerufen in #Allgemein“. */
-  line: string;
-}
-
-/**
- * Of these chats the tag chats a person reads, with where they were called: those of
- * conversations they read now – what the agent was told and did there (others' lines) is for
- * them only while it is (as in the export).
- */
-async function readableTagChats(
-  deps: AppDeps,
-  userId: string,
-  chats: readonly CloudAgentChatRow[],
-): Promise<Map<string, CalledIn>> {
-  const readable = new Map<string, CalledIn>();
-  const of = new Map(
-    chats.flatMap((chat) => {
-      const conversation = tagConversation(chat.id);
-      return conversation ? [[conversation, chat.id] as const] : [];
-    }),
-  );
-  if (of.size === 0) return readable;
-  const rows = await deps.db
-    .select({
-      id: senderChannels.id,
-      kind: senderChannels.kind,
-      name: senderChannels.name,
-      areaId: senderChannels.areaId,
-      workspaceId: senderChannels.workspaceId,
-    })
-    .from(senderChannels)
-    .where(inArray(senderChannels.id, [...of.keys()]));
-  const add = (channelId: string, title: string, line: string) =>
-    readable.set(of.get(channelId) ?? '', { title, line });
-  // An area's conversations: who sees the area (`audienceOf`); groups and direct ones: who is in.
-  const inAreas = rows.filter((row) => row.kind === 'area' || row.kind === 'channel');
-  const joined = rows.filter((row) => row.kind !== 'area' && row.kind !== 'channel');
-  const [first] = inAreas;
-  const ctx = first
-    ? await cloudContext(deps.db, first.workspaceId, userId).catch(() => null)
-    : null;
-  for (const row of inAreas) {
-    const area = row.areaId ? ctx?.areas.get(row.areaId) : undefined;
-    if (!area?.access) continue;
-    // An area's own channel is called as the area, as in the side bar.
-    const name = `#${row.kind === 'area' ? area.row.name : row.name}`;
-    add(row.id, name, `Gerufen in ${name}`);
-  }
-  if (joined.length === 0) return readable;
-  const members = await deps.db
-    .select({ channelId: senderMembers.channelId, userId: users.id, name: users.name })
-    .from(senderMembers)
-    .innerJoin(users, eq(users.id, senderMembers.userId))
-    .where(
-      inArray(
-        senderMembers.channelId,
-        joined.map((row) => row.id),
-      ),
-    );
-  for (const row of joined) {
-    const people = members.filter((each) => each.channelId === row.id);
-    if (!people.some((each) => each.userId === userId)) continue;
-    const others = people.filter((each) => each.userId !== userId);
-    if (row.kind === 'direct') {
-      const other = others[0]?.name ?? 'Nicht mehr da';
-      add(row.id, `Direkt mit ${other}`, `Gerufen in der Unterhaltung mit ${other}`);
-    } else {
-      const name = row.name || others.map((each) => each.name.split(' ')[0]).join(', ') || 'Gruppe';
-      add(row.id, name, `Gerufen in der Gruppe „${name}“`);
-    }
-  }
-  return readable;
-}
 
 /** The agent with its chats and desk; asking says the caller is there (the page asks on). */
 export async function getCloudAgent(
@@ -1364,22 +1278,33 @@ export async function getCloudAgent(
   const [summary] = await summaries(deps, userId, [row]);
   if (!summary) throw agentNotFound();
   touchHere(deps, row.id, author);
-  // Open, its answers are read – in Sender's side bar too.
-  await readAgent(deps.db, userId, row.id);
-  const allChats = await deps.db
-    .select()
-    .from(cloudAgentChats)
-    .where(eq(cloudAgentChats.agentId, row.id))
-    .orderBy(asc(cloudAgentChats.createdAt));
-  const readable = await readableTagChats(deps, userId, allChats);
-  const chatRows = allChats.filter((chat) => !isTagChat(chat.id) || readable.has(chat.id));
-  const kept = (
-    await deps.db
-      .select()
-      .from(cloudAgentMessages)
-      .where(eq(cloudAgentMessages.agentId, row.id))
-      .orderBy(asc(cloudAgentMessages.seq))
-  ).filter((message) => !isTagChat(message.chatId) || readable.has(message.chatId));
+  const chatRows = await agentChatsOf(deps.db, row.id);
+  const chatIds = chatRows.map((chat) => chat.id);
+  // How far the viewer had read, for the „Neu“ line – then, open, its answers are read (in
+  // Sender's side bar too).
+  const reads = chatIds.length
+    ? await deps.db
+        .select({ channelId: senderMembers.channelId, readSeq: senderMembers.readSeq })
+        .from(senderMembers)
+        .where(and(inArray(senderMembers.channelId, chatIds), eq(senderMembers.userId, userId)))
+    : [];
+  await readAgentHere(deps, userId, row);
+  const kept = await agentMessagesWhere(deps.db, eq(senderChannels.agentId, row.id));
+  // As any conversation's messages are shown: reactions, the message each answers, calls.
+  const shown = new Map(
+    (
+      await agentChatDtos(
+        deps,
+        row.workspaceId,
+        chatIds.length
+          ? await deps.db
+              .select()
+              .from(senderMessages)
+              .where(inArray(senderMessages.channelId, chatIds))
+          : [],
+      )
+    ).map((each) => [each.id, each]),
+  );
   const people = await deps.db
     .select()
     .from(users)
@@ -1387,7 +1312,7 @@ export async function getCloudAgent(
       inArray(users.id, [
         ...new Set([
           row.userId,
-          ...chatRows.map((each) => each.userId),
+          ...chatRows.flatMap((each) => (each.userId ? [each.userId] : [])),
           ...kept.flatMap((each) => (each.userId ? [each.userId] : [])),
         ]),
       ]),
@@ -1399,22 +1324,16 @@ export async function getCloudAgent(
   const titles = new Map(
     chatRows.map((chat) => [
       chat.id,
-      readable.get(chat.id)?.title ??
-        chatTitle(
-          row,
-          chat,
-          kept.find((each) => each.chatId === chat.id && each.role === 'user')?.text,
-        ),
+      chatTitle(
+        row,
+        chat,
+        kept.find((each) => each.chatId === chat.id && each.role === 'user')?.text,
+      ),
     ]),
   );
   const now = deps.clock.now().getTime();
   const there = [...(here.get(row.id)?.values() ?? [])].filter(
     (each) => each.author.id !== userId && now - each.at <= HERE_MS,
-  );
-  // Calls with it stand in its chat as one entry each.
-  const calls = await callBriefs(
-    deps,
-    kept.flatMap((each) => (each.callId ? [each.callId] : [])),
   );
   // What it asked to be confirmed: a card under the answer it was asked in.
   const askRows = await deps.db
@@ -1432,28 +1351,36 @@ export async function getCloudAgent(
   const chats: CloudAgentChat[] = chatRows.map((chat) => {
     const messages: CloudAgentMessage[] = kept
       .filter((each) => each.chatId === chat.id)
-      .map((each) => ({
-        id: each.id,
-        role: each.role,
-        text: each.text,
-        attachments: each.attachments,
-        state: each.role === 'assistant' ? (each.state ?? 'done') : null,
-        error: each.error,
-        author: each.role === 'user' ? authorOf(each.userId) : null,
-        fromChat: each.fromChatId ? (titles.get(each.fromChatId) ?? 'Chat') : null,
-        call: each.callId ? (calls.get(each.callId) ?? null) : null,
-        ...asksOf(each.id),
-      }));
+      .flatMap((each) => {
+        const dto = shown.get(each.id);
+        if (!dto) return [];
+        return [
+          {
+            ...dto,
+            role: each.role,
+            state: each.role === 'assistant' ? (each.state ?? 'done') : null,
+            error: each.error,
+            ...asksOf(each.id),
+          },
+        ];
+      });
     const run = runs.get(chat.id);
     if (run) {
       messages.push({
         id: `${NOW_PREFIX}${chat.id}`,
-        role: 'assistant',
+        seq: (messages.at(-1)?.seq ?? 0) + 1,
+        author: null,
+        agent: { id: row.id, title: row.title },
         text: run.text,
+        attachments: [],
+        createdAt: run.since.toISOString(),
+        editedAt: null,
+        deleted: false,
+        reactions: [],
+        replyTo: null,
+        role: 'assistant',
         state: 'answering',
         error: null,
-        author: null,
-        fromChat: null,
         ...asksOf(`${NOW_PREFIX}${chat.id}`),
       });
     }
@@ -1461,7 +1388,7 @@ export async function getCloudAgent(
       id: chat.id,
       title: titles.get(chat.id) ?? 'Chat',
       startedBy: authorOf(chat.userId),
-      calledIn: readable.get(chat.id)?.line ?? null,
+      readSeq: reads.find((each) => each.channelId === chat.id)?.readSeq ?? 0,
       running: Boolean(run),
       interrupted: !run && kept.findLast((each) => each.chatId === chat.id)?.role === 'user',
       messages,
@@ -1588,6 +1515,16 @@ async function runSenderTool(
     case 'post_message': {
       const input = SENDER_INPUTS.post_message.parse(raw);
       await open(input.conversation);
+      if (input.send_at) {
+        const content = await scheduleForTool(
+          deps,
+          agent.userId,
+          input.conversation,
+          { text: input.text, sendAt: input.send_at },
+          { id: agent.id },
+        ).catch(refused);
+        return { content, changed: true };
+      }
       await postAsAgent(
         deps,
         { id: agent.id, title: agent.title, userId: agent.userId },
@@ -1736,9 +1673,10 @@ async function runTodoTool(
   switch (name) {
     case 'list_todos': {
       const input = TODO_INPUTS.list_todos.parse(raw);
-      const list = (
-        await listTodos(deps, userId, actor.workspaceId, { areaId: input.area })
-      ).filter((todo) => (!why || todo.areaId) && (!input.open_only || isOpenTodo(todo.status)));
+      const list = (await listTodos(deps, userId, actor.workspaceId, { areaId: input.area }))
+        .filter((todo) => (!why || todo.areaId) && (!input.open_only || isOpenTodo(todo.status)))
+        // As on the timeline: each milestone's lines in their order.
+        .sort((a, b) => a.position - b.position || a.number - b.number);
       return {
         content:
           (list.map(line).join('\n') || 'No to-dos.') +
@@ -1761,6 +1699,13 @@ async function runTodoTool(
     case 'create_todo': {
       const input = TODO_INPUTS.create_todo.parse(raw);
       refuseOwn(input.area ?? null);
+      const projectId = await projectNamed(
+        deps,
+        userId,
+        actor.workspaceId,
+        input.area ?? null,
+        input.project,
+      ).catch(refused);
       const todo = await createTodo(
         deps,
         userId,
@@ -1769,6 +1714,7 @@ async function runTodoTool(
           title: input.title,
           description: input.description,
           areaId: input.area ?? null,
+          projectId,
           status: input.status,
           priority: input.priority as TodoPriority | undefined,
           assigneeId: input.assignee,
@@ -1781,6 +1727,7 @@ async function runTodoTool(
                 actor.workspaceId,
                 input.area ?? null,
                 input.milestone,
+                projectId,
               )
             : undefined,
         },
@@ -1791,6 +1738,14 @@ async function runTodoTool(
     case 'update_todo': {
       const input = TODO_INPUTS.update_todo.parse(raw);
       const todo = await find(input.todo);
+      // One it may only see is refused before a project or milestone is made for it.
+      if (!todo.canEdit) throw forbidden('In diesem Bereich darfst du nur ansehen.');
+      const projectId =
+        input.project !== undefined
+          ? await projectNamed(deps, userId, actor.workspaceId, todo.areaId, input.project).catch(
+              refused,
+            )
+          : (todo.project?.id ?? null);
       const changed = await updateTodo(
         deps,
         userId,
@@ -1803,13 +1758,32 @@ async function runTodoTool(
           assigneeId: input.assignee,
           startOn: input.start,
           dueOn: input.due,
+          projectId: input.project !== undefined ? projectId : undefined,
           milestoneId: input.milestone
-            ? await milestoneNamed(deps, userId, actor.workspaceId, todo.areaId, input.milestone)
+            ? await milestoneNamed(
+                deps,
+                userId,
+                actor.workspaceId,
+                todo.areaId,
+                input.milestone,
+                projectId,
+              )
             : input.milestone,
         },
         { agentId: agent.id },
       );
-      return { content: `Changed: ${line(changed)}`, changed: true };
+      if (input.before === undefined)
+        return { content: `Changed: ${line(changed)}`, changed: true };
+      const placed = await updateTodo(
+        deps,
+        userId,
+        todo.id,
+        {
+          position: await positionBefore(deps, userId, changed, input.before).catch(refused),
+        },
+        { agentId: agent.id },
+      );
+      return { content: `Changed: ${line(placed)}`, changed: true };
     }
     case 'delete_todo': {
       const input = TODO_INPUTS.delete_todo.parse(raw);
@@ -1821,14 +1795,25 @@ async function runTodoTool(
       const input = TODO_INPUTS.list_milestones.parse(raw);
       refuseOwn(input.area ?? null);
       const list = (
-        await listMilestones(deps, userId, actor.workspaceId, { areaId: input.area }).catch(
-          refused,
-        )
+        await listMilestones(deps, userId, actor.workspaceId, { areaId: input.area }).catch(refused)
       ).filter((one) => one.areaId === (input.area ?? null));
+      const projects = (
+        await listProjects(
+          deps,
+          userId,
+          actor.workspaceId,
+          input.area ? { areaId: input.area } : {},
+        ).catch(refused)
+      ).filter((each) => each.areaId === (input.area ?? null));
+      const projectName = (projectId: string | null) =>
+        projects.find((each) => each.id === projectId)?.name ?? DEFAULT_PROJECT_NAME;
       return {
         content:
           list
-            .map((one) => `${one.id}: ${one.name}${one.dueOn ? ` (due ${one.dueOn})` : ''}`)
+            .map(
+              (one) =>
+                `${one.id}: ${one.name}${one.dueOn ? ` (due ${one.dueOn})` : ''}${input.area ? ` – project „${projectName(one.projectId)}“` : ''}`,
+            )
             .join('\n') || 'No milestones there.',
         changed: false,
       };
@@ -1850,9 +1835,6 @@ async function runTodoTool(
     }
   }
 }
-
-const nextSeq = (agentId: string) =>
-  sql<number>`(select coalesce(max(${cloudAgentMessages.seq}), 0) + 1 from ${cloudAgentMessages} where ${cloudAgentMessages.agentId} = ${agentId})`;
 
 const KIND_WORDS: Record<CloudAgentFileRow['kind'], string> = {
   new: 'new file',
@@ -2276,7 +2258,7 @@ function deskLabel(name: string, input: unknown): string | null {
     case 'read_conversation':
       return 'Liest die Nachrichten';
     case 'post_message':
-      return 'Schreibt in Sender';
+      return said('send_at') ? 'Plant eine Nachricht' : 'Schreibt in Sender';
     case 'edit_message':
       return 'Ändert eine Nachricht';
     case 'react_message':
@@ -2360,12 +2342,7 @@ type FoundAi = Awaited<ReturnType<typeof workspaceAiConnection>>;
 type Ai = Extract<FoundAi, { connection: object }>;
 
 /** A person's message, kept in the chat. */
-async function keep(
-  deps: AppDeps,
-  agent: CloudAgentRow,
-  chat: CloudAgentChatRow,
-  message: Waiting,
-) {
+async function keep(deps: AppDeps, agent: CloudAgentRow, chat: AgentChatRow, message: Waiting) {
   const now = deps.clock.now();
   // Taken already by what it came on (a conversation's message, which put them away itself), or
   // taken now – these go into Cloud's „Chat-Dateien“ once the message is kept.
@@ -2377,17 +2354,15 @@ async function keep(
     message.attachmentIds ?? [],
   );
   message.attachments = [...(message.attachments ?? []), ...taken];
-  await deps.db.insert(cloudAgentMessages).values({
-    id: message.id,
-    agentId: agent.id,
-    chatId: chat.id,
-    userId: message.viewer.author.id,
-    seq: nextSeq(agent.id),
-    role: 'user',
-    text: message.text,
-    attachments: message.attachments,
-    createdAt: now,
-  });
+  // Called in a conversation: what the person wrote stands there already.
+  if (!message.tag)
+    await keepAgentMessage(deps.db, chat, now, {
+      id: message.id,
+      userId: message.viewer.author.id,
+      text: message.text,
+      attachments: message.attachments,
+      replyTo: message.replyTo,
+    });
   await deps.db.update(cloudAgents).set({ updatedAt: now }).where(eq(cloudAgents.id, agent.id));
   // An area's agent's into the area; one's own (also one standing in an area) into one's own.
   await fileChatFiles(
@@ -2409,7 +2384,7 @@ async function work(
   deps: AppDeps,
   viewer: Viewer,
   agent: CloudAgentRow,
-  chat: CloudAgentChatRow,
+  chat: AgentChatRow,
   text: string,
   zone?: string,
   whenBusy: 'wait' | 'refuse' = 'refuse',
@@ -2427,10 +2402,22 @@ async function work(
   attachmentIds: readonly string[] = [],
   /** Files taken already by what the message came on (`Waiting.attachments`). */
   taken: Attachment[] = [],
+  /** „Antworten“: a message of the chat (`Waiting.replyTo`). */
+  replyTo?: string,
 ) {
   if (!text.trim() && attachmentIds.length === 0 && taken.length === 0)
     throw badRequest('Schreib etwas.');
   const userId = viewer.author.id;
+  // The message answered is quoted to the agent, as the person sees it above theirs.
+  if (replyTo) {
+    const [answered] = await agentMessagesWhere(
+      deps.db,
+      and(eq(senderMessages.id, replyTo), eq(senderMessages.channelId, chat.id)),
+    );
+    if (!answered || answered.deleted || tag)
+      throw badRequest('Diese Nachricht gibt es nicht (mehr).');
+    prompt = `${quoted(answered.text)}\n\n${prompt ?? text}`;
+  }
   const found = await workspaceAiConnection(deps, agent.workspaceId);
   if (!found.connection) throw new ApiError(409, 'ai_not_configured', found.error);
   const message: Waiting = {
@@ -2443,6 +2430,7 @@ async function work(
     tag,
     prompt,
     foreign,
+    replyTo,
     attachmentIds,
     attachments: taken,
   };
@@ -2505,7 +2493,7 @@ const startRun = (deps: AppDeps, agentId: string, userId: string, waiting: Waiti
  * person's, whose rights its tools need; one that came as it ended): the next person's are
  * answered now, the rest wait on.
  */
-async function goOn(deps: AppDeps, agentId: string, chat: CloudAgentChatRow, waiting: Waiting[]) {
+async function goOn(deps: AppDeps, agentId: string, chat: AgentChatRow, waiting: Waiting[]) {
   const [first] = waiting;
   if (!first) return;
   const userId = first.viewer.author.id;
@@ -2536,7 +2524,7 @@ async function goOn(deps: AppDeps, agentId: string, chat: CloudAgentChatRow, wai
  */
 interface ToolRun {
   agent: CloudAgentRow;
-  chat: CloudAgentChatRow;
+  chat: AgentChatRow;
   /** The person who wrote: its tools run as them. */
   viewer: Viewer;
   /** Nobody's message among what it answers: it set itself to work (`areasOnly`). */
@@ -2639,14 +2627,7 @@ async function runAgentTool(
       changed: !name.startsWith('list_'),
     };
   if (name in TODO_INPUTS)
-    return runTodoTool(
-      deps,
-      agent,
-      actor,
-      name as keyof typeof TODO_INPUTS,
-      input,
-      run.unattended,
-    );
+    return runTodoTool(deps, agent, actor, name as keyof typeof TODO_INPUTS, input, run.unattended);
   if (name in SENDER_INPUTS)
     return runSenderTool(
       deps,
@@ -2657,28 +2638,15 @@ async function runAgentTool(
       run.tag,
     );
   if (name in AUTO_INPUTS) {
-    const done = await runAutoTool(
-      deps,
-      userId,
-      agent.id,
-      name as AutoToolName,
-      input,
-      run.zone,
-    );
-    const [fresh] = await deps.db
-      .select()
-      .from(cloudAgents)
-      .where(eq(cloudAgents.id, agent.id));
+    const done = await runAutoTool(deps, userId, agent.id, name as AutoToolName, input, run.zone);
+    const [fresh] = await deps.db.select().from(cloudAgents).where(eq(cloudAgents.id, agent.id));
     if (fresh) run.autoChanged?.(fresh);
     return done;
   }
   // A chat beside the first has a name of its own; the first's is the agent's.
   if (name === 'name_chat' && chat.id !== agent.id) {
     const { title } = INPUTS.name_chat.parse(input);
-    await deps.db
-      .update(cloudAgentChats)
-      .set({ title })
-      .where(eq(cloudAgentChats.id, chat.id));
+    await deps.db.update(senderChannels).set({ title }).where(eq(senderChannels.id, chat.id));
     return { content: `The chat is called „${title}“ now.`, changed: true };
   }
   if (name === 'create_area') {
@@ -2703,24 +2671,11 @@ async function runAgentTool(
   }
   // Services outside: the connections of who wrote, never the agent's owner's.
   if (name in CONNECTION_INPUTS) {
-    return runConnectionTool(
-      deps,
-      userId,
-      agent.workspaceId,
-      name as ConnectionToolName,
-      input,
-    );
+    return runConnectionTool(deps, userId, agent.workspaceId, name as ConnectionToolName, input);
   }
   // Mailboxes: those of who wrote, in their own private agent only.
   if (name in MAIL_INPUTS) {
-    return runMailTool(
-      deps,
-      userId,
-      agent.workspaceId,
-      name as MailToolName,
-      input,
-      agent.id,
-    );
+    return runMailTool(deps, userId, agent.workspaceId, name as MailToolName, input, agent.id);
   }
   if (name in SETTINGS_INPUTS)
     return {
@@ -2728,20 +2683,17 @@ async function runAgentTool(
       changed: name === 'change_settings',
     };
   if (APP_NAMES.has(name)) {
-    const ran = await runAppTool(
-      deps,
-      { viewer, workspaceId: agent.workspaceId },
-      name,
-      { ...(input as Record<string, unknown>), workspace: agent.workspaceId },
-    );
+    const ran = await runAppTool(deps, { viewer, workspaceId: agent.workspaceId }, name, {
+      ...(input as Record<string, unknown>),
+      workspace: agent.workspaceId,
+    });
     const said = ran.content
       .flatMap((each) => (each.type === 'text' ? [each.text] : []))
       .join('\n');
     if (ran.isError) throw new ToolChatError(said);
     return { content: said, changed: !APP_READING.has(name) };
   }
-  if (name in INPUTS)
-    return runDeskTool(deps, viewer, actor, name as keyof typeof INPUTS, input);
+  if (name in INPUTS) return runDeskTool(deps, viewer, actor, name as keyof typeof INPUTS, input);
   if (CLOUD_NAMES.has(name)) return runCloudTool(deps, actor, name, input);
   if (!MCP_NAMES.has(name)) throw new ToolChatError(`No tool "${name}".`);
   return runDeckTool(deps, viewer, actor, name, input);
@@ -2765,6 +2717,8 @@ async function askFirst(
     foreign: run.foreign,
     agentId: run.agent.id,
   });
+  // Called in a conversation it only reads and posts there (`refuse`): nothing to confirm.
+  if (run.tag) throw new ToolChatError('Not here: you were called in a conversation.');
   const pin = await askPin(deps, run.viewer, run.agent.workspaceId, name, input);
   await deps.db.insert(cloudAgentAsks).values({
     id: crypto.randomUUID(),
@@ -2812,10 +2766,7 @@ export async function decideCloudAgentAsk(
     .returning();
   if (!taken) throw badRequest('Das ist schon entschieden.');
   if (confirm) {
-    const [chat] = await deps.db
-      .select()
-      .from(cloudAgentChats)
-      .where(eq(cloudAgentChats.id, ask.chatId));
+    const [chat] = await agentChatsWhere(deps.db, eq(senderChannels.id, ask.chatId));
     let state: CloudAgentAskState = 'done';
     let result: string;
     try {
@@ -2847,7 +2798,11 @@ export async function decideCloudAgentAsk(
       result = ran.content;
       if ((ran as { isError?: boolean }).isError) state = 'failed';
     } catch (error) {
-      if (!(error instanceof ToolChatError || error instanceof ApiError || error instanceof ZodError))
+      if (!(
+        error instanceof ToolChatError ||
+        error instanceof ApiError ||
+        error instanceof ZodError
+      ))
         deps.log.error('Cloud agent ask failed', { agentId: agent.id, error });
       state = 'failed';
       result =
@@ -2910,6 +2865,14 @@ function asksByAnswer<T extends { id: string; role: string; chatId: string; crea
 }
 const NOW_PREFIX = 'answering-';
 
+/** A message answered, as the agent is told it above the answer („Antworten“). */
+const quoted = (text: string) =>
+  `(Answering this earlier message:)\n${text
+    .slice(0, 600)
+    .split('\n')
+    .map((line) => `> ${line}`)
+    .join('\n')}`;
+
 /**
  * Sets the agent to work on `batch` – one person's messages, kept in the chat already – as
  * `run`, in the background. What that person writes meanwhile it is told between its steps;
@@ -2918,7 +2881,7 @@ const NOW_PREFIX = 'answering-';
 async function begin(
   deps: AppDeps,
   agent: CloudAgentRow,
-  chat: CloudAgentChatRow,
+  chat: AgentChatRow,
   run: Run,
   batch: readonly Waiting[],
   found: Ai,
@@ -2960,22 +2923,9 @@ async function begin(
     const later = new Set([...batch, ...run.waiting].map((each) => each.id));
     const before = first.tag
       ? []
-      : (
-          await deps.db
-            .select({
-              id: cloudAgentMessages.id,
-              role: cloudAgentMessages.role,
-              text: cloudAgentMessages.text,
-              attachments: cloudAgentMessages.attachments,
-              userId: cloudAgentMessages.userId,
-              fromChatId: cloudAgentMessages.fromChatId,
-              chatId: cloudAgentMessages.chatId,
-              createdAt: cloudAgentMessages.createdAt,
-            })
-            .from(cloudAgentMessages)
-            .where(eq(cloudAgentMessages.chatId, chat.id))
-            .orderBy(asc(cloudAgentMessages.seq))
-        ).filter((each) => !later.has(each.id));
+      : (await agentMessagesWhere(deps.db, eq(senderMessages.channelId, chat.id))).filter(
+          (each) => !later.has(each.id) && !each.deleted,
+        );
     // What it asked to be confirmed, and how that ended: told beside the answer it was asked in.
     const asked = asksByAnswer(
       before,
@@ -3007,13 +2957,12 @@ async function begin(
       (message) => message.text.trim() || message.attachments.length > 0,
     )) {
       const from = names.find((person) => person.id === each.userId);
-      const said = (
-        each.fromChatId
-          ? `[Note from the chat ${each.fromChatId}] ${each.text}`
-          : from
-            ? `[${promptName(from.name)}] ${each.text}`
-            : each.text
-      ).slice(0, MAX_MATERIAL_CHAT_TEXT);
+      const answered = each.replyTo && before.find((one) => one.id === each.replyTo);
+      const text = answered ? `${quoted(answered.text)}\n\n${each.text}` : each.text;
+      const said = (from ? `[${promptName(from.name)}] ${text}` : text).slice(
+        0,
+        MAX_MATERIAL_CHAT_TEXT,
+      );
       const last = history.at(-1);
       const files = each.role === 'user' ? each.attachments : [];
       // A note stands beside an answer: the two are one turn of the agent's.
@@ -3143,17 +3092,14 @@ async function begin(
       // Others' work taken out of the agent (`forgetOthers`): nothing of it is kept.
       if (run.controller.signal.reason === FORGOTTEN) return;
       const now = deps.clock.now();
-      await deps.db.insert(cloudAgentMessages).values({
-        id: crypto.randomUUID(),
-        agentId: agent.id,
-        chatId: chat.id,
-        seq: nextSeq(agent.id),
-        role: 'assistant',
-        text: run.text,
-        state,
-        error: failure,
-        createdAt: now,
-      });
+      // Called in a conversation: what it had to say it posted there (`post_message`).
+      if (!first.tag)
+        await keepAgentMessage(deps.db, chat, now, {
+          byAgent: true,
+          text: run.text,
+          state,
+          error: failure,
+        });
       const [kept] = await deps.db
         .update(cloudAgents)
         .set({ updatedAt: now })
@@ -3219,11 +3165,7 @@ export async function createCloudAgent(
   if (!row) throw new Error('Cloud agent insert returned nothing');
   try {
     // Its first chat has its id.
-    const [chat] = await deps.db
-      .insert(cloudAgentChats)
-      .values({ id: row.id, agentId: row.id, userId, createdAt: now })
-      .returning();
-    if (!chat) throw new Error('Cloud agent chat insert returned nothing');
+    const chat = await openAgentChat(deps.db, row, { id: row.id, userId, at: now });
     await work(
       deps,
       viewer,
@@ -3240,6 +3182,8 @@ export async function createCloudAgent(
       attachmentIds,
     );
   } catch (error) {
+    // Nothing kept in its chat yet: no files on it.
+    await dropAgentChats(deps.db, eq(senderChannels.agentId, row.id));
     await deps.db.delete(cloudAgents).where(eq(cloudAgents.id, row.id));
     throw error;
   }
@@ -3269,7 +3213,7 @@ export async function createIdleCloudAgent(
     await tx
       .insert(cloudAgents)
       .values({ id, workspaceId, userId, areaId, title, createdAt: now, updatedAt: now });
-    await tx.insert(cloudAgentChats).values({ id, agentId: id, userId, createdAt: now });
+    await openAgentChat(tx, { id, workspaceId }, { id, userId, at: now });
   });
   return getCloudAgent(deps, viewer.author, id);
 }
@@ -3316,27 +3260,9 @@ export async function noteCallTurn(
 ): Promise<void> {
   if (runs.has(agentId)) return;
   const now = deps.clock.now();
-  await deps.db.insert(cloudAgentMessages).values({
-    id: crypto.randomUUID(),
-    agentId,
-    chatId: agentId,
-    userId,
-    seq: nextSeq(agentId),
-    role: 'user',
-    text: asked,
-    createdAt: now,
-  });
-  await deps.db.insert(cloudAgentMessages).values({
-    id: crypto.randomUUID(),
-    agentId,
-    chatId: agentId,
-    userId: null,
-    seq: nextSeq(agentId),
-    role: 'assistant',
-    text: answer,
-    state: 'done',
-    createdAt: now,
-  });
+  const chat = { id: agentId, agentId };
+  await keepAgentMessage(deps.db, chat, now, { userId, text: asked });
+  await keepAgentMessage(deps.db, chat, now, { byAgent: true, text: answer, state: 'done' });
   await deps.db.update(cloudAgents).set({ updatedAt: now }).where(eq(cloudAgents.id, agentId));
 }
 
@@ -3353,17 +3279,12 @@ export async function keepCallInChat(
   memory: string,
 ): Promise<void> {
   const now = deps.clock.now();
-  await deps.db.insert(cloudAgentMessages).values({
-    id: crypto.randomUUID(),
-    agentId,
-    chatId: agentId,
+  await keepAgentMessage(deps.db, { id: agentId, agentId }, now, {
     userId,
-    seq: nextSeq(agentId),
-    role: 'assistant',
+    byAgent: true,
     text: memory,
     state: 'done',
     callId,
-    createdAt: now,
   });
   await deps.db.update(cloudAgents).set({ updatedAt: now }).where(eq(cloudAgents.id, agentId));
 }
@@ -3414,9 +3335,7 @@ export async function makeConversationAgent(
     })
     .returning();
   if (!row) throw new Error('Cloud agent insert returned nothing');
-  await deps.db
-    .insert(cloudAgentChats)
-    .values({ id: row.id, agentId: row.id, userId, createdAt: now });
+  await openAgentChat(deps.db, row, { id: row.id, userId, at: now });
   await announceAgent(deps, row);
   return row;
 }
@@ -3443,6 +3362,8 @@ export async function messageCloudAgent(
   attachmentIds: readonly string[] = [],
   /** Files taken already by what it came on (a conversation's message that called it). */
   taken: Attachment[] = [],
+  /** „Antworten“: a message of that chat. */
+  replyTo?: string,
 ): Promise<CloudAgentDetail> {
   const row = await agentFor(deps, viewer.author.id, agentId);
   await membersWork(deps, row.workspaceId, viewer.author.id);
@@ -3452,27 +3373,22 @@ export async function messageCloudAgent(
     throw notFound('Diese Mail gibt es nicht.');
   if (mailThreadId && !prompt)
     prompt = await besideMail(deps, viewer.author.id, row.workspaceId, mailThreadId, text);
-  // Written to only by a call there: anything else in it would run without the call's hold, on
-  // the lines others wrote in that conversation.
-  if (!tag && chatId && isTagChat(chatId))
-    throw badRequest(
-      'Hier arbeitet der Agent für die Unterhaltung, in der er gerufen wurde – ruf ihn dort mit @Agent.',
-    );
-  if (tag)
-    await deps.db
-      .insert(cloudAgentChats)
-      .values({
+  // Called in a conversation, it works for that one, apart from its chats: nothing is kept but
+  // what it posts there (`Waiting.tag`) – a run of its own per conversation.
+  const chat: AgentChatRow = tag
+    ? {
         id: tagChatId(row.id, tag),
         agentId: row.id,
         userId: viewer.author.id,
+        title: null,
         createdAt: deps.clock.now(),
-      })
-      .onConflictDoNothing();
+      }
+    : await agentChat(deps.db, row, chatId);
   await work(
     deps,
     viewer,
     row,
-    await chatOf(deps, row, tag ? tagChatId(row.id, tag) : chatId),
+    chat,
     text,
     zone,
     'wait',
@@ -3483,6 +3399,7 @@ export async function messageCloudAgent(
     foreign,
     attachmentIds,
     taken,
+    replyTo,
   );
   return getCloudAgent(deps, viewer.author, row.id);
 }
@@ -3551,13 +3468,6 @@ export async function shareCloudAgent(
   // In an area `shared` means that area's people, in none the workspace's.
   await deps.db.update(cloudAgents).set({ shared, areaId }).where(eq(cloudAgents.id, row.id));
   if (fewer) await forgetOthers(deps, row);
-  // Read by others now (or other ones): what it was told and did in conversations was only for
-  // who reads those – its tag chats go (taken out of them first, see above). Kept to its owner,
-  // nobody new reads it.
-  if (shared && (!row.shared || areaId !== row.areaId))
-    await deps.db
-      .delete(cloudAgentChats)
-      .where(and(eq(cloudAgentChats.agentId, row.id), like(cloudAgentChats.id, TAG_CHATS)));
   // Gone from the side bars of who read it before, there in those of who reads it now.
   await announceAgent(deps, row, { ...row, shared, areaId });
 }
@@ -3628,7 +3538,7 @@ export async function runDueCloudAgents(deps: AppDeps): Promise<void> {
         deps,
         { kind: 'owner', author: ownerAuthor(owner) },
         row,
-        await chatOf(deps, row, undefined),
+        await agentChat(deps.db, row),
         row.repeatText,
         undefined,
         'refuse',
@@ -3643,16 +3553,11 @@ export async function runDueCloudAgents(deps: AppDeps): Promise<void> {
       if (error.status === 409 && error.code === 'bad_request') continue;
       if (error.status === 403)
         await deps.db.update(cloudAgents).set(off).where(eq(cloudAgents.id, row.id));
-      await deps.db.insert(cloudAgentMessages).values({
-        id: crypto.randomUUID(),
-        agentId: row.id,
-        chatId: row.id,
-        seq: nextSeq(row.id),
-        role: 'assistant',
+      await keepAgentMessage(deps.db, { id: row.id, agentId: row.id }, now, {
+        byAgent: true,
         text: '',
         state: 'failed',
         error: `Der wiederholte Auftrag lief nicht: ${error.message}`,
-        createdAt: now,
       });
     }
   }
@@ -3690,7 +3595,7 @@ async function workOnWatched(
       deps,
       { kind: 'owner', author: ownerAuthor(owner) },
       row,
-      await chatOf(deps, row, undefined),
+      await agentChat(deps.db, row),
       await watchOrders(deps, due),
       undefined,
       'refuse',
@@ -3817,21 +3722,16 @@ async function forgetOthers(deps: AppDeps, row: CloudAgentRow) {
     run.waiting.splice(0, run.waiting.length, ...own);
   }
   const [chats, writers] = await Promise.all([
-    deps.db
-      .select({ id: cloudAgentChats.id, userId: cloudAgentChats.userId })
-      .from(cloudAgentChats)
-      .where(and(eq(cloudAgentChats.agentId, row.id), notLike(cloudAgentChats.id, TAG_CHATS))),
-    deps.db
-      .selectDistinct({ chatId: cloudAgentMessages.chatId })
-      .from(cloudAgentMessages)
-      .where(
-        and(
-          eq(cloudAgentMessages.agentId, row.id),
-          eq(cloudAgentMessages.role, 'user'),
-          isNotNull(cloudAgentMessages.userId),
-          ne(cloudAgentMessages.userId, row.userId),
-        ),
-      ),
+    agentChatsOf(deps.db, row.id),
+    agentMessagesWhere(
+      deps.db,
+      and(
+        eq(senderChannels.agentId, row.id),
+        isNull(senderMessages.agentId),
+        isNotNull(senderMessages.userId),
+        ne(senderMessages.userId, row.userId),
+      )!,
+    ),
   ]);
   const written = new Set(writers.map((each) => each.chatId));
   const gone = chats
@@ -3839,14 +3739,9 @@ async function forgetOthers(deps: AppDeps, row: CloudAgentRow) {
     .map((chat) => chat.id);
   if (gone.length === 0) return;
   const forgotten = await deps.db
-    .delete(cloudAgentMessages)
-    .where(
-      and(
-        eq(cloudAgentMessages.agentId, row.id),
-        or(inArray(cloudAgentMessages.chatId, gone), inArray(cloudAgentMessages.fromChatId, gone)),
-      ),
-    )
-    .returning({ attachments: cloudAgentMessages.attachments });
+    .delete(senderMessages)
+    .where(inArray(senderMessages.channelId, gone))
+    .returning({ attachments: senderMessages.attachments });
   // Their files go with them.
   await deleteAttachments(
     deps,
@@ -3854,7 +3749,12 @@ async function forgetOthers(deps: AppDeps, row: CloudAgentRow) {
   );
   const dropped = gone.filter((id) => id !== row.id);
   if (dropped.length > 0)
-    await deps.db.delete(cloudAgentChats).where(inArray(cloudAgentChats.id, dropped));
+    await deps.db.delete(senderChannels).where(inArray(senderChannels.id, dropped));
+  // The first chat starts anew – and how far who read it read.
+  if (gone.includes(row.id)) {
+    await deps.db.update(senderChannels).set({ lastSeq: 0 }).where(eq(senderChannels.id, row.id));
+    await deps.db.delete(senderMembers).where(eq(senderMembers.channelId, row.id));
+  }
   const [owner] = await deps.db.select().from(users).where(eq(users.id, row.userId));
   const viewer: Viewer | null = owner ? { kind: 'owner', author: ownerAuthor(owner) } : null;
   const opens = async (file: CloudAgentFileRow) => {
@@ -3891,8 +3791,8 @@ async function dropAgent(deps: AppDeps, row: CloudAgentRow) {
     if (file.kind === 'deck') await trashDeck(deps, file.deckId, row.userId);
     else if (file.originalDeckId) await deleteDeck(deps, file.deckId);
   }
-  // The files in its chats go with them (the rows go by cascade, the files would stay).
-  const files = await attachmentsOf(deps.db, { agentIds: [row.id] });
+  // Its chats go with it, the files in them too.
+  const files = await dropAgentChats(deps.db, eq(senderChannels.agentId, row.id));
   await deps.db.delete(cloudAgents).where(eq(cloudAgents.id, row.id));
   await deleteAttachments(deps, files);
   await announceAgent(deps, row);
@@ -3933,25 +3833,6 @@ export async function releaseAreaAgents(deps: AppDeps, area: CloudAreaRow) {
       await forgetOthers(deps, agent);
       kept.push(agent);
     }
-  }
-  const channels = await deps.db
-    .select({ id: senderChannels.id })
-    .from(senderChannels)
-    .where(eq(senderChannels.areaId, area.id));
-  const tagChats = agents.flatMap((agent) =>
-    channels.map((channel) => tagChatId(agent.id, channel.id)),
-  );
-  if (tagChats.length > 0) {
-    // Their messages go by cascade, the files on them with them.
-    const told = await deps.db
-      .select({ attachments: cloudAgentMessages.attachments })
-      .from(cloudAgentMessages)
-      .where(inArray(cloudAgentMessages.chatId, tagChats));
-    await deps.db.delete(cloudAgentChats).where(inArray(cloudAgentChats.id, tagChats));
-    await deleteAttachments(
-      deps,
-      told.flatMap((each) => each.attachments ?? []),
-    );
   }
   await deps.db.update(cloudAgents).set({ shared: false }).where(eq(cloudAgents.areaId, area.id));
   // Out of the side bars of the area's people (the area is still there to say who they are).

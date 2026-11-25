@@ -12,10 +12,7 @@ import { pluralize } from '@/lib/format';
 import { Avatar, Badge, Button, cn, Icon, IconButton, Menu, type MenuAction } from '@/ui';
 import { useSenderOrNull } from '@/features/sender';
 import { WorkspaceMark } from '@/features/workspaces';
-
-/** Where the lines to the areas begin: around the workspace's picture and name. */
-const HUB_EDGE = 52;
-import { DOT, layoutPeopleGraph } from '../lib/people-graph';
+import { DOT, HUB_NAME, layoutPeopleGraph } from '../lib/people-graph';
 import { AreaDot, areaColor } from './AreaDot';
 
 /** Where the graph stands in its frame: moved by `x`, `y` (px), `k` times as large. */
@@ -38,6 +35,7 @@ const clamp = (zoom: number) => Math.min(MAX_ZOOM, Math.max(MIN_ZOOM, zoom));
  */
 export function PeopleGraph({
   areas,
+  everyone,
   query,
   workspace,
   userId,
@@ -45,6 +43,8 @@ export function PeopleGraph({
   actionsFor = () => [],
 }: {
   areas: readonly CloudArea[];
+  /** Everyone in the workspace (its own area's people): who is in none of `areas` stands round its picture. */
+  everyone: readonly CloudAreaMember[];
   query: string;
   workspace: Pick<Workspace, 'id' | 'name' | 'logoUrl'>;
   /** The caller: their own dot opens no chat. */
@@ -53,13 +53,28 @@ export function PeopleGraph({
   areaTo: (area: CloudArea) => string;
   actionsFor?: (area: CloudArea) => MenuAction[];
 }) {
-  const graph = useMemo(() => layoutPeopleGraph(areas), [areas]);
-  const areaOf = useMemo(() => new Map(areas.map((area) => [area.id, area])), [areas]);
   const memberOf = useMemo(() => {
     const members = new Map<string, CloudAreaMember>();
     for (const area of areas) for (const member of area.members) members.set(member.id, member);
     return members;
   }, [areas]);
+  // In the workspace, in none of its areas (the user, 2026-11-25: „die personen die nur im
+  // workspace sind aber in keinem bereich will ich natürlich auch sehen“).
+  const loose = useMemo(
+    () => everyone.filter((member) => !memberOf.has(member.id)),
+    [everyone, memberOf],
+  );
+  const graph = useMemo(
+    () =>
+      layoutPeopleGraph(
+        areas,
+        loose.map((member) => member.id),
+      ),
+    [areas, loose],
+  );
+  const areaOf = useMemo(() => new Map(areas.map((area) => [area.id, area])), [areas]);
+  const looseOf = useMemo(() => new Map(loose.map((member) => [member.id, member])), [loose]);
+  const personOf = (id: string) => memberOf.get(id) ?? looseOf.get(id);
 
   const frame = useRef<HTMLDivElement>(null);
   const [size, setSize] = useState({ width: 0, height: 0 });
@@ -163,12 +178,12 @@ export function PeopleGraph({
     personId === overPerson ||
     (lit !== null && areaIds.includes(lit)) ||
     (words !== '' &&
-      `${memberOf.get(personId)?.name ?? ''} ${memberOf.get(personId)?.title ?? ''}`
+      `${personOf(personId)?.name ?? ''} ${personOf(personId)?.title ?? ''}`
         .toLowerCase()
         .includes(words));
   const pickedArea = picked ? areaOf.get(picked) : undefined;
 
-  const pointedMember = overPerson ? memberOf.get(overPerson) : undefined;
+  const pointedMember = overPerson ? personOf(overPerson) : undefined;
 
   // A click on someone's picture opens the chat with them – one already there straight away.
   const sender = useSenderOrNull();
@@ -188,6 +203,8 @@ export function PeopleGraph({
   };
   // Zoomed far out, the names of the areas and of the workspace stay readable.
   const label = Math.min(2.2, Math.max(1, 1 / camera.k));
+  // With people round it the workspace's picture and name stay as large as the ring leaves room.
+  const hubLabel = loose.length > 0 ? 1 : label;
 
   return (
     // As tall as the page has room: the net scrolls and zooms in itself, the page stays put.
@@ -219,7 +236,7 @@ export function PeopleGraph({
               const fromX = parent?.x ?? 0;
               const fromY = parent?.y ?? 0;
               const far = Math.hypot(area.x - fromX, area.y - fromY);
-              const start = parent ? parent.radius + 6 : HUB_EDGE;
+              const start = parent ? parent.radius + 6 : graph.hubEdge;
               const end = far - area.radius - 6;
               if (far < 1 || end <= start) return null;
               const dx = (area.x - fromX) / far;
@@ -242,12 +259,17 @@ export function PeopleGraph({
           <div
             className="absolute top-0 left-0 flex flex-col items-center gap-1.5 whitespace-nowrap"
             style={{
-              transform: `translate(-50%, -20px) scale(${label})`,
+              transform: `translate(-50%, -20px) scale(${hubLabel})`,
               transformOrigin: '50% 20px',
             }}
           >
             <WorkspaceMark name={workspace.name} logoUrl={workspace.logoUrl} size={40} />
-            <span className="text-xs font-medium text-fg-muted">{workspace.name}</span>
+            <span
+              className="truncate text-xs font-medium text-fg-muted"
+              style={loose.length > 0 ? { maxWidth: HUB_NAME } : undefined}
+            >
+              {workspace.name}
+            </span>
           </div>
 
           {/* The people come first; an area is only the ground they stand on. */}
@@ -272,7 +294,7 @@ export function PeopleGraph({
 
           <ul aria-label="Personen">
             {graph.people.map((person) => {
-              const member = memberOf.get(person.id);
+              const member = personOf(person.id);
               if (!member) return null;
               const on = isLit(person.id, person.areaIds);
               return (
@@ -370,7 +392,9 @@ export function PeopleGraph({
             <span className="truncate text-xs text-fg-muted">{pointedMember.title}</span>
           )}
           <span className="text-xs text-fg-subtle">
-            {pointed.areaIds.map((id) => areaOf.get(id)?.name ?? '').join(' | ')}
+            {pointed.areaIds.length > 0
+              ? pointed.areaIds.map((id) => areaOf.get(id)?.name ?? '').join(' | ')
+              : workspace.name}
           </span>
         </div>
       )}

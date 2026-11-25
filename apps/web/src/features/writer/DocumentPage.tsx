@@ -1,6 +1,7 @@
 import { useCallback } from 'react';
 import { Navigate, useLocation, useParams } from 'react-router';
 import { isSignedOutError } from '@/features/auth';
+import { usePageCommands } from '@/features/commands';
 import { useStoredChoice } from '@/features/reviews';
 import { registerOfficeFonts } from '@/features/viewer';
 import { useDocument, useMe } from '@/lib/api';
@@ -20,6 +21,9 @@ export function Component() {
   const location = useLocation();
   const me = useMe();
   const opened = useDocument(documentId);
+  // ⌘K: „Gehe zu“ and the apps lead into the document's workspace, which the address does not say.
+  const workspaceId = opened.data?.document.workspaceId;
+  usePageCommands({ group: 'Dokument', actions: [], workspaceId }, Boolean(workspaceId));
   // A Markdown file is shown as last chosen: rendered or as written.
   const [markdownView, setMarkdownView] = useStoredChoice(
     'writer.markdown.view',

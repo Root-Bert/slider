@@ -49,6 +49,7 @@ import { legalRoutes } from './routes/legal';
 import { meRoutes } from './routes/me';
 import { sliderTemplateRoutes } from './routes/slider-templates';
 import { spellingRoutes } from './routes/spelling';
+import { userPicturesRoutes } from './routes/user-pictures';
 import { passkeysRoutes } from './routes/passkeys';
 import { setupRoutes } from './routes/setup';
 import { storageRoutes } from './routes/storage';
@@ -160,6 +161,7 @@ export function createApp(appDeps: AppDeps) {
   const api = new Hono()
     .route('/', meRoutes(deps, gate))
     .route('/', spellingRoutes(deps))
+    .route('/', userPicturesRoutes(deps))
     .route('/', sliderTemplateRoutes(deps))
     .route('/', dataRequestsRoutes(deps))
     .route('/', contactRoutes(deps))

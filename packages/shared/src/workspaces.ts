@@ -187,8 +187,21 @@ export const meUserSchema = z.object({
   email: z.string(),
   color: accentColorSchema,
   isInstanceAdmin: z.boolean(),
+  /** Cloud's file names with their ending (Einstellungen › Dateien › „Dateiendungen zeigen“). */
+  showExtensions: z.boolean(),
 });
 export type MeUser = z.infer<typeof meUserSchema>;
+
+/** `GET|PUT /me/picture`: one's own picture (Konto › Profil). */
+export interface MePicture {
+  /** A link to it (`/files/…`, valid for hours); `null`: the one seeded by the name. */
+  url: string | null;
+  /** „Profibild mit KI“ is there: a workspace's image model goes after a photo. */
+  ai: boolean;
+}
+
+/** `GET /people/pictures`: the pictures of the people one sees, by user id (`/files/…` links). */
+export type PeoplePictures = Record<string, string>;
 
 /**
  * Another account signed in on this browser (`GET /auth/accounts`): switched to without signing

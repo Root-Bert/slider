@@ -20,10 +20,12 @@ export function Component() {
   const own = ui.home?.areas.find((area) => area.root)?.channels[0];
   // The workspace's own area is the net's middle, not one of its areas.
   const areas = (cloud?.areas ?? []).filter((area) => !area.root);
+  // Everyone in the workspace: who is in none of the areas stands round its picture.
+  const everyone = cloud?.areas.find((area) => area.root)?.members ?? [];
   const channelOf = (areaId: string) =>
     ui.home?.areas.find((area) => area.id === areaId)?.channels[0];
   const [query, setQuery] = useState('');
-  const found = peopleFound(areas, query);
+  const found = peopleFound([...areas, { members: everyone }], query);
   return (
     <section aria-label="Bereiche" className="flex min-h-0 flex-1 flex-col gap-3">
       <header className={PAGE_HEADER}>
@@ -65,6 +67,7 @@ export function Component() {
         ) : (
           <PeopleGraph
             areas={areas}
+            everyone={everyone}
             query={query}
             workspace={ui.workspace}
             userId={ui.me.id}

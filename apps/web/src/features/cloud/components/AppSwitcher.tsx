@@ -87,8 +87,8 @@ export function AppLogo({ app, className }: { app: AppId; className?: string }) 
   return <Logo tone="brand" className={className} />;
 }
 
-interface AppEntry {
-  id: string;
+export interface AppEntry {
+  id: AppId;
   name: string;
   note: string;
   mark: ReactNode;
@@ -102,38 +102,9 @@ const mark = (child: ReactNode) => (
   <span className="flex size-6 shrink-0 items-center justify-center">{child}</span>
 );
 
-/**
- * The chevron beside the logo: the apps of one account – Cloud, Slider, Writer, Reader and
- * Sender – one click apart, in the same workspace. A menu built like the workspace
- * switcher beside it: one row per app, the open one picked. At the app's start the logo is part
- * of the button (`logo`).
- * In the desktop app there is one app only: the logo stands alone, no menu. Installed as a web
- * app too – save Cloud: installed, it keeps the menu and the other app opens in a window of its own.
- */
-export function AppSwitcher({
-  workspaceId,
-  logo,
-  link,
-}: {
-  workspaceId: string | null;
-  /** Elsewhere: the logo as a link, before the chevron – the menu opens flush with its left. */
-  link?: ReactNode;
-  /**
-   * At the app's start, where the logo has nowhere to lead: the logo itself, which then opens
-   * the menu together with the chevron – one button, like the workspace switcher's.
-   */
-  logo?: ReactNode;
-}) {
-  const app = useCurrentApp();
-  const navigate = useNavigate();
-  if (!workspaceId) return link ?? null;
-  // The desktop app's window is one app, and so is an installed web app's – save Cloud's, the
-  // whole suite: there the menu stays and the other app opens in a window of its own
-  // (`windowForApp`).
-  if (installedApp && (installedApp !== 'cloud' || /\bElectron\//.test(navigator.userAgent)))
-    return link ?? logo ?? null;
-
-  const apps: AppEntry[] = [
+/** The family's apps in a workspace, as the switcher lists them (the command panel too). */
+export function suiteApps(workspaceId: string): AppEntry[] {
+  return [
     {
       id: 'cloud',
       name: 'Cloud',
@@ -175,6 +146,54 @@ export function AppSwitcher({
       stage: 'Beta',
     },
   ];
+}
+
+/**
+ * Opens a page of an app – its start, a document, a PDF: installed, a window is one app – another
+ * one opens beside it, as itself.
+ */
+export function useOpenApp() {
+  const app = useCurrentApp();
+  const navigate = useNavigate();
+  return (entry: Pick<AppEntry, 'id' | 'to'>) => {
+    const other = entry.id === app ? null : windowForApp(entry.id);
+    if (other) other.go(entry.to);
+    else void navigate(entry.to);
+  };
+}
+
+/**
+ * The chevron beside the logo: the apps of one account – Cloud, Slider, Writer, Reader and
+ * Sender – one click apart, in the same workspace. A menu built like the workspace
+ * switcher beside it: one row per app, the open one picked. At the app's start the logo is part
+ * of the button (`logo`).
+ * In the desktop app there is one app only: the logo stands alone, no menu. Installed as a web
+ * app too – save Cloud: installed, it keeps the menu and the other app opens in a window of its own.
+ */
+export function AppSwitcher({
+  workspaceId,
+  logo,
+  link,
+}: {
+  workspaceId: string | null;
+  /** Elsewhere: the logo as a link, before the chevron – the menu opens flush with its left. */
+  link?: ReactNode;
+  /**
+   * At the app's start, where the logo has nowhere to lead: the logo itself, which then opens
+   * the menu together with the chevron – one button, like the workspace switcher's.
+   */
+  logo?: ReactNode;
+}) {
+  const app = useCurrentApp();
+  const openApp = useOpenApp();
+  if (!workspaceId) return link ?? null;
+  // The desktop app's window is one app, and so is an installed web app's – save Cloud's, the
+  // whole suite: there the menu stays and the other app opens in a window of its own
+  // (`windowForApp`).
+  if (installedApp && (installedApp !== 'cloud' || /\bElectron\//.test(navigator.userAgent)))
+    return link ?? logo ?? null;
+
+  const apps = suiteApps(workspaceId);
 
   return (
     <HeaderPopover
@@ -221,10 +240,7 @@ export function AppSwitcher({
                 trailing={each.stage && <Badge>{each.stage}</Badge>}
                 onClick={() => {
                   close();
-                  // Installed, a window is one app: the other one opens beside it, as itself.
-                  const other = each.id === app ? null : windowForApp(each.id as AppId);
-                  if (other) other.go(each.to);
-                  else void navigate(each.to);
+                  openApp(each);
                 }}
               >
                 <span className={cn('truncate', each.stage === 'Alpha' && 'text-fg-subtle')}>

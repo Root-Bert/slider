@@ -28,6 +28,8 @@ import {
   fileClicks,
 } from './components/FileBrowser';
 import { FileIcon } from './components/FileIcon';
+import { FileName } from './components/FileName';
+import { ForYou } from './components/ForYou';
 import { MyTodos } from './components/todos/TodoList';
 import { UpcomingEvents } from './components/calendar/UpcomingEvents';
 import { useCloud } from './hooks/useCloud';
@@ -118,7 +120,7 @@ function WorkCard({ work }: { work: Work }) {
       <span className="flex min-w-0 items-start gap-2.5 px-0.5">
         <FileIcon kind="file" type={file.fileType} size={20} className="mt-0.5" />
         <span className="flex min-w-0 flex-col gap-0.5">
-          <span className="truncate text-body font-medium text-fg">{file.name}</span>
+          <FileName node={file} className="text-body font-medium text-fg" />
           <span className="truncate text-xs text-fg-muted">
             {file.updatedBy.id === ui.userId ? 'Du' : file.updatedBy.name} |{' '}
             {formatRelativeTime(file.updatedAt)}
@@ -150,15 +152,18 @@ function FilePart({ part }: { part: FileSummaryPart }) {
         {id && nodeKind ? (
           <button
             type="button"
-            className="truncate text-left text-body font-medium text-fg hover:underline focus-visible:underline focus-visible:outline-none"
+            className="flex min-w-0 text-left text-body font-medium text-fg hover:underline focus-visible:underline focus-visible:outline-none"
             onClick={() =>
               nodeKind === 'folder' ? ui.open({ id, kind: 'folder' } as never) : ui.openFile(id)
             }
           >
-            {part.name}
+            <FileName node={{ name: part.name, kind: nodeKind }} />
           </button>
         ) : (
-          <span className="truncate text-body font-medium text-fg">{part.name}</span>
+          <FileName
+            node={{ name: part.name, kind: nodeKind ?? 'other' }}
+            className="text-body font-medium text-fg"
+          />
         )}
         <span className="text-body text-fg-muted">{part.text}</span>
       </span>
@@ -266,6 +271,10 @@ export function Component() {
             />
           )}
 
+          {/* What waits for one across the apps – Sender, the calendar, Slider, Writer, the
+              files and agents – only what wants something of one, said by the AI. */}
+          <ForYou stamp={unreadNow.stamp} />
+
           {/* What happened since the last visit and what waits for an answer (as Sender's
               „Aktuell“), beside it what to go on with, while there is some: side by side in the
               columns of the lists below (over „Aktivität“), stacked the summary first. No „all“
@@ -277,8 +286,20 @@ export function Component() {
               work.length > 0 && 'lg:grid-cols-[minmax(0,1fr)_368px]',
             )}
           >
-            <div className="flex min-w-0 flex-col gap-y-6 lg:col-start-2 lg:row-start-1">
+            {/* Never taller than the cards beside it, but room for two or three parts where they
+                are small (stacked: a height of its own) – the rest scrolls in the panel. */}
+            <div
+              className={cn(
+                'flex min-w-0 flex-col',
+                work.length > 0 &&
+                  'lg:relative lg:col-start-2 lg:row-start-1 lg:min-h-60 lg:self-stretch',
+              )}
+            >
               <SummaryAside
+                className={cn(
+                  'max-h-[22rem]',
+                  work.length > 0 && 'lg:absolute lg:inset-x-0 lg:top-0 lg:max-h-full',
+                )}
                 summary={summary.data}
                 pending={summary.isPending}
                 fetching={summary.isFetching}
@@ -287,19 +308,25 @@ export function Component() {
                 filePart={(part) => <FilePart part={part} />}
                 sinceLabel="Neu seit"
               />
-              {unread.length > 0 && (
-                <section aria-labelledby="cloud-unread" className="flex min-w-0 flex-col gap-2">
-                  <h2 id="cloud-unread" className="text-base font-semibold text-fg">
-                    Ungelesen
-                  </h2>
-                  <RowList variant="hover" aria-label="Ungelesen">
-                    {unread.map((item) => (
-                      <UnreadRow key={`${item.kind}:${item.id}`} item={item} />
-                    ))}
-                  </RowList>
-                </section>
-              )}
             </div>
+            {unread.length > 0 && (
+              <section
+                aria-labelledby="cloud-unread"
+                className={cn(
+                  'flex min-w-0 flex-col gap-2',
+                  work.length > 0 && 'lg:col-start-2 lg:row-start-2',
+                )}
+              >
+                <h2 id="cloud-unread" className="text-base font-semibold text-fg">
+                  Ungelesen
+                </h2>
+                <RowList variant="hover" aria-label="Ungelesen">
+                  {unread.map((item) => (
+                    <UnreadRow key={`${item.kind}:${item.id}`} item={item} />
+                  ))}
+                </RowList>
+              </section>
+            )}
             {work.length > 0 && (
               <section
                 aria-labelledby="cloud-continue"

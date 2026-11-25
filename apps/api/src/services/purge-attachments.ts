@@ -3,13 +3,13 @@ import { isCloudReference, type Attachment } from '@slider/shared';
 import type { Executor } from '../db/client';
 import {
   calendarEvents,
-  cloudAgentMessages,
   decks,
   documentComments,
   materialChatMessages,
   materialChats,
   pdfComments,
   senderMessages,
+  senderScheduled,
   todos,
 } from '../db/schema';
 
@@ -77,8 +77,27 @@ export async function attachmentsOn(
 }
 
 /**
+ * The files of planned messages („Später senden“) being deleted – but not of one posted already
+ * (stuck or refused after it went out): the message has them now under the plan's id.
+ */
+export async function unsentPlanFiles(
+  db: Executor,
+  planned: readonly { id: string; attachments: Attachment[] | null }[],
+): Promise<Attachment[]> {
+  const ids = planned.map((row) => row.id);
+  const out = new Set<string>();
+  for (let from = 0; from < ids.length; from += CHUNK)
+    for (const row of await db
+      .select({ id: senderMessages.id })
+      .from(senderMessages)
+      .where(inArray(senderMessages.id, ids.slice(from, from + CHUNK))))
+      out.add(row.id);
+  return planned.filter((row) => !out.has(row.id)).flatMap((row) => row.attachments ?? []);
+}
+
+/**
  * The files on what goes with these through the database – a conversation's messages
- * (`channelIds`), an agent's chats (`agentIds`), to-dos (`todoIds`), the events of calendars
+ * (`channelIds`, an agent's chats among them), to-dos (`todoIds`), the events of calendars
  * (`calendarIds`) – gathered before the delete, removed after it (`deleteAttachments`). Not the
  * Cloud files and folders they point to.
  */
@@ -86,7 +105,6 @@ export async function attachmentsOf(
   db: Executor,
   of: {
     channelIds?: readonly string[];
-    agentIds?: readonly string[];
     todoIds?: readonly string[];
     calendarIds?: readonly string[];
   },
@@ -107,11 +125,12 @@ export async function attachmentsOf(
       .from(senderMessages)
       .where(inArray(senderMessages.channelId, ids)),
   );
-  await gather(of.agentIds, (ids) =>
+  // What was planned there („Später senden“) and holds its files while it waits.
+  await gather(of.channelIds, (ids) =>
     db
-      .select({ attachments: cloudAgentMessages.attachments })
-      .from(cloudAgentMessages)
-      .where(inArray(cloudAgentMessages.agentId, ids)),
+      .select({ attachments: senderScheduled.attachments })
+      .from(senderScheduled)
+      .where(inArray(senderScheduled.channelId, ids)),
   );
   await gather(of.todoIds, (ids) =>
     db.select({ attachments: todos.attachments }).from(todos).where(inArray(todos.id, ids)),

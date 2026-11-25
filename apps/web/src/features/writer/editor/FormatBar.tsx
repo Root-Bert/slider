@@ -1,4 +1,4 @@
-import { isModKey } from '@/lib/keyboard';
+import { useCommandKeyClaim } from '@/features/commands';
 import { isApplePlatform } from '@/lib/platform';
 import {
   useEffect,
@@ -581,24 +581,21 @@ export function FormatBar({
     return () => window.removeEventListener('keydown', onKey, { capture: true });
   });
 
-  // ⌘K: the link's field, as its button opens it.
+  // ⌘K: the link's field, as its button opens it – while text is picked, in place of the command
+  // panel.
   const linkable = showPanel && !picked && (!collapsed || !!(sel && linkAt(blocks, sel.focus)));
-  useEffect(() => {
-    if (!linkable) return;
-    const onKey = (event: KeyboardEvent) => {
-      if (!isModKey(event) || event.altKey || event.shiftKey || event.key.toLowerCase() !== 'k')
-        return;
-      setPart('text');
-      // The text part shows its link button once rendered.
-      requestAnimationFrame(() => {
-        const button = panel.current?.querySelector<HTMLButtonElement>('[data-link] button');
-        if (button && button.getAttribute('aria-expanded') !== 'true') button.click();
-      });
-      event.preventDefault();
-    };
-    window.addEventListener('keydown', onKey);
-    return () => window.removeEventListener('keydown', onKey);
-  }, [linkable]);
+  useCommandKeyClaim(
+    linkable
+      ? () => {
+          setPart('text');
+          // The text part shows its link button once rendered.
+          requestAnimationFrame(() => {
+            const button = panel.current?.querySelector<HTMLButtonElement>('[data-link] button');
+            if (button && button.getAttribute('aria-expanded') !== 'true') button.click();
+          });
+        }
+      : null,
+  );
 
   // A panel that went takes the focus it held with it.
   if (!open && within) setWithin(false);

@@ -1,8 +1,18 @@
 import type { Slide } from '@slider/shared';
 import { isApplePlatform } from '@/lib/platform';
+import type { MenuAction } from '@/ui';
 
 /** ⌥P on Apple platforms, Alt P elsewhere: the presenter view. */
 export const presenterShortcut = () => (isApplePlatform() ? '⌥P' : 'Alt P');
+
+/** What shows: the slide show or the presenter view – the button's menu and ⌘K's (`DeckCommands`). */
+export const presentActions = (
+  onPresent: () => void,
+  onPresenterView: () => void,
+): MenuAction[] => [
+  { label: 'Präsentieren', icon: 'slideshow', onSelect: onPresent },
+  { label: 'Referentenansicht', icon: 'notes', onSelect: onPresenterView },
+];
 
 /**
  * The slides a presentation shows: like PowerPoint without the hidden ones, even while the

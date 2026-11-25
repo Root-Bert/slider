@@ -51,7 +51,13 @@ function NameField({
       placeholder={placeholder}
       maxLength={100}
       onChange={(event) => type(event.target.value)}
-      onBlur={commit}
+      onBlur={(event) => {
+        // Into a dialog over the page (⌘K's panel): it gives the focus back, the name is not done
+        // yet – sent, it would start the field over (keyed by it) and the caret be gone.
+        if (event.relatedTarget instanceof Element && event.relatedTarget.closest('dialog[open]'))
+          return;
+        commit();
+      }}
       onKeyDown={(event) => {
         if (event.key === 'Enter') event.currentTarget.blur();
         if (event.key === 'Escape') {

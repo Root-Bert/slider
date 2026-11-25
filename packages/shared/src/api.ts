@@ -258,17 +258,21 @@ export interface MeResponse {
 export const USER_NAME_MAX = 80;
 
 /**
- * The viewer's own settings: their accent colour (pins, lines, drawings) and the name others see
- * (BER-145: people correct it themselves). Either or both.
+ * The viewer's own settings: their accent colour (pins, lines, drawings), the name others see
+ * (BER-145: people correct it themselves) and whether Cloud's file names show their ending. Any of
+ * them.
  */
 export const updateMeInputSchema = z
   .object({
     color: accentColorSchema.optional(),
     name: z.string().trim().min(1, 'Der Name darf nicht leer sein.').max(USER_NAME_MAX).optional(),
+    showExtensions: z.boolean().optional(),
   })
-  .refine((input) => input.color !== undefined || input.name !== undefined, {
-    message: 'Nichts zu ändern.',
-  });
+  .refine(
+    (input) =>
+      input.color !== undefined || input.name !== undefined || input.showExtensions !== undefined,
+    { message: 'Nichts zu ändern.' },
+  );
 export type UpdateMeInput = z.infer<typeof updateMeInputSchema>;
 
 /**

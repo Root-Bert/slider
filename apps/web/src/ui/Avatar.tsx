@@ -2,6 +2,7 @@ import type { Author, CommentSource } from '@slider/shared';
 import type { ReactNode } from 'react';
 import { ringColor } from '@/lib/accent';
 import { generatedAvatar } from '@/lib/generated-avatar';
+import { usePersonPicture } from '@/lib/people-pictures';
 import { GoogleSlidesMark } from './brand/GoogleSlidesMark';
 import { cn } from './cn';
 import { Icon } from './Icon';
@@ -9,7 +10,8 @@ import { Icon } from './Icon';
 export type AvatarSize = 16 | 18 | 20 | 24 | 28 | 32 | 64;
 
 interface AvatarProps {
-  author: Pick<Author, 'name' | 'color' | 'type'>;
+  /** With its `id`, a person's own picture shows (Konto › Profil) where they chose one. */
+  author: Pick<Author, 'name' | 'color' | 'type'> & { id?: string };
   size?: AvatarSize;
   /**
    * Where an imported comment comes from: the small "P" badge for PowerPoint (BER-115), Google
@@ -26,8 +28,8 @@ interface AvatarProps {
 }
 
 /**
- * UI kit "Avatar": circle with a pastel presence ring around a DiceBear avatar seeded by the
- * name, so everyone has one (PowerPoint authors too). A deleted account shows a plain person
+ * UI kit "Avatar": circle with a pastel presence ring around the person's own picture, else a
+ * DiceBear avatar seeded by the name, so everyone has one (PowerPoint authors too). A deleted account shows a plain person
  * icon instead – no avatar that could still point to who it was (BER-145); the AI its own sign
  * (the sparkles of „KI“ everywhere else in the app) in white on a grey circle – not Slider's mark.
  */
@@ -40,6 +42,7 @@ export function Avatar({
   children,
   className,
 }: AvatarProps) {
+  const own = usePersonPicture(author.type === 'owner' ? author.id : undefined);
   // The ring is the picture's own border, so ring and picture share one circle.
   const ring = {
     borderWidth: size >= 32 ? 2 : 1.5,
@@ -64,7 +67,7 @@ export function Avatar({
         </span>
       ) : (
         <img
-          src={picture ?? generatedAvatar(author.name)}
+          src={picture ?? own ?? generatedAvatar(author.name)}
           alt=""
           className="size-full rounded-full border-solid bg-placeholder object-cover"
           style={ring}

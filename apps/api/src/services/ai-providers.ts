@@ -916,8 +916,65 @@ export async function transcribe(
     feature?: AiFeature;
   } = {},
 ): Promise<string> {
+  const body = await transcription(deps, connection, audio, options, transcriptionSchema);
+  return body.text.trim();
+}
+
+/** What a recording said and when – each piece of speech with its start and end, in seconds. */
+export interface TimedTranscript {
+  text: string;
+  /** How long the recording is, where the service says. */
+  duration: number | null;
+  segments: { start: number; end: number; text: string }[];
+  /** Each word, where the service tells them (OpenAI's Whisper) – else empty. */
+  words: { start: number; end: number; word: string }[];
+}
+
+/**
+ * {@link transcribe} with the times of what was said (`verbose_json`): the pieces of speech –
+ * and the words, where the service gives them. A service that has no times (OpenAI's newer
+ * models) answers without them: `segments` empty.
+ */
+export async function transcribeTimed(
+  deps: Pick<AppDeps, 'config' | 'aiFetch'>,
+  connection: AiConnection,
+  audio: { bytes: Uint8Array; name: string; type: string },
+  options: Parameters<typeof transcribe>[3] = {},
+): Promise<TimedTranscript> {
+  const body = await transcription(
+    deps,
+    connection,
+    audio,
+    { ...options, timed: true },
+    timedTranscriptionSchema,
+  );
+  return {
+    text: body.text.trim(),
+    duration: body.duration ?? null,
+    segments: (body.segments ?? []).map(({ start, end, text }) => ({
+      start,
+      end,
+      text: text.trim(),
+    })),
+    words: (body.words ?? []).map(({ start, end, word }) => ({ start, end, word: word.trim() })),
+  };
+}
+
+async function transcription<S extends typeof transcriptionSchema>(
+  deps: Pick<AppDeps, 'config' | 'aiFetch'>,
+  connection: AiConnection,
+  audio: { bytes: Uint8Array; name: string; type: string },
+  options: Parameters<typeof transcribe>[3] & { timed?: boolean },
+  schema: S,
+): Promise<z.infer<S>> {
   const form = new FormData();
   form.set('file', new Blob([Buffer.from(audio.bytes)], { type: audio.type }), audio.name);
+  if (options.timed) {
+    form.set('response_format', 'verbose_json');
+    form.append('timestamp_granularities[]', 'segment');
+    // Mistral takes the pieces only; OpenAI's Whisper and others the words too.
+    if (connection.provider !== 'mistral') form.append('timestamp_granularities[]', 'word');
+  }
   form.set('model', connection.model);
   if (options.language) form.set('language', options.language);
   if (connection.provider === 'mistral') {
@@ -941,7 +998,7 @@ export async function transcribe(
       body: form,
       signal: options.signal ? AbortSignal.any([options.signal, timeout]) : timeout,
     },
-    transcriptionSchema,
+    schema,
   );
   const usage = body.usage;
   connection.meter?.({
@@ -957,7 +1014,7 @@ export async function transcribe(
     inputTokens: usage?.input_tokens ?? usage?.prompt_tokens ?? 0,
     outputTokens: usage?.output_tokens ?? usage?.completion_tokens ?? 0,
   });
-  return body.text.trim();
+  return body;
 }
 
 /**
@@ -977,6 +1034,12 @@ const transcriptionSchema = z.object({
       completion_tokens: z.number().nullish(),
     })
     .nullish(),
+});
+
+/** {@link transcriptionSchema} with the times of the pieces of speech and of the words. */
+const timedTranscriptionSchema = transcriptionSchema.extend({
+  segments: z.array(z.object({ start: z.number(), end: z.number(), text: z.string() })).nullish(),
+  words: z.array(z.object({ start: z.number(), end: z.number(), word: z.string() })).nullish(),
 });
 
 /** How long a WAV recording is, from its header – `null` for anything else. */

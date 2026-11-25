@@ -1,18 +1,4 @@
-import {
-  and,
-  asc,
-  desc,
-  eq,
-  gt,
-  inArray,
-  isNotNull,
-  isNull,
-  lt,
-  ne,
-  notLike,
-  or,
-  sql,
-} from 'drizzle-orm';
+import { and, asc, desc, eq, gt, inArray, isNotNull, isNull, lt, ne, or, sql } from 'drizzle-orm';
 import {
   MAX_SENDER_GROUP,
   MAX_SENDER_MESSAGE,
@@ -46,11 +32,9 @@ import {
 } from '@slider/shared';
 import type { Executor } from '../db/client';
 import {
-  cloudAgentMessages,
   cloudAgents,
   cloudAreaMembers,
   cloudAreas,
-  senderAgentReads,
   senderChannelAgents,
   senderChannels,
   senderFiles,
@@ -66,20 +50,15 @@ import {
 } from '../db/schema';
 import type { AppDeps } from '../deps';
 import { badRequest, forbidden, notFound } from '../http/errors';
-import {
-  claimAttachments,
-  copyAttachments,
-  deleteAttachments,
-  dropUnkeptCopies,
-  withFileNames,
-} from './attachments';
+import { claimAttachments, deleteAttachments, withFileNames } from './attachments';
 import { attachmentsOf } from './purge-attachments';
+import { dropAgentChats } from './agent-chats';
 import { keepSenderFiles } from './sender-files';
 import { ownerAuthor } from '../authors';
 import { cloudAccessAtLeast } from '@slider/shared';
 import { areaAccess, cloudContext, requireArea, type CloudCtx } from './cloud/context';
 import { audienceShrank } from './call-audience';
-import { TAG_CHATS } from './cloud-agent-runs';
+import { atLeast } from './workspaces/roles';
 import { callBriefs } from './call-records';
 import {
   agentFor,
@@ -118,7 +97,11 @@ export class SenderLive {
 
   /** Told of every event published (the start's AI look made anew in the background). */
   watch(
-    watcher: (workspaceId: string, audience: ReadonlySet<string> | null, event: SenderEvent) => void,
+    watcher: (
+      workspaceId: string,
+      audience: ReadonlySet<string> | null,
+      event: SenderEvent,
+    ) => void,
   ): () => void {
     this.watchers.add(watcher);
     return () => this.watchers.delete(watcher);
@@ -251,15 +234,24 @@ export async function announceAgent(deps: Deps, ...rows: CloudAgentRow[]): Promi
   }
 }
 
-interface Seen {
+export interface Seen {
   row: SenderChannelRow;
   ctx: CloudCtx;
   /** The caller's place in it (read state; for groups and direct ones: membership). */
   readSeq: number | null;
 }
 
-/** A conversation the caller sees (404 otherwise – as if it were not there). */
-async function seen(deps: Deps, userId: string, channelId: string): Promise<Seen> {
+/**
+ * A conversation the caller sees (404 otherwise – as if it were not there). A chat with an agent
+ * (`agentChats`) only for what is done to its messages – reactions, changes – and seen by who sees
+ * the agent; written and read through the agent (`cloud-agents.ts`).
+ */
+async function seen(
+  deps: Deps,
+  userId: string,
+  channelId: string,
+  agentChats = false,
+): Promise<Seen> {
   const [row] = await deps.db.select().from(senderChannels).where(eq(senderChannels.id, channelId));
   if (!row) throw channelNotFound();
   let ctx: CloudCtx;
@@ -272,7 +264,11 @@ async function seen(deps: Deps, userId: string, channelId: string): Promise<Seen
     .select({ readSeq: senderMembers.readSeq })
     .from(senderMembers)
     .where(and(eq(senderMembers.channelId, row.id), eq(senderMembers.userId, userId)));
-  if (inArea(row)) {
+  if (row.kind === 'agent') {
+    const agent = agentChats ? await agentOf(deps.db, row) : null;
+    const audience = agent && (await agentAudience(deps.db, agent));
+    if (!agent || (audience && !audience.has(userId))) throw channelNotFound();
+  } else if (inArea(row)) {
     if (!row.areaId || !ctx.areas.get(row.areaId)?.access) throw channelNotFound();
   } else if (!mine) {
     throw channelNotFound();
@@ -581,6 +577,19 @@ async function oneChannel(deps: Deps, ctx: CloudCtx, userId: string, row: Sender
   return channelDto(ctx, userId, row, { people, members, unread, agents, pins, muted });
 }
 
+/**
+ * An agent's answers in its chats the caller has not read – one's own call with it is no news to
+ * oneself, to the others who see it it is (`agentUnread`, `unreadAgentLines` in sender-news).
+ */
+export const unreadAnswers = (userId: string) =>
+  and(
+    eq(senderChannels.kind, 'agent'),
+    isNotNull(senderMessages.agentId),
+    isNull(senderMessages.deletedAt),
+    or(isNull(senderMessages.callId), ne(senderMessages.userId, userId)),
+    gt(senderMessages.seq, sql`coalesce(${senderMembers.readSeq}, 0)`),
+  );
+
 /** Unread answers of the caller's agents – their own always, others' once opened here. */
 async function agentUnread(
   db: Executor,
@@ -590,28 +599,16 @@ async function agentUnread(
   const result = new Map<string, number>();
   if (agentIds.length === 0) return result;
   const rows = await db
-    .select({ agentId: cloudAgentMessages.agentId, count: sql<number>`count(*)::int` })
-    .from(cloudAgentMessages)
+    .select({ agentId: senderChannels.agentId, count: sql<number>`count(*)::int` })
+    .from(senderMessages)
+    .innerJoin(senderChannels, eq(senderChannels.id, senderMessages.channelId))
     .leftJoin(
-      senderAgentReads,
-      and(
-        eq(senderAgentReads.agentId, cloudAgentMessages.agentId),
-        eq(senderAgentReads.userId, userId),
-      ),
+      senderMembers,
+      and(eq(senderMembers.channelId, senderMessages.channelId), eq(senderMembers.userId, userId)),
     )
-    .where(
-      and(
-        inArray(cloudAgentMessages.agentId, [...agentIds]),
-        eq(cloudAgentMessages.role, 'assistant'),
-        // A tag chat's answers are posted in its conversation – read there.
-        notLike(cloudAgentMessages.chatId, TAG_CHATS),
-        // One's own call with it is no news to oneself – to the others who see it, it is.
-        or(isNull(cloudAgentMessages.callId), ne(cloudAgentMessages.userId, userId)),
-        gt(cloudAgentMessages.seq, sql`coalesce(${senderAgentReads.readSeq}, 0)`),
-      ),
-    )
-    .groupBy(cloudAgentMessages.agentId);
-  for (const row of rows) result.set(row.agentId, row.count);
+    .where(and(inArray(senderChannels.agentId, [...agentIds]), unreadAnswers(userId)))
+    .groupBy(senderChannels.agentId);
+  for (const row of rows) if (row.agentId) result.set(row.agentId, row.count);
   return result;
 }
 
@@ -813,31 +810,59 @@ export async function senderHome(
   };
 }
 
+/** Of these agents those whose chats the caller read once. */
 async function openedAgents(db: Executor, userId: string, agentIds: readonly string[]) {
   if (agentIds.length === 0) return [];
   const rows = await db
-    .select({ agentId: senderAgentReads.agentId })
-    .from(senderAgentReads)
+    .selectDistinct({ agentId: senderChannels.agentId })
+    .from(senderMembers)
+    .innerJoin(senderChannels, eq(senderChannels.id, senderMembers.channelId))
     .where(
-      and(eq(senderAgentReads.userId, userId), inArray(senderAgentReads.agentId, [...agentIds])),
+      and(
+        eq(senderMembers.userId, userId),
+        eq(senderChannels.kind, 'agent'),
+        inArray(senderChannels.agentId, [...agentIds]),
+      ),
     );
-  return rows.map((row) => row.agentId);
+  return rows.flatMap((row) => (row.agentId ? [row.agentId] : []));
 }
 
-/** The caller read an agent's answers up to its latest (its page asks on while open). */
-export async function readAgent(db: Executor, userId: string, agentId: string): Promise<void> {
-  const [latest] = await db
-    .select({ seq: sql<number>`coalesce(max(${cloudAgentMessages.seq}), 0)::int` })
-    .from(cloudAgentMessages)
-    .where(eq(cloudAgentMessages.agentId, agentId));
-  const seq = latest?.seq ?? 0;
+/**
+ * The caller read an agent's chats up to their latest (its page asks on while open). `true`:
+ * something was unread – their side bars are to ask again (`readAgentHere`).
+ */
+export async function readAgent(db: Executor, userId: string, agentId: string): Promise<boolean> {
+  const chats = await db
+    .select({ id: senderChannels.id, seq: senderChannels.lastSeq, read: senderMembers.readSeq })
+    .from(senderChannels)
+    .leftJoin(
+      senderMembers,
+      and(eq(senderMembers.channelId, senderChannels.id), eq(senderMembers.userId, userId)),
+    )
+    .where(and(eq(senderChannels.kind, 'agent'), eq(senderChannels.agentId, agentId)));
+  if (!chats.some((chat) => (chat.read ?? 0) < chat.seq)) return false;
   await db
-    .insert(senderAgentReads)
-    .values({ agentId, userId, readSeq: seq })
+    .insert(senderMembers)
+    .values(chats.map((chat) => ({ channelId: chat.id, userId, readSeq: chat.seq })))
     .onConflictDoUpdate({
-      target: [senderAgentReads.agentId, senderAgentReads.userId],
-      set: { readSeq: seq },
+      target: [senderMembers.channelId, senderMembers.userId],
+      set: { readSeq: sql`excluded.read_seq` },
     });
+  return true;
+}
+
+/**
+ * The agent's page open: what came in is read – and the reader's side bars, which may have
+ * counted it a moment before (the answer's own news), ask again.
+ */
+export async function readAgentHere(
+  deps: Deps,
+  userId: string,
+  agent: Pick<CloudAgentRow, 'id' | 'workspaceId'>,
+): Promise<void> {
+  if (!(await readAgent(deps.db, userId, agent.id))) return;
+  if (senderLive.open(agent.workspaceId))
+    senderLive.publish(agent.workspaceId, new Set([userId]), { type: 'channels' });
 }
 
 function messageDto(
@@ -1020,6 +1045,8 @@ async function append(
   /** Files its writer put on it (`claimAttachments`). */
   attachmentIds: readonly string[] = [],
   replyTo: string | null = null,
+  /** A planned one's own id (sender-scheduled.ts): posted twice, the second is refused. */
+  id: string = crypto.randomUUID(),
 ): Promise<{ message: SenderMessageRow; people: Map<string, AccountAuthor> }> {
   const people = await peopleOf(deps.db, row.workspaceId);
   const mentions = await mentionsHere(deps.db, row, text, people, author.userId);
@@ -1038,7 +1065,7 @@ async function append(
     const [inserted] = await tx
       .insert(senderMessages)
       .values({
-        id: crypto.randomUUID(),
+        id,
         channelId: row.id,
         seq: bumped.seq,
         userId: author.userId,
@@ -1116,40 +1143,19 @@ async function pushNew(
   });
 }
 
-/** Of these people, who muted the conversation. */
-async function mutedBy(db: Executor, channelId: string, userIds: readonly string[]) {
-  const rows = await db
-    .select({ userId: senderMembers.userId })
-    .from(senderMembers)
-    .where(
-      and(
-        eq(senderMembers.channelId, channelId),
-        eq(senderMembers.muted, true),
-        inArray(senderMembers.userId, [...userIds]),
-      ),
-    );
-  return new Set(rows.map((each) => each.userId));
-}
-
-async function announce(deps: Deps, row: SenderChannelRow, event: SenderEvent) {
-  if (!senderLive.open(row.workspaceId)) return;
-  senderLive.publish(row.workspaceId, await audienceOf(deps.db, row), event);
-}
-
-export async function postMessage(
-  deps: AppDeps,
+/**
+ * That the caller may write in it now – sees it, more than reads along, the other one of a direct
+ * conversation still there, the message answered still there. For a message planned to go later
+ * too (`sender-scheduled.ts`), when planned and again when it goes.
+ */
+export async function checkPost(
+  deps: Deps,
   userId: string,
   channelId: string,
-  text: string,
-  /** Who writes, to set the agent tagged there to work as them. */
-  viewer?: Viewer,
-  /** Files put on it – words or files, one of them at least. */
-  attachmentIds: readonly string[] = [],
-  /** „Antworten“: a message of this conversation, quoted above it. */
-  replyTo?: string,
-): Promise<SenderMessage> {
-  if (!text.trim() && attachmentIds.length === 0) throw badRequest('Schreib etwas.');
-  const { row, ctx } = await seen(deps, userId, channelId);
+  replyTo?: string | null,
+): Promise<Seen> {
+  const found = await seen(deps, userId, channelId);
+  const { row, ctx } = found;
   if (inArea(row) && ctx.role === 'viewer') throw forbidden(READS_ALONG);
   if (row.kind === 'direct') {
     const ids = await memberIds(deps.db, row.id);
@@ -1168,6 +1174,74 @@ export async function postMessage(
       );
     if (!answered) throw badRequest('Diese Nachricht gibt es nicht (mehr).');
   }
+  return found;
+}
+/** Of these people, who muted the conversation. */
+async function mutedBy(db: Executor, channelId: string, userIds: readonly string[]) {
+  const rows = await db
+    .select({ userId: senderMembers.userId })
+    .from(senderMembers)
+    .where(
+      and(
+        eq(senderMembers.channelId, channelId),
+        eq(senderMembers.muted, true),
+        inArray(senderMembers.userId, [...userIds]),
+      ),
+    );
+  return new Set(rows.map((each) => each.userId));
+}
+
+async function announce(deps: Deps, row: SenderChannelRow, event: SenderEvent) {
+  if (!senderLive.open(row.workspaceId)) return;
+  // A chat with an agent: who sees the agent asks for it again.
+  if (row.kind === 'agent') {
+    const agent = await agentOf(deps.db, row);
+    if (agent) await announceAgent(deps, agent);
+    return;
+  }
+  senderLive.publish(row.workspaceId, await audienceOf(deps.db, row), event);
+}
+
+/** The agent a chat with an agent is with. */
+async function agentOf(db: Executor, row: SenderChannelRow): Promise<CloudAgentRow | null> {
+  if (!row.agentId) return null;
+  const [agent] = await db.select().from(cloudAgents).where(eq(cloudAgents.id, row.agentId));
+  return agent ?? null;
+}
+
+/**
+ * Messages of chats with an agent as any conversation's are shown – reactions, the message each
+ * answers, calls (`getCloudAgent`, which adds what only an agent's has).
+ */
+export async function agentChatDtos(
+  deps: AppDeps,
+  workspaceId: string,
+  rows: readonly SenderMessageRow[],
+): Promise<SenderMessage[]> {
+  const people = await peopleOf(deps.db, workspaceId);
+  const calls = await callBriefs(
+    deps,
+    rows.flatMap((each) => (each.callId ? [each.callId] : [])),
+  );
+  return fullDtos(deps.db, people, await agentTitles(deps.db, rows), calls, rows);
+}
+
+export async function postMessage(
+  deps: AppDeps,
+  userId: string,
+  channelId: string,
+  text: string,
+  /** Who writes, to set the agent tagged there to work as them. */
+  viewer?: Viewer,
+  /** Files put on it – words or files, one of them at least. */
+  attachmentIds: readonly string[] = [],
+  /** „Antworten“: a message of this conversation, quoted above it. */
+  replyTo?: string,
+  /** A planned one posts under its own id. */
+  id?: string,
+): Promise<SenderMessage> {
+  if (!text.trim() && attachmentIds.length === 0) throw badRequest('Schreib etwas.');
+  const { row, ctx } = await checkPost(deps, userId, channelId, replyTo);
   const { message, people } = await append(
     deps,
     row,
@@ -1177,6 +1251,7 @@ export async function postMessage(
     null,
     attachmentIds,
     replyTo ?? null,
+    id,
   );
   const [dto] = await fullDtos(deps.db, people, new Map(), new Map(), [message]);
   if (!dto) throw messageNotFound();
@@ -1315,8 +1390,10 @@ async function areaOwnAgent(
     );
   agentId = await conversationAgentId(deps.db, { ...row, agentId: null });
   // Tagged twice at once: the one kept first stays.
-  if (agentId !== made.id) await deps.db.delete(cloudAgents).where(eq(cloudAgents.id, made.id));
-  else await channelsChanged(deps, row);
+  if (agentId !== made.id) {
+    await dropAgentChats(deps.db, eq(senderChannels.agentId, made.id));
+    await deps.db.delete(cloudAgents).where(eq(cloudAgents.id, made.id));
+  } else await channelsChanged(deps, row);
   return agentId;
 }
 
@@ -1355,11 +1432,10 @@ async function callAgent(
       (each) =>
         `[${each.createdAt}] ${each.agent ? `${each.agent.title} (Agent)` : (each.author?.name ?? 'jemand, der nicht mehr da ist')}: ${withFileNames(each.text.replace(/\s+/g, ' '), each.attachments ?? [])}`,
     );
-  // The files on the message that called it: the agent looks at them too – its chat keeps its
-  // own copies (the message deleted, the agent's still open them; the agent deleted, the
-  // message keeps its own).
-  const since = deps.clock.now();
-  const files = await copyAttachments(deps, message.attachments ?? []);
+  // The files on the message that called it: the agent looks at them too – the message's own,
+  // no copies: a tag run keeps nothing in the agent's chat (what it says stands here), so a copy
+  // would be held by nothing.
+  const files = message.attachments ?? [];
   // The chat keeps what they wrote; the agent is told where, how to answer and what came before.
   await messageCloudAgent(
     deps,
@@ -1393,10 +1469,7 @@ async function callAgent(
     false,
     [],
     files,
-  ).catch(async (error: unknown) => {
-    await dropUnkeptCopies(deps, agentId, since, files);
-    throw error;
-  });
+  );
 }
 
 /**
@@ -1408,9 +1481,21 @@ export async function postAsAgent(
   agent: { id: string; title: string; userId: string },
   channelId: string,
   text: string,
+  /** A planned one posts under its own id. */
+  id?: string,
 ): Promise<SenderMessage> {
   const { row } = await seen(deps, agent.userId, channelId);
-  const { message, people } = await append(deps, row, { userId: null, agentId: agent.id }, text);
+  const { message, people } = await append(
+    deps,
+    row,
+    { userId: null, agentId: agent.id },
+    text,
+    null,
+    null,
+    [],
+    null,
+    id,
+  );
   const dto = messageDto(message, people, new Map([[agent.id, agent.title]]));
   await announce(deps, row, { type: 'message', channelId: row.id, message: dto });
   void pushNew(deps, row, dto, message.mentions ?? []).catch((error: unknown) =>
@@ -1423,19 +1508,14 @@ export async function postAsAgent(
  * An agent's own message: one it wrote itself (`agent_id`), in a conversation its person sees –
  * changed or deleted as „Bearbeiten“ and „Löschen“ do a person's own.
  */
-async function agentsMessage(
-  deps: Deps,
-  agent: { id: string; userId: string },
-  messageId: string,
-) {
+async function agentsMessage(deps: Deps, agent: { id: string; userId: string }, messageId: string) {
   const [message] = await deps.db
     .select()
     .from(senderMessages)
     .where(eq(senderMessages.id, messageId));
   if (!message || message.deletedAt) throw messageNotFound();
   const { row } = await seen(deps, agent.userId, message.channelId);
-  if (message.agentId !== agent.id)
-    throw forbidden('Nur eigene Nachrichten lassen sich ändern.');
+  if (message.agentId !== agent.id) throw forbidden('Nur eigene Nachrichten lassen sich ändern.');
   return { message, row };
 }
 
@@ -1541,7 +1621,8 @@ export async function postFromMail(
 
 /**
  * A message the caller may change – their own; `moderate`: also someone else's where the caller
- * manages the conversation (its creator, the area's managers), to delete it.
+ * manages the conversation (its creator, the area's managers), to delete it. Not in an agent's
+ * chat: who opened it does not rule over what others (or the agent) said there.
  */
 async function ownMessage(deps: Deps, userId: string, messageId: string, moderate = false) {
   const [message] = await deps.db
@@ -1549,8 +1630,10 @@ async function ownMessage(deps: Deps, userId: string, messageId: string, moderat
     .from(senderMessages)
     .where(eq(senderMessages.id, messageId));
   if (!message) throw messageNotFound();
-  const { row, ctx } = await seen(deps, userId, message.channelId);
-  const allowed = message.userId === userId || (moderate && manages(ctx, userId, row));
+  const { row, ctx } = await seen(deps, userId, message.channelId, true);
+  const allowed =
+    (message.userId === userId && !message.agentId) ||
+    (moderate && row.kind !== 'agent' && manages(ctx, userId, row));
   if (!allowed || message.callId) throw forbidden('Nur eigene Nachrichten lassen sich ändern.');
   if (message.deletedAt) throw messageNotFound();
   return { message, row };
@@ -1595,8 +1678,11 @@ export async function reactToMessage(
     .where(eq(senderMessages.id, messageId));
   // A call's entry takes none.
   if (!message || message.deletedAt || message.callId) throw messageNotFound();
-  const { row, ctx } = await seen(deps, userId, message.channelId);
+  const { row, ctx } = await seen(deps, userId, message.channelId, true);
   if (inArea(row) && ctx.role === 'viewer') throw forbidden(READS_ALONG);
+  // In an agent's chat members and admins write; others read along (`canWrite`).
+  if (row.kind === 'agent' && !atLeast(ctx.role, 'member'))
+    throw forbidden('Hier schreiben Mitglieder und Admins des Workspace.');
   if (kind) {
     await deps.db
       .insert(senderReactions)

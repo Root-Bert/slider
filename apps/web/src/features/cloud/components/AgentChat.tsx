@@ -1,38 +1,80 @@
-import { useEffect, useRef } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useNavigate } from 'react-router';
-import {
-  isTagChat,
-  type Attachment,
-  type CloudAgentChat,
-  type CloudAgentDetail,
+import type {
+  AccountAuthor,
+  Attachment,
+  CloudAgentChat,
+  CloudAgentDetail,
+  CloudAgentMessage,
+  SenderMessage,
 } from '@slider/shared';
-import { tellTypingInCloudAgent, useMessageCloudAgent, useStopCloudAgent } from '@/lib/api';
-import { chatMatches, useMarkedMatches, useShowHit } from '@/lib/chat-search';
+import {
+  tellTypingInCloudAgent,
+  useDeleteSenderMessage,
+  useEditSenderMessage,
+  useMe,
+  useMessageCloudAgent,
+  usePlaceAgentMessage,
+  useReactSenderMessage,
+  useStopCloudAgent,
+} from '@/lib/api';
 import { draftKeys } from '@/lib/drafts';
 import { routes } from '@/lib/routes';
-import { ChatAnswer, ChatMessage } from '@/features/viewer';
-import { Avatar, cn, Icon } from '@/ui';
-import { useCloud } from '../hooks/useCloud';
+import { AnswerBody } from '@/features/viewer';
+import { MessageList, quoteOf, ReplyQuote, TypingLine, useSenderOrNull } from '@/features/sender';
+import { cn, ConfirmDialog, Icon, IconButton } from '@/ui';
+import { useCloudOrNull, type CloudUi } from '../hooks/useCloud';
 import { choicesIn, withoutChoices } from '../lib/choices';
 import { plainNamed, type Named } from '../lib/named';
-import { messageWords } from '../lib/message-words';
-import { AgentAvatar } from './AgentAvatar';
 import { AgentComposer } from './AgentComposer';
 import { AgentAsks } from './AgentAsks';
 import { AgentChoices, AgentWatching } from './AgentWatching';
 import { useShownCall } from './CallPanel';
-import { CallEntry } from './CallRecord';
 import { WithNamed } from './Named';
 
-/** Opens what an answer named: a file shows its details beside, the rest is gone to. */
-function useOpenNamed() {
-  const ui = useCloud();
+/** Opens what an answer named in Cloud: a file shows its details beside, the rest is gone to. */
+function useOpenNamed(cloud: CloudUi | null) {
   const navigate = useNavigate();
+  if (!cloud) return undefined;
   return (named: Named) => {
-    if (named.kind === 'file') ui.openFile(named.id);
-    else if (named.kind === 'folder') void navigate(routes.cloudFolder(ui.workspace.id, named.id));
-    else if (named.kind === 'area') void navigate(routes.cloudArea(ui.workspace.id, named.id));
+    if (named.kind === 'file') cloud.openFile(named.id);
+    else if (named.kind === 'folder')
+      void navigate(routes.cloudFolder(cloud.workspace.id, named.id));
+    else if (named.kind === 'area') void navigate(routes.cloudArea(cloud.workspace.id, named.id));
     else void navigate(routes.deck(named.id));
+  };
+}
+
+/**
+ * What the chat needs of the app it stands in – one chat in both: in Cloud a named file opens
+ * beside and a call over the page; in Sender (an agent as a conversation) what it names opens in
+ * its app (`WithNamed`'s own way) and a call on Sender's page of it.
+ */
+function useChatPlace(agentId: string) {
+  const cloud = useCloudOrNull();
+  const sender = useSenderOrNull();
+  const shownCall = useShownCall();
+  const openNamed = useOpenNamed(cloud);
+  const me = useMe().data?.viewer.author ?? null;
+  if (cloud) {
+    return {
+      workspaceId: cloud.workspace.id,
+      me,
+      people: [] as AccountAuthor[],
+      notify: (text: string, tone?: 'neutral' | 'danger') => cloud.notify(text, tone),
+      callHref: shownCall.href,
+      openNamed,
+    };
+  }
+  if (!sender) throw new Error('AgentChat must be used in Cloud or Sender');
+  const workspaceId = sender.workspace.id;
+  return {
+    workspaceId,
+    me: sender.me,
+    people: sender.home?.people ?? [],
+    notify: (text: string, tone?: 'neutral' | 'danger') => sender.notify(text, tone),
+    callHref: (callId: string) => routes.messagesAgentCall(workspaceId, agentId, callId),
+    openNamed,
   };
 }
 
@@ -47,23 +89,14 @@ function scrollParent(element: HTMLElement) {
   return null;
 }
 
-/** „Vera schreibt …“ – who is writing a message in the chat right now. */
-function Typing({ chat }: { chat: CloudAgentChat }) {
-  const [first, ...more] = chat.typing;
-  if (!first) return null;
-  return (
-    <p aria-live="polite" className="flex shrink-0 items-center gap-2 px-1 text-xs text-fg-subtle">
-      <Avatar author={first} size={16} nativeTitle={false} />
-      {more.length === 0
-        ? `${first.name} schreibt …`
-        : `${first.name} und ${more.length === 1 ? (more[0]?.name ?? '') : `${more.length} weitere`} schreiben …`}
-    </p>
-  );
-}
+const NO_OLDER = { more: false, loading: false, load: () => {} };
 
 /**
  * The agent's chat – `chat` null: none yet, it starts with the first message. Everyone who may
- * write writes here, and sees the others doing it.
+ * write writes here, and sees the others doing it. A conversation like any (`MessageList`, the
+ * field every conversation has): reacted to, answered, changed – the agent's answers with how
+ * they stand, what it asks to confirm, the choices it offers. Cloud's page, Sender's
+ * (`AgentChatPage`), beside a mail.
  */
 export function AgentChat({
   agent,
@@ -80,49 +113,53 @@ export function AgentChat({
   /** The field focused as it shows – by default only in an empty chat. */
   autoFocus?: boolean;
   /** Writes to the open chat in place of the plain message (beside a mail: which one). */
-  onSend?: (text: string, chatId: string, attachments: Attachment[]) => Promise<boolean>;
+  onSend?: (
+    text: string,
+    chatId: string,
+    attachments: Attachment[],
+    replyTo?: string,
+  ) => Promise<boolean>;
   /** The chat's search: only the messages it finds, marked (`lib/chat-search.ts`). */
   search?: { query: string; clear: () => void };
 }) {
-  const ui = useCloud();
-  const shownCall = useShownCall();
-  const message = useMessageCloudAgent(ui.workspace.id, agent.id);
-  const stop = useStopCloudAgent(ui.workspace.id, agent.id);
-  const listRef = useRef<HTMLOListElement>(null);
+  const ui = useChatPlace(agent.id);
+  const chatId = chat?.id ?? agent.id;
+  const message = useMessageCloudAgent(ui.workspaceId, agent.id);
+  const stop = useStopCloudAgent(ui.workspaceId, agent.id);
+  const place = usePlaceAgentMessage(ui.workspaceId, agent.id);
+  const edit = useEditSenderMessage(ui.workspaceId, chatId, place);
+  const remove = useDeleteSenderMessage(ui.workspaceId, chatId, place);
+  const react = useReactSenderMessage(
+    ui.workspaceId,
+    chatId,
+    ui.me ?? { id: '', name: '', type: 'owner', color: 'blue' },
+    place,
+  );
   const composerRef = useRef<HTMLDivElement>(null);
-  // Follows the answer while it is written, unless one scrolled up to read. Inline (the field
-  // stuck at the column's foot): once as one writes, then only while the column stands (nearly)
-  // at its end – opened, the column stays put.
-  const pinned = useRef(!inline);
+  const [editing, setEditing] = useState<string | null>(null);
+  const [replying, setReplying] = useState<SenderMessage | null>(null);
+  const [deleting, setDeleting] = useState<SenderMessage | null>(null);
+  // The „Neu“ line stands before what was unread when the chat opened – an answer of the agent's
+  // or another's words, done; not one's own, not the answer being written (that one is watched),
+  // nor what comes in while one looks (its page reads it as it asks).
+  const [readSeq] = useState(() => {
+    const news = chat?.messages.findLast(
+      (each) => each.state !== 'answering' && each.author?.id !== ui.me?.id,
+    );
+    return chat && news && chat.readSeq < news.seq ? chat.readSeq : Number.MAX_SAFE_INTEGER;
+  });
+  // Inline (the field stuck at the column's foot): once as one writes, then only while the
+  // column stands (nearly) at its end – opened, the column stays put.
+  const pinned = useRef(false);
   const shown = useRef(false);
-  // A scroll bar that takes room (a mouse, macOS' „always show“) stands out to the right in the
-  // gap beside, so the messages end flush with the field under them – not a bar's width further in.
-  useEffect(() => {
-    const list = listRef.current;
-    if (inline || !list) return;
-    const fit = () => {
-      const bar = list.offsetWidth - list.clientWidth;
-      list.style.marginRight = bar > 0 ? `-${bar}px` : '';
-    };
-    const watch = new ResizeObserver(fit);
-    watch.observe(list);
-    return () => watch.disconnect();
-  }, [inline]);
+  const counted = useRef(0);
   const messages = chat?.messages ?? [];
+  const byId = new Map(messages.map((each) => [each.id, each]));
   const last = messages.at(-1);
-  const query = search?.query.trim() ?? '';
-  const searching = query !== '';
-  useMarkedMatches(listRef, query);
-  const showHit = useShowHit(listRef, searching, () => search?.clear());
-  const shownMessages = searching
-    ? messages.filter((each) => chatMatches(messageWords(each), query))
-    : messages;
-  const openNamed = useOpenNamed();
+  const searching = (search?.query.trim() ?? '') !== '';
   // What it noticed where it watches stands in its first chat, where it then works on it.
   const watching = chat?.id === agent.id ? agent.watching : [];
-  // Where it was called in a conversation it is written to only there (`@Agent`).
-  const tagged = chat !== null && isTagChat(chat.id);
-  const canWrite = agent.canWrite && !tagged;
+  const canWrite = agent.canWrite;
   // A question of its own with answers to pick: under its last message, until answered.
   const choices =
     chat &&
@@ -133,143 +170,157 @@ export function AgentChat({
     !last.call
       ? choicesIn(last.text)
       : [];
+  const fail = (error: Error) => ui.notify(error.message, 'danger');
   const send = (text: string, attachments: Attachment[] = []) => {
     pinned.current = true;
-    if (chat && onSend) return onSend(text, chat.id, attachments);
-    return message.mutateAsync({ text, attachments, chatId: chat?.id ?? agent.id }).then(
-      () => true,
-      (error: Error) => {
-        ui.notify(error.message, 'danger');
-        return false;
-      },
-    );
+    const replyTo = replying?.id;
+    setReplying(null);
+    const sent =
+      chat && onSend
+        ? onSend(text, chat.id, attachments, replyTo)
+        : message.mutateAsync({ text, attachments, chatId, replyTo }).then(
+            () => true,
+            (error: Error) => {
+              fail(error);
+              return false;
+            },
+          );
+    // Not sent: the words stay in the field (the composer keeps them), the quote above them.
+    return sent.then((ok) => {
+      if (!ok && replyTo) setReplying(byId.get(replyTo) ?? null);
+      return ok;
+    });
+  };
+  const reply = (each: SenderMessage) => {
+    setReplying(each);
+    composerRef.current?.querySelector<HTMLElement>('textarea, [contenteditable="true"]')?.focus();
+  };
+  const agentsOwn = (each: SenderMessage) => {
+    const full = byId.get(each.id);
+    return full?.role === 'assistant' && !full.call ? full : null;
   };
   useEffect(() => {
-    const list = listRef.current;
-    if (inline) {
-      const field = composerRef.current;
-      const column = field && scrollParent(field);
-      const first = !shown.current;
-      shown.current = true;
-      if (!field || !column || first) return;
-      // How far the column stands from its end: scrolled up to read, far.
-      const below = column.scrollHeight - column.scrollTop - column.clientHeight;
-      if (pinned.current || below < FOLLOW_PX) column.scrollTop = column.scrollHeight;
-      pinned.current = false;
-      return;
-    }
-    if (list && pinned.current) list.scrollTop = list.scrollHeight;
-  }, [inline, last?.text, chat?.doing, messages.length, watching.length, choices.length]);
+    if (!inline) return;
+    const arrived = messages.length !== counted.current;
+    counted.current = messages.length;
+    const field = composerRef.current;
+    const column = field && scrollParent(field);
+    const first = !shown.current;
+    shown.current = true;
+    if (!field || !column || first) return;
+    // How far the column stands from its end: scrolled up to read, far.
+    const below = column.scrollHeight - column.scrollTop - column.clientHeight;
+    if (pinned.current || below < FOLLOW_PX) column.scrollTop = column.scrollHeight;
+    // Written: followed until it stands there (not used up by the quote going as it is sent).
+    if (arrived) pinned.current = false;
+  }, [
+    inline,
+    last?.text,
+    chat?.doing,
+    messages.length,
+    watching.length,
+    choices.length,
+    // The quote above the field takes room: the column follows as it does for a message.
+    replying?.id,
+  ]);
+  const lastOwn = ui.me
+    ? [...messages]
+        .reverse()
+        .find((each) => !each.deleted && each.role === 'user' && each.author?.id === ui.me?.id)
+    : undefined;
   return (
     <section
       aria-label="Chat"
       className={cn('flex min-w-0 flex-col gap-3', !inline && 'min-h-0 flex-1')}
     >
-      <ol
-        ref={listRef}
-        onScroll={(event) => {
-          const list = event.currentTarget;
-          pinned.current = list.scrollHeight - list.scrollTop - list.clientHeight < 24;
-        }}
-        // No frame: the chat stands free on the page, as in Sender, and reaches up to the chats'
-        // row – a message fades out right under it, with room above the first one.
-        className={cn(
-          'flex flex-col gap-4 select-text',
-          !inline &&
-            'roll-away-list -mt-5 min-h-0 flex-1 overflow-y-auto overscroll-contain pt-12 pb-3',
-        )}
-      >
-        {searching && shownMessages.length === 0 && (
-          <li className="m-auto text-body text-fg-muted">Nichts gefunden.</li>
-        )}
-        {shownMessages.map((each) => (
-          <li
-            key={each.id}
-            data-message={each.id}
-            onClick={showHit(each.id)}
-            className={cn('flex flex-col', searching && 'cursor-pointer')}
-          >
-            {each.call ? (
-              // A call with it: one entry that opens the call's page.
-              <CallEntry call={each.call} to={shownCall.href(each.call.id)} />
-            ) : each.role === 'user' ? (
-              <ChatMessage
-                text={each.text}
-                attachments={each.attachments}
-                above={
-                  each.author && (
-                    <>
-                      {chat?.calledIn && (
-                        // Where it was called, before who called it: the chat keeps their words alone.
-                        <span className="flex min-w-0 items-center gap-1">
-                          <Icon name="at" size={16} />
-                          <span className="truncate">{chat.calledIn}</span>
-                          {each.author.id !== ui.userId && <span aria-hidden>|</span>}
-                        </span>
-                      )}
-                      {each.author.id !== ui.userId && each.author.name}
-                      <Avatar author={each.author} size={20} nativeTitle={false} />
-                    </>
-                  )
-                }
-                onCopied={(ok) =>
-                  ui.notify(ok ? 'Nachricht kopiert' : 'Nicht kopiert', ok ? 'neutral' : 'danger')
-                }
-              />
-            ) : (
-              <ChatAnswer
-                // Who answers: the agent with its picture, as a person has theirs.
-                above={
-                  <>
-                    <AgentAvatar id={agent.id} size={22} className="rounded-mark" />
-                    <span className="truncate">
-                      {each.fromChat ? `Aus dem Chat „${each.fromChat}“` : agent.title}
-                    </span>
-                  </>
-                }
+      {ui.me && (
+        <MessageList
+          conversationId={chatId}
+          messages={messages}
+          readSeq={readSeq}
+          me={ui.me}
+          people={ui.people}
+          editing={editing}
+          older={NO_OLDER}
+          intro={null}
+          inline={inline}
+          onEditing={setEditing}
+          onSave={(each, text) =>
+            edit.mutate({ id: each.id, text, before: each }, { onError: fail })
+          }
+          onDelete={setDeleting}
+          readOnly={!canWrite}
+          onReact={
+            canWrite
+              ? (each, kind) => react.mutate({ before: each, kind }, { onError: fail })
+              : undefined
+          }
+          onReply={canWrite ? reply : undefined}
+          callHref={ui.callHref}
+          search={search}
+          writing={(each) => byId.get(each.id)?.state === 'answering'}
+          copyOf={(each) => (agentsOwn(each) ? plainNamed(withoutChoices(each.text)) : each.text)}
+          body={(each) => {
+            const answer = agentsOwn(each);
+            if (!answer) return undefined;
+            const writing = answer.state === 'answering';
+            return (
+              <AnswerBody
                 entry={{
-                  id: each.id,
-                  role: 'assistant',
-                  text: withoutChoices(each.text),
-                  state: each.state ?? 'done',
-                  reading: each.state === 'answering' ? (chat?.doing ?? null) : null,
-                  readingIn: each.state === 'answering' ? (chat?.doingIn ?? null) : null,
-                  error: each.error,
+                  text: withoutChoices(answer.text),
+                  state: answer.state ?? 'done',
+                  reading: writing ? (chat?.doing ?? null) : null,
+                  readingIn: writing ? (chat?.doingIn ?? null) : null,
+                  error: answer.error,
                 }}
                 renderText={(run) => (
-                  <WithNamed text={run} workspaceId={ui.workspace.id} onOpen={openNamed} />
+                  <WithNamed text={run} workspaceId={ui.workspaceId} onOpen={ui.openNamed} />
                 )}
-                copyText={(text) => plainNamed(withoutChoices(text))}
-                onCopied={(ok) =>
-                  ui.notify(ok ? 'Antwort kopiert' : 'Nicht kopiert', ok ? 'neutral' : 'danger')
-                }
+                rollAway={false}
               />
-            )}
-            {each.asks && each.asks.length > 0 && !searching && (
-              <AgentAsks
-                workspaceId={ui.workspace.id}
-                agentId={agent.id}
-                asks={each.asks}
-                onError={(message) => ui.notify(message, 'danger')}
-              />
-            )}
-            {each === last && !searching && (
-              <AgentChoices choices={choices} onPick={(text) => void send(text)} />
-            )}
-          </li>
-        ))}
-        {watching.length > 0 && !searching && <AgentWatching agent={agent} />}
-      </ol>
-      {chat && <Typing chat={chat} />}
+            );
+          }}
+          below={(each) => (
+            <AgentExtras
+              message={byId.get(each.id)}
+              last={each.id === last?.id}
+              searching={searching}
+              workspaceId={ui.workspaceId}
+              agentId={agent.id}
+              choices={choices}
+              onPick={(text) => void send(text)}
+              onError={(text) => ui.notify(text, 'danger')}
+            />
+          )}
+          after={watching.length > 0 && <AgentWatching agent={agent} />}
+        />
+      )}
+      {chat && <TypingLine people={chat.typing} />}
       {canWrite ? (
         <div
           ref={composerRef}
           // Inline: the field stays at the column's foot, on the page's colour – the column goes
           // under it.
-          className={cn('flex shrink-0 flex-col', inline && 'sticky bottom-0 z-10 bg-canvas pt-2')}
+          className={cn(
+            'flex shrink-0 flex-col gap-1.5',
+            inline && 'sticky bottom-0 z-10 bg-canvas pt-2',
+          )}
         >
+          {replying && (
+            <div className="flex items-center gap-2 px-1">
+              <Icon name="reply" size={16} className="shrink-0 text-fg-subtle" />
+              <ReplyQuote quote={quoteOf(replying)} className="flex-1" />
+              <IconButton
+                icon="close"
+                label="Nicht antworten"
+                size="xs"
+                variant="subtle"
+                onClick={() => setReplying(null)}
+              />
+            </div>
+          )}
           <AgentComposer
-            placeholder="Schreib dem Agenten …"
+            placeholder={`Nachricht an ${agent.title}`}
             autoFocus={autoFocus ?? !chat}
             inline={inline}
             // Its own page: typing goes in from anywhere on it; beside a mail, letters are the mail's.
@@ -280,7 +331,7 @@ export function AgentChat({
                     key: draftKeys.agent(agent.id, chat.id),
                     target: {
                       kind: 'agent',
-                      workspaceId: ui.workspace.id,
+                      workspaceId: ui.workspaceId,
                       agentId: agent.id,
                       chatId: chat.id,
                       name: agent.title,
@@ -289,25 +340,71 @@ export function AgentChat({
                   }
                 : undefined
             }
-            workspaceId={ui.workspace.id}
+            workspaceId={ui.workspaceId}
             working={Boolean(chat?.running)}
             onTyping={chat ? () => tellTypingInCloudAgent(agent.id, chat.id) : undefined}
-            onStop={
-              chat
-                ? () =>
-                    stop.mutate(chat.id, { onError: (error) => ui.notify(error.message, 'danger') })
-                : undefined
-            }
+            onStop={chat ? () => stop.mutate(chat.id, { onError: fail }) : undefined}
+            onEditLast={lastOwn ? () => setEditing(lastOwn.id) : undefined}
             onSend={send}
           />
         </div>
       ) : (
         <p className="shrink-0 text-xs text-fg-subtle">
-          {tagged
-            ? 'Hier arbeitet der Agent für die Unterhaltung, in der er gerufen wurde – ruf ihn dort mit @Agent.'
-            : 'Hier schreiben Mitglieder und Admins des Workspace. Du liest mit.'}
+          Hier schreiben Mitglieder und Admins des Workspace. Du liest mit.
         </p>
       )}
+      {deleting && (
+        <ConfirmDialog
+          title="Nachricht löschen?"
+          description="Sie verschwindet für alle in diesem Chat."
+          confirmLabel="Löschen"
+          onClose={() => setDeleting(null)}
+          onConfirm={() => {
+            const each = deleting;
+            setDeleting(null);
+            remove.mutate(each, {
+              onSuccess: () => ui.notify('Nachricht gelöscht'),
+              onError: fail,
+            });
+          }}
+        />
+      )}
     </section>
+  );
+}
+
+/** Under an agent's answer: what it asks to confirm; under the last, the choices it offers. */
+function AgentExtras({
+  message,
+  last,
+  searching,
+  workspaceId,
+  agentId,
+  choices,
+  onPick,
+  onError,
+}: {
+  message: CloudAgentMessage | undefined;
+  last: boolean;
+  searching: boolean;
+  workspaceId: string;
+  agentId: string;
+  choices: string[];
+  onPick: (text: string) => void;
+  onError: (text: string) => void;
+}) {
+  if (!message || searching) return null;
+  return (
+    <>
+      {message.asks && message.asks.length > 0 && (
+        <AgentAsks
+          workspaceId={workspaceId}
+          agentId={agentId}
+          asks={message.asks}
+          onError={onError}
+        />
+      )}
+      {last && <AgentChoices choices={choices} onPick={onPick} />}
+    </>
   );
 }

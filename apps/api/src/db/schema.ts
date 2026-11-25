@@ -192,6 +192,17 @@ export const users = pgTable('users', {
    * Mail › Aktualisieren): `null` the clock's round, every minute; 0 only when asked.
    */
   mailSyncMinutes: integer('mail_sync_minutes'),
+  /**
+   * The person's own picture (Konto › Profil): a blob key, new for every picture
+   * (`users/<id>/pictures/<uuid>.jpg`, drawn by us as a square JPEG); `null`: the one seeded by
+   * the name.
+   */
+  picture: text('picture'),
+  /**
+   * Cloud's file names with their ending („Bericht.pdf“, Einstellungen › Dateien ›
+   * „Dateiendungen zeigen“); off: „Bericht“, the symbol beside it tells what it is.
+   */
+  showExtensions: boolean('show_extensions').notNull().default(false),
 });
 
 /**
@@ -2167,62 +2178,6 @@ export const cloudAgents = pgTable(
 export type CloudAgentRow = typeof cloudAgents.$inferSelect;
 
 /**
- * The chats of an agent: several people (and several chats) work on the same thing, with one
- * desk. The first has the agent's own id and its title (`title` null); further ones are opened
- * beside it and seen by everyone the agent is shared with.
- */
-export const cloudAgentChats = pgTable(
-  'cloud_agent_chats',
-  {
-    id: text('id').primaryKey(),
-    agentId: text('agent_id')
-      .notNull()
-      .references(() => cloudAgents.id, { onDelete: 'cascade' }),
-    /** Who opened it. */
-    userId: text('user_id')
-      .notNull()
-      .references(() => users.id, { onDelete: 'cascade' }),
-    /** What it is about; `null`: the start of its first message (the first chat: the agent's). */
-    title: encryptedText('cloud_agent_chats', 'title'),
-    createdAt: createdAt(),
-  },
-  (t) => [index('cloud_agent_chats_agent_idx').on(t.agentId, t.createdAt)],
-);
-export type CloudAgentChatRow = typeof cloudAgentChats.$inferSelect;
-
-/** An agent's messages in order (`seq`): the people's and the agent's answers, as they ended. */
-export const cloudAgentMessages = pgTable(
-  'cloud_agent_messages',
-  {
-    id: text('id').primaryKey(),
-    agentId: text('agent_id')
-      .notNull()
-      .references(() => cloudAgents.id, { onDelete: 'cascade' }),
-    chatId: text('chat_id')
-      .notNull()
-      .references(() => cloudAgentChats.id, { onDelete: 'cascade' }),
-    /** Who wrote it (a person's message); gone or from before chats were shared: `null`. */
-    userId: text('user_id').references(() => users.id, { onDelete: 'set null' }),
-    /** A note the agent of another chat of this agent left here (`role` assistant). */
-    fromChatId: text('from_chat_id'),
-    /** A call with the agent (`role` assistant): one entry, its text what the agent remembers of it. */
-    callId: text('call_id').references((): AnyPgColumn => callRecords.id, { onDelete: 'cascade' }),
-    seq: integer('seq').notNull(),
-    role: text('role').$type<'user' | 'assistant'>().notNull(),
-    text: encryptedText('cloud_agent_messages', 'text').notNull(),
-    /** Files put on it (`services/attachments.ts`), in their order. */
-    attachments: encryptedJsonList<Attachment>('cloud_agent_messages', 'attachments')
-      .notNull()
-      .default([]),
-    /** How the agent's answer ended; `null` for the person's message. */
-    state: text('state').$type<MaterialChatAnswerState>(),
-    error: text('error'),
-    createdAt: createdAt(),
-  },
-  (t) => [uniqueIndex('cloud_agent_messages_agent_seq_idx').on(t.agentId, t.seq)],
-);
-
-/**
  * What an agent wants done that cannot be undone or reaches out (delete, send, a public link):
  * not done at once but asked in its chat (`services/cloud-agent-asks.ts`) – done only when the
  * person whose rights it runs with (`user_id`) confirms it, with those rights then. `input` the
@@ -2235,9 +2190,10 @@ export const cloudAgentAsks = pgTable(
     agentId: text('agent_id')
       .notNull()
       .references(() => cloudAgents.id, { onDelete: 'cascade' }),
+    /** The agent's chat it was asked in (`sender_channels`, kind `agent`). */
     chatId: text('chat_id')
       .notNull()
-      .references(() => cloudAgentChats.id, { onDelete: 'cascade' }),
+      .references((): AnyPgColumn => senderChannels.id, { onDelete: 'cascade' }),
     userId: text('user_id')
       .notNull()
       .references(() => users.id, { onDelete: 'cascade' }),
@@ -2260,7 +2216,7 @@ export type CloudAgentAskRow = typeof cloudAgentAsks.$inferSelect;
  * A call that is over, as it was written down (`services/call-records.ts`): who was in it, every
  * turn – people's and the agent's –, what was sent to agents, and the notes the AI writes once
  * after it. A conversation's call is seen by who sees the conversation; one's own call with an
- * agent stands in its chat (`cloud_agent_messages.call_id`) and is seen by who sees the agent.
+ * agent stands in its chat (`sender_messages.call_id`) and is seen by who sees the agent.
  * `person_ids`: who was in it, plain (export, deletion); names and words are sealed.
  */
 export const callRecords = pgTable(
@@ -2586,8 +2542,10 @@ export type ReaderSignatureRow = typeof readerSignatures.$inferSelect;
 /**
  * Sender's conversations (`packages/shared/src/sender.ts`): an area's own channel (`area`, one
  * each, made when first listed), further channels inside an area (`channel`), groups and
- * direct conversations. Who sees an area sees its channels; a group's or a direct one's people
- * are `sender_members`.
+ * direct conversations, and the chats with an agent (`agent`: its first has the agent's id,
+ * further ones are opened beside it; who sees the agent sees them, `seesAgent`). Who sees an
+ * area sees its channels; a group's or a direct one's people are `sender_members` – where every
+ * reader's read state is kept, too.
  */
 export const senderChannels = pgTable(
   'sender_channels',
@@ -2606,9 +2564,15 @@ export const senderChannels = pgTable(
     directKey: text('direct_key'),
     /**
      * An area's own agent, tagged with `@Agent` in its channels (made when first tagged); `null`
-     * in groups and direct ones – the agents added anywhere are `sender_channel_agents`.
+     * in groups and direct ones – the agents added anywhere are `sender_channel_agents`. In a
+     * chat with an agent (kind `agent`) that agent: its chats go with it (`dropAgent`).
      */
     agentId: text('agent_id').references(() => cloudAgents.id, { onDelete: 'set null' }),
+    /**
+     * A chat with an agent: what it is about (the agent names it, `name_chat`, from what was
+     * said – sealed); `null`: how it began, the first chat (its id the agent's) the agent's title.
+     */
+    title: encryptedText('sender_channels', 'title'),
     /** The seq of its latest message. */
     lastSeq: integer('last_seq').notNull().default(0),
     createdAt: createdAt(),
@@ -2678,11 +2642,54 @@ export const senderMessages = pgTable(
     replyTo: text('reply_to').references((): AnyPgColumn => senderMessages.id, {
       onDelete: 'set null',
     }),
+    /** An agent's answer in a chat with it: how it ended (`null`: anything else). */
+    state: text('state').$type<MaterialChatAnswerState>(),
+    error: text('error'),
     createdAt: createdAt(),
   },
   (t) => [uniqueIndex('sender_messages_channel_seq_idx').on(t.channelId, t.seq)],
 );
 export type SenderMessageRow = typeof senderMessages.$inferSelect;
+
+/**
+ * A message planned to go later („Später senden“, `services/sender-scheduled.ts`): who planned it
+ * sees it above their field; when due it is posted as theirs (or their agent's) with every check
+ * again – refused, it stays with why. Its files are taken while it waits.
+ */
+export const senderScheduled = pgTable(
+  'sender_scheduled',
+  {
+    id: text('id').primaryKey(),
+    workspaceId: text('workspace_id')
+      .notNull()
+      .references(() => workspaces.id, { onDelete: 'cascade' }),
+    channelId: text('channel_id')
+      .notNull()
+      .references(() => senderChannels.id, { onDelete: 'cascade' }),
+    /** Who planned it – or whose agent did. */
+    userId: text('user_id')
+      .notNull()
+      .references(() => users.id, { onDelete: 'cascade' }),
+    /** Planned by an agent: it goes in the agent's name. */
+    agentId: text('agent_id').references(() => cloudAgents.id, { onDelete: 'cascade' }),
+    text: encryptedText('sender_scheduled', 'text').notNull(),
+    /** Files put on it (`services/attachments.ts`), taken while it waits. */
+    attachments: encryptedJsonList<Attachment>('sender_scheduled', 'attachments')
+      .notNull()
+      .default([]),
+    replyTo: text('reply_to').references(() => senderMessages.id, { onDelete: 'set null' }),
+    sendAt: timestamptz('send_at').notNull(),
+    state: text('state').$type<'waiting' | 'sending' | 'failed'>().notNull().default('waiting'),
+    /** Refused when due: why. */
+    error: text('error'),
+    createdAt: createdAt(),
+  },
+  (t) => [
+    index('sender_scheduled_due_idx').on(t.state, t.sendAt),
+    index('sender_scheduled_person_idx').on(t.userId, t.channelId),
+  ],
+);
+export type SenderScheduledRow = typeof senderScheduled.$inferSelect;
 
 /** One reaction per person on a message (👍 / 👎 / egal, as on comments); gone with either. */
 export const senderReactions = pgTable(
@@ -2701,21 +2708,6 @@ export const senderReactions = pgTable(
     primaryKey({ columns: [t.messageId, t.userId] }),
     index('sender_reactions_user_idx').on(t.userId),
   ],
-);
-
-/** How far a person has read an agent's answers in Sender (its messages' seq). */
-export const senderAgentReads = pgTable(
-  'sender_agent_reads',
-  {
-    agentId: text('agent_id')
-      .notNull()
-      .references(() => cloudAgents.id, { onDelete: 'cascade' }),
-    userId: text('user_id')
-      .notNull()
-      .references(() => users.id, { onDelete: 'cascade' }),
-    readSeq: integer('read_seq').notNull().default(0),
-  },
-  (t) => [primaryKey({ columns: [t.agentId, t.userId] })],
 );
 
 /**
@@ -3188,8 +3180,35 @@ export const pushSubscriptions = pgTable(
 );
 
 /**
+ * A project (`@slider/shared` todos): a plan of its own beside a place's „Allgemein“ (to-dos and
+ * milestones without a project) – an area's (whoever may edit in the area changes it) or, without
+ * an area, its owner's alone. Deleted, its to-dos and milestones go back to „Allgemein“.
+ */
+export const todoProjects = pgTable(
+  'todo_projects',
+  {
+    id: text('id').primaryKey(),
+    workspaceId: text('workspace_id')
+      .notNull()
+      .references(() => workspaces.id, { onDelete: 'cascade' }),
+    areaId: text('area_id').references(() => cloudAreas.id, { onDelete: 'cascade' }),
+    /** One's own (no area): whose; goes with their account. */
+    ownerId: text('owner_id').references(() => users.id, { onDelete: 'cascade' }),
+    name: encryptedText('todo_projects', 'name').notNull(),
+    createdAt: createdAt(),
+    updatedAt: timestamptz('updated_at').notNull().defaultNow(),
+  },
+  (t) => [
+    index('todo_projects_area_idx').on(t.areaId),
+    index('todo_projects_owner_idx').on(t.ownerId),
+  ],
+);
+export type TodoProjectRow = typeof todoProjects.$inferSelect;
+
+/**
  * A milestone (`@slider/shared` todos): a point a place's to-dos lead to, by a date – an area's
- * (whoever may edit there changes it) or, without an area, its owner's alone, as to-dos are.
+ * (whoever may edit there changes it; in one of its projects or its „Allgemein“) or, without an
+ * area, its owner's alone, as to-dos are.
  */
 export const todoMilestones = pgTable(
   'todo_milestones',
@@ -3200,6 +3219,8 @@ export const todoMilestones = pgTable(
       .references(() => workspaces.id, { onDelete: 'cascade' }),
     areaId: text('area_id').references(() => cloudAreas.id, { onDelete: 'cascade' }),
     ownerId: text('owner_id').references(() => users.id, { onDelete: 'cascade' }),
+    /** One of the area's projects; `null`: its „Allgemein“. */
+    projectId: text('project_id').references(() => todoProjects.id, { onDelete: 'set null' }),
     name: encryptedText('todo_milestones', 'name').notNull(),
     /** `YYYY-MM-DD`. */
     dueOn: text('due_on'),
@@ -3209,6 +3230,7 @@ export const todoMilestones = pgTable(
   (t) => [
     index('todo_milestones_area_idx').on(t.areaId),
     index('todo_milestones_owner_idx').on(t.ownerId),
+    index('todo_milestones_project_idx').on(t.projectId),
   ],
 );
 export type TodoMilestoneRow = typeof todoMilestones.$inferSelect;
@@ -3228,6 +3250,8 @@ export const todos = pgTable(
     areaId: text('area_id').references(() => cloudAreas.id, { onDelete: 'cascade' }),
     /** One's own (no area): whose; goes with their account. */
     ownerId: text('owner_id').references(() => users.id, { onDelete: 'cascade' }),
+    /** One of the area's projects; `null`: its „Allgemein“. */
+    projectId: text('project_id').references(() => todoProjects.id, { onDelete: 'set null' }),
     number: integer('number').notNull(),
     title: encryptedText('todos', 'title').notNull(),
     description: encryptedText('todos', 'description').notNull(),
@@ -3244,6 +3268,11 @@ export const todos = pgTable(
     startOn: text('start_on'),
     /** `YYYY-MM-DD`. */
     dueOn: text('due_on'),
+    /**
+     * Its place among its milestone's on the timeline (fractions between two); made or put into
+     * another milestone or place without one, it goes last.
+     */
+    position: doublePrecision('position').notNull().default(0),
     milestoneId: text('milestone_id').references(() => todoMilestones.id, {
       onDelete: 'set null',
     }),
@@ -3262,9 +3291,32 @@ export const todos = pgTable(
     index('todos_owner_idx').on(t.ownerId),
     index('todos_assignee_idx').on(t.assigneeId),
     index('todos_milestone_idx').on(t.milestoneId),
+    index('todos_project_idx').on(t.projectId),
   ],
 );
 export type TodoRow = typeof todos.$inferSelect;
+
+/**
+ * A to-do waiting on another (`@slider/shared` todos, `blockedBy`): `todo_id` starts once
+ * `blocked_by_id` is done – both of one place (area and project, or one's own); either deleted, the
+ * link goes with it. The timeline marks those it holds up.
+ */
+export const todoDependencies = pgTable(
+  'todo_dependencies',
+  {
+    todoId: text('todo_id')
+      .notNull()
+      .references(() => todos.id, { onDelete: 'cascade' }),
+    blockedById: text('blocked_by_id')
+      .notNull()
+      .references(() => todos.id, { onDelete: 'cascade' }),
+    createdAt: createdAt(),
+  },
+  (t) => [
+    primaryKey({ columns: [t.todoId, t.blockedById] }),
+    index('todo_dependencies_blocked_by_idx').on(t.blockedById),
+  ],
+);
 
 /**
  * Calendars (`@slider/shared` calendar): an area's (each area has one, made when first looked at

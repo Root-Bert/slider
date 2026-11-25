@@ -183,3 +183,12 @@ export function autoWords(agent: {
   if (parts.length === 0) return null;
   return `${agent.paused ? 'Pausiert' : 'Arbeitet von selbst'}: ${parts.join(', ')}`;
 }
+
+/** Where a search hit lies: its area (or „Meine Dateien“) and the folders down to it. */
+export const whereOf = (node: Pick<CloudNode, 'location'>) =>
+  [
+    node.location?.areaName ?? (node.location?.areaId === null ? 'Meine Dateien' : null),
+    ...(node.location?.folders ?? []).map((folder) => folder.name),
+  ]
+    .filter(Boolean)
+    .join(' › ');

@@ -1,8 +1,8 @@
 import { z } from 'zod';
 import { MAX_MATERIAL_CHAT_MESSAGE, type MaterialChatAnswerState } from './material-chat';
 import type { Author } from './model';
-import type { CallBrief } from './calls';
-import { attachmentIdsSchema, type Attachment } from './attachments';
+import { attachmentIdsSchema } from './attachments';
+import type { SenderMessage } from './sender';
 
 /*
  * „Agenten“ in Cloud: an order to the workspace's AI that works across files on the server –
@@ -31,12 +31,14 @@ export const cloudAgentInputSchema = z.object({
   zone: z.string().min(1).max(64).optional(),
   /** Written beside one of the writer's mails („KI zur Mail“): the agent is told which one. */
   mailThreadId: z.string().min(1).max(100).optional(),
+  /** „Antworten“: a message of that chat, quoted above it (the agent is told it too). */
+  replyTo: z.string().min(1).max(100).optional(),
 });
 /** One of an agent's chats (left out: its first) – to stop it, or to say one is typing there. */
 export const cloudAgentChatRefSchema = z.object({ chatId: z.string().min(1).max(100).optional() });
 /**
- * Where it was called in a conversation (`@Agent`): one chat per conversation, `<agent>:<channel>`,
- * apart from the agent's own chat (its id the agent's) – only the call writes there.
+ * A run where it was called in a conversation (`@Agent`): keyed `<agent>:<channel>`, apart from
+ * the agent's chats (their ids no `:`) – nothing of it is kept in them.
  */
 export const isTagChat = (chatId: string) => chatId.includes(':');
 export type CloudAgentInput = z.input<typeof cloudAgentInputSchema>;
@@ -221,21 +223,15 @@ export interface CloudAgentFile {
   updatedAt: string;
 }
 
-export interface CloudAgentMessage {
-  id: string;
+/**
+ * A message in an agent's chat: a Sender message (its chat is a conversation, kind `agent`) –
+ * shown by the same list, reacted to, answered, changed as any – and what only an agent's has.
+ */
+export interface CloudAgentMessage extends SenderMessage {
   role: 'user' | 'assistant';
-  text: string;
-  /** Files the person put on it. */
-  attachments?: Attachment[];
   /** The agent's: `answering` while it works; `null` for a person's. */
   state: MaterialChatAnswerState | 'answering' | null;
   error: string | null;
-  /** Who wrote it – a person's message; `null` for the agent's. */
-  author: Author | null;
-  /** A note the agent of another chat left here: that chat's name. */
-  fromChat: string | null;
-  /** A call with the agent: shown as one entry that opens the call's page (`CallBrief`). */
-  call?: CallBrief | null;
   /** What the agent asked to be confirmed while it wrote this answer: a card each under it. */
   asks?: CloudAgentAsk[];
 }
@@ -272,11 +268,8 @@ export interface CloudAgentChat {
   id: string;
   title: string;
   startedBy: Author;
-  /**
-   * A tag chat's: where it was called, in words („Gerufen in #Allgemein“) – shown above what
-   * was said there; the chat's title is that conversation's name. `null` for the others.
-   */
-  calledIn: string | null;
+  /** How far the viewer had read it when asked: the „Neu“ line stands after it. */
+  readSeq: number;
   running: boolean;
   /** It stopped in the middle of its work (the server started anew): write to it to go on. */
   interrupted: boolean;

@@ -12,6 +12,8 @@ import type { Author } from './model';
 
 /** One file at most – what mail carries. */
 export const MAX_ATTACHMENT_BYTES = 25 * 1024 * 1024;
+/** A video at most – a recorded screen of five minutes is about 100 MB. */
+export const MAX_VIDEO_ATTACHMENT_BYTES = 200 * 1024 * 1024;
 /** Files on one message at most. */
 export const MAX_ATTACHMENTS = 10;
 
@@ -63,6 +65,23 @@ export const attachmentPath = (id: string, download = false) =>
 
 /** Pictures a browser shows and the AI looks at. */
 export const isPictureAttachment = (type: string) => /^image\/(png|jpeg|gif|webp)$/.test(type);
+
+/** Videos a browser plays in the message (a recording sent in Sender). */
+export const isVideoAttachment = (type: string) => /^video\/(mp4|webm)$/.test(type);
+
+/**
+ * A part of a recorded video the AI would cut („KI-Schnitt“, `POST …/video-cuts`), in seconds –
+ * and why („Pause“, „Versprecher“).
+ */
+export interface SuggestedVideoCut {
+  start: number;
+  end: number;
+  why: string;
+}
+
+/** How big a file of this type may be – a video more than what mail carries. */
+export const attachmentLimit = (type: string) =>
+  isVideoAttachment(type) ? MAX_VIDEO_ATTACHMENT_BYTES : MAX_ATTACHMENT_BYTES;
 
 /** The folder an area's chat puts its files into, at the area's top. */
 export const CHAT_FILES_FOLDER = 'Chat-Dateien';

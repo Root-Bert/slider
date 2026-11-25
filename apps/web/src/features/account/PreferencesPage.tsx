@@ -2,7 +2,8 @@ import { SettingsLayout } from '@/shell/layouts/SettingsLayout';
 import { useAccount } from '@/features/auth';
 import { canPlaceApps, FilesPreferences } from '@/features/cloud';
 import { MailPreferences, NotifyPreferences } from '@/features/sender';
-import { Icon, Section, useToast, type IconName } from '@/ui';
+import { loadedVersion, useNewerVersion } from '@/lib/app-version';
+import { Button, Icon, Section, useToast, type IconName } from '@/ui';
 import { CallVoiceSection } from './components/CallVoiceSection';
 import { AppsSection, ColorPicker, WorkSection } from './components/PreferenceSections';
 
@@ -28,6 +29,9 @@ const NAV = [
  */
 export function Component() {
   const { user, version } = useAccount();
+  // The release this page runs – `/me` already names the server's, newer once one came out.
+  const running = loadedVersion() ?? version;
+  const newer = useNewerVersion();
   const [toast, showToast] = useToast();
 
   return (
@@ -45,11 +49,21 @@ export function Component() {
       <CallVoiceSection onNotify={showToast} />
       <NotifyPreferences />
       <AppsSection />
-      <FilesPreferences />
+      <FilesPreferences onNotify={showToast} />
       <WorkSection />
       <MailPreferences />
       <Section id="version" title="Version">
-        <p className="text-sm text-fg">{version ? `Version ${version}` : 'Entwicklungsversion'}</p>
+        <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
+          <p className="text-sm text-fg">
+            {running ? `Version ${running}` : 'Entwicklungsversion'}
+            {newer && <span className="text-fg-muted"> | Version {newer} ist da</span>}
+          </p>
+          {newer && (
+            <Button size="sm" icon="refresh" onClick={() => window.location.reload()}>
+              Neu laden
+            </Button>
+          )}
+        </div>
       </Section>
     </SettingsLayout>
   );

@@ -35,7 +35,14 @@ export {
   type CreationDraft,
 } from './creation/creation-draft';
 // The chat with the AI in a side panel – beside the material, and beside the files in Cloud.
-export { ChatAnswer, ChatMessage, ChatPanel, type Chat, type ChatEntry } from './board/ChatPanel';
+export {
+  AnswerBody,
+  ChatAnswer,
+  ChatMessage,
+  ChatPanel,
+  type Chat,
+  type ChatEntry,
+} from './board/ChatPanel';
 export { useAgentChat } from './board/agent-chat';
 // „Material“ beside a text document too: the board's page (loaded when first needed), the tile
 // that opens it, and what the page asks of its host (`BoardOwner`).
@@ -55,6 +62,8 @@ export { LiveTranscript, type LiveSignal } from './voice/lib/live-transcript';
 export { Segmenter } from './voice/lib/segmenter';
 export { openMicrophone, prepareMicrophone, type Microphone } from './voice/lib/vad';
 export { canRecord } from './media/lib/recording';
+// Recording a video to send – with its editor (a message in Sender).
+export { RecorderPanel } from './media/RecorderPanel';
 export { describeError } from './media/lib/recorder-errors';
 // The photo search, for a text document's pictures too.
 export { PhotoGrid } from './editing/photos/StockPhotoSearch';

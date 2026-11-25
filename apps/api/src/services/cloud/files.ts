@@ -579,6 +579,7 @@ export async function removeVersions(
     keys.push(
       blobKeys.cloudThumbnail(node.workspaceId, node.id, version.id),
       blobKeys.cloudPreview(node.workspaceId, node.id, version.id),
+      blobKeys.cloudPreviewAsDeck(node.workspaceId, node.id, version.id),
     );
   }
   await deps.db

@@ -12,8 +12,10 @@ import { FILE_KINDS } from '../lib/kinds';
 import { ActivityFeed } from './ActivityFeed';
 import { AreaDot } from './AreaDot';
 import { FileIcon } from './FileIcon';
+import { FileName } from './FileName';
 import { VersionList } from './VersionList';
 import { NodeNameInput } from './NodeNameInput';
+import { hasPagePreview, PagePreview } from './PagePreview';
 
 const TABS = [
   { value: 'details', label: 'Details' },
@@ -43,6 +45,7 @@ function Details({ detail }: { detail: CloudNodeDetail }) {
     area?.name ?? (node.areaId === null && node.owner.id === userId ? 'Meine Dateien' : 'Geteilt');
   return (
     <div className="flex flex-col gap-4">
+      {hasPagePreview(node) && <PagePreview key={`${node.id}-${node.versionId}`} node={node} />}
       <dl className="flex flex-col divide-y divide-hairline">
         <Fact label="Art">{folder ? 'Ordner' : FILE_KINDS[node.fileType ?? 'other'].label}</Fact>
         {!folder && <Fact label="Größe">{formatFileSize(node.sizeBytes)}</Fact>}
@@ -135,13 +138,9 @@ function Versions({ detail }: { detail: CloudNodeDetail }) {
 // ── The whole view ──────────────────────────────────────────────────────────
 
 /**
- * A file opened over the page it was on (`?datei=<id>`): what it looks like – a picture, the
- * pages of a PDF or office file, a video, text – and beside it its details, what happened to it
- * and its versions. Esc or the arrow goes back to the list, which never left.
- */
-/**
- * „Details“: what there is to know about a file or folder, in a panel beside the list – facts and
- * who sees it, what happened to it, its versions. The file itself opens in its app (`ui.open`).
+ * „Details“: what there is to know about a file or folder, in a panel beside the list – its pages
+ * to leaf through, facts and who sees it, what happened to it, its versions. The file itself
+ * opens in its app (`ui.open`).
  */
 export function Preview() {
   const ui = useCloud();
@@ -197,8 +196,8 @@ export function Preview() {
               {node && ui.renaming?.where === 'preview' && ui.renaming.id === node.id ? (
                 <NodeNameInput node={node} />
               ) : (
-                <span className="truncate" title={node?.name}>
-                  {node?.name ?? ' '}
+                <span className="flex min-w-0" title={node?.name}>
+                  {node ? <FileName node={node} /> : ' '}
                 </span>
               )}
             </h2>

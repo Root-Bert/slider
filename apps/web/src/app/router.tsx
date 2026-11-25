@@ -1,4 +1,6 @@
-import { createBrowserRouter } from 'react-router';
+import { createBrowserRouter, Outlet } from 'react-router';
+import { CommandKey } from '@/features/commands';
+import { PeoplePicturesSync } from './PeoplePicturesSync';
 import { RouteError } from './RouteError';
 
 /**
@@ -11,6 +13,14 @@ import { RouteError } from './RouteError';
  */
 export const router = createBrowserRouter([
   {
+    // Every page: the command panel (⌘K) and people's pictures for whoever is signed in.
+    element: (
+      <>
+        <Outlet />
+        <CommandKey />
+        <PeoplePicturesSync />
+      </>
+    ),
     errorElement: <RouteError />,
     // Shown while the first lazy route module loads.
     hydrateFallbackElement: <div className="dot-grid min-h-full" aria-busy />,

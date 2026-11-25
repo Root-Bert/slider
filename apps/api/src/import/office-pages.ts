@@ -1,6 +1,7 @@
 import type { ParsedSlide } from '@slider/pptx';
+import { and, eq } from 'drizzle-orm';
 import type { Database } from '../db/client';
-import type { DeckRow, RevisionRow, SlideRenderer } from '../db/schema';
+import { cloudVersions, type DeckRow, type RevisionRow, type SlideRenderer } from '../db/schema';
 import type { Logger } from '../logger';
 import { isOdpBytes } from '@slider/odp';
 import { isPdfBytes } from '../sources/safe-fetch';
@@ -113,6 +114,74 @@ export async function renderSlidePages(
     }
   } else return preview;
   if (!pdf) return preview;
+  const pages = await pagesOfPdf(deps, deck, revision, pdf, slides, renderer, { priority, onPage });
+  return pages ? { renderer, pages } : preview;
+}
+
+/**
+ * Visible slides up to which a deck opens on Cloud's pictures of its file: each page drawn here
+ * keeps the opening waiting (~150 ms a page after ~350 ms, measured), the SVG previews do not.
+ */
+const OPENING_PAGES_MAX = 8;
+
+/**
+ * What an upload opens on while LibreOffice draws it in the workspace's fonts: the PDF Cloud
+ * already drew of the very same file (its small picture and pages, `cloud_versions.preview`) –
+ * so a file opened from Cloud looks as it did there a moment ago, not like its SVG previews.
+ * Marked as not drawn yet (`renderer` null): the `fresh` re-render replaces every page. `null`
+ * when Cloud drew no such file, the deck is long (each page drawn here delays the opening) or
+ * the pages do not fit the slides.
+ */
+export async function openingPages(
+  deps: SlidePagesDeps,
+  deck: DeckRow,
+  revision: RevisionRow,
+  slides: readonly ParsedSlide[],
+  { onPage }: { onPage?: (done: number) => Promise<void> } = {},
+): Promise<SlidePages | null> {
+  const { db } = deps;
+  const sha256 = revision.contentSha256;
+  const visible = slides.filter((slide) => !slide.hidden).length;
+  if (!db || !sha256 || visible === 0 || visible > OPENING_PAGES_MAX) return null;
+  try {
+    const [drawn] = await db
+      .select({ nodeId: cloudVersions.nodeId, versionId: cloudVersions.id })
+      .from(cloudVersions)
+      .where(
+        and(
+          eq(cloudVersions.workspaceId, deck.workspaceId),
+          eq(cloudVersions.sha256, sha256),
+          eq(cloudVersions.preview, 'ready'),
+        ),
+      )
+      .limit(1);
+    if (!drawn) return null;
+    const pdf = await deps.storage.get(
+      blobKeys.cloudPreview(deck.workspaceId, drawn.nodeId, drawn.versionId),
+    );
+    if (!pdf) return null;
+    const pages = await pagesOfPdf(deps, deck, revision, pdf, slides, 'cloud', { onPage });
+    return pages && { renderer: null, pages };
+  } catch (error) {
+    deps.log.warn(`Cloud's pictures of deck ${deck.id} could not be used`, error);
+    return null;
+  }
+}
+
+/**
+ * The PDF's pages rasterised and stored, one per visible slide in order (hidden ones `null`);
+ * `null` (logged) when its page count does not fit or it cannot be drawn.
+ */
+async function pagesOfPdf(
+  deps: Pick<SlidePagesDeps, 'storage' | 'log'>,
+  deck: DeckRow,
+  revision: RevisionRow,
+  pdf: Uint8Array,
+  slides: readonly ParsedSlide[],
+  /** Who drew the PDF, for the log. */
+  drawnBy: string,
+  { priority, onPage }: { priority?: PoolPriority; onPage?: (done: number) => Promise<void> },
+): Promise<(StoredPage | null)[] | null> {
   const visible = slides.filter((slide) => !slide.hidden).length;
   // Each page goes to storage as soon as it is drawn, so a long deck never holds all its
   // images in memory; the page count is checked before the first page is drawn.
@@ -136,18 +205,15 @@ export async function renderSlidePages(
     await deleteStoredPages(deps.storage, pages);
     if (error instanceof PageCountMismatch) {
       deps.log.warn(
-        `PDF (${renderer}) of deck ${deck.id} has ${error.pages} pages for ${visible} visible slides`,
+        `PDF (${drawnBy}) of deck ${deck.id} has ${error.pages} pages for ${visible} visible slides`,
       );
     } else {
-      deps.log.warn(`PDF (${renderer}) of deck ${deck.id} could not be rendered`, error);
+      deps.log.warn(`PDF (${drawnBy}) of deck ${deck.id} could not be rendered`, error);
     }
-    return preview;
+    return null;
   }
   let next = 0;
-  return {
-    renderer,
-    pages: slides.map((slide) => (slide.hidden ? null : (pages[next++] ?? null))),
-  };
+  return slides.map((slide) => (slide.hidden ? null : (pages[next++] ?? null)));
 }
 
 /** Removes the images of a PDF that was given up half-way; best effort. */

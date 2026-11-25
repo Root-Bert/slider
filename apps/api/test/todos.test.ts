@@ -1,16 +1,24 @@
 import type Anthropic from '@anthropic-ai/sdk';
 import { eq, sql } from 'drizzle-orm';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import type { CloudArea, SenderEvent, Todo, TodoMilestone, WorkspaceRole } from '@slider/shared';
+import type {
+  CloudArea,
+  SenderEvent,
+  Todo,
+  TodoMilestone,
+  TodoProject,
+  WorkspaceRole,
+} from '@slider/shared';
 import JSZip from 'jszip';
 import {
   cloudAgentAsks,
-  cloudAgentChats,
   cloudAgents,
   todoMilestones,
+  todoProjects,
   todos,
   workspaceMembers,
 } from '../src/db/schema';
+import { openAgentChat } from '../src/services/agent-chats';
 import { SEALED_PREFIX } from '../src/crypto/content-crypto';
 import { runAppTool } from '../src/services/mcp-cloud';
 import { senderLive } from '../src/services/sender';
@@ -227,7 +235,11 @@ describe('To-dos', () => {
         shared,
         areaId,
       });
-      await ctx.deps.db.insert(cloudAgentChats).values({ id: agentId, agentId, userId });
+      await openAgentChat(
+        ctx.deps.db,
+        { id: agentId, workspaceId: ctx.workspaceId },
+        { id: agentId, userId, at: ctx.deps.clock.now() },
+      );
       return agentId;
     };
     const salesAgent = await agent(anna.user.id, true, sales.id);
@@ -283,9 +295,12 @@ describe('To-dos', () => {
     // Deleting it only asks: a card waits for whose rights it runs with; the to-do stays.
     await expect
       .poll(async () =>
-        (await ctx.deps.db.select().from(cloudAgentAsks).where(eq(cloudAgentAsks.agentId, salesAgent))).map(
-          (row) => [row.tool, row.text, row.state],
-        ),
+        (
+          await ctx.deps.db
+            .select()
+            .from(cloudAgentAsks)
+            .where(eq(cloudAgentAsks.agentId, salesAgent))
+        ).map((row) => [row.tool, row.text, row.state]),
       )
       .toEqual([['delete_todo', '„Präsentation bauen“ löschen?', 'open']]);
     // „Neuer Agent“: one's own, plainly „Agent“, in its area, given it – nothing runs.
@@ -300,13 +315,13 @@ describe('To-dos', () => {
     expect(told).toHaveLength(0);
 
     // An app (MCP) works as the person: makes one in an area for someone named, changes it by number.
-    const app = async (name: string, args: Record<string, unknown>) => {
+    const app = async (name: string, args: Record<string, unknown>, as = ctx.ownerId) => {
       const ran = await runAppTool(
         ctx.deps,
         {
           viewer: {
             kind: 'owner',
-            author: { type: 'owner', id: ctx.ownerId, name: 'Owner', color: 'blue' },
+            author: { type: 'owner', id: as, name: 'Owner', color: 'blue' },
           },
           workspaceId: ctx.workspaceId,
         },
@@ -370,6 +385,16 @@ describe('To-dos', () => {
       dueOn: '2026-12-10',
       milestone: { id: beta.id, name: 'Beta', dueOn: '2026-12-20' },
     });
+    // Put into a milestone without a place among its lines: last of all; a place given: kept, also
+    // into another milestone at once.
+    const listed = await ok<Todo[]>(send('GET', `/workspaces/${ctx.workspaceId}/todos`));
+    const placed = listed.find((one) => one.id === plan2.id)!;
+    expect(placed.position).toBe(Math.max(...listed.map((one) => one.position)));
+    expect(placed.position).toBeGreaterThan(plan2.position);
+    expect(
+      await ok<Todo>(send('PATCH', `/todos/${plan2.id}`, { position: 0.5, milestoneId: null })),
+    ).toMatchObject({ position: 0.5, milestone: null });
+    await ok(send('PATCH', `/todos/${plan2.id}`, { milestoneId: beta.id, position: 0.25 }));
     expect((await milestones(anna.cookie)).map((one) => one.name)).toEqual(['Beta']);
     expect(
       (await send('PATCH', `/todo-milestones/${beta.id}`, { name: 'X' }, vera.cookie)).status,
@@ -385,13 +410,78 @@ describe('To-dos', () => {
       'starts 2026-12-05, due 2026-12-08, milestone „Beta“ (2026-12-20)',
     );
     const standNumber = /#(\d+)/.exec(stand.text)?.[1];
+    // „Wartet auf“: to-dos of its own place alone – not itself, not one of another place, no loop.
+    const standRef = /^Made: (\S+)/.exec(stand.text)?.[1];
+    expect(
+      (await ok<Todo>(send('PATCH', `/todos/${plan2.id}`, { blockedBy: [standRef, standRef] })))
+        .blockedBy,
+    ).toEqual([standRef]);
+    expect((await ok<Todo>(send('GET', `/todos/${standRef}`))).blockedBy).toEqual([]);
+    for (const [id, blockedBy] of [
+      [standRef, [plan2.id]],
+      [plan2.id, [plan2.id]],
+      [plan2.id, [mine.id]],
+    ] as const)
+      expect((await send('PATCH', `/todos/${id}`, { blockedBy })).status).toBe(400);
+    // Two at once, each on the other: one goes through, the other would close the loop – and the
+    // file it brought is not taken, so it can be put on again.
+    await ok(send('PATCH', `/todos/${plan2.id}`, { blockedBy: [] }));
+    const upload = async (name: string) => {
+      const form = new FormData();
+      form.append('file', new File(['Plan'], name, { type: 'text/plain' }));
+      const res = await ctx.request(`/api/workspaces/${ctx.workspaceId}/attachments`, {
+        method: 'POST',
+        body: form,
+      });
+      return ((await res.json()) as { id: string }).id;
+    };
+    const pair = [
+      { id: plan2.id, on: standRef, file: await upload('A.txt') },
+      { id: standRef!, on: plan2.id, file: await upload('B.txt') },
+    ];
+    const both = await Promise.all(
+      pair.map((one) =>
+        send('PATCH', `/todos/${one.id}`, { blockedBy: [one.on], attachments: [one.file] }),
+      ),
+    );
+    expect(both.map((res) => res.status).sort()).toEqual([200, 400]);
+    const lost = pair[both.findIndex((res) => res.status === 400)]!;
+    expect(
+      (
+        await ok<Todo>(send('PATCH', `/todos/${lost.id}`, { attachments: [lost.file] }))
+      ).attachments?.map((one) => one.id),
+    ).toEqual([lost.file]);
+    // One a person may only see: refused before a project of theirs is made for it.
+    expect(
+      await app('update_todo', { todo: standNumber, area: null, project: 'Privat' }, vera.user.id),
+    ).toMatchObject({ error: true });
+    expect(
+      (
+        await ok<{ name: string }[]>(
+          send('GET', `/workspaces/${ctx.workspaceId}/todo-projects`, undefined, vera.cookie),
+        )
+      ).map((one) => one.name),
+    ).not.toContain('Privat');
+    // An app puts it on the timeline as dragged there: before one of its milestone's, or last;
+    // before one of another place is refused. list_todos lists them in that order.
+    await app('update_todo', { todo: standNumber, before: plan2.id });
+    const sales2 = (await app('list_todos', { area: sales.id })).text;
+    expect(sales2.indexOf('Stand bauen')).toBeLessThan(sales2.indexOf(plan2.title));
+    expect((await ok<Todo>(send('GET', `/todos/${standRef}`))).position).toBe(0.25 - 1);
+    expect(await app('update_todo', { todo: standNumber, before: mine.id })).toMatchObject({
+      error: true,
+    });
+    await app('update_todo', { todo: standNumber, before: null });
+    expect((await ok<Todo>(send('GET', `/todos/${standRef}`))).position).toBe(1.25);
     expect((await app('update_todo', { todo: standNumber, milestone: 'Launch' })).text).toContain(
       'milestone „Launch“',
     );
     expect((await milestones()).map((one) => one.name)).toEqual(['Beta', 'Steuerjahr', 'Launch']);
-    expect(
-      (await ok<Todo>(send('PATCH', `/todos/${plan2.id}`, { areaId: null }))).milestone,
-    ).toBeNull();
+    // Moved to another place: its milestone and what it waits on go.
+    expect(await ok<Todo>(send('PATCH', `/todos/${plan2.id}`, { areaId: null }))).toMatchObject({
+      milestone: null,
+      blockedBy: [],
+    });
     await ok(send('PATCH', `/todos/${plan2.id}`, { milestoneId: taxYear.id }));
     const launch = (await milestones()).find((one) => one.name === 'Launch')!;
     expect(
@@ -401,6 +491,99 @@ describe('To-dos', () => {
     ).toMatchObject({ name: 'Launch', dueOn: '2027-01-15', canEdit: true });
     await ok(send('DELETE', `/todo-milestones/${launch.id}`), 204);
     expect((await app('read_todo', { todo: standNumber })).text).not.toContain('milestone');
+
+    // Projects: a place's plans beside its „Allgemein“ – a to-do or milestone goes only into its
+    // own place's; another project drops the old one's milestone; who views makes none; apps name
+    // them; deleted, its to-dos and milestones go back to „Allgemein“.
+    const fairProject = await ok<TodoProject>(
+      send('POST', `/workspaces/${ctx.workspaceId}/todo-projects`, {
+        name: ' Messe ',
+        areaId: sales.id,
+      }),
+      201,
+    );
+    expect(fairProject).toMatchObject({ name: 'Messe', areaId: sales.id, canEdit: true });
+    const [sealedProject] = await ctx.deps.db
+      .select({ raw: sql<string>`${todoProjects.name}` })
+      .from(todoProjects)
+      .where(eq(todoProjects.id, fairProject.id));
+    expect(sealedProject?.raw.startsWith(SEALED_PREFIX)).toBe(true);
+    expect(
+      (
+        await send(
+          'POST',
+          `/workspaces/${ctx.workspaceId}/todo-projects`,
+          { name: 'X', areaId: sales.id },
+          vera.cookie,
+        )
+      ).status,
+    ).toBe(403);
+    expect(
+      (
+        await ok<TodoProject[]>(
+          send(
+            'GET',
+            `/workspaces/${ctx.workspaceId}/todo-projects?area=${sales.id}`,
+            undefined,
+            anna.cookie,
+          ),
+        )
+      ).map((one) => one.name),
+    ).toEqual(['Messe']);
+    expect((await send('PATCH', `/todos/${mine.id}`, { projectId: fairProject.id })).status).toBe(
+      400,
+    );
+    // One's own have projects too – one's alone: another neither sees nor changes them.
+    const ownProject = await ok<TodoProject>(
+      send('POST', `/workspaces/${ctx.workspaceId}/todo-projects`, { name: 'Umzug' }),
+      201,
+    );
+    expect(ownProject).toMatchObject({ areaId: null, canEdit: true });
+    expect(
+      (
+        await ok<TodoProject[]>(
+          send('GET', `/workspaces/${ctx.workspaceId}/todo-projects`, undefined, anna.cookie),
+        )
+      ).map((one) => one.name),
+    ).toEqual(['Messe']);
+    expect(
+      (await send('PATCH', `/todo-projects/${ownProject.id}`, { name: 'X' }, anna.cookie)).status,
+    ).toBe(404);
+    expect(
+      (await ok<Todo>(send('PATCH', `/todos/${mine.id}`, { projectId: ownProject.id }))).project,
+    ).toEqual({ id: ownProject.id, name: 'Umzug' });
+    const boxes = await app('create_todo', { title: 'Kartons', project: 'umzug' });
+    expect(boxes.text).toContain('own, project „Umzug“');
+    await ok(send('DELETE', `/todos/${/^Made: (\S+) #/.exec(boxes.text)?.[1]}`), 204);
+    await ok(send('DELETE', `/todo-projects/${ownProject.id}`), 204);
+    expect(
+      (await ok<Todo>(send('PATCH', `/todos/${mine.id}`, { priority: 2 }))).project,
+    ).toBeNull();
+    const standId = /^(\S+) #/.exec((await app('read_todo', { todo: standNumber })).text)?.[1];
+    await ok(send('PATCH', `/todos/${standId}`, { milestoneId: beta.id }));
+    expect(
+      await ok<Todo>(send('PATCH', `/todos/${standId}`, { projectId: fairProject.id })),
+    ).toMatchObject({ project: { id: fairProject.id, name: 'Messe' }, milestone: null });
+    expect((await send('PATCH', `/todos/${standId}`, { milestoneId: beta.id })).status).toBe(400);
+    expect((await app('update_todo', { todo: standNumber, milestone: 'Aufbau' })).text).toContain(
+      'project „Messe“, starts 2026-12-05, due 2026-12-08, milestone „Aufbau“',
+    );
+    expect((await milestones()).find((one) => one.name === 'Aufbau')?.projectId).toBe(
+      fairProject.id,
+    );
+    const flyer = await app('create_todo', { title: 'Flyer', area: sales.id, project: 'werbung' });
+    expect(flyer.text).toContain('project „werbung“');
+    const flyerId = /^Made: (\S+) #/.exec(flyer.text)?.[1];
+    expect(
+      (await ok<Todo>(send('PATCH', `/todos/${flyerId}`, { areaId: null }))).project,
+    ).toBeNull();
+    await ok(send('DELETE', `/todos/${flyerId}`), 204);
+    await ok(send('PATCH', `/todo-projects/${fairProject.id}`, { name: 'Messe 2027' }));
+    expect((await app('read_todo', { todo: standNumber })).text).toContain('project „Messe 2027“');
+    await ok(send('DELETE', `/todo-projects/${fairProject.id}`), 204);
+    expect((await app('read_todo', { todo: standNumber })).text).toContain(
+      'project „Allgemein“, starts 2026-12-05, due 2026-12-08, milestone „Aufbau“',
+    );
 
     // The person's own beyond the files: settings (only what is on the server), Sender, mail, agents.
     expect((await app('read_settings', {})).text).toMatch(
@@ -418,6 +601,19 @@ describe('To-dos', () => {
     ).toBe('Posted.');
     expect((await app('read_conversation', { conversation: channel })).text).toContain(
       ': Hallo Vertrieb',
+    );
+    // Planned for later: said so, nothing in the conversation yet.
+    expect(
+      (
+        await app('post_message', {
+          conversation: channel,
+          text: 'Morgen früh',
+          send_at: new Date(ctx.deps.clock.now().getTime() + 86_400_000).toISOString(),
+        })
+      ).text,
+    ).toMatch(/^Planned for /);
+    expect((await app('read_conversation', { conversation: channel })).text).not.toContain(
+      'Morgen früh',
     );
     expect(await app('read_conversation', { conversation: 'nope' })).toMatchObject({ error: true });
     expect((await app('list_mailboxes', {})).error).toBe(false);

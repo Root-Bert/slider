@@ -200,8 +200,11 @@ Parity script (from `apps/web`): `bun --tsconfig-override=tsconfig.app.json scri
   `useHeardWords`, `CreationProgress`, `Timeline`. Check: api `deck-creation.test.ts`,
   `creation-draft.test.ts`.
 - **A deck opens at once** – a blank „Neue Präsentation“ is ready in its own request (the blank
-  slide drawn once at start-up, `BlankDecks`); an upload opens on its SVG previews and
-  LibreOffice's pictures follow as a `fresh` re-render (viewer reloads on `renderedAt`); no import
+  slide drawn once at start-up, `BlankDecks`); an upload opens on its SVG previews – a file Cloud
+  already drew (≤ 8 slides) on those pictures (`openingPages`; Cloud draws presentation files as
+  their deck is – `materialPdf` with `fonts`, a single run with the replacement table and the
+  workspace's fonts, never the pool – so the swap keeps the fonts) – and LibreOffice's pictures
+  follow as a `fresh` re-render (viewer reloads on `renderedAt`); no import
   animation, an upload is a small toast (`UploadToast`). Where: `import/ready-blank.ts`,
   `import-deck.ts` (`later`), `DeckPage`. Check: api `odp.test.ts`, `import.test.ts`; e2e `02-upload`.
 

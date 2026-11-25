@@ -8,8 +8,8 @@ import {
   type SenderMessageHit,
 } from '@slider/shared';
 import { useOpenSenderDirect, useSenderMessageSearch } from '@/lib/api';
-import { isModKey } from '@/lib/keyboard';
-import { isApplePlatform } from '@/lib/platform';
+import { isSearchKey } from '@/lib/keyboard';
+import { searchKeyLabel } from '@/lib/platform';
 import { AgentAvatar, AreaDot } from '@/features/cloud';
 import { WorkspaceMark } from '@/features/workspaces';
 import { Avatar, cn, Icon, Kbd, TextField, useDebounced } from '@/ui';
@@ -48,8 +48,8 @@ export function stepHits(event: KeyboardEvent<HTMLElement>) {
 /**
  * A side bar's search field: found while one types, in the bar where its list stood (nothing
  * opens over the page). Enter takes the first hit, ↓ steps into them, Esc empties the field.
- * `shortcut`: ⌘F types here, always – a page's own field is ⌘K's (`ViewSearch`) (Sender; Cloud's
- * ⌘F is `SearchPalette`'s, which finds the field by `marked`).
+ * `shortcut`: ⇧⌘F types here, always – a page's own field is ⌘F's (`ViewSearch`) (Sender; Cloud's
+ * ⇧⌘F is `SearchPalette`'s, which finds the field by `marked`).
  */
 export function BarSearchField({
   query,
@@ -66,8 +66,7 @@ export function BarSearchField({
 }) {
   const field = useRef<HTMLInputElement>(null);
   const onKey = useEffectEvent((event: globalThis.KeyboardEvent) => {
-    if (event.key.toLowerCase() !== 'f' || !isModKey(event) || event.altKey || event.shiftKey)
-      return;
+    if (!isSearchKey(event, 'main')) return;
     if (document.querySelector('dialog[open]')) return;
     event.preventDefault();
     field.current?.focus();
@@ -88,7 +87,7 @@ export function BarSearchField({
         placeholder="Suchen"
         value={query}
         onChange={(event) => onQuery(event.target.value)}
-        trailing={query === '' ? <Kbd>{isApplePlatform() ? '⌘F' : 'Strg F'}</Kbd> : undefined}
+        trailing={query === '' ? <Kbd>{searchKeyLabel('main')}</Kbd> : undefined}
         onKeyDown={(event) => {
           if (event.key === 'Escape' && query !== '') {
             event.preventDefault();

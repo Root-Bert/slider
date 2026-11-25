@@ -1,6 +1,8 @@
 import {
+  DEFAULT_PROJECT_NAME,
   isOpenTodo,
   MAX_MILESTONE_NAME,
+  MAX_PROJECT_NAME,
   searchFold,
   TODO_PRIORITIES,
   TODO_PRIORITY_LABELS,
@@ -12,12 +14,15 @@ import {
   type CloudPerson,
   type Todo,
   type TodoChange,
+  type TodoMilestone,
+  type TodoProject,
 } from '@slider/shared';
 import {
   createContext,
   useContext,
   useEffect,
   useEffectEvent,
+  useRef,
   useState,
   type ReactNode,
 } from 'react';
@@ -32,12 +37,16 @@ import {
   useCloudAgents,
   useCloudPeople,
   useCreateMilestone,
+  useCreateProject,
   useCreateTodo,
+  useDeleteProject,
   useMe,
   useMilestones,
+  useProjects,
   useNewTodoAgent,
   useSendTodoAgent,
   useTodos,
+  useUpdateProject,
   useUpdateTodo,
 } from '@/lib/api';
 import { isTextTarget } from '@/lib/dom';
@@ -60,8 +69,10 @@ import {
   LoadingState,
   MenuDivider,
   MenuHeading,
+  Menu,
   MenuItem,
   PopoverPanel,
+  SegmentedControl,
   SidePanel,
   TextField,
   TextLink,
@@ -77,6 +88,7 @@ import {
   OWN_SCOPE,
   scopeTabs,
   useAssignedOnly,
+  useProjectParam,
   useScope,
   WORKSPACE_SCOPE,
 } from '../../lib/scopes';
@@ -88,6 +100,7 @@ import { DueCalendar } from './DueCalendar';
 import { TodoActions } from './TodoActions';
 import { PriorityMark, StatusMark } from './TodoMarks';
 import { TodoTimeline } from './TodoTimeline';
+import { heldUpBy } from './timeline';
 import { byUrgency, isMine } from './order';
 
 /**
@@ -99,6 +112,8 @@ export function TodoList({ area }: { area: CloudArea | null }) {
   const workspaceId = ui.workspace.id;
   const todos = useTodos(workspaceId, area?.id ?? null);
   const milestones = useMilestones(workspaceId, area?.id ?? null);
+  const projects = useProjects(workspaceId, area?.id ?? null);
+  const [projectParam, setProject] = useProjectParam();
   const shown = useShownTodo();
   const [view, setView] = useStoredChoice('slider.cloud.todos-view', TODO_VIEWS, 'list');
   // The overview's open tab (the page's title); in an area all are the area's.
@@ -114,29 +129,59 @@ export function TodoList({ area }: { area: CloudArea | null }) {
       : scope && scope !== OWN_SCOPE
         ? (areas.find((each) => each.id === scope) ?? null)
         : null);
-  // The page's own field (⌘K): only those with every word in them.
+  // Projects: an area's, or one's own on „Meine“ – never on „Alle“.
+  const own = !area && scope === OWN_SCOPE;
+  const projectPlace = target || own;
+  const placeProjects = projectPlace
+    ? (projects.data ?? []).filter((each) => each.areaId === (target?.id ?? null))
+    : [];
+  // The project open – the place's „Allgemein“ unless one of its own is picked.
+  const project = placeProjects.find((each) => each.id === projectParam) ?? null;
+  const projectId = project?.id ?? null;
+  // The page's own field (⌘F): only those with every word in them.
   const [query, setQuery] = useState('');
+  // On the timeline: the milestone new ones go to – one of the place they are made in (gone or of
+  // another place: none).
+  const [pickedId, setPicked] = useState<string | null>(null);
   if (!todos.data) return <LoadingState padding="lg" />;
   const all = todos.data;
   // A tab whose place is not known (yet): nothing of it – never one's own under its name.
   const lost = !!scope && scope !== OWN_SCOPE && !target;
-  const placed = !scope
+  // One place – an area (its project open) or a tab of the overview; „Alle“ every one.
+  const placed = !(area || scope)
     ? all
     : lost
       ? []
-      : all.filter((todo) => todo.areaId === (target?.id ?? null));
+      : all.filter(
+          (todo) =>
+            todo.areaId === (target?.id ?? null) && (todo.project?.id ?? null) === projectId,
+        );
   // „Mir zugeteilt“ (the page's title row): only those given to oneself.
   const mineOnly = !area && assignedOnly;
   const scoped = mineOnly ? placed.filter((todo) => todo.assignee?.id === ui.userId) : placed;
   const list = todosSaying(scoped, query);
   const canAdd = !lost && (!target || target.access === 'edit' || target.access === 'manage');
+  const shownMilestones = (milestones.data ?? []).filter(
+    (milestone) =>
+      !(area || scope) ||
+      (milestone.areaId === (target?.id ?? null) && milestone.projectId === projectId),
+  );
+  const picked =
+    view === 'timeline'
+      ? (shownMilestones.find(
+          (milestone) =>
+            milestone.id === pickedId &&
+            milestone.areaId === (target?.id ?? null) &&
+            milestone.projectId === projectId,
+        ) ?? null)
+      : null;
   const tab = tabs.find((each) => each.key === scope);
   const none =
     mineOnly && (placed.length > 0 || !scope)
       ? 'Dir ist hier keine Aufgabe zugeteilt.'
-      : scope === OWN_SCOPE
+      : scope === OWN_SCOPE && !placeProjects.length
         ? 'Du hast noch keine eigene Aufgabe.'
-        : `In „${scope === WORKSPACE_SCOPE ? (target?.name ?? 'Workspace') : (tab?.label ?? '')}“ steht noch keine Aufgabe.`;
+        : `In „${project ? project.name : own ? DEFAULT_PROJECT_NAME : scope === WORKSPACE_SCOPE ? (target?.name ?? 'Workspace') : (tab?.label ?? '')}“ steht noch keine Aufgabe.`;
   const tiles = view === 'tiles';
   const rows = (each: readonly Todo[]) =>
     each.map((todo) =>
@@ -158,13 +203,19 @@ export function TodoList({ area }: { area: CloudArea | null }) {
     );
   return (
     <div className="flex w-full flex-col gap-6 pb-16">
+      {/* A place's projects: its „Allgemein“ and those made beside it, one open. */}
+      {projectPlace && placeProjects.length > 0 && (
+        <ProjectTabs own={own} projects={placeProjects} current={project} onPick={setProject} />
+      )}
       {/* The new one's field, the search and tiles or rows: one line, as on „Agenten“. */}
       {(canAdd || all.length > 0) && (
         <div className="flex flex-wrap items-center gap-3">
           {/* On a phone the new to-do takes its own row, search and view under it. */}
           <div className="min-w-48 flex-1 max-sm:basis-full">
-            {canAdd && <NewTodo areaId={target?.id ?? null} />}
+            {canAdd && <NewTodo areaId={target?.id ?? null} project={project} milestone={picked} />}
           </div>
+          {/* Between the new to-do and the search: a new project, typed where it stands. */}
+          {canAdd && projectPlace && <NewProject areaId={target?.id ?? null} onMade={setProject} />}
           {/* The search on the right, in the row – as Post's. */}
           {all.length > 0 && (
             <ViewSearch
@@ -198,20 +249,21 @@ export function TodoList({ area }: { area: CloudArea | null }) {
             !area
               ? 'Deine und die aus deinen Bereichen stehen hier.'
               : canAdd
-                ? 'Schreib oben, was in diesem Bereich zu tun ist.'
-                : 'Hier stehen die Aufgaben dieses Bereichs.'
+                ? `Schreib oben, was in ${project ? 'diesem Projekt' : 'diesem Bereich'} zu tun ist.`
+                : `Hier stehen die Aufgaben ${project ? 'dieses Projekts' : 'dieses Bereichs'}.`
           }
         />
       ) : view === 'timeline' ? (
-        // On a timeline, under their milestones – the place's (on „Alle“ every place's).
+        // On a timeline, under their milestones – the place's, area and project (on „Alle“ every
+        // place's).
         <TodoTimeline
           todos={list}
-          milestones={(milestones.data ?? []).filter(
-            (milestone) => !scope || milestone.areaId === (target?.id ?? null),
-          )}
+          milestones={shownMilestones}
           openId={shown.id}
           onToggle={shown.toggle}
-          newIn={canAdd ? { areaId: target?.id ?? null } : undefined}
+          newIn={canAdd ? { areaId: target?.id ?? null, projectId } : undefined}
+          picked={picked?.id ?? null}
+          onPick={setPicked}
           lead={
             area || scope
               ? undefined
@@ -240,7 +292,7 @@ export function TodoList({ area }: { area: CloudArea | null }) {
           );
         })
       ) : (
-        <Overview list={list} rows={rows} tiles={tiles} />
+        <Overview list={list} projects={projects.data ?? []} rows={rows} tiles={tiles} />
       )}
     </div>
   );
@@ -418,35 +470,54 @@ const BY_STATUS = ['in_progress', 'todo', 'backlog', 'done', 'canceled'] as cons
 /** One's own first, then each area – the open ones, the finished folded under them. */
 function Overview({
   list,
+  projects,
   rows,
   tiles,
 }: {
   list: readonly Todo[];
+  projects: readonly TodoProject[];
   rows: (each: readonly Todo[]) => ReactNode;
   tiles: boolean;
 }) {
   const ui = useCloud();
   const areas = ui.home?.areas ?? [];
   const places: { key: string; title: string; lead: ReactNode; todos: Todo[] }[] = [];
-  const own = list.filter((todo) => todo.areaId === null);
-  if (own.length) {
-    places.push({
-      key: 'own',
-      title: MINE,
-      lead: <MeAvatar />,
-      todos: own,
-    });
-  }
-  for (const area of areas) {
-    const here = list.filter((todo) => todo.areaId === area.id);
-    if (here.length) {
+  // Each place's „Allgemein“ under its name, then each of its projects as „Bereich | Projekt“ –
+  // one's own first.
+  const order = (id: string) => {
+    const at = projects.findIndex((each) => each.id === id);
+    return at < 0 ? projects.length : at;
+  };
+  const place = (key: string, title: string, lead: ReactNode, here: Todo[]) => {
+    const general = here.filter((todo) => !todo.project);
+    if (general.length) places.push({ key, title, lead, todos: general });
+    const inProjects = [
+      ...new Map(here.flatMap((todo) => (todo.project ? [[todo.project.id, todo.project]] : []))),
+    ]
+      .map(([, each]) => each)
+      .sort((a, b) => order(a.id) - order(b.id));
+    for (const each of inProjects) {
       places.push({
-        key: area.id,
-        title: area.name,
-        lead: <AreaDot color={area.color} />,
-        todos: here,
+        key: each.id,
+        title: `${title} | ${each.name}`,
+        lead,
+        todos: here.filter((todo) => todo.project?.id === each.id),
       });
     }
+  };
+  place(
+    'own',
+    MINE,
+    <MeAvatar />,
+    list.filter((todo) => todo.areaId === null),
+  );
+  for (const area of areas) {
+    place(
+      area.id,
+      area.name,
+      <AreaDot color={area.color} />,
+      list.filter((todo) => todo.areaId === area.id),
+    );
   }
   return places.map((place) => {
     const open = place.todos.filter((todo) => isOpenTodo(todo.status));
@@ -514,8 +585,19 @@ function Group({
   );
 }
 
-/** Typed where it stands: Enter puts it in – one's own in the overview, the area's in an area. */
-function NewTodo({ areaId }: { areaId: string | null }) {
+/**
+ * Typed where it stands: Enter puts it in – one's own in the overview, the area's in an area, in
+ * the project open there; on the timeline into the milestone picked there.
+ */
+function NewTodo({
+  areaId,
+  project,
+  milestone,
+}: {
+  areaId: string | null;
+  project: TodoProject | null;
+  milestone: TodoMilestone | null;
+}) {
   const ui = useCloud();
   const create = useCreateTodo(ui.workspace.id);
   const [title, setTitle] = useState('');
@@ -524,7 +606,7 @@ function NewTodo({ areaId }: { areaId: string | null }) {
     if (!text) return;
     setTitle('');
     create.mutate(
-      { title: text, areaId },
+      { title: text, areaId, projectId: project?.id ?? null, milestoneId: milestone?.id ?? null },
       { onError: (error) => ui.notify(error.message, 'danger') },
     );
   };
@@ -539,7 +621,13 @@ function NewTodo({ areaId }: { areaId: string | null }) {
         if (event.key === 'Escape') setTitle('');
       }}
       maxLength={300}
-      placeholder={areaId ? 'Neue Aufgabe im Bereich' : 'Neue Aufgabe'}
+      placeholder={
+        (project
+          ? `Neue Aufgabe in „${project.name}“`
+          : areaId
+            ? 'Neue Aufgabe im Bereich'
+            : 'Neue Aufgabe') + (milestone ? ` für „${milestone.name}“` : '')
+      }
       aria-label="Neue Aufgabe"
       // Ready to type, as „Agenten“'s order field – also where „Neu › Neue Aufgabe“ leads.
       autoFocus
@@ -594,7 +682,9 @@ function TodoRow({
         {area && (
           <span className="flex max-w-40 shrink-0 items-center gap-1.5 text-xs text-fg-muted">
             <AreaDot color={area.color} />
-            <span className="truncate">{area.name}</span>
+            <span className="truncate">
+              {todo.project ? `${area.name} | ${todo.project.name}` : area.name}
+            </span>
           </span>
         )}
         {/* What it carries beyond its title, named on hover. */}
@@ -1235,7 +1325,8 @@ function MilestonePicker({
 }) {
   const ui = useCloud();
   const here = (useMilestones(ui.workspace.id).data ?? []).filter(
-    (milestone) => milestone.areaId === todo.areaId,
+    (milestone) =>
+      milestone.areaId === todo.areaId && milestone.projectId === (todo.project?.id ?? null),
   );
   const create = useCreateMilestone(ui.workspace.id);
   const [name, setName] = useState('');
@@ -1310,8 +1401,420 @@ function MilestonePicker({
                 const text = name.trim();
                 setName('');
                 close();
+                create
+                  .mutateAsync({
+                    name: text,
+                    areaId: todo.areaId,
+                    projectId: todo.project?.id ?? null,
+                  })
+                  .then(
+                    (made) => onChange({ milestoneId: made.id }),
+                    (error: Error) => ui.notify(error.message, 'danger'),
+                  );
+              }}
+              className="min-w-0 flex-1 bg-transparent text-fg outline-none placeholder:text-fg-faint"
+            />
+          </label>
+        </>
+      )}
+    </Picker>
+  );
+}
+
+/**
+ * „Wartet auf“: the to-dos of its place it is to start after – picked one by one (a pick adds or
+ * takes one away and closes, as every picker); those waiting on it already are not offered (a
+ * loop never ends). Under it, which wait on it. The timeline marks red one that starts too early.
+ */
+function BlockedByPicker({
+  todo,
+  onChange,
+}: {
+  todo: Todo;
+  onChange: (change: TodoChange) => void;
+}) {
+  const ui = useCloud();
+  const all = useTodos(ui.workspace.id).data ?? [];
+  const [query, setQuery] = useState('');
+  const here = all.filter(
+    (each) =>
+      each.areaId === todo.areaId && (each.project?.id ?? null) === (todo.project?.id ?? null),
+  );
+  const byId = new Map(here.map((each) => [each.id, each]));
+  const blockers = todo.blockedBy
+    .flatMap((id) => byId.get(id) ?? [])
+    .sort((a, b) => a.number - b.number);
+  const waiting = heldUpBy(here, todo.id);
+  const waitingOn = here.filter((each) => each.blockedBy.includes(todo.id));
+  const words = searchFold(query.trim()).split(/\s+/).filter(Boolean);
+  const offered = here
+    .filter(
+      (each) =>
+        each.id !== todo.id &&
+        !waiting.has(each.id) &&
+        (todo.blockedBy.includes(each.id) || isOpenTodo(each.status)),
+    )
+    .filter((each) => {
+      const hay = searchFold(`#${each.number} ${each.title}`);
+      return words.every((word) => hay.includes(word));
+    })
+    .sort(
+      (a, b) =>
+        Number(todo.blockedBy.includes(b.id)) - Number(todo.blockedBy.includes(a.id)) ||
+        a.number - b.number,
+    );
+  const names = blockers.map((each) => `#${each.number}`).join(', ');
+  /** One more to wait on, or one less – the picker closes, as every picker. */
+  const pick = (each: Todo, close: () => void) => {
+    close();
+    setQuery('');
+    const picked = todo.blockedBy.includes(each.id);
+    onChange({
+      blockedBy: picked
+        ? todo.blockedBy.filter((id) => id !== each.id)
+        : [...todo.blockedBy, each.id],
+    });
+  };
+  return (
+    <>
+      <Picker
+        wide
+        label={blockers.length ? `Wartet auf ${names}` : 'Wartet auf'}
+        disabled={!todo.canEdit}
+        className={blockers.length ? 'text-fg' : 'text-fg-muted'}
+        trigger={
+          <>
+            <span className="flex size-5 shrink-0 items-center justify-center">
+              <Icon name="link" size="md" />
+            </span>
+            <span className="truncate">
+              {blockers.length === 1
+                ? `Wartet auf #${blockers[0]!.number} ${blockers[0]!.title}`
+                : blockers.length
+                  ? `Wartet auf ${names}`
+                  : 'Wartet auf'}
+            </span>
+          </>
+        }
+      >
+        {(close) => (
+          <>
+            {here.length > 9 && (
+              <label className="flex h-8 items-center gap-2 px-2 text-sm">
+                <Icon name="search" size="sm" className="shrink-0 text-fg-subtle" />
+                <input
+                  autoFocus
+                  value={query}
+                  placeholder="Aufgabe suchen …"
+                  aria-label="Aufgabe suchen"
+                  onChange={(event) => setQuery(event.target.value)}
+                  onKeyDown={(event) => {
+                    // Typed letters stay in the field; Esc closes the picker, the arrows and ⇥
+                    // step into the hits as anywhere in it; Enter picks the first.
+                    if (!['Escape', 'ArrowDown', 'ArrowUp', 'Tab'].includes(event.key))
+                      event.stopPropagation();
+                    if (event.key !== 'Enter' || !offered[0]) return;
+                    event.preventDefault();
+                    pick(offered[0], close);
+                  }}
+                  className="min-w-0 flex-1 bg-transparent text-fg outline-none placeholder:text-fg-faint"
+                />
+              </label>
+            )}
+            {offered.length === 0 ? (
+              <p className="px-2 py-1.5 text-sm text-fg-muted">
+                {words.length ? 'Keine Treffer' : 'Keine andere offene Aufgabe hier'}
+              </p>
+            ) : (
+              offered.map((each) => {
+                const picked = todo.blockedBy.includes(each.id);
+                return (
+                  <MenuItem
+                    key={each.id}
+                    role="menuitemcheckbox"
+                    aria-checked={picked}
+                    selected={picked}
+                    truncate
+                    trailing={
+                      <span className="text-xs text-fg-faint tabular-nums">#{each.number}</span>
+                    }
+                    onClick={() => pick(each, close)}
+                  >
+                    {each.title}
+                  </MenuItem>
+                );
+              })
+            )}
+          </>
+        )}
+      </Picker>
+      {waitingOn.length > 0 && (
+        <p className="flex h-9 min-w-0 items-center gap-2.5 px-2 text-sm text-fg-muted">
+          <span className="flex size-5 shrink-0 items-center justify-center">
+            <Icon name="arrowForward" size="md" />
+          </span>
+          <span className="truncate">
+            {waitingOn.map((each) => `#${each.number}`).join(', ')}{' '}
+            {waitingOn.length === 1 ? 'wartet' : 'warten'} darauf
+          </span>
+        </p>
+      )}
+    </>
+  );
+}
+
+/**
+ * A place's projects as tabs over its list: „Allgemein“ (its to-dos without a project) and those
+ * made beside it, one open. The open one's menu renames it (typed where it stands) or deletes it.
+ */
+function ProjectTabs({
+  own,
+  projects,
+  current,
+  onPick,
+}: {
+  /** One's own (on „Meine“) – not an area's. */
+  own: boolean;
+  projects: readonly TodoProject[];
+  current: TodoProject | null;
+  onPick: (projectId: string | null) => void;
+}) {
+  const ui = useCloud();
+  const rename = useUpdateProject(ui.workspace.id);
+  const remove = useDeleteProject(ui.workspace.id);
+  const [renaming, setRenaming] = useState(false);
+  const [name, setName] = useState('');
+  const [deleting, setDeleting] = useState<TodoProject | null>(null);
+  // Esc drops what was typed – the blur that follows saves nothing.
+  const dropped = useRef(false);
+  const start = () => {
+    dropped.current = false;
+    setName(current?.name ?? '');
+    setRenaming(true);
+  };
+  // Kept on Enter and on leaving the field, as a milestone's name.
+  const save = () => {
+    const text = name.trim();
+    setRenaming(false);
+    if (dropped.current || !text || !current || text === current.name) return;
+    rename.mutate(
+      { id: current.id, change: { name: text } },
+      { onError: (error) => ui.notify(error.message, 'danger') },
+    );
+  };
+  return (
+    <div className="-mb-2 flex min-w-0 flex-wrap items-center gap-2">
+      {!renaming && (
+        <SegmentedControl
+          label="Projekte"
+          mode="tabs"
+          size="sm"
+          track="soft"
+          segments={[
+            { value: '', label: DEFAULT_PROJECT_NAME },
+            ...projects.map((each) => ({ value: each.id, label: each.name })),
+          ]}
+          value={current?.id ?? ''}
+          onChange={(value) => onPick(value || null)}
+          className="max-w-full overflow-x-auto [scrollbar-width:none]"
+        />
+      )}
+      {current?.canEdit && !renaming && (
+        <Menu
+          label={`Mehr zu „${current.name}“`}
+          triggerSize="xs"
+          actions={[
+            { label: 'Umbenennen', icon: 'driveFileRename', onSelect: start },
+            {
+              label: 'Löschen',
+              icon: 'delete',
+              tone: 'danger' as const,
+              onSelect: () => setDeleting(current),
+            },
+          ]}
+        />
+      )}
+      {renaming && (
+        <input
+          autoFocus
+          value={name}
+          maxLength={MAX_PROJECT_NAME}
+          aria-label="Name des Projekts"
+          onChange={(event) => setName(event.target.value)}
+          onBlur={save}
+          onKeyDown={(event) => {
+            if (event.key === 'Enter' && !event.nativeEvent.isComposing) {
+              event.preventDefault();
+              save();
+              // Put in: the blur as the field goes keeps nothing more.
+              dropped.current = true;
+            }
+            if (event.key === 'Escape') {
+              event.stopPropagation();
+              dropped.current = true;
+              setRenaming(false);
+            }
+          }}
+          className="h-9 w-56 rounded-control bg-surface-1 px-3 text-sm text-fg outline-none focus-visible:ring-2 focus-visible:ring-focus"
+        />
+      )}
+      {deleting && (
+        <ConfirmDialog
+          onClose={() => setDeleting(null)}
+          title={`„${deleting.name}“ löschen?`}
+          description={`Seine Aufgaben und Meilensteine bleiben ${own ? 'bei dir' : 'im Bereich'}, unter „${DEFAULT_PROJECT_NAME}“.`}
+          confirmLabel="Löschen"
+          confirmIcon="delete"
+          onConfirm={() => {
+            const gone = deleting;
+            setDeleting(null);
+            onPick(null);
+            remove.mutateAsync(gone.id).then(
+              () => ui.notify(`„${gone.name}“ gelöscht`),
+              (error: Error) => ui.notify(error.message, 'danger'),
+            );
+          }}
+        />
+      )}
+    </div>
+  );
+}
+
+/**
+ * „Neues Projekt“ in the list's tool row, between the new to-do and the search: typed where it
+ * stands, made on Enter (Esc or leaving the field drops it, as a new milestone) and opened.
+ */
+function NewProject({
+  areaId,
+  onMade,
+}: {
+  areaId: string | null;
+  onMade: (projectId: string) => void;
+}) {
+  const ui = useCloud();
+  const create = useCreateProject(ui.workspace.id);
+  const [typing, setTyping] = useState(false);
+  const [name, setName] = useState('');
+  const stop = () => {
+    setTyping(false);
+    setName('');
+  };
+  if (!typing)
+    return (
+      <Button
+        variant="ghost"
+        icon="add"
+        aria-label="Neues Projekt"
+        onClick={() => setTyping(true)}
+        className="shrink-0"
+      >
+        {/* On a phone only its plus, so search and view keep one row. */}
+        <span className="max-sm:hidden">Neues Projekt</span>
+      </Button>
+    );
+  return (
+    <input
+      autoFocus
+      value={name}
+      maxLength={MAX_PROJECT_NAME}
+      placeholder="Neues Projekt …"
+      aria-label="Neues Projekt"
+      onChange={(event) => setName(event.target.value)}
+      onBlur={stop}
+      onKeyDown={(event) => {
+        if (event.key === 'Escape') {
+          event.stopPropagation();
+          stop();
+        }
+        if (event.key !== 'Enter' || event.nativeEvent.isComposing) return;
+        event.preventDefault();
+        const text = name.trim();
+        stop();
+        if (!text) return;
+        create.mutateAsync({ name: text, areaId }).then(
+          (made) => onMade(made.id),
+          (error: Error) => ui.notify(error.message, 'danger'),
+        );
+      }}
+      className="h-10 w-44 shrink-0 rounded-panel border border-border bg-surface px-3 text-sm text-fg outline-none placeholder:text-fg-faint focus-visible:ring-2 focus-visible:ring-focus"
+    />
+  );
+}
+
+/**
+ * Its project in its place: „Allgemein“ or one of the area's – or a new one typed where it stands
+ * at the foot of the choice, made and given at once (as a milestone).
+ */
+function ProjectPicker({ todo, onChange }: { todo: Todo; onChange: (change: TodoChange) => void }) {
+  const ui = useCloud();
+  const projects = (useProjects(ui.workspace.id, todo.areaId).data ?? []).filter(
+    (each) => each.areaId === todo.areaId,
+  );
+  const create = useCreateProject(ui.workspace.id);
+  const [name, setName] = useState('');
+  const label = todo.project?.name ?? DEFAULT_PROJECT_NAME;
+  return (
+    <Picker
+      wide
+      label={`Projekt: ${label}`}
+      disabled={!todo.canEdit}
+      trigger={
+        <>
+          <span className="flex size-5 shrink-0 items-center justify-center">
+            <Icon name="dashboard" size="md" />
+          </span>
+          <span className="truncate">{label}</span>
+        </>
+      }
+    >
+      {(close) => (
+        <>
+          <MenuItem
+            role="menuitemradio"
+            aria-checked={!todo.project}
+            selected={!todo.project}
+            icon="dashboard"
+            onClick={() => {
+              close();
+              if (todo.project) onChange({ projectId: null });
+            }}
+          >
+            {DEFAULT_PROJECT_NAME}
+          </MenuItem>
+          {projects.map((each) => (
+            <MenuItem
+              key={each.id}
+              role="menuitemradio"
+              aria-checked={todo.project?.id === each.id}
+              selected={todo.project?.id === each.id}
+              icon="dashboard"
+              truncate
+              onClick={() => {
+                close();
+                if (todo.project?.id !== each.id) onChange({ projectId: each.id });
+              }}
+            >
+              {each.name}
+            </MenuItem>
+          ))}
+          <MenuDivider />
+          <label className="flex h-8 items-center gap-2 px-2 text-sm">
+            <Icon name="add" size="sm" className="shrink-0 text-fg-subtle" />
+            <input
+              value={name}
+              maxLength={MAX_PROJECT_NAME}
+              placeholder="Neues Projekt …"
+              aria-label="Neues Projekt"
+              onChange={(event) => setName(event.target.value)}
+              onKeyDown={(event) => {
+                // Typed letters stay in the field; Esc closes the picker as anywhere in it.
+                if (event.key !== 'Escape') event.stopPropagation();
+                if (event.key !== 'Enter' || !name.trim()) return;
+                const text = name.trim();
+                setName('');
+                close();
                 create.mutateAsync({ name: text, areaId: todo.areaId }).then(
-                  (made) => onChange({ milestoneId: made.id }),
+                  (made) => onChange({ projectId: made.id }),
                   (error: Error) => ui.notify(error.message, 'danger'),
                 );
               }}
@@ -1537,7 +2040,9 @@ function TodoDetail({
               <StartPicker todo={todo} onChange={onChange} />
               <DuePicker todo={todo} onChange={onChange} />
               <MilestonePicker todo={todo} onChange={onChange} />
+              <BlockedByPicker todo={todo} onChange={onChange} />
               <PlacePicker todo={todo} onChange={onChange} />
+              <ProjectPicker todo={todo} onChange={onChange} />
             </div>
           </div>
         </PickerLook>

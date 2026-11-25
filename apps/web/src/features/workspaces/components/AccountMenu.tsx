@@ -1,28 +1,13 @@
 import { useEffect, useState } from 'react';
 import type { CloudSync } from '@slider/shared';
 import { useNavigate } from 'react-router';
-import { editsUnsentBeforeSignOut } from '@/features/viewer';
 import { takeAccountNotice } from '@/lib/api-client';
 import { routes } from '@/lib/routes';
-import { desktopBridge } from '@/lib/desktop-bridge';
-import { forgetOffline } from '@/lib/offline';
 import { dismissPasskeyHint, passkeyHintDismissed, passkeysSupported } from '@/lib/passkeys';
-import {
-  useAuthProviders,
-  useCloudSignOut,
-  useCloudStatus,
-  useDesktopState,
-  useLogout,
-  useMe,
-  useOtherAccounts,
-  useSignOutOtherAccount,
-  usePasskeys,
-  useStartCloudSignIn,
-} from '@/lib/api';
+import { useMe, useSignOutOtherAccount, usePasskeys, useStartCloudSignIn } from '@/lib/api';
 import { type ThemePreference, useThemePreference } from '@/lib/theme';
 import {
   Avatar,
-  ConfirmDialog,
   ErrorText,
   Icon,
   IconButton,
@@ -36,7 +21,8 @@ import {
   Toast,
   useToast,
 } from '@/ui';
-import { MAX_OTHER_ACCOUNTS, useAccountSwitch } from '../hooks/useAccountSwitch';
+import { MAX_OTHER_ACCOUNTS } from '../hooks/useAccountSwitch';
+import { useSignOut } from '../hooks/useSignOut';
 import { HeaderPopover } from './HeaderPopover';
 
 const THEMES: readonly Segment<ThemePreference>[] = [
@@ -55,43 +41,32 @@ const THEMES: readonly Segment<ThemePreference>[] = [
  */
 export function AccountMenu() {
   const { data: me } = useMe();
-  const logout = useLogout();
-  // The desktop app is one person on their own machine, no login of its own: „Anmelden“ and
-  // „Abmelden“ there are about its Slider server (BER-201).
-  const desktop = useAuthProviders().data?.desktop ?? false;
-  // The server's pages inside the desktop app (online, BER-201): „Abmelden“ signs this computer
-  // out – its session there ends with it, its copies go as on this computer's own pages.
-  const bridge = desktop ? null : desktopBridge();
-  const [confirmBridgeSignOut, setConfirmBridgeSignOut] = useState(false);
-  const [bridgeSigningOut, setBridgeSigningOut] = useState(false);
-  const [bridgeSignOutFailed, setBridgeSignOutFailed] = useState(false);
-  /** Edits not sent yet when „Abmelden“ was picked there: they go with the account's copies. */
-  const [bridgeUnsent, setBridgeUnsent] = useState(0);
-  const cloud = useCloudStatus(desktop);
-  const cloudAccount = cloud.data?.account ?? null;
+  const {
+    dialog: signOutDialog,
+    desktop,
+    bridge,
+    cloud,
+    cloudAccount,
+    others,
+    accounts,
+    desktopState,
+    offlineAccount,
+    signsOutOne,
+    allLabel,
+    signOutAll,
+    askCloudSignOut,
+    busy: signingOut,
+    logoutFailed,
+  } = useSignOut();
   const startCloud = useStartCloudSignIn();
-  const cloudSignOut = useCloudSignOut();
-  const [confirmCloudSignOut, setConfirmCloudSignOut] = useState(false);
   const navigate = useNavigate();
   const [hintWanted, setHintWanted] = useState(
     () => passkeysSupported() && !passkeyHintDismissed(),
   );
   const passkeys = usePasskeys(Boolean(me?.user) && hintWanted);
   const [theme, setTheme] = useThemePreference();
-  // Waiting for edits on their way before signing out, and how many were left unsent (to confirm).
-  const [checking, setChecking] = useState(false);
-  const [unsent, setUnsent] = useState<number | null>(null);
-  // More accounts on this browser – and in the desktop app's server pages, as in Figma (not on
-  // this computer's own pages: they are the app's one account).
+  // More accounts on this browser – and in the desktop app's server pages (`useSignOut`).
   const accountsShown = Boolean(me?.user) && !desktop;
-  const desktopState = useDesktopState();
-  /** The app's account, when the pages are on another one: only its decks are kept offline. */
-  const offlineAccount =
-    bridge && desktopState?.account && desktopState.account.email !== me?.user?.email
-      ? desktopState.account
-      : null;
-  const others = useOtherAccounts(accountsShown).data ?? [];
-  const accounts = useAccountSwitch();
   const signOutOther = useSignOutOtherAccount();
   // On another account than this browser was on before: said once, whoever changed it.
   const [toast, showToast] = useToast();
@@ -102,16 +77,6 @@ export function AccountMenu() {
   if (!me) return null;
   const user = me.user;
   if (!user) return <Avatar author={me.viewer.author} size={32} />;
-
-  const leave = () =>
-    logout.mutate(undefined, { onSuccess: () => window.location.assign(routes.login()) });
-  const signOut = async () => {
-    if (checking || logout.isPending) return;
-    setChecking(true);
-    const left = await editsUnsentBeforeSignOut().finally(() => setChecking(false));
-    if (left > 0) setUnsent(left);
-    else leave();
-  };
 
   return (
     <>
@@ -332,7 +297,7 @@ export function AccountMenu() {
                       icon="logout"
                       onClick={() => {
                         close();
-                        setConfirmCloudSignOut(true);
+                        askCloudSignOut();
                       }}
                     >
                       Abmelden
@@ -366,37 +331,25 @@ export function AccountMenu() {
                 <MenuDivider />
                 {/* Only this account; the next one signed in here takes over. In the desktop app
                     its own account goes with its copies – „Von allen Konten abmelden“ there. */}
-                {others.length > 0 && (!bridge || offlineAccount) && (
+                {signsOutOne && (
                   <MenuItem icon="logout" disabled={accounts.busy} onClick={accounts.signOut}>
                     Abmelden
                   </MenuItem>
                 )}
                 <MenuItem
                   icon={
-                    checking || (logout.isPending && unsent === null) ? (
+                    signingOut ? (
                       <Spinner size={18} />
                     ) : (
                       <Icon name="logout" size={18} className="text-fg-subtle" />
                     )
                   }
-                  onClick={() => {
-                    if (!bridge) return void signOut();
-                    if (checking) return;
-                    setChecking(true);
-                    void editsUnsentBeforeSignOut()
-                      .then((left) => {
-                        close();
-                        setBridgeUnsent(left);
-                        setBridgeSignOutFailed(false);
-                        setConfirmBridgeSignOut(true);
-                      })
-                      .finally(() => setChecking(false));
-                  }}
+                  onClick={() => signOutAll(close)}
                 >
                   {/* Every account on this browser goes: a shared computer is left clean. */}
-                  {others.length > 0 ? 'Von allen Konten abmelden' : 'Abmelden'}
+                  {allLabel}
                 </MenuItem>
-                {logout.isError && (
+                {logoutFailed && (
                   <ErrorText role="alert" size="xs" className="px-3 pt-0.5 pb-1.5">
                     Abmelden hat nicht geklappt. Bitte erneut versuchen.
                   </ErrorText>
@@ -406,83 +359,8 @@ export function AccountMenu() {
           </>
         )}
       </HeaderPopover>
-      {confirmCloudSignOut && cloud.data && (
-        <ConfirmDialog
-          title="Abmelden?"
-          description={`Die Präsentationen des Kontos verschwinden von diesem Computer und bleiben auf ${
-            new URL(cloud.data.server).host
-          }. Was hier erstellt oder auf diesem Computer behalten wurde, bleibt hier.`}
-          confirmLabel="Abmelden"
-          confirmIcon="logout"
-          pending={cloudSignOut.isPending}
-          error={cloudSignOut.error?.message}
-          onClose={() => {
-            cloudSignOut.reset();
-            setConfirmCloudSignOut(false);
-          }}
-          onConfirm={() =>
-            cloudSignOut.mutate(undefined, { onSuccess: () => setConfirmCloudSignOut(false) })
-          }
-        />
-      )}
-      {confirmBridgeSignOut && bridge && (
-        <ConfirmDialog
-          title={others.length > 0 ? 'Von allen Konten abmelden?' : 'Abmelden?'}
-          description={`${
-            others.length > 0 ? 'Alle Konten in dieser App werden abgemeldet. ' : ''
-          }Die Präsentationen ${
-            desktopState?.account?.email ? `von ${desktopState.account.email}` : 'des Kontos'
-          } verschwinden von diesem Computer und bleiben auf ${window.location.host}. Was hier erstellt oder auf diesem Computer behalten wurde, bleibt hier.${
-            bridgeUnsent === 0
-              ? ''
-              : bridgeUnsent === 1
-                ? ' Eine Änderung ist noch nicht gespeichert und geht verloren.'
-                : ` ${bridgeUnsent} Änderungen sind noch nicht gespeichert und gehen verloren.`
-          }`}
-          confirmLabel="Abmelden"
-          confirmIcon="logout"
-          pending={bridgeSigningOut}
-          error={
-            bridgeSignOutFailed ? 'Abmelden hat nicht geklappt. Bitte erneut versuchen.' : undefined
-          }
-          onClose={() => setConfirmBridgeSignOut(false)}
-          onConfirm={() => {
-            setBridgeSigningOut(true);
-            setBridgeSignOutFailed(false);
-            // What this browser session kept for the account (stored answers, the edits not sent)
-            // goes first, as on signing out in the browser – the app then moves the tabs to this
-            // computer's pages, this one with them.
-            // Every account of the app's pages signs out (`desktop:signOut`), their drafts too.
-            void forgetOffline('everyone')
-              .then(() => bridge.signOut())
-              .then(
-                (done) => setBridgeSignOutFailed(!done),
-                () => setBridgeSignOutFailed(true),
-              )
-              .finally(() => setBridgeSigningOut(false));
-          }}
-        />
-      )}
-      {accounts.dialog}
+      {signOutDialog}
       <Toast toast={toast} />
-      {unsent !== null && (
-        <ConfirmDialog
-          title="Trotzdem abmelden?"
-          description={`${
-            unsent === 1
-              ? 'Eine Änderung ist noch nicht gespeichert.'
-              : `${unsent} Änderungen sind noch nicht gespeichert.`
-          } Beim Abmelden gehen sie verloren.`}
-          confirmLabel="Abmelden"
-          confirmIcon="logout"
-          pending={logout.isPending}
-          error={
-            logout.isError ? 'Abmelden hat nicht geklappt. Bitte erneut versuchen.' : undefined
-          }
-          onClose={() => setUnsent(null)}
-          onConfirm={leave}
-        />
-      )}
     </>
   );
 }

@@ -17,13 +17,23 @@ import {
   type CloudShare,
   type CloudShareInput,
   type CloudShareUpdate,
+  type CloudFocus,
   type CloudSummary,
-  type CloudUploadResult,
   type CloudVersion,
+  type Comment,
   type Deck,
+  type Slide,
 } from '@slider/shared';
-import { keepPreviousData, useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import {
+  keepPreviousData,
+  useMutation,
+  useQuery,
+  useQueryClient,
+  type QueryClient,
+} from '@tanstack/react-query';
 import { api } from '../api-client';
+import { queryKeys } from './keys';
+import { SIGNED_URL_STALE_MS } from './revisions';
 
 /**
  * Cloud – the workspace's files. Everything of one workspace lives under `['cloud', id]`, so a
@@ -79,6 +89,7 @@ export const useCloudHome = (workspaceId: string) =>
   useQuery({
     queryKey: cloudKeys.home(workspaceId),
     queryFn: () => api.get<CloudHome>(base(workspaceId)),
+    enabled: workspaceId !== '',
     staleTime: 15_000,
   });
 
@@ -159,6 +170,35 @@ export const useCloudSummary = (workspaceId: string, since: string | null, stamp
     staleTime: Infinity,
     retry: false,
   });
+
+/**
+ * „Für dich“ on Cloud's start: what waits for the person across the apps. `plain` at once (and
+ * every minute: to-dos, comments and shares change without telling), `told` by the AI for exactly
+ * those entries – asked anew when they change; the server answers from its last look while only
+ * some went.
+ */
+export function useCloudFocus(workspaceId: string, stamp: string | null) {
+  const plain = useQuery({
+    queryKey: ['cloud-focus', workspaceId, false, stamp],
+    queryFn: () => api.get<CloudFocus>(`${base(workspaceId)}/focus?ai=0`),
+    enabled: stamp !== null,
+    placeholderData: keepPreviousData,
+    refetchInterval: 60_000,
+    staleTime: 30_000,
+    // Back on the page after dealing with a row: asked anew, so it goes at once.
+    refetchOnMount: 'always',
+  });
+  const entries = plain.data?.items.map((item) => `${item.key}@${item.at ?? ''}`).join(',');
+  const told = useQuery({
+    queryKey: ['cloud-focus', workspaceId, true, entries],
+    queryFn: () => api.get<CloudFocus>(`${base(workspaceId)}/focus?ai=1`),
+    enabled: entries !== undefined && (plain.data?.items.length ?? 0) > 0,
+    placeholderData: keepPreviousData,
+    staleTime: Infinity,
+    retry: false,
+  });
+  return { plain, told };
+}
 
 export const useCloudPeople = (workspaceId: string, enabled = true) =>
   useQuery({
@@ -294,16 +334,6 @@ export function useCopyCloudNodes(workspaceId: string) {
   return useMutation({
     mutationFn: (input: { ids: string[] } & Target) =>
       api.post<CloudBatchResult>('/cloud/nodes/copy', input),
-    onSettled: refresh,
-  });
-}
-
-/** „Als PDF ablegen …“: a presentation (or other office file) as a PDF of its own, where picked. */
-export function useKeepCloudPdf(workspaceId: string) {
-  const { refresh } = useListPatch(workspaceId);
-  return useMutation({
-    mutationFn: ({ nodeId, ...target }: { nodeId: string } & Target) =>
-      api.post<CloudUploadResult>(`/cloud/nodes/${nodeId}/pdf`, target),
     onSettled: refresh,
   });
 }
@@ -494,7 +524,72 @@ export function useDeleteCloudVersion(workspaceId: string) {
 export function usePresentCloudNode() {
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: (nodeId: string) => api.post<Deck>(`/cloud/nodes/${nodeId}/present`, {}),
+    mutationFn: async (nodeId: string) => {
+      const deck = await api.post<Deck>(`/cloud/nodes/${nodeId}/present`, {});
+      await warmDeck(queryClient, deck);
+      return deck;
+    },
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ['decks', 'list'] }),
   });
+}
+
+/** How long „Öffnen“ (already showing that it loads) waits at most for what the viewer needs. */
+const WARM_MS = 1500;
+/** Slides whose pictures are loaded before: what the viewer shows first. */
+const WARM_PICTURES = 3;
+
+/**
+ * A ready presentation's deck, slides and comments put in the cache – as `useDeck`, `useSlides`,
+ * `useComments` ask for them – and its first slides' pictures loaded, before it opens: the viewer
+ * then stands at once with its slides, not after a spinner and empty frames. Waits at most
+ * {@link WARM_MS}; whatever is not there by then comes as before.
+ */
+async function warmDeck(queryClient: QueryClient, deck: Deck): Promise<void> {
+  if (deck.import.status !== 'ready') return;
+  const id = deck.id;
+  const work = Promise.all([
+    queryClient.prefetchQuery({
+      queryKey: queryKeys.deck(id),
+      queryFn: () => api.get<Deck>(`/decks/${id}`),
+    }),
+    queryClient.prefetchQuery({
+      queryKey: queryKeys.comments(id),
+      queryFn: () => api.get<Comment[]>(`/decks/${id}/comments`),
+    }),
+    queryClient
+      .fetchQuery({
+        queryKey: queryKeys.slides(id),
+        queryFn: () => api.get<Slide[]>(`/decks/${id}/slides`),
+        staleTime: SIGNED_URL_STALE_MS,
+      })
+      .then((slides) => {
+        // The strip's small pictures on their way too, not waited for.
+        for (const slide of slides) new Image().src = slide.thumbnailUrl;
+        return Promise.allSettled(
+          slides
+            .filter((slide) => !slide.hidden)
+            .slice(0, WARM_PICTURES)
+            .flatMap((slide) => [
+              // What the stage shows first (`SwapImage`'s `initialSrc`), then what it takes from
+              // the two sizes (`slideSrcSet`) at about its width.
+              decoded(slide.thumbnailUrl),
+              slide.thumbnailUrl === slide.imageUrl
+                ? null
+                : decoded(slide.imageUrl, `${slide.thumbnailUrl} 1280w, ${slide.imageUrl} 3840w`),
+            ]),
+        );
+      }),
+  ]).catch(() => {});
+  await Promise.race([work, new Promise((resolve) => setTimeout(resolve, WARM_MS))]);
+}
+
+/** A picture loaded and decoded – of `srcSet` the one the browser takes at half the window. */
+function decoded(src: string, srcSet?: string): Promise<void> {
+  const picture = new Image();
+  if (srcSet) {
+    picture.sizes = '50vw';
+    picture.srcset = srcSet;
+  }
+  picture.src = src;
+  return picture.decode();
 }

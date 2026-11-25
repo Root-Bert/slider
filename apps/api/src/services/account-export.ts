@@ -23,7 +23,6 @@ import {
   documentComments,
   googleConnections,
   cloudAgentFiles,
-  cloudAgentMessages,
   cloudAgents,
   materialChatMessages,
   materialChats,
@@ -44,8 +43,10 @@ import {
   revisions,
   senderChannels,
   senderDrafts,
+  senderScheduled,
   senderMembers,
   senderMessages,
+  todoDependencies,
   todoMilestones,
   todos,
   calendars,
@@ -65,9 +66,8 @@ import { ApiError, notFound } from '../http/errors';
 import { callsOf } from './call-records';
 import { normalizeEmail } from './accounts';
 import { inviteEntries, invitesTo } from './data-requests';
-import { tagConversation } from './cloud-agent-runs';
 import { cloudContext, type CloudCtx } from './cloud/context';
-import { audienceOf } from './sender';
+import { agentMessagesWhere, type AgentMessageRow } from './agent-chats';
 
 /**
  * Everything Slider stores about an account, as a ZIP (BER-145: DSGVO Art. 15 copy and Art. 20
@@ -287,7 +287,8 @@ async function buildExport(
         })
         .from(senderMembers)
         .innerJoin(senderChannels, eq(senderChannels.id, senderMembers.channelId))
-        .where(eq(senderMembers.userId, userId)),
+        // How far they read an agent's chats: no conversation they are in (`agenten.json`).
+        .where(and(eq(senderMembers.userId, userId), ne(senderChannels.kind, 'agent'))),
       db
         .select()
         .from(senderPins)
@@ -306,6 +307,8 @@ async function buildExport(
 
   const zip = new JSZip();
   zip.file('LIESMICH.txt', README);
+  const picture = user.picture ? await fileOf(deps.storage, user.picture) : null;
+  if (picture) zip.file('profilbild.jpg', picture, { compression: 'STORE' });
   zip.file(
     'konto.json',
     json({
@@ -315,8 +318,10 @@ async function buildExport(
         name: user.name,
         email: user.email,
         color: user.color,
+        picture: picture ? 'profilbild.jpg' : null,
         callVoice: user.callVoice,
         mailSyncMinutes: user.mailSyncMinutes,
+        showExtensions: user.showExtensions,
         instanceAdmin: user.isInstanceAdmin,
         createdAt: user.createdAt.toISOString(),
         lastActiveAt: user.lastActiveAt.toISOString(),
@@ -580,12 +585,15 @@ async function buildExport(
     .from(cloudAgents)
     .where(eq(cloudAgents.userId, userId))
     .orderBy(asc(cloudAgents.createdAt));
-  const agentMessages = await db
-    .select({ message: cloudAgentMessages })
-    .from(cloudAgentMessages)
-    .innerJoin(cloudAgents, eq(cloudAgents.id, cloudAgentMessages.agentId))
-    .where(eq(cloudAgents.userId, userId))
-    .orderBy(asc(cloudAgentMessages.seq));
+  const agentMessages = (
+    await agentMessagesWhere(
+      db,
+      inArray(
+        senderChannels.agentId,
+        agents.map((agent) => agent.id),
+      ),
+    )
+  ).filter((message) => !message.deleted);
   const agentFiles = await db
     .select({ file: cloudAgentFiles })
     .from(cloudAgentFiles)
@@ -593,14 +601,17 @@ async function buildExport(
     .where(eq(cloudAgents.userId, userId))
     .orderBy(asc(cloudAgentFiles.createdAt));
   // What they wrote to colleagues' agents (an agent is a shared space): their messages only.
-  const writtenElsewhere = await db
-    .select({ message: cloudAgentMessages, agent: cloudAgents })
-    .from(cloudAgentMessages)
-    .innerJoin(cloudAgents, eq(cloudAgents.id, cloudAgentMessages.agentId))
-    .where(and(eq(cloudAgentMessages.userId, userId), ne(cloudAgents.userId, userId)))
-    .orderBy(asc(cloudAgentMessages.createdAt));
-  // Hers is what she may still read: an area's agent while she sees the area (`seesAgent`), what
-  // it was told and did in a conversation (its tag chats, with others' lines) while she reads that.
+  const writtenElsewhere = (
+    await agentMessagesWhere(
+      db,
+      and(
+        eq(senderMessages.userId, userId),
+        isNull(senderMessages.agentId),
+        isNull(senderMessages.deletedAt),
+      )!,
+    )
+  ).filter((message) => !agents.some((agent) => agent.id === message.agentId));
+  // Hers is what she may still read: an area's agent while she sees the area (`seesAgent`).
   const contexts = new Map<string, Promise<CloudCtx | null>>();
   const contextIn = (workspaceId: string) => {
     let found = contexts.get(workspaceId);
@@ -615,29 +626,17 @@ async function buildExport(
     const ctx = agent.areaId ? await contextIn(agent.workspaceId) : null;
     if (!agent.shared || !agent.areaId || ctx?.areas.get(agent.areaId)?.access) seen.add(agent.id);
   }
-  const talkedIn = [
-    ...new Set(
-      [...agentMessages, ...writtenElsewhere].flatMap(
-        ({ message }) => tagConversation(message.chatId) ?? [],
-      ),
-    ),
-  ];
-  const readable = new Set<string>();
-  if (talkedIn.length > 0)
-    for (const row of await db
-      .select()
-      .from(senderChannels)
-      .where(inArray(senderChannels.id, talkedIn)))
-      if ((await audienceOf(db, row)).has(userId)) readable.add(row.id);
-  const readsChat = (chatId: string) => {
-    const conversation = tagConversation(chatId);
-    return conversation === null || readable.has(conversation);
-  };
-  const writtenThere = writtenElsewhere.filter(({ message }) => readsChat(message.chatId));
-  const elsewhere = new Map<string, typeof cloudAgents.$inferSelect>();
-  for (const { agent } of writtenThere) elsewhere.set(agent.id, agent);
+  const elsewhere = writtenElsewhere.length
+    ? await db
+        .select()
+        .from(cloudAgents)
+        .where(
+          inArray(cloudAgents.id, [...new Set(writtenElsewhere.map((message) => message.agentId))]),
+        )
+        .orderBy(asc(cloudAgents.createdAt))
+    : [];
   /** A person's message: theirs (`null`: from before agents were shared – the owner's) or another's. */
-  const roleOf = (message: typeof cloudAgentMessages.$inferSelect) =>
+  const roleOf = (message: AgentMessageRow) =>
     message.role !== 'user'
       ? 'KI'
       : message.userId === userId || message.userId === null
@@ -655,12 +654,10 @@ async function buildExport(
         ...(seen.has(agent.id) ? {} : { areaLeft: true }),
         messages: agentMessages
           .filter(
-            ({ message }) =>
-              message.agentId === agent.id &&
-              readsChat(message.chatId) &&
-              (seen.has(agent.id) || roleOf(message) === 'du'),
+            (message) =>
+              message.agentId === agent.id && (seen.has(agent.id) || roleOf(message) === 'du'),
           )
-          .map(({ message }) => ({
+          .map((message) => ({
             role: roleOf(message),
             text: message.text,
             state: message.state,
@@ -676,15 +673,15 @@ async function buildExport(
             createdAt: file.createdAt.toISOString(),
           })),
       })),
-      ...[...elsewhere.values()].map((agent) => ({
+      ...elsewhere.map((agent) => ({
         id: agent.id,
         workspaceId: agent.workspaceId,
         title: agent.title,
         colleaguesAgent: true,
         createdAt: agent.createdAt.toISOString(),
-        messages: writtenThere
-          .filter(({ message }) => message.agentId === agent.id)
-          .map(({ message }) => ({
+        messages: writtenElsewhere
+          .filter((message) => message.agentId === agent.id)
+          .map((message) => ({
             role: 'du',
             text: message.text,
             createdAt: message.createdAt.toISOString(),
@@ -803,6 +800,17 @@ async function buildExport(
     .from(todos)
     .where(or(eq(todos.ownerId, userId), eq(todos.createdBy, userId)))
     .orderBy(asc(todos.createdAt));
+  const waits = todoRows.length
+    ? await db
+        .select()
+        .from(todoDependencies)
+        .where(
+          inArray(
+            todoDependencies.todoId,
+            todoRows.map((row) => row.id),
+          ),
+        )
+    : [];
   zip.file(
     'todos.json',
     json(
@@ -819,6 +827,7 @@ async function buildExport(
         startOn: row.startOn,
         dueOn: row.dueOn,
         milestoneId: row.milestoneId,
+        blockedBy: waits.filter((one) => one.todoId === row.id).map((one) => one.blockedById),
         source: row.source,
         completedAt: row.completedAt?.toISOString() ?? null,
         createdAt: row.createdAt.toISOString(),
@@ -908,7 +917,14 @@ async function buildExport(
     .from(senderMessages)
     .innerJoin(senderChannels, eq(senderChannels.id, senderMessages.channelId))
     .leftJoin(cloudAreas, eq(cloudAreas.id, senderChannels.areaId))
-    .where(and(eq(senderMessages.userId, userId), isNull(senderMessages.deletedAt)))
+    .where(
+      and(
+        eq(senderMessages.userId, userId),
+        isNull(senderMessages.deletedAt),
+        // Their agents' chats: `agenten.json`.
+        ne(senderChannels.kind, 'agent'),
+      ),
+    )
     .orderBy(asc(senderMessages.createdAt));
   zip.file(
     'nachrichten.json',
@@ -944,6 +960,29 @@ async function buildExport(
         target: row.target,
         text: row.text,
         updatedAt: row.updatedAt.toISOString(),
+      })),
+    ),
+  );
+
+  // What they (or their agents for them) planned to send later („Später senden“).
+  const plannedRows = await db
+    .select()
+    .from(senderScheduled)
+    .where(eq(senderScheduled.userId, userId))
+    .orderBy(asc(senderScheduled.sendAt));
+  zip.file(
+    'geplant.json',
+    json(
+      plannedRows.map((row) => ({
+        workspaceId: row.workspaceId,
+        conversationId: row.channelId,
+        agentId: row.agentId,
+        text: row.text,
+        attachments: row.attachments.map((one) => one.name),
+        sendAt: row.sendAt.toISOString(),
+        state: row.state,
+        error: row.error,
+        createdAt: row.createdAt.toISOString(),
       })),
     ),
   );
@@ -1295,7 +1334,7 @@ const safeName = (name: string) =>
 
 const README = `Deine Daten aus Office
 
-konto.json            Profil, Anmeldewege, Passkeys, verbundene Nextcloud-Konten, KI-Apps, Sitzungen, Workspaces, Verbindungen, Bereiche, Angepinntes (in der Cloud und im Sender), Favoriten, zuletzt Geöffnetes, Unterhaltungen im Sender, Wörter für Workspaces
+konto.json            Profil (dein Bild in profilbild.jpg), Anmeldewege, Passkeys, verbundene Nextcloud-Konten, KI-Apps, Sitzungen, Workspaces, Verbindungen, Bereiche, Angepinntes (in der Cloud und im Sender), Favoriten, zuletzt Geöffnetes, Unterhaltungen im Sender, Wörter für Workspaces
 praesentationen.json  Präsentationen, die dir gehören; die Originaldateien liegen in praesentationen/
 kommentare.json       Kommentare und Antworten, die du geschrieben hast – in allen Präsentationen
 reaktionen.json       Deine Reaktionen auf Kommentare und KI-Antworten (up = Daumen hoch, down = Daumen runter, neutral = egal)
@@ -1311,6 +1350,7 @@ dateien.json          Deine eigenen Dateien und Ordner in der Cloud; die Dateien
 material.json         Notizen, Links und Dateien (nur benannt), die du auf Materialseiten gelegt hast
 nachrichten.json      Deine Nachrichten im Sender (nicht die der anderen)
 entwuerfe.json        Was du geschrieben und noch nicht abgeschickt hast – in Unterhaltungen, an Agenten, als Mail
+geplant.json          Nachrichten, die du (oder dein Agent) für später geplant hast und die noch nicht gesendet sind
 anrufe.json           Anrufe, in denen du warst: wann, mit wem, was du gesagt hast, und die Notizen danach
 dokumente.json        Deine Kommentare in Textdokumenten und PDFs, deine Reaktionen, KI-Aufträge dort, was du in PDFs ausgefüllt hast; Unterschriften in unterschriften/
 todos.json            Deine eigenen Aufgaben und die, die du in Bereichen angelegt hast

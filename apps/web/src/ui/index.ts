@@ -47,6 +47,13 @@ export { IconButton, type IconButtonProps } from './IconButton';
 export { IconTile, type IconTileProps, type IconTileSize } from './IconTile';
 export { Kbd, ReturnKey } from './Kbd';
 export {
+  PaletteBody,
+  PaletteDialog,
+  PaletteMark,
+  PaletteMarked,
+  type PaletteEntry,
+} from './Palette';
+export {
   ListRow,
   RowList,
   type ListRowProps,

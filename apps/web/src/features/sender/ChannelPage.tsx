@@ -10,6 +10,7 @@ import {
   type SenderChannel,
   type SenderChannelAgent,
   type SenderMessage,
+  type SenderScheduled,
 } from '@slider/shared';
 import {
   isPending,
@@ -30,7 +31,12 @@ import {
   useAddSenderAgent,
   useRemoveSenderAgent,
   useUpdateSenderChannel,
+  useDeleteSenderScheduled,
+  useScheduleSenderMessage,
+  useSendSenderScheduledNow,
+  useSenderScheduled,
 } from '@/lib/api';
+import { draftOf, setDraft } from '@/lib/drafts';
 import { routes } from '@/lib/routes';
 import { CallBoxes, CallButtons, useChannelCall } from '@/features/calls';
 import { AgentAvatar, AreaDot, AsideToggle, useAgentAside } from '@/features/cloud';
@@ -51,6 +57,7 @@ import { Composer, type TagAgent } from './components/Composer';
 import { useAttachments } from '@/features/attachments';
 import { MessageList } from './components/MessageList';
 import { ReplyQuote } from './components/ReplyQuote';
+import { ScheduledLines } from './components/ScheduledLine';
 import { PersonFace } from './components/PersonFace';
 import { quoteOf } from './lib/quote';
 import { ChatFiles } from './components/ChatFiles';
@@ -178,6 +185,13 @@ export function Conversation({
   const post = usePostSenderMessage(workspaceId, channelId, ui.me);
   const failedOf = useFailedSends();
   const discard = useDiscardFailedSend(workspaceId, channelId);
+  // „Später senden“: one's planned messages here, above the field.
+  const planned = useSenderScheduled(workspaceId, channelId);
+  const schedule = useScheduleSenderMessage(workspaceId, channelId);
+  const unplan = useDeleteSenderScheduled(workspaceId, channelId);
+  const sendNow = useSendSenderScheduledNow(workspaceId, channelId);
+  // „Bearbeiten“ on a planned one: its words back into the field (after what stands there).
+  const [refill, setRefill] = useState<{ text: string } | null>(null);
   // Files put on the message being written – kept per conversation, as its words.
   const attach = useAttachments({
     workspaceId,
@@ -336,6 +350,40 @@ export function Conversation({
     });
     setReplyingTo(null);
   };
+  // Refused: said, the words and files back into the field.
+  const sendLater = (text: string, attachments: Attachment[], at: Date) =>
+    schedule
+      .mutateAsync({
+        text,
+        attachments,
+        replyTo: replying?.id,
+        sendAt: at,
+        pendingId: newPendingId(),
+      })
+      .then(
+        () => {
+          setReplyingTo(null);
+          return true;
+        },
+        (error: Error) => {
+          ui.notify(error.message, 'danger');
+          return false;
+        },
+      );
+  const editPlanned = (one: SenderScheduled) =>
+    unplan.mutate(one, {
+      onSuccess: (was) => {
+        const standing = draftOf(channelId).trim();
+        const text = standing ? `${standing}\n${was.text}` : was.text;
+        // Kept as the draft too: gone from the server, it must not go with a reload.
+        setDraft(channelId, text, { kind: 'conversation', workspaceId });
+        setRefill({ text });
+        attach.restore(was.attachments);
+        const answered = was.replyTo && messages.find((each) => each.id === was.replyTo);
+        if (answered) setReplyingTo(answered);
+      },
+      onError: (error) => ui.notify(error.message, 'danger'),
+    });
   const reply = (message: SenderMessage) => {
     setReplyingTo(message);
     composerRef.current?.querySelector<HTMLElement>('textarea, [contenteditable="true"]')?.focus();
@@ -548,6 +596,22 @@ export function Conversation({
               <TypingLine people={typing} />
               {channel.canWrite ? (
                 <div ref={composerRef} className="flex shrink-0 flex-col gap-1.5">
+                  <ScheduledLines
+                    planned={planned.data ?? []}
+                    // Per call, not mutate()'s callbacks: those answer only the latest of two quick ones.
+                    onSendNow={(one) =>
+                      void sendNow
+                        .mutateAsync(one)
+                        .catch((error: Error) => ui.notify(error.message, 'danger'))
+                    }
+                    onEdit={editPlanned}
+                    onDelete={(one) =>
+                      void unplan.mutateAsync(one).then(
+                        () => ui.notify('Geplante Nachricht gelöscht'),
+                        (error: Error) => ui.notify(error.message, 'danger'),
+                      )
+                    }
+                  />
                   {replying && (
                     <div className="flex items-center gap-2 px-1">
                       <Icon name="reply" size={16} className="shrink-0 text-fg-subtle" />
@@ -569,6 +633,8 @@ export function Conversation({
                     agents={agentsToTag(channel, callable)}
                     onNewAgent={() => bringAgent()}
                     onSend={send}
+                    onSchedule={sendLater}
+                    prefill={refill}
                     everyone
                     attach={attach}
                     onTyping={() => tellTypingInSender(channelId)}

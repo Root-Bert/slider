@@ -18,11 +18,11 @@ import {
 } from '@slider/shared';
 import {
   callRecords,
-  cloudAgentChats,
   cloudAgents,
   senderMessages,
   workspaceMembers,
 } from '../src/db/schema';
+import { openAgentChat } from '../src/services/agent-chats';
 import { anonymiseCalls, callsOf } from '../src/services/call-records';
 import { contentSecurityPolicy, sfuOrigins } from '../src/http/csp';
 import {
@@ -264,9 +264,11 @@ describe('Calls – in a conversation, heard on every page', () => {
       userId: anna.user.id,
       title: 'Recherche',
     });
-    await ctx.deps.db
-      .insert(cloudAgentChats)
-      .values({ id: agentId, agentId, userId: anna.user.id });
+    await openAgentChat(
+      ctx.deps.db,
+      { id: agentId, workspaceId: ctx.workspaceId },
+      { id: agentId, userId: anna.user.id, at: ctx.deps.clock.now() },
+    );
     const dialled = await send(
       'POST',
       `/cloud/agents/${agentId}/call`,
@@ -766,7 +768,11 @@ describe('Calls – in a conversation, heard on every page', () => {
       await ctx.deps.db
         .insert(cloudAgents)
         .values({ id, workspaceId: ctx.workspaceId, userId: owner, title, shared });
-      await ctx.deps.db.insert(cloudAgentChats).values({ id, agentId: id, userId: owner });
+      await openAgentChat(
+        ctx.deps.db,
+        { id, workspaceId: ctx.workspaceId },
+        { id, userId: owner, at: ctx.deps.clock.now() },
+      );
       return id;
     };
     const veras = await agentOf(vera.user.id, 'Veras Notizen', false);

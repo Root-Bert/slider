@@ -2,7 +2,10 @@ import { instanceAiUsageSchema, type Comment } from '@slider/shared';
 import { eq, sql } from 'drizzle-orm';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { SEALED_PREFIX } from '../src/crypto/content-crypto';
-import { media, workspaceMembers } from '../src/db/schema';
+import { media, workspaceMembers, workspaces } from '../src/db/schema';
+import { attachmentBlocks } from '../src/services/attachments';
+import { blobKeys } from '../src/storage/blob-storage';
+import { slipsFrom } from '../src/services/video-cuts';
 import {
   createReadyDeck,
   createTestContext,
@@ -111,7 +114,18 @@ describe('PUT /comments/:commentId/recording', () => {
         aiFetch: async (url, init) => {
           if (!url.endsWith('/audio/transcriptions'))
             return Response.json({ data: [{ id: 'whisper-large-v3-turbo' }] });
-          asked.push((init?.body as FormData).get('file') as File);
+          const sent = init?.body as FormData;
+          if (sent.get('response_format') === 'verbose_json')
+            return Response.json({
+              text: 'Also hier ist der Plan. Hier ist der Plan.',
+              duration: 12,
+              segments: [
+                { id: 0, start: 1.5, end: 3, text: 'Also hier ist der' },
+                { id: 1, start: 3.2, end: 5, text: 'Plan.' },
+                { id: 2, start: 8, end: 10, text: 'Hier ist der Plan.' },
+              ],
+            });
+          asked.push(sent.get('file') as File);
           if (fail) return new Response('busy', { status: 503 });
           return Response.json({ text: 'Den Titel bitte größer.' });
         },
@@ -162,6 +176,86 @@ describe('PUT /comments/:commentId/recording', () => {
           await (await speech.request('/api/instance/ai-usage?interval=1d')).json(),
         );
         expect(usage.byFeature.find((each) => each.feature === 'recording')?.audioSeconds).toBe(4);
+
+        // „KI-Schnitt“ on a video before it is sent: its sound's silences become cuts (before the
+        // first word, between, after the last) – the AI's slips only where the workspace has one.
+        const sound = new FormData();
+        sound.append('file', new File([new Uint8Array(64)], 'ton.wav', { type: 'audio/wav' }));
+        const cuts = await speech.request(`/api/workspaces/${speech.workspaceId}/video-cuts`, {
+          method: 'POST',
+          body: sound,
+        });
+        expect(await cuts.json()).toEqual([
+          { start: 0, end: 1.2, why: 'Pause' },
+          { start: 5.3, end: 7.7, why: 'Pause' },
+          { start: 10.3, end: 12, why: 'Pause' },
+        ]);
+        expect(
+          slipsFrom('Hier: {"cut":[{"id":0,"why":"Abgebrochen"},{"id":9}]}', [
+            { start: 1.5, end: 3, text: 'Also hier ist der' },
+          ]),
+        ).toEqual([{ start: 1.5, end: 3, why: 'Abgebrochen' }]);
+
+        // A video put on a message is read by the AI as what was said when and its stills: the
+        // browser hands over stills and sound, the server keeps them beside it.
+        const upload = new FormData();
+        upload.append('file', new File(['0123456789'], 'erklärt.mp4', { type: 'video/mp4' }));
+        const video = (await (
+          await speech.request(`/api/workspaces/${speech.workspaceId}/attachments`, {
+            method: 'POST',
+            body: upload,
+          })
+        ).json()) as { id: string; name: string; type: string; size: number };
+        const still = new Uint8Array([
+          0xff, 0xd8, 0xff, 0xc0, 0, 11, 8, 0, 2, 0, 3, 1, 0, 0, 0, 0xff, 0xd9,
+        ]);
+        const digest = new FormData();
+        digest.append('still', new File([still], 'a.jpg', { type: 'image/jpeg' }));
+        digest.append('still', new File([new Uint8Array(20)], 'b.jpg', { type: 'image/jpeg' }));
+        digest.append('at', JSON.stringify([4.2, 9]));
+        digest.append('duration', '12');
+        digest.append('speech', new File([new Uint8Array(64)], 'ton.wav', { type: 'audio/wav' }));
+        const digested = await speech.request(`/api/attachments/${video.id}/digest`, {
+          method: 'POST',
+          body: digest,
+        });
+        expect(digested.status).toBe(204);
+        const read = await attachmentBlocks(speech.deps, speech.workspaceId, [video]);
+        expect(read[0]).toEqual({
+          type: 'text',
+          text: '<datei name="erklärt.mp4" art="Video" dauer="0:12">\nGesprochen:\n[0:01] Also hier ist der\n[0:03] Plan.\n[0:08] Hier ist der Plan.\n1 Standbilder folgen, je mit ihrer Zeit.\n</datei>',
+        });
+        // The one that is no JPEG left out. Taken off again, the digest goes with it.
+        expect(read.slice(1).map((one) => one.type)).toEqual(['text', 'image']);
+        expect(read[1]).toEqual({ type: 'text', text: '[Bild bei 0:04 aus „erklärt.mp4“]' });
+        const digests = async () =>
+          (
+            await speech.deps.storage.list(
+              `${blobKeys.workspacePrefix(speech.workspaceId)}attachments/`,
+            )
+          ).filter((key) => key.endsWith('.digest'));
+        expect(await digests()).toHaveLength(1);
+        // Only while one may work in its workspace (the speech service is the workspace's).
+        await speech.deps.db
+          .update(workspaces)
+          .set({ blockedAt: new Date() })
+          .where(eq(workspaces.id, speech.workspaceId));
+        const again = new FormData();
+        again.append('duration', '12');
+        expect(
+          (
+            await speech.request(`/api/attachments/${video.id}/digest`, {
+              method: 'POST',
+              body: again,
+            })
+          ).status,
+        ).toBe(403);
+        await speech.deps.db
+          .update(workspaces)
+          .set({ blockedAt: null })
+          .where(eq(workspaces.id, speech.workspaceId));
+        await speech.request(`/api/attachments/${video.id}`, { method: 'DELETE' });
+        expect(await digests()).toEqual([]);
       } finally {
         await speech.cleanup();
       }

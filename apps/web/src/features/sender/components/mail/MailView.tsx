@@ -249,7 +249,7 @@ export function MailFolderPicker({ view }: { view: MailViewState }) {
 }
 
 /**
- * The row under the mailboxes: the folders, „Neue Mail“, on the right the search (⌘K; Esc in it
+ * The row under the mailboxes: the folders, „Neue Mail“, on the right the search (⌘F; Esc in it
  * keeps the open mail) – and wide, at its
  * end, the switch for the AI beside the open mail (where the mail is the page, it is in the mail's
  * head).

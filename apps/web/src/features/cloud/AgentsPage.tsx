@@ -61,7 +61,7 @@ export function Component() {
         ? 'Dem Workspace ist noch kein Agent gegeben.'
         : `In „${tab?.label ?? ''}“ steht noch kein Agent.`;
   const [view, setView] = useAgentView();
-  // The page's own field (⌘K): only those with every word in them.
+  // The page's own field (⌘F): only those with every word in them.
   const [query, setQuery] = useState('');
   const found = agentsSaying(shown, query);
   // Who looks or comments reads what agents did; giving one work is for members and admins (as the server says).

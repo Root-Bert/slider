@@ -8,7 +8,8 @@ import { FileIcon } from './FileIcon';
 /**
  * The uploads under way, bottom right: one line saying how far they are, the files below it –
  * each with its bar, a way to stop it and, when it failed, why and a retry. Stays until closed
- * once everything is through, so what failed is not missed.
+ * once everything is through, so what failed is not missed. PDFs the server makes („Als PDF
+ * ablegen“) stand here alike, without bytes to count or a way to stop them.
  */
 export function UploadTray({
   uploads,
@@ -24,13 +25,26 @@ export function UploadTray({
   const failed = items.filter((item) => item.status === 'failed').length;
   const total = items.reduce((sum, item) => sum + item.size, 0);
   const sent = items.reduce((sum, item) => sum + Math.min(item.sent, item.size), 0);
-  const title = uploads.busy
-    ? `${done} von ${items.length} hochgeladen`
-    : failed > 0
-      ? `${failed} ${failed === 1 ? 'Upload' : 'Uploads'} fehlgeschlagen`
-      : items.length === 1
-        ? '1 Datei hochgeladen'
-        : `${items.length} Dateien hochgeladen`;
+  const pdfs = items.every((item) => item.made);
+  const title = pdfs
+    ? uploads.busy
+      ? `${done} von ${items.length} PDFs abgelegt`
+      : failed > 0
+        ? `${failed} ${failed === 1 ? 'PDF' : 'PDFs'} nicht abgelegt`
+        : items.length === 1
+          ? '1 PDF abgelegt'
+          : `${items.length} PDFs abgelegt`
+    : uploads.busy
+      ? `${done} von ${items.length} hochgeladen`
+      : failed > 0
+        ? `${failed} ${failed === 1 ? 'Upload' : 'Uploads'} fehlgeschlagen`
+        : items.length === 1
+          ? '1 Datei hochgeladen'
+          : `${items.length} Dateien hochgeladen`;
+  // What goes up can be stopped; what the server makes cannot.
+  const stoppable = items.some(
+    (item) => !item.made && (item.status === 'waiting' || item.status === 'sending'),
+  );
 
   return (
     <section
@@ -39,7 +53,9 @@ export function UploadTray({
     >
       <header className="flex items-center gap-2 py-2 pr-2 pl-4">
         <Icon
-          name={uploads.busy ? 'upload' : failed > 0 ? 'error' : 'checkCircle'}
+          name={
+            uploads.busy ? (pdfs ? 'pictureAsPdf' : 'upload') : failed > 0 ? 'error' : 'checkCircle'
+          }
           size={18}
           className={cn(
             'shrink-0',
@@ -63,12 +79,12 @@ export function UploadTray({
         />
         <IconButton
           icon="close"
-          label={uploads.busy ? 'Alle Uploads abbrechen' : 'Schließen'}
+          label={stoppable ? 'Alle Uploads abbrechen' : 'Schließen'}
           size="compact"
           onClick={uploads.clear}
         />
       </header>
-      {uploads.busy && <ProgressBar value={total > 0 ? sent / total : null} label="Uploads" />}
+      {uploads.busy && total > 0 && <ProgressBar value={sent / total} label="Uploads" />}
       {!folded && (
         <ul className="flex max-h-[min(320px,40vh)] flex-col overflow-y-auto border-t border-hairline p-1.5">
           {items.map((item) => (
@@ -101,12 +117,14 @@ export function UploadTray({
                       ? item.created === false
                         ? `Neue Fassung | ${formatFileSize(item.size)}`
                         : formatFileSize(item.size)
-                      : item.status === 'waiting'
-                        ? 'Wartet'
-                        : `${formatFileSize(item.sent)} von ${formatFileSize(item.size)}`}
+                      : item.made
+                        ? 'Wird erstellt'
+                        : item.status === 'waiting'
+                          ? 'Wartet'
+                          : `${formatFileSize(item.sent)} von ${formatFileSize(item.size)}`}
                 </span>
               </div>
-              {item.status === 'failed' && (
+              {item.status === 'failed' && !item.made && (
                 <IconButton
                   icon="refresh"
                   label={`${item.name} noch einmal hochladen`}
@@ -116,7 +134,7 @@ export function UploadTray({
               )}
               {item.status === 'done' ? (
                 <Icon name="check" size={16} className="mr-1.5 shrink-0 text-success" />
-              ) : (
+              ) : item.made ? null : (
                 <IconButton
                   icon="close"
                   label={`Upload von ${item.name} abbrechen`}

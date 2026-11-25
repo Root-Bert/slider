@@ -17,6 +17,7 @@ import { useCollectionSelection } from '@/lib/collection-selection';
 import { isOnControl } from '@/lib/marquee-select';
 import { isTextTarget } from '@/lib/dom';
 import { useAccount } from '@/features/auth';
+import { usePageCommands } from '@/features/commands';
 import { UploadToast, useDeckUpload } from '@/features/onboarding';
 import { HomeChat } from './components/HomeChat';
 import {
@@ -225,7 +226,8 @@ export function Component() {
     pageMenu.onContextMenu(event);
   };
   const bridge = desktopBridge();
-  const pageActions: MenuAction[] = [
+  // What is made or opened here – the page's menu and the command panel (⌘K) alike.
+  const makeActions: MenuAction[] = [
     ...(mayCreate
       ? [
           {
@@ -250,6 +252,10 @@ export function Component() {
             : []),
         ]
       : []),
+  ];
+  usePageCommands({ group: 'Präsentationen', actions: makeActions, workspaceId: workspace.id });
+  const pageActions: MenuAction[] = [
+    ...makeActions,
     {
       label: 'Einstellungen',
       icon: 'settings',
@@ -273,8 +279,9 @@ export function Component() {
     >
       <title>{`Präsentationen | ${workspace.name} | Slider`}</title>
 
-      {/* The chat's panel (`HomeChat`) stands beside the list, not over it – as the header. */}
-      <main className="@container flex flex-col gap-6 px-4 pt-2 pb-16 transition-[margin] duration-300 ease-out md:px-8 md:[body:has([data-cloud-panel])_&]:mr-[400px]">
+      {/* The chat's panel (`HomeChat`) stands beside the list, not over it – as the header; at
+        once, not eased (tiles drawn anew each frame flicker). */}
+      <main className="@container flex flex-col gap-6 px-4 pt-2 pb-16 md:px-8 md:[body:has([data-cloud-panel])_&]:mr-[400px]">
         <PageHeader
           layout="inline"
           subtitleSize="body"

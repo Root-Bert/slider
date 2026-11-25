@@ -37,7 +37,7 @@ import {
 import type { BillingProvider } from '../src/billing/stripe-billing';
 import type { AppDeps, InstanceControl } from '../src/deps';
 import { importDeck } from '../src/import/import-deck';
-import type { DocumentToPdf, PptxToPdf } from '../src/import/libreoffice';
+import type { DocumentToPdf, MaterialToPdf, PptxToPdf } from '../src/import/libreoffice';
 import type { OpenPptx } from '../src/import/pptx';
 import { BlankDecks } from '../src/import/ready-blank';
 import {
@@ -246,6 +246,8 @@ export async function createTestContext(
     libreOfficePdf?: PptxToPdf;
     /** LibreOffice's PDF of a Word, Excel or text file; a fake too. Without it those are refused. */
     documentPdf?: DocumentToPdf;
+    /** LibreOffice's PDF of a Word or PowerPoint file in Cloud; a fake too. Without it none. */
+    materialPdf?: MaterialToPdf;
     config?: Partial<Config>;
     fetch?: FetchLike;
     lookup?: LookupAll;
@@ -382,6 +384,7 @@ export async function createTestContext(
     rendering: { renderers, progress: renderProgress },
     blankDecks: new BlankDecks({ openPptx, clock, log: silentLogger, ...renderers }),
     documentPdf: options.documentPdf,
+    materialPdf: options.materialPdf,
     oidc: config.auth.oidc ? new OidcClient(config.auth.oidc, clock, fetch) : null,
     google: config.auth.google ? new OidcClient(config.auth.google, clock, fetch) : null,
     webauthn: options.webauthn,

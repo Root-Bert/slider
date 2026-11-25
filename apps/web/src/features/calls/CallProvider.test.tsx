@@ -99,7 +99,7 @@ describe('CallProvider', () => {
     );
     const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
     queryClient.setQueryData<Partial<MeResponse>>(queryKeys.me, {
-      user: { ...me, email: 'r@example.test', isInstanceAdmin: false },
+      user: { ...me, email: 'r@example.test', isInstanceAdmin: false, showExtensions: false },
       workspaces: [],
     } as Partial<MeResponse>);
     fake.snap = snapshot(call);

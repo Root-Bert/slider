@@ -38,9 +38,12 @@ const DRAG_THRESHOLD = 4;
 /** Distance to the window edge where a drag starts scrolling, and the speed at the edge. */
 const SCROLL_EDGE = 48;
 const SCROLL_SPEED = 18;
-/** Presses here are clicks on something, not the start of a selection box. */
+/**
+ * Presses here are clicks on something, not the start of a selection box – `data-own-drag`: a
+ * surface whose drags are its own (the to-dos' „Zeitplan“: bars moved, lines drawn on).
+ */
 const NOT_EMPTY_SPACE =
-  'a, button, input, textarea, select, label, dialog, [role="menu"], [data-selection-bar]';
+  'a, button, input, textarea, select, label, dialog, [role="menu"], [data-selection-bar], [data-own-drag]';
 
 /**
  * Marks the parts of an item that drag the item (a list row's picture and name). An item that has

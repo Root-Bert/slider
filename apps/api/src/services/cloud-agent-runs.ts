@@ -38,6 +38,8 @@ export interface Waiting {
    * where, how to answer, the lines before) – the chat keeps only `text`, their own words.
    */
   prompt?: string;
+  /** „Antworten“: the message of the chat it answers (kept with it; quoted in `prompt`). */
+  replyTo?: string;
   /** Files the person put on it: taken as it is kept (`attachments`), read by the agent. */
   attachmentIds?: readonly string[];
   attachments?: Attachment[];
@@ -62,16 +64,7 @@ export const runsOf = (agentId: string) =>
   [...runs.values()].filter((run) => run.agentId === agentId);
 
 /**
- * Where a tag (`Waiting.tag`) runs: the agent's own chat for that conversation, apart from its
- * others – what was said there (the lines before, the call, the run) is only for who reads the
- * conversation, and goes as soon as the agent is someone else's to read (`shareCloudAgent`, an
- * area deleted).
+ * The run of a tag (`Waiting.tag`): the agent's for that conversation, apart from its chats –
+ * nothing of it is kept but what it posts there (`post_message`).
  */
 export const tagChatId = (agentId: string, channelId: string) => `${agentId}:${channelId}`;
-/** Matches the tag chats' ids (`LIKE`): the others' are bare UUIDs. */
-export const TAG_CHATS = '%:%';
-/** The conversation a tag chat is for (`tagChatId`); `null`: another chat. */
-export const tagConversation = (chatId: string) => {
-  const at = chatId.indexOf(':');
-  return at < 0 ? null : chatId.slice(at + 1);
-};

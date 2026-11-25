@@ -12,7 +12,7 @@ import type {
 import { useMutation, useQuery, useQueryClient, type QueryClient } from '@tanstack/react-query';
 import { api } from '../api-client';
 import { cloudKeys } from './cloud';
-import { senderKeys } from './sender';
+import { senderKeys, type PlaceMessage } from './sender';
 
 /**
  * „Agenten“ in Cloud: orders to the AI that it works on in the server, each with its chats –
@@ -168,6 +168,7 @@ export function useMessageCloudAgent(workspaceId: string, agentId: string) {
       attachments = [],
       chatId,
       mailThreadId,
+      replyTo,
     }: {
       text: string;
       /** Files put on it: the agent reads them. */
@@ -175,6 +176,8 @@ export function useMessageCloudAgent(workspaceId: string, agentId: string) {
       chatId: string;
       /** Written beside a mail: the agent is told which one, as with the order. */
       mailThreadId?: string;
+      /** „Antworten“: a message of that chat, quoted above it. */
+      replyTo?: string;
     }) =>
       api.post<CloudAgentDetail>(`/cloud/agents/${agentId}/messages`, {
         text,
@@ -182,11 +185,34 @@ export function useMessageCloudAgent(workspaceId: string, agentId: string) {
         chatId,
         zone: ownZone(),
         mailThreadId,
+        replyTo,
       }),
     onMutate: () => markRunning(queryClient, workspaceId, agentId),
     onSuccess: (agent) => queryClient.setQueryData(cloudAgentKeys.one(workspaceId, agentId), agent),
     onError: () => unmarkRunning(queryClient, workspaceId, agentId),
   });
+}
+
+/**
+ * A message of the agent's chats changed by Sender's own routes (a reaction, a change, deleted):
+ * shown in place at once, what only an agent's message has kept (`useEditSenderMessage` …).
+ */
+export function usePlaceAgentMessage(workspaceId: string, agentId: string): PlaceMessage {
+  const queryClient = useQueryClient();
+  return (message) =>
+    queryClient.setQueryData<CloudAgentDetail>(cloudAgentKeys.one(workspaceId, agentId), (agent) =>
+      agent
+        ? {
+            ...agent,
+            chats: agent.chats.map((chat) => ({
+              ...chat,
+              messages: chat.messages.map((each) =>
+                each.id === message.id ? { ...each, ...message } : each,
+              ),
+            })),
+          }
+        : agent,
+    );
 }
 
 const typingAt = new Map<string, number>();

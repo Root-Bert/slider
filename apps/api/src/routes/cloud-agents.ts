@@ -82,7 +82,7 @@ export function cloudAgentRoutes(deps: AppDeps) {
     })
     .post('/cloud/agents/:agentId/messages', viewer, async (c) => {
       requireOwner(c.var.viewer);
-      const { text, attachments, chatId, zone, mailThreadId } = await readJson(
+      const { text, attachments, chatId, zone, mailThreadId, replyTo } = await readJson(
         c,
         cloudAgentInputSchema,
       );
@@ -101,6 +101,8 @@ export function cloudAgentRoutes(deps: AppDeps) {
           mailThreadId,
           false,
           attachments,
+          [],
+          replyTo,
         ),
       );
     })

@@ -1,5 +1,10 @@
 /** Public API of Sender (the workspace's conversations) – what Cloud shows of it. */
 export { Conversation } from './ChannelPage';
+export { Composer } from './components/Composer';
+export { TypingLine } from './components/TypingLine';
+export { MessageList } from './components/MessageList';
+export { ReplyQuote } from './components/ReplyQuote';
+export { quoteOf } from './lib/quote';
 export { agentFiles, ChatFiles } from './components/ChatFiles';
 export { ChatViews, useChatView } from './components/ChatTitle';
 export { DraftList } from './components/DraftList';
@@ -9,7 +14,12 @@ export { useWorkspaceDrafts } from './hooks/useWorkspaceDrafts';
 export { NewConversation } from './components/NewConversation';
 export { NotifyOffer, NotifyPreferences } from './components/NotifyOffer';
 export { SenderToast } from './components/SenderToast';
-export { SummaryAside, UnreadRow, type FileSummaryPart } from './components/SenderStart';
+export {
+  SummaryAside,
+  UnreadRow,
+  usePlace as useConversationPlace,
+  type FileSummaryPart,
+} from './components/SenderStart';
 export { useUnreadNow } from './hooks/useUnreadNow';
 export { Unread } from './components/SenderSidebar';
 export { chatsOf } from './lib/direct';

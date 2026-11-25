@@ -9,6 +9,7 @@ import {
   type RefObject,
 } from 'react';
 import { useSearchParams } from 'react-router';
+import { useCommandKeyClaim } from '@/features/commands';
 import { presentationKey } from './lib/presentation';
 import type { SlideMark } from './lib/show-times';
 import {
@@ -37,6 +38,8 @@ export interface ShowKeyHandlers {
   clear?: () => boolean;
 }
 
+const doNothing = () => {};
+
 /**
  * PowerPoint's keys while presenting, taken on the window before anything else: nothing reaches
  * the viewer behind (shortcuts, find, tools), the browser keeps its own (⌘, Ctrl, ⌥).
@@ -44,6 +47,8 @@ export interface ShowKeyHandlers {
 export function useShowKeys(handlers: ShowKeyHandlers) {
   // A number typed before Enter: the slide to jump to.
   const typed = useRef('');
+  // ⌘K opens no command panel over the show: it does nothing here.
+  useCommandKeyClaim(doNothing);
   const onKeyDown = useEffectEvent((event: KeyboardEvent) => {
     event.stopImmediatePropagation();
     if (event.metaKey || event.ctrlKey || event.altKey) return;

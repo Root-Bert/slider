@@ -11,6 +11,7 @@ import { OidcClient } from './auth/oidc';
 import { systemClock } from './clock';
 import { dataPaths, loadBootConfig } from './config';
 import { openDatabase } from './db/client';
+import { moveAgentChats } from './db/move-agent-chats';
 import { GUARDED_EXIT_CODE, holdData } from './desktop-apps';
 import { users } from './db/schema';
 import { releaseRunningImportAttempts } from './import/attempts';
@@ -56,6 +57,7 @@ import { FsBlobStorage } from './storage/fs-blob-storage';
 import type { AppDeps } from './deps';
 import { deckFontAdopter } from './services/deck-fonts';
 import { sendDueMail, syncAllMail } from './services/mail';
+import { sendDueScheduled } from './services/sender-scheduled';
 import { runDueCloudAgents, runWatchingCloudAgents } from './services/cloud-agents';
 import { RetentionSweeper } from './services/retention';
 import { resumeTranscripts } from './services/transcripts';
@@ -88,6 +90,8 @@ async function main(): Promise<void> {
   const { db } = database;
   // Content is encrypted at rest (BER-149); a key other than the data's stops the start here.
   const dataKey = await setUpDataKey(env, boot.dataDir, boot.env === 'production', db, log);
+  // Agent chats from before they were Sender conversations (migration 0185): moved once.
+  await moveAgentChats(db, log);
   const config = await loadInstanceConfig(env, boot, db, log);
   const { storage, media } = encryptedStores(dataKey, {
     storage: new FsBlobStorage(blobsDir),
@@ -344,6 +348,18 @@ async function main(): Promise<void> {
       });
   }, 3_000);
   outboxClock.unref?.();
+  // „Später senden“: messages planned for now go out (one round at a time).
+  let scheduledDue = false;
+  const scheduledClock = setInterval(() => {
+    if (scheduledDue) return;
+    scheduledDue = true;
+    void sendDueScheduled(deps)
+      .catch((error: unknown) => log.error('Sending planned messages failed', error))
+      .finally(() => {
+        scheduledDue = false;
+      });
+  }, 5_000);
+  scheduledClock.unref?.();
   // Recordings a stopped server left without their transcript.
   await resumeTranscripts(deps);
   await resumeExtractions(deps);
@@ -366,6 +382,7 @@ async function main(): Promise<void> {
     clearInterval(watchClock);
     clearInterval(mailClock);
     clearInterval(outboxClock);
+    clearInterval(scheduledClock);
     // LibreOffice runs in its own process group and would outlive this process.
     stopRunningConversions();
     officePool?.close();

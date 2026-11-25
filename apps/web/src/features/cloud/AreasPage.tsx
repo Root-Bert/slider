@@ -220,7 +220,8 @@ export function Component() {
   // Typed where it stands, in the bar beside the views: lights up the net's people.
   const [query, setQuery] = useState('');
   const words = query.trim().toLowerCase();
-  const found = peopleFound(areas, query);
+  // Who is in none of the areas is found too: the workspace's own area holds everyone.
+  const found = peopleFound(root ? [...areas, root] : areas, query);
   return (
     <CloudPage
       docTitle={root ? `${root.name} | Bereiche` : 'Bereiche'}
@@ -296,6 +297,7 @@ export function Component() {
               {view === 'people' && (
                 <PeopleGraph
                   areas={areas}
+                  everyone={root?.members ?? []}
                   query={query}
                   workspace={ui.workspace}
                   userId={ui.userId}

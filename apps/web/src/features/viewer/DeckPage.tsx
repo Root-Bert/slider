@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { Navigate, useLocation, useParams, useSearchParams } from 'react-router';
 import { routes } from '@/lib/routes';
 import { isSignedOutError } from '@/features/auth';
+import { usePageCommands } from '@/features/commands';
 import { markDeckOpened } from '@/lib/last-visits';
 import { useComments, useDeck, useDeckEdit, useDeckPeople, useMe, useSlides } from '@/lib/api';
 import { ImportFailed } from './ImportFailed';
@@ -35,6 +36,9 @@ export function DeckRoute({ deckId }: { deckId: string }) {
   const [initialMaterial] = useState(() => searchParams.has(MATERIAL_PARAM));
 
   const deck = useDeck(deckId);
+  // ⌘K: „Gehe zu“ and the apps lead into the deck's workspace, which the address does not say.
+  const workspaceId = deck.data?.workspaceId;
+  usePageCommands({ group: 'Präsentation', actions: [], workspaceId }, Boolean(workspaceId));
   const me = useMe();
   const ready = deck.data?.import.status === 'ready';
   const slides = useSlides(deckId, ready);

@@ -76,6 +76,7 @@ export const useMailAccounts = (workspaceId: string) =>
   useQuery({
     queryKey: mailKeys.accounts(workspaceId),
     queryFn: () => api.get<MailAccount[]>(`/workspaces/${workspaceId}/mail/accounts`),
+    enabled: workspaceId !== '',
   });
 
 /** The mailbox an agent got ready for the form, while it waits (`null`: none). */

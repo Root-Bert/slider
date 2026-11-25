@@ -1,13 +1,23 @@
-import { useEffect, useEffectEvent, useId, useRef, useState, type ReactNode } from 'react';
+import { useEffect, useEffectEvent, useState } from 'react';
 import { useNavigate } from 'react-router';
-import type { CloudNode } from '@slider/shared';
 import { useCloudSearch } from '@/lib/api';
 import { formatRelativeTime } from '@/lib/format';
-import { isModKey } from '@/lib/keyboard';
+import { isSearchKey } from '@/lib/keyboard';
 import { routes } from '@/lib/routes';
 import { useMailHits } from '@/features/sender';
-import { cn, Icon, Kbd, ReturnKey, useDebounced, type IconName } from '@/ui';
+import {
+  PaletteBody,
+  PaletteDialog,
+  PaletteMark,
+  PaletteMarked as Marked,
+  useDebounced,
+  type IconName,
+  type PaletteEntry as Entry,
+} from '@/ui';
 import { useCloud } from '../hooks/useCloud';
+import { shownName, useShowExtensions } from '../hooks/useShowExtensions';
+import { whereOf } from '../lib/kinds';
+import { useCloudNewActions } from '../hooks/useNewActions';
 import { askCrumbSearch, CRUMB_SEARCH } from '../lib/crumb-search';
 import { AreaDot } from './AreaDot';
 import { FileIcon } from './FileIcon';
@@ -15,47 +25,15 @@ import { FileIcon } from './FileIcon';
 /** Dispatched on `window` to open the search from anywhere on the page. */
 export const OPEN_SEARCH_EVENT = 'slider:cloud-search';
 
-interface Entry {
-  key: string;
-  group: string;
-  leading: ReactNode;
-  title: ReactNode;
-  subtitle?: string;
-  run: () => void;
-}
-
-/** The name with what was typed set in bold. */
-function Marked({ text, query }: { text: string; query: string }) {
-  const word = query.trim().split(/\s+/)[0] ?? '';
-  const at = word ? text.toLocaleLowerCase('de').indexOf(word.toLocaleLowerCase('de')) : -1;
-  if (at < 0) return <>{text}</>;
-  return (
-    <>
-      {text.slice(0, at)}
-      <span className="font-semibold text-fg">{text.slice(at, at + word.length)}</span>
-      {text.slice(at + word.length)}
-    </>
-  );
-}
-
-const whereOf = (node: CloudNode) =>
-  [
-    node.location?.areaName ?? (node.location?.areaId === null ? 'Meine Dateien' : null),
-    ...(node.location?.folders ?? []).map((folder) => folder.name),
-  ]
-    .filter(Boolean)
-    .join(' › ');
-
 /**
- * ⌘F: one field for everything – files and folders by name wherever one may look, the areas, the
+ * ⇧⌘F: one field for everything – files and folders by name wherever one may look, the areas, the
  * mails, and the few things to do from anywhere. ↑ ↓ pick, ↵ opens, Esc closes.
  */
 export function SearchPalette() {
-  const dialog = useRef<HTMLDialogElement>(null);
   const [open, setOpen] = useState(false);
 
   const show = useEffectEvent(() => {
-    // The side bar's field – the whole app's search, never a page's own (that is ⌘K's,
+    // The side bar's field – the whole app's search, never a page's own (that is ⌘F's,
     // `ViewSearch`): typed where it stands, nothing opens over the page; the bar folded: the one in
     // the page's path (`CrumbSearch`); a panel (narrow) or no bar: the palette.
     const field = [
@@ -72,8 +50,7 @@ export function SearchPalette() {
     } else setOpen(true);
   });
   const onKeyDown = useEffectEvent((event: KeyboardEvent) => {
-    if (event.key.toLowerCase() !== 'f' || !isModKey(event) || event.altKey || event.shiftKey)
-      return;
+    if (!isSearchKey(event, 'main')) return;
     // Over an open dialog nothing opens: its question comes first.
     if (!open && document.querySelector('dialog[open]')) return;
     event.preventDefault();
@@ -88,77 +65,48 @@ export function SearchPalette() {
       window.removeEventListener(OPEN_SEARCH_EVENT, show);
     };
   }, []);
-  useEffect(() => {
-    const element = dialog.current;
-    if (!element) return;
-    if (open && !element.open) element.showModal();
-    if (!open && element.open) element.close();
-  }, [open]);
-
   const close = () => setOpen(false);
   return (
-    <dialog
-      ref={dialog}
-      aria-label="Suchen"
-      onClose={close}
-      onClick={(event) => {
-        if (event.target === event.currentTarget) close();
-      }}
-      className="glass-elevated m-0 mx-auto mt-[min(120px,14vh)] w-[min(660px,calc(100vw-32px))] rounded-panel p-0 text-left text-fg backdrop:bg-scrim backdrop:backdrop-blur-sm open:animate-pop-in"
-    >
-      {open && <SearchPanel onClose={close} />}
-    </dialog>
+    <PaletteDialog open={open} onClose={close} label="Suchen">
+      {open && <SearchPanel />}
+    </PaletteDialog>
   );
 }
 
-/** Marks the side bar's search field (`bar`) and its stand-in in the page's path (`page`), for ⌘F. */
+/** Marks the side bar's search field (`bar`) and its stand-in in the page's path (`page`), for ⇧⌘F. */
 const SEARCH_FIELD = 'data-cloud-search';
 
-/** The search itself: the field, what it finds and the few things to do. In the ⌘F panel. */
-function SearchPanel({ onClose }: { onClose: () => void }) {
+/** The search itself: the field, what it finds and the few things to do. In the ⇧⌘F panel. */
+function SearchPanel() {
   const ui = useCloud();
+  const extensions = useShowExtensions();
   const navigate = useNavigate();
-  const list = useRef<HTMLDivElement>(null);
-  const listId = useId();
+  const newActions = useCloudNewActions();
   const [query, setQuery] = useState('');
-  const [active, setActive] = useState(0);
   const settled = useDebounced(query, 150);
   // Small, as the bar: what is called so. What the files say is the page's (`SearchResults`).
   const search = useCloudSearch(ui.workspace.id, settled.trim());
   const mails = useMailHits(ui.workspace.id, settled.trim());
 
-  const close = () => {
-    setQuery('');
-    setActive(0);
-    onClose();
-  };
-  const go = (run: () => void) => () => {
-    close();
-    run();
-  };
   const words = query.trim().toLocaleLowerCase('de');
   const command = (key: string, icon: IconName, title: string, run: () => void): Entry => ({
     key,
     group: 'Befehle',
-    leading: (
-      <span className="flex size-8 items-center justify-center rounded-chip bg-surface-2 text-fg-muted">
-        <Icon name={icon} size={18} />
-      </span>
-    ),
+    leading: <PaletteMark icon={icon} />,
     title,
-    run: go(run),
+    run,
   });
   const entries: Entry[] = [
     ...(words && search.data ? search.data.nodes : []).map((node): Entry => ({
       key: node.id,
       group: 'Dateien',
       leading: <FileIcon kind={node.kind} type={node.fileType} />,
-      title: <Marked text={node.name} query={query} />,
+      title: <Marked text={shownName(node, extensions)} query={query} />,
       subtitle: [whereOf(node), node.updatedBy.name, formatRelativeTime(node.updatedAt)]
         .filter(Boolean)
         .join(' | '),
       // As a click in the list: a file shows its details, a folder opens.
-      run: go(() => (node.kind === 'file' ? ui.openFile(node.id) : ui.open(node))),
+      run: () => (node.kind === 'file' ? ui.openFile(node.id) : ui.open(node)),
     })),
     ...(ui.home?.areas ?? [])
       .filter((area) => words && area.name.toLocaleLowerCase('de').includes(words))
@@ -168,17 +116,13 @@ function SearchPanel({ onClose }: { onClose: () => void }) {
         leading: <AreaDot color={area.color} size="lg" />,
         title: <Marked text={area.name} query={query} />,
         subtitle: area.description || undefined,
-        run: go(() => void navigate(routes.cloudArea(ui.workspace.id, area.id))),
+        run: () => void navigate(routes.cloudArea(ui.workspace.id, area.id)),
       })),
     // Subject, names, addresses – every mailbox and folder; one opens in Post.
     ...(words ? mails.threads : []).map((thread): Entry => ({
       key: thread.id,
       group: 'Mails',
-      leading: (
-        <span className="flex size-8 items-center justify-center rounded-chip bg-surface-2 text-fg-muted">
-          <Icon name="mail" size={18} />
-        </span>
-      ),
+      leading: <PaletteMark icon="mail" />,
       title: (
         <Marked
           text={thread.subject || thread.person.name.trim() || thread.person.address}
@@ -191,141 +135,34 @@ function SearchPanel({ onClose }: { onClose: () => void }) {
       ]
         .filter(Boolean)
         .join(' | '),
-      run: go(() => void navigate(routes.cloudMailThread(ui.workspace.id, thread.id))),
+      run: () => void navigate(routes.cloudMailThread(ui.workspace.id, thread.id)),
     })),
-    ...[
-      command('upload', 'uploadFile', 'Dateien hochladen', () => ui.pickAndUpload(ui.place)),
-      command('folder', 'createNewFolder', 'Neuer Ordner', () => ui.newFolder(ui.place)),
-      ...(ui.home?.canCreateAreas
-        ? [command('area', 'workspaces', 'Neuer Bereich', () => ui.newArea())]
-        : []),
-      ...(ui.home?.ownFiles !== false
-        ? [
-            command(
-              'own',
-              'folder',
-              'Zu „Meine Dateien“',
-              () => void navigate(routes.cloudOwn(ui.workspace.id)),
-            ),
-          ]
-        : []),
-      command(
-        'slider',
-        'slideshow',
-        'Zu Slider wechseln',
-        () => void navigate(routes.workspace(ui.workspace.id)),
+    // What „Neu“ makes here – the side bar's menu, the command panel's (⌘K) „Neu“.
+    ...newActions
+      .filter((action) => !action.disabled)
+      .filter((action) => !words || action.label.toLocaleLowerCase('de').includes(words))
+      .map((action) =>
+        command(action.key ?? action.label, action.icon as IconName, action.label, action.onSelect),
       ),
-    ].filter((entry) => !words || String(entry.title).toLocaleLowerCase('de').includes(words)),
   ];
-  const picked = Math.min(active, Math.max(0, entries.length - 1));
-  useEffect(() => {
-    list.current?.querySelector('[data-active="true"]')?.scrollIntoView({ block: 'nearest' });
-  }, [picked]);
-
-  let lastGroup = '';
   const searching = Boolean(words) && (settled !== query || search.isFetching || mails.settling);
   return (
-    <div className="flex max-h-[min(560px,70vh)] flex-col">
-      <label className="flex h-14 shrink-0 items-center gap-3 border-b border-hairline px-5">
-        <Icon name="search" size={20} className="text-fg-muted" />
-        <input
-          autoFocus
-          value={query}
-          onChange={(event) => {
-            setQuery(event.target.value);
-            setActive(0);
-          }}
-          onKeyDown={(event) => {
-            if (event.key === 'ArrowDown') {
-              event.preventDefault();
-              setActive(Math.min(entries.length - 1, picked + 1));
-            } else if (event.key === 'ArrowUp') {
-              event.preventDefault();
-              setActive(Math.max(0, picked - 1));
-            } else if (event.key === 'Enter') {
-              event.preventDefault();
-              entries[picked]?.run();
-            }
-          }}
-          aria-label="Dateien, Ordner, Bereiche und Mails durchsuchen"
-          aria-controls={listId}
-          aria-activedescendant={entries[picked] ? `${listId}-${picked}` : undefined}
-          placeholder="Dateien, Ordner, Bereiche und Mails durchsuchen"
-          autoComplete="off"
-          spellCheck={false}
-          className="min-w-0 flex-1 bg-transparent text-base text-fg outline-none placeholder:text-fg-subtle"
-        />
-        <Kbd>esc</Kbd>
-      </label>
-      <div
-        ref={list}
-        id={listId}
-        role="listbox"
-        aria-label="Treffer"
-        className="flex-1 overflow-y-auto p-2"
-      >
-        {entries.map((entry, index) => {
-          const heading = entry.group !== lastGroup;
-          lastGroup = entry.group;
-          const current = index === picked;
-          return (
-            <div key={`${entry.group}:${entry.key}`}>
-              {heading && (
-                <p className="px-2.5 pt-2.5 pb-1.5 text-caption font-semibold tracking-wider text-fg-subtle uppercase">
-                  {entry.group}
-                </p>
-              )}
-              <button
-                type="button"
-                role="option"
-                id={`${listId}-${index}`}
-                aria-selected={current}
-                data-active={current}
-                onMouseMove={() => setActive(index)}
-                onClick={entry.run}
-                className={cn(
-                  'flex h-12 w-full items-center gap-3 rounded-control px-2.5 text-left',
-                  current && 'bg-hover',
-                )}
-              >
-                {entry.leading}
-                <span className="flex min-w-0 flex-1 flex-col">
-                  <span className="truncate text-sm text-fg-muted">{entry.title}</span>
-                  {entry.subtitle && (
-                    <span className="truncate text-xs text-fg-subtle">{entry.subtitle}</span>
-                  )}
-                </span>
-                {current && (
-                  <Kbd>
-                    <ReturnKey />
-                  </Kbd>
-                )}
-              </button>
-            </div>
-          );
-        })}
-        {words && !searching && search.data?.nodes.length === 0 && mails.threads.length === 0 && (
-          <p className="px-2.5 py-3 text-body text-fg-subtle">
-            Keine Datei, kein Ordner und keine Mail heißt so.
-          </p>
-        )}
-        {search.data?.more && words && (
-          <p className="px-2.5 py-2 text-xs text-fg-subtle">
-            Es gibt mehr Treffer. Tippe weiter, um sie einzugrenzen.
-          </p>
-        )}
-      </div>
-      <footer className="flex shrink-0 items-center gap-4 border-t border-hairline px-5 py-2.5 text-xs text-fg-subtle">
-        <span className="flex items-center gap-1.5">
-          <Kbd>↑↓</Kbd> wählen
-        </span>
-        <span className="flex items-center gap-1.5">
-          <Kbd>
-            <ReturnKey />
-          </Kbd>{' '}
-          öffnen
-        </span>
-      </footer>
-    </div>
+    <PaletteBody
+      label="Dateien, Ordner, Bereiche und Mails durchsuchen"
+      query={query}
+      onQuery={setQuery}
+      entries={entries}
+    >
+      {words && !searching && search.data?.nodes.length === 0 && mails.threads.length === 0 && (
+        <p className="px-2.5 py-3 text-body text-fg-subtle">
+          Keine Datei, kein Ordner und keine Mail heißt so.
+        </p>
+      )}
+      {search.data?.more && words && (
+        <p className="px-2.5 py-2 text-xs text-fg-subtle">
+          Es gibt mehr Treffer. Tippe weiter, um sie einzugrenzen.
+        </p>
+      )}
+    </PaletteBody>
   );
 }

@@ -13,6 +13,7 @@ import {
   senderPinSchema,
   senderPostSchema,
   senderReadSchema,
+  senderScheduleSchema,
   senderTriageReadSchema,
   senderUpdateChannelSchema,
   type AccountAuthor,
@@ -52,6 +53,12 @@ import {
 } from '../services/sender';
 import { fileSenderFile, folderFilings, listSenderFiles } from '../services/sender-files';
 import { senderSummary, senderUnread } from '../services/sender-news';
+import {
+  deleteScheduled,
+  listScheduled,
+  scheduleMessage,
+  sendScheduledNow,
+} from '../services/sender-scheduled';
 import { readTriage, senderTriage } from '../services/sender-triage';
 import { pinSender } from '../services/sender-pins';
 import { subscribePush, unsubscribePush, vapidOf } from '../services/web-push';
@@ -165,6 +172,25 @@ export function senderRoutes(deps: AppDeps) {
         ),
         201,
       );
+    })
+    /** „Später senden“: the caller's planned messages here, and planning one. */
+    .get('/sender/channels/:channelId/scheduled', viewer, async (c) =>
+      c.json(await listScheduled(deps, me(c).id, c.req.param('channelId'))),
+    )
+    .post('/sender/channels/:channelId/scheduled', viewer, async (c) => {
+      const input = await readJson(c, senderScheduleSchema);
+      limitWrites(c, me(c).id);
+      return c.json(await scheduleMessage(deps, me(c).id, c.req.param('channelId'), input), 201);
+    })
+    /** „Löschen“ / „Bearbeiten“: gone – what it was is answered, to be typed on. */
+    .delete('/sender/scheduled/:id', viewer, async (c) =>
+      c.json(await deleteScheduled(deps, me(c).id, c.req.param('id'))),
+    )
+    /** „Jetzt senden“, „Erneut senden“. */
+    .post('/sender/scheduled/:id/send', viewer, async (c) => {
+      limitWrites(c, me(c).id);
+      await sendScheduledNow(deps, me(c).id, c.req.param('id'));
+      return c.body(null, 204);
     })
     /** A conversation's „Dateien“, newest first, with where each lies in Cloud. */
     .get('/sender/channels/:channelId/files', viewer, async (c) => {

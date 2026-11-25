@@ -338,6 +338,38 @@ export async function unseenShares(
   return Number(row?.count ?? 0);
 }
 
+/**
+ * What others shared with the caller that they have not seen under „Geteilt“ yet, the newest
+ * first – for Cloud's „Für dich“. Unlike that list it marks nothing as seen.
+ */
+export async function newSharesWithMe(
+  deps: Pick<CloudDeps, 'db' | 'clock'>,
+  userId: string,
+  workspaceId: string,
+  limit: number,
+): Promise<{ node: CloudNodeRow; by: string | null; at: Date }[]> {
+  const now = deps.clock.now();
+  const rows = await deps.db
+    .select({ node: cloudNodes, share: cloudShares, by: users.name })
+    .from(cloudShares)
+    .innerJoin(cloudNodes, eq(cloudNodes.id, cloudShares.nodeId))
+    .leftJoin(users, eq(users.id, cloudShares.createdBy))
+    .where(
+      and(
+        eq(cloudShares.kind, 'user'),
+        eq(cloudShares.userId, userId),
+        eq(cloudShares.workspaceId, workspaceId),
+        sql`${cloudShares.seenAt} is null`,
+        live,
+      ),
+    )
+    .orderBy(desc(cloudShares.createdAt))
+    .limit(limit);
+  return rows
+    .filter((row) => !row.share.expiresAt || row.share.expiresAt > now)
+    .map((row) => ({ node: row.node, by: row.by, at: row.share.createdAt }));
+}
+
 // ── One file, opened ────────────────────────────────────────────────────────
 
 /** `GET /cloud/nodes/:id`: the file with its versions, its shares and what happened to it. */

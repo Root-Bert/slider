@@ -1,6 +1,7 @@
 import { useRef } from 'react';
 import { Navigate, useLocation, useNavigate, useParams } from 'react-router';
 import { isSignedOutError } from '@/features/auth';
+import { usePageCommands } from '@/features/commands';
 import { useImportPdf, useMe, usePdf } from '@/lib/api';
 import { ApiError } from '@/lib/api-client';
 import { READER_START } from '@/lib/apps';
@@ -17,6 +18,9 @@ export function Component() {
   const location = useLocation();
   const me = useMe();
   const opened = usePdf(pdfId);
+  // ⌘K: „Gehe zu“ and the apps lead into the PDF's workspace, which the address does not say.
+  const workspaceId = opened.data?.pdf.workspaceId;
+  usePageCommands({ group: 'PDF', actions: [], workspaceId }, Boolean(workspaceId));
 
   if (isSignedOutError(me.error) || isSignedOutError(opened.error)) {
     return <Navigate to={routes.login(location.pathname + location.search)} replace />;

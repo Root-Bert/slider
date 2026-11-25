@@ -15,6 +15,7 @@ import { deleteOrphanSlides, FINGERPRINT_VERSION, sha256Hex, toShape } from './c
 import { ConversionAborted, type PptxToPdf } from './libreoffice';
 import {
   hasPdfRenderer,
+  openingPages,
   renderSlidePages,
   slideRenderer,
   storeSlideRender,
@@ -207,8 +208,9 @@ async function runImport(deps: ImportDeps, { deckId, revisionId }: ImportJob): P
   };
   await progress(0);
   const parsedSlides = planned.map(({ parsed }) => parsed);
-  // A deck LibreOffice would draw opens at once on its SVG previews; LibreOffice's pictures
-  // follow (`fresh` re-render, below). A PDF's own pages need no LibreOffice: drawn right here.
+  // A deck LibreOffice would draw opens at once on its SVG previews – or on Cloud's pictures of
+  // the same file (`openingPages`) – and LibreOffice's pictures follow (`fresh` re-render, below).
+  // A PDF's own pages need no LibreOffice: drawn right here.
   const later = deps.queue !== undefined && hasPdfRenderer(deps) && !isPdfBytes(bytes);
   // The SVGs' hashes (what slide matching compares, BER-108) are worked out meanwhile: the PDF
   // is drawn by LibreOffice and the PDF worker, not on this thread.
@@ -216,8 +218,11 @@ async function runImport(deps: ImportDeps, { deckId, revisionId }: ImportJob): P
   const hashes =
     hasPdfRenderer(deps) && !later ? renderHashes(document, parsedSlides, hashing) : null;
   hashes?.catch(() => {});
+  // Opened from Cloud, it opens on the pictures already seen there, not on its SVG previews.
   const rendered: SlidePages = later
-    ? { renderer: null, pages: parsedSlides.map(() => null) }
+    ? ((await openingPages(deps, deck, revision, parsedSlides, {
+        onPage: (done) => progress(Math.min(done, total - 1)),
+      })) ?? { renderer: null, pages: parsedSlides.map(() => null) })
     : await renderSlidePages(deps, deck, revision, bytes, parsedSlides, {
         onPage: (done) => progress(Math.min(done, total - 1)),
       }).catch((error: unknown) => {

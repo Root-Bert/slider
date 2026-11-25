@@ -1,5 +1,6 @@
 import {
   createContext,
+  Fragment,
   use,
   useLayoutEffect,
   useRef,
@@ -7,7 +8,7 @@ import {
   type DragEvent,
   type ReactNode,
 } from 'react';
-import { NavLink, useLocation, useNavigate, useSearchParams } from 'react-router';
+import { NavLink, useLocation, useSearchParams } from 'react-router';
 import {
   cloudAccessAtLeast,
   type CloudArea,
@@ -17,7 +18,7 @@ import {
   type MailThreadSummary,
   type SenderChannel,
 } from '@slider/shared';
-import { useCreateDocument, useMailThreads, usePinCloudNode, useTodos } from '@/lib/api';
+import { useMailThreads, usePinCloudNode, useTodos } from '@/lib/api';
 import { routes } from '@/lib/routes';
 import { BarHandle } from '@/shell/BarHandle';
 import { BarStartLink } from '@/shell/BarStartLink';
@@ -26,7 +27,6 @@ import {
   chatsOf,
   isMailChat,
   mailGroupName,
-  NEW_MAIL,
   MutedMark,
   PinnedMark,
   pinKindOf,
@@ -43,7 +43,6 @@ import {
   useSenderOrNull,
   useWorkspaceDrafts,
 } from '@/features/sender';
-import { canCreateDecks } from '@/features/workspaces';
 import {
   Button,
   cn,
@@ -60,7 +59,7 @@ import {
 } from '@/ui';
 import { OWN_FILES, useCloud, type CloudTarget } from '../hooks/useCloud';
 import { areaTree, canHaveAreasUnder, isWorkspaceOwn } from '../lib/areas';
-import { useShownEvent } from './calendar/EventPanel';
+import { useCloudNewActions } from '../hooks/useNewActions';
 import { DROP_FAILED, droppedFiles } from '../lib/upload';
 import { areaColor } from './AreaDot';
 import { AgentFace } from './AgentFace';
@@ -543,30 +542,13 @@ function HomeButton() {
  */
 function NewMenu({ start }: { start: ReactNode }) {
   const ui = useCloud();
-  const sender = useSenderOrNull();
-  const navigate = useNavigate();
-  const createDocument = useCreateDocument(ui.workspace.id);
-  const event = useShownEvent();
+  const actions = useCloudNewActions();
   const { open, setOpen, close, wrapperRef, panelId, triggerProps } = usePopover({
     hasPopup: 'menu',
   });
-  const run = (action: () => void) => () => {
-    close();
-    action();
-  };
   const folded = use(Folded);
-  const { workspace, place } = ui;
-  const makes = canCreateDecks(workspace.role);
-  // An area open (not a folder in it): its own Aufgaben and Agenten; else the overviews.
-  const area = place.areaId ? ui.home?.areas.find((each) => each.id === place.areaId) : undefined;
-  const newDocument = () =>
-    createDocument.mutate(
-      { template: 'plain', parentId: place.parentId, areaId: place.areaId },
-      {
-        onSuccess: (document) => void navigate(routes.document(document.id)),
-        onError: (error) => ui.notify(error.message, 'danger'),
-      },
-    );
+  // Where the first group lands, under it – before the line to what is made.
+  const placeEnds = actions.findIndex((action) => action.divider);
   return (
     <div
       ref={wrapperRef}
@@ -600,86 +582,25 @@ function NewMenu({ start }: { start: ReactNode }) {
           className="w-57"
           role="menu"
         >
-          <MenuItem icon="uploadFile" onClick={run(() => ui.pickAndUpload(ui.place))}>
-            Dateien hochladen
-          </MenuItem>
-          <MenuItem icon="driveFolderUpload" onClick={run(() => ui.pickAndUpload(ui.place, true))}>
-            Ordner hochladen
-          </MenuItem>
-          <MenuItem icon="createNewFolder" onClick={run(() => ui.newFolder(ui.place))}>
-            Neuer Ordner
-          </MenuItem>
-          <p className="px-2.5 pt-1 pb-1 text-caption text-fg-subtle">Nach „{ui.place.name}“</p>
-          {(makes || ui.home?.canCreateAreas) && <MenuDivider />}
-          {makes && (
-            <MenuItem
-              icon="slideshow"
-              onClick={run(() => void navigate(routes.newReview(workspace.id, place)))}
-            >
-              Neue Präsentation
-            </MenuItem>
-          )}
-          {makes && (
-            <MenuItem icon="article" onClick={run(newDocument)}>
-              Neues Dokument
-            </MenuItem>
-          )}
-          {ui.home?.canCreateAreas && (
-            <MenuItem icon="workspaces" onClick={run(() => ui.newArea())}>
-              Neuer Bereich
-            </MenuItem>
-          )}
-          {/* What is to be done and when: each typed where it stands – the field of Aufgaben or
-            Agenten (the area's, an area open), the event beside the page. */}
-          <MenuDivider />
-          <MenuItem
-            icon="checklist"
-            onClick={run(
-              () =>
-                void navigate(
-                  area
-                    ? routes.cloudAreaTodos(workspace.id, area.id)
-                    : routes.cloudTodos(workspace.id),
-                ),
-            )}
-          >
-            Neue Aufgabe
-          </MenuItem>
-          <MenuItem
-            icon="event"
-            onClick={run(() => event.create({ day: new Date().toLocaleDateString('sv-SE') }))}
-          >
-            Neuer Termin
-          </MenuItem>
-          {makes && (
-            <MenuItem
-              icon="autoAwesome"
-              onClick={run(
-                () =>
-                  void navigate(
-                    area && !isWorkspaceOwn(area)
-                      ? routes.cloudAreaAgents(workspace.id, area.id)
-                      : routes.cloudAgents(workspace.id),
-                  ),
+          {actions.map((action, index) => (
+            <Fragment key={action.key ?? action.label}>
+              {index === placeEnds && (
+                <p className="px-2.5 pt-1 pb-1 text-caption text-fg-subtle">
+                  Nach „{ui.place.name}“
+                </p>
               )}
-            >
-              Neuer Agent
-            </MenuItem>
-          )}
-          {sender && (
-            <>
-              <MenuDivider />
-              <MenuItem icon="groups" onClick={run(() => void navigate(sender.newPath('gruppe')))}>
-                Neue Gruppe
-              </MenuItem>
+              {action.divider && <MenuDivider />}
               <MenuItem
-                icon="mail"
-                onClick={run(() => void navigate(sender.mailThreadPath(NEW_MAIL)))}
+                icon={action.icon}
+                onClick={() => {
+                  close();
+                  action.onSelect();
+                }}
               >
-                Neue Mail
+                {action.label}
               </MenuItem>
-            </>
-          )}
+            </Fragment>
+          ))}
         </PopoverPanel>
       )}
     </div>
@@ -762,7 +683,7 @@ export function CloudSidebar({
           {home?.ownFiles !== false ? <NewMenu start={<HomeButton />} /> : <HomeButton />}
         </div>
         {/* One field for all of it – files, areas, chats, people; the hits stand in the bar. */}
-        {/* Folded, the field's place keeps its height: a magnifier there opens what ⌘F opens –
+        {/* Folded, the field's place keeps its height: a magnifier there opens what ⇧⌘F opens –
           the rows below stand where they stand open. */}
         <div className="mt-2 shrink-0">
           {folded ? (

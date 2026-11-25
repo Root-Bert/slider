@@ -5,13 +5,15 @@ import {
   USER_NAME_MAX,
   type Viewer,
 } from '@slider/shared';
+import { eq } from 'drizzle-orm';
 import { z } from 'zod';
+import { users } from '../db/schema';
 import type { AppDeps } from '../deps';
 import { ApiError } from '../http/errors';
 import { callVoices, pickCallVoice } from './call-voices';
 import { mailSyncOf, setMailSync } from './mail';
 import { ToolChatError } from './tool-chat';
-import { updateViewerColor, updateViewerName } from './users';
+import { setShowExtensions, updateViewerColor, updateViewerName } from './users';
 
 /**
  * The person's own settings an agent or a connected app may read and change for them – those kept
@@ -32,14 +34,15 @@ export const SETTINGS_INPUTS = {
           message: `One of ${MAIL_SYNC_MINUTES.join(', ')}.`,
         })
         .optional(),
+      show_extensions: z.boolean().optional(),
     })
     .passthrough(),
 } as const;
 export type SettingsToolName = keyof typeof SETTINGS_INPUTS;
 
 const READ_DESCRIPTION =
-  "The person's own settings: their name and colour (others see them by it), the voice agents speak with in their calls (and those to pick from), how often their mailboxes are checked. Says too what only the person sets, in their browser, and where.";
-const CHANGE_DESCRIPTION = `Changes the person's own settings – only the fields given, only when they ask for it: name (others see it, on their comments too), color (${ACCENT_COLORS.join(', ')}), call_voice (a voice id from read_settings; null: the automatic one), mail_check_minutes (${MAIL_SYNC_MINUTES.join(', ')} – 0: only when they press „Abrufen“). A mailbox's own settings: update_mailbox; an area's: update_area.`;
+  "The person's own settings: their name and colour (others see them by it), the voice agents speak with in their calls (and those to pick from), how often their mailboxes are checked, whether Cloud's file names show their ending. Says too what only the person sets, in their browser, and where.";
+const CHANGE_DESCRIPTION = `Changes the person's own settings – only the fields given, only when they ask for it: name (others see it, on their comments too), color (${ACCENT_COLORS.join(', ')}), call_voice (a voice id from read_settings; null: the automatic one), mail_check_minutes (${MAIL_SYNC_MINUTES.join(', ')} – 0: only when they press „Abrufen“), show_extensions (true: „Bericht.pdf“ in Cloud's lists, false: „Bericht“). A mailbox's own settings: update_mailbox; an area's: update_area.`;
 
 export const SETTINGS_TOOLS = [
   {
@@ -57,6 +60,7 @@ export const SETTINGS_TOOLS = [
         color: { type: 'string', enum: [...ACCENT_COLORS] },
         call_voice: { type: ['string', 'null'] },
         mail_check_minutes: { type: 'integer', enum: [...MAIL_SYNC_MINUTES] },
+        show_extensions: { type: 'boolean' },
       },
     },
   },
@@ -80,7 +84,14 @@ export async function runSettingsTool(
   const voicesOf = () =>
     callVoices(deps, userId).catch(() => ({ voices: [], automatic: null, picked: null }));
   if (name === 'read_settings') {
-    const [voices, sync] = await Promise.all([voicesOf(), mailSyncOf(deps, userId)]);
+    const [voices, sync, [user]] = await Promise.all([
+      voicesOf(),
+      mailSyncOf(deps, userId),
+      deps.db
+        .select({ showExtensions: users.showExtensions })
+        .from(users)
+        .where(eq(users.id, userId)),
+    ]);
     const picked = voices.voices.find((each) => each.id === voices.picked);
     return [
       `name: ${viewer.author.name}`,
@@ -93,6 +104,7 @@ export async function runSettingsTool(
             .join('; ')}`
         : 'voices to pick: none – the workspace has no speech service',
       `mail_check_minutes: ${sync.minutes} (${minutesWord(sync.minutes)})`,
+      `show_extensions: ${user?.showExtensions ?? false} (Cloud's file names ${user?.showExtensions ? 'with' : 'without'} their ending)`,
       BROWSER_ONLY,
     ].join('\n');
   }
@@ -101,10 +113,12 @@ export async function runSettingsTool(
     input.name === undefined &&
     input.color === undefined &&
     input.call_voice === undefined &&
-    input.mail_check_minutes === undefined
+    input.mail_check_minutes === undefined &&
+    input.show_extensions === undefined
   )
     throw new ToolChatError(
-      'Say what to change: name, color, call_voice or mail_check_minutes. ' + BROWSER_ONLY,
+      'Say what to change: name, color, call_voice, mail_check_minutes or show_extensions. ' +
+        BROWSER_ONLY,
     );
   const done: string[] = [];
   let now = viewer;
@@ -129,6 +143,10 @@ export async function runSettingsTool(
   if (input.mail_check_minutes !== undefined) {
     await setMailSync(deps, userId, input.mail_check_minutes);
     done.push(`mailboxes checked ${minutesWord(input.mail_check_minutes)}`);
+  }
+  if (input.show_extensions !== undefined) {
+    await setShowExtensions(deps.db, userId, input.show_extensions);
+    done.push(`file names ${input.show_extensions ? 'with' : 'without'} their ending`);
   }
   return done.length ? `Changed: ${done.join(', ')}.` : 'Nothing was different.';
 }

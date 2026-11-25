@@ -17,8 +17,8 @@ import { Unread } from './SenderSidebar';
 
 /* The parts of Sender's start („Aktuell“, `SenderHomePage`): its rows and the AI's summary. */
 
-/** Where a conversation of the start page opens. */
-function usePlace() {
+/** Where a conversation of the start page opens (Cloud's „Für dich“ too). */
+export function usePlace() {
   const ui = useSender();
   return (item: Pick<SenderUnreadItem, 'kind' | 'id' | 'areaId' | 'channelKind'>) =>
     item.kind === 'agent'
@@ -153,9 +153,9 @@ export function SummaryAside({
   return (
     <aside
       aria-labelledby="summary-since"
-      className={cn('glass flex flex-col gap-2 rounded-panel p-4', className)}
+      className={cn('glass flex min-h-0 flex-col gap-2 rounded-panel p-4', className)}
     >
-      <div className="flex items-center gap-2 pb-1">
+      <div className="flex shrink-0 items-center gap-2 pb-1">
         <h2 id="summary-since" className="min-w-0 flex-1 text-base font-semibold text-fg">
           Seit deinem letzten Besuch
         </h2>
@@ -213,13 +213,14 @@ function SummaryBody({
   return (
     <>
       {summary.since && (
-        <p className="-mt-2 text-xs text-fg-subtle">
+        <p className="-mt-2 shrink-0 text-xs text-fg-subtle">
           {sinceLabel}{' '}
           {dayOf(summary.since).replace(/^(Heute|Gestern)$/, (day) => day.toLowerCase())},{' '}
           {timeOf(summary.since)}
         </p>
       )}
-      <ul className="flex flex-col gap-3 pt-1">
+      {/* A panel given a height (Cloud's, as high as the cards beside it) scrolls in itself. */}
+      <ul className="-mx-2 flex min-h-0 flex-col gap-3 overflow-y-auto overscroll-contain px-2 pt-1">
         {summary.parts.map((part, index) =>
           part.kind === 'file' ? (
             <li key={`file:${part.id ?? index}`} className="flex gap-2.5">

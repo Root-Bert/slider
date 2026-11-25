@@ -383,5 +383,12 @@ export function useRecorder(
     };
   }, [acquire, autoStart, previewsCamera, record, screenSource]);
 
-  return { state, stream, levels, elapsedMs, start, stop, pause, resume, reset };
+  /** The take as cut (`VideoEditor`): it takes the place of the one recorded. */
+  const replace = useCallback((recording: Recording) => {
+    if (urlRef.current && urlRef.current !== recording.url) URL.revokeObjectURL(urlRef.current);
+    urlRef.current = recording.url;
+    setState({ status: 'recorded', recording });
+  }, []);
+
+  return { state, stream, levels, elapsedMs, start, stop, pause, resume, reset, replace };
 }

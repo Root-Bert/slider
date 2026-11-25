@@ -407,6 +407,16 @@ async function entriesOf(
   };
 }
 
+/** Everything unread, each in its group – no AI, no agenda (Cloud's „Für dich“ takes from it). */
+export async function triageEntries(
+  deps: AppDeps,
+  userId: string,
+  workspaceId: string,
+): Promise<Entry[]> {
+  return (await entriesOf(deps, userId, workspaceId, undefined, false)).entries;
+}
+export type { Entry as TriageEntry };
+
 // ── The AI ──────────────────────────────────────────────────────────────────
 
 const SYSTEM = [

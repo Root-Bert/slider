@@ -1,7 +1,13 @@
 import { useCallback, useEffect, useReducer, useRef } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
-import type { CloudNode } from '@slider/shared';
+import {
+  CLOUD_PDF_BATCH,
+  cloudBaseName,
+  type CloudBatchResult,
+  type CloudNode,
+} from '@slider/shared';
 import { cloudKeys } from '@/lib/api';
+import { api } from '@/lib/api-client';
 import { sendFile, type PickedFile, type UploadTarget } from '../lib/upload';
 
 /** How many files go up at once; the rest wait their turn. */
@@ -18,6 +24,8 @@ export interface UploadItem {
   node?: CloudNode;
   /** `false`: it became the next version of a file that was there. */
   created?: boolean;
+  /** Made by the server („Als PDF ablegen“), not sent from here: no bytes to count or stop. */
+  made?: boolean;
 }
 
 interface Job {
@@ -157,16 +165,76 @@ export function useUploads(workspaceId: string) {
     dispatch({ type: 'remove', ids: items.map((item) => item.id) });
   }, [items]);
 
+  /**
+   * „Als PDF ablegen“: each PDF a line here while the server makes it – it lies beside its file,
+   * maybe not where one is, and its name opens it. A few per request, one request after another.
+   */
+  const makePdfs = useCallback(
+    async (nodes: readonly CloudNode[]) => {
+      const lines = nodes.map((node) => ({ node, id: crypto.randomUUID() }));
+      dispatch({
+        type: 'add',
+        items: lines.map(({ node, id }) => ({
+          id,
+          name: `${cloudBaseName(node.name)}.pdf`,
+          size: 0,
+          sent: 0,
+          status: 'sending',
+          made: true,
+        })),
+      });
+      for (let at = 0; at < lines.length; at += CLOUD_PDF_BATCH) {
+        const chunk = lines.slice(at, at + CLOUD_PDF_BATCH);
+        try {
+          const result = await api.post<CloudBatchResult>('/cloud/nodes/pdf', {
+            ids: chunk.map(({ node }) => node.id),
+          });
+          // The PDFs come in the order asked, without those skipped.
+          const skipped = new Map(result.skipped.map((each) => [each.id, each.reason]));
+          let next = 0;
+          for (const { node, id } of chunk) {
+            const reason = skipped.get(node.id);
+            const pdf = reason === undefined ? result.nodes[next++] : undefined;
+            dispatch({
+              type: 'patch',
+              id,
+              patch: pdf
+                ? { status: 'done', node: pdf, size: pdf.sizeBytes, sent: pdf.sizeBytes }
+                : { status: 'failed', error: reason ?? 'Kein PDF entstanden.' },
+            });
+          }
+        } catch (error) {
+          for (const { id } of chunk) {
+            dispatch({
+              type: 'patch',
+              id,
+              patch: {
+                status: 'failed',
+                error: error instanceof Error ? error.message : 'Kein PDF entstanden.',
+              },
+            });
+          }
+        }
+        void queryClient.invalidateQueries({ queryKey: cloudKeys.all(workspaceId) });
+      }
+    },
+    [queryClient, workspaceId],
+  );
+
   const busy = items.some((item) => item.status === 'waiting' || item.status === 'sending');
-  // Leaving the page mid-upload loses what has not gone up: the browser asks first.
+  // Leaving the page mid-upload loses what has not gone up: the browser asks first. (A PDF the
+  // server makes is made anyway.)
+  const sending = items.some(
+    (item) => !item.made && (item.status === 'waiting' || item.status === 'sending'),
+  );
   useEffect(() => {
-    if (!busy) return;
+    if (!sending) return;
     const warn = (event: BeforeUnloadEvent) => event.preventDefault();
     window.addEventListener('beforeunload', warn);
     return () => window.removeEventListener('beforeunload', warn);
-  }, [busy]);
+  }, [sending]);
 
-  return { items, add, cancel, retry, clear, busy };
+  return { items, add, cancel, retry, clear, busy, makePdfs };
 }
 
 export type Uploads = ReturnType<typeof useUploads>;

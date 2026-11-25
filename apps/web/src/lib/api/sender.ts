@@ -14,6 +14,7 @@ import {
   type SenderMessage,
   type SenderMessagePage,
   type SenderPin,
+  type SenderScheduled,
   type SenderUpdateChannel,
   type MailThread,
   type MailThreadSummary,
@@ -51,6 +52,8 @@ export const senderKeys = {
   home: (workspaceId: string) => ['sender', workspaceId, 'home'] as const,
   messages: (workspaceId: string, channelId: string) =>
     ['sender', workspaceId, 'messages', channelId] as const,
+  scheduled: (workspaceId: string, channelId: string) =>
+    ['sender', workspaceId, 'scheduled', channelId] as const,
 };
 
 type Pages = InfiniteData<SenderMessagePage, number | null>;
@@ -222,6 +225,115 @@ export function usePostSenderMessage(workspaceId: string, channelId: string, me:
   });
 }
 
+/*
+ * „Später senden“: one's planned messages of a conversation, above its field – seen by oneself
+ * alone, an agent's too. Planned, sent at once or deleted, the line shows it at once; the stream
+ * (`scheduled`) brings what another tab, an agent or the server's round changed.
+ */
+export function useSenderScheduled(workspaceId: string, channelId: string) {
+  return useQuery({
+    queryKey: senderKeys.scheduled(workspaceId, channelId),
+    queryFn: () => api.get<SenderScheduled[]>(`/sender/channels/${channelId}/scheduled`),
+  });
+}
+
+function patchScheduled(
+  queryClient: QueryClient,
+  workspaceId: string,
+  channelId: string,
+  change: (list: SenderScheduled[]) => SenderScheduled[],
+) {
+  queryClient.setQueryData<SenderScheduled[]>(
+    senderKeys.scheduled(workspaceId, channelId),
+    (list) => change(list ?? []),
+  );
+}
+
+const byTime = (a: SenderScheduled, b: SenderScheduled) => a.sendAt.localeCompare(b.sendAt);
+
+export function useScheduleSenderMessage(workspaceId: string, channelId: string) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({
+      text,
+      attachments,
+      replyTo,
+      sendAt,
+    }: {
+      text: string;
+      attachments: Attachment[];
+      replyTo?: string;
+      sendAt: Date;
+      pendingId: string;
+    }) =>
+      api.post<SenderScheduled>(`/sender/channels/${channelId}/scheduled`, {
+        text,
+        attachments: attachments.map((one) => one.id),
+        ...(replyTo ? { replyTo } : {}),
+        sendAt: sendAt.toISOString(),
+      }),
+    onMutate: ({ text, attachments, replyTo, sendAt, pendingId }) =>
+      patchScheduled(queryClient, workspaceId, channelId, (list) =>
+        [
+          ...list,
+          {
+            id: pendingId,
+            channelId,
+            text,
+            attachments,
+            replyTo: replyTo ?? null,
+            sendAt: sendAt.toISOString(),
+            state: 'waiting' as const,
+            error: null,
+            agent: null,
+          },
+        ].sort(byTime),
+      ),
+    onSuccess: (planned, { pendingId }) =>
+      patchScheduled(queryClient, workspaceId, channelId, (list) =>
+        [...list.filter((one) => one.id !== pendingId && one.id !== planned.id), planned].sort(
+          byTime,
+        ),
+      ),
+    onError: (_error, { pendingId }) =>
+      patchScheduled(queryClient, workspaceId, channelId, (list) =>
+        list.filter((one) => one.id !== pendingId),
+      ),
+  });
+}
+
+/** „Löschen“, „Bearbeiten“ (what it was comes back, to be put into the field): gone at once. */
+export function useDeleteSenderScheduled(workspaceId: string, channelId: string) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (planned: SenderScheduled) =>
+      api.delete<SenderScheduled>(`/sender/scheduled/${planned.id}`),
+    onMutate: (planned) =>
+      patchScheduled(queryClient, workspaceId, channelId, (list) =>
+        list.filter((one) => one.id !== planned.id),
+      ),
+    onError: (_error, planned) =>
+      patchScheduled(queryClient, workspaceId, channelId, (list) =>
+        [...list.filter((one) => one.id !== planned.id), planned].sort(byTime),
+      ),
+  });
+}
+
+/** „Jetzt senden“, „Erneut senden“: out of the line at once; refused, back with why. */
+export function useSendSenderScheduledNow(workspaceId: string, channelId: string) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (planned: SenderScheduled) =>
+      api.post<void>(`/sender/scheduled/${planned.id}/send`, {}),
+    onMutate: (planned) =>
+      patchScheduled(queryClient, workspaceId, channelId, (list) =>
+        list.filter((one) => one.id !== planned.id),
+      ),
+    onSettled: () =>
+      queryClient.invalidateQueries({ queryKey: senderKeys.scheduled(workspaceId, channelId) }),
+  });
+}
+
 /** „Löschen“ on a message that was not sent: it goes, from this tab alone. */
 export function useDiscardFailedSend(workspaceId: string, channelId: string) {
   const queryClient = useQueryClient();
@@ -243,48 +355,59 @@ export function useDiscardFailedSend(workspaceId: string, channelId: string) {
 
 export const newPendingId = () => `${PENDING}${crypto.randomUUID()}`;
 
-export function useEditSenderMessage(workspaceId: string, channelId: string) {
+/**
+ * Where a changed message is shown at once: the conversation's pages – or, for a chat with an
+ * agent, the agent's own (`placeAgentMessage`).
+ */
+export type PlaceMessage = (message: SenderMessage) => void;
+
+function usePlace(workspaceId: string, channelId: string, place?: PlaceMessage): PlaceMessage {
   const queryClient = useQueryClient();
+  return place ?? ((message) => placeMessage(queryClient, workspaceId, channelId, message));
+}
+
+export function useEditSenderMessage(workspaceId: string, channelId: string, place?: PlaceMessage) {
+  const put = usePlace(workspaceId, channelId, place);
   return useMutation({
     mutationFn: ({ id, text }: { id: string; text: string; before: SenderMessage }) =>
       api.patch<SenderMessage>(`/sender/messages/${id}`, { text }),
-    onMutate: ({ before, text }) =>
-      placeMessage(queryClient, workspaceId, channelId, {
-        ...before,
-        text,
-        editedAt: new Date().toISOString(),
-      }),
-    onSuccess: (message) => placeMessage(queryClient, workspaceId, channelId, message),
-    onError: (_error, { before }) => placeMessage(queryClient, workspaceId, channelId, before),
+    onMutate: ({ before, text }) => put({ ...before, text, editedAt: new Date().toISOString() }),
+    onSuccess: (message) => put(message),
+    onError: (_error, { before }) => put(before),
   });
 }
 
 /** 👍 / 👎 / egal on a message, or taken back (`null`): shown at once, put back if refused. */
-export function useReactSenderMessage(workspaceId: string, channelId: string, me: AccountAuthor) {
-  const queryClient = useQueryClient();
+export function useReactSenderMessage(
+  workspaceId: string,
+  channelId: string,
+  me: AccountAuthor,
+  place?: PlaceMessage,
+) {
+  const put = usePlace(workspaceId, channelId, place);
   return useMutation({
     mutationFn: ({ before, kind }: { before: SenderMessage; kind: CommentReactionKind | null }) =>
       api.put<SenderMessage>(`/sender/messages/${before.id}/reaction`, { kind }),
     onMutate: ({ before, kind }) => {
       const others = (before.reactions ?? []).filter((each) => each.author.id !== me.id);
-      placeMessage(queryClient, workspaceId, channelId, {
-        ...before,
-        reactions: kind ? [...others, { kind, author: me }] : others,
-      });
+      put({ ...before, reactions: kind ? [...others, { kind, author: me }] : others });
     },
-    onSuccess: (message) => placeMessage(queryClient, workspaceId, channelId, message),
-    onError: (_error, { before }) => placeMessage(queryClient, workspaceId, channelId, before),
+    onSuccess: (message) => put(message),
+    onError: (_error, { before }) => put(before),
   });
 }
 
-export function useDeleteSenderMessage(workspaceId: string, channelId: string) {
-  const queryClient = useQueryClient();
+export function useDeleteSenderMessage(
+  workspaceId: string,
+  channelId: string,
+  place?: PlaceMessage,
+) {
+  const put = usePlace(workspaceId, channelId, place);
   return useMutation({
     mutationFn: (before: SenderMessage) =>
       api.delete(`/sender/messages/${before.id}`).then(() => before),
-    onMutate: (before) =>
-      placeMessage(queryClient, workspaceId, channelId, { ...before, text: '', deleted: true }),
-    onError: (_error, before) => placeMessage(queryClient, workspaceId, channelId, before),
+    onMutate: (before) => put({ ...before, text: '', attachments: [], deleted: true }),
+    onError: (_error, before) => put(before),
   });
 }
 
@@ -323,6 +446,13 @@ export function useReadSenderChannel(workspaceId: string) {
           ? channel
           : { ...channel, unread: 0, mentioned: false },
       );
+      // The kept page too: opened again, its „Neu“ line stands after what was read now – not
+      // after what was read when it was first loaded (it is not asked again: `staleTime`).
+      queryClient.setQueryData<Pages>(senderKeys.messages(workspaceId, channelId), (data) => {
+        const first = data?.pages[0];
+        if (!data || !first || first.readSeq >= seq) return data;
+        return { ...data, pages: [{ ...first, readSeq: seq }, ...data.pages.slice(1)] };
+      });
       if ((readAt.get(channelId) ?? 0) >= seq) return;
       readAt.set(channelId, seq);
       void api.post(`/sender/channels/${channelId}/read`, { seq }).catch(() => {
@@ -651,7 +781,14 @@ export function useSenderLive(
           break;
         // The start's AI look was made anew (`useSenderTriage`): the page shows the new one.
         case 'triage':
-          void queryClient.invalidateQueries({ queryKey: [...senderKeys.all(workspaceId), 'triage'] });
+          void queryClient.invalidateQueries({
+            queryKey: [...senderKeys.all(workspaceId), 'triage'],
+          });
+          break;
+        case 'scheduled':
+          void queryClient.invalidateQueries({
+            queryKey: senderKeys.scheduled(workspaceId, event.channelId),
+          });
           break;
       }
     };

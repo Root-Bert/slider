@@ -1,13 +1,16 @@
 import { and, eq, inArray, isNull, or, sql } from 'drizzle-orm';
 import {
+  DEFAULT_PROJECT_NAME,
   isOpenTodo,
   type MilestoneChange,
   type MilestoneInput,
-  type Attachment,
+  type ProjectChange,
+  type ProjectInput,
   type Todo,
   type TodoChange,
   type TodoInput,
   type TodoMilestone,
+  type TodoProject,
   type TodoStatus,
   type Viewer,
 } from '@slider/shared';
@@ -15,12 +18,16 @@ import {
   cloudAgents,
   mailAccounts,
   mailThreads,
+  todoDependencies,
   todoMilestones,
+  todoProjects,
   todos,
   workspaceMembers,
   type TodoMilestoneRow,
+  type TodoProjectRow,
   type TodoRow,
 } from '../db/schema';
+import { advisoryXactLock, type Executor } from '../db/client';
 import type { AppDeps } from '../deps';
 import { badRequest, forbidden, isUniqueViolation, notFound } from '../http/errors';
 import { areaNotFound, authorsOf, cloudContext, type CloudCtx } from './cloud/context';
@@ -35,7 +42,9 @@ import { areaAudience, senderLive } from './sender';
 
 /*
  * To-dos (`@slider/shared` todos): one's own – no area, the owner's alone – or an area's, seen by
- * whoever sees the area and changed by whoever may edit there (an area one only views: read).
+ * whoever sees the area and changed by whoever may edit there (an area one only views: read). In
+ * an area they stand in its „Allgemein“ (`projectId` null) or in one of its projects; a place is
+ * area and project, milestones are a place's.
  * An agent works on them as the person it works for (`cloud-agents.ts`), its name on what it
  * wrote. Every change tells those who see it (`senderLive`, `todos`): their lists refetch.
  */
@@ -53,7 +62,7 @@ const NO_SENDING = 'Ein Agent teilt keine Aufgabe einem anderen Agenten zu.';
 export const todoNotFound = () => notFound('Diese Aufgabe gibt es nicht (mehr).');
 
 /** Whether the caller sees it, and may change it. */
-function accessTo(ctx: CloudCtx, row: Pick<TodoRow, 'areaId' | 'ownerId'>) {
+function accessTo(ctx: CloudCtx, row: { areaId: string | null; ownerId?: string | null }) {
   if (!row.areaId) return row.ownerId === ctx.userId ? 'edit' : null;
   const access = ctx.areas.get(row.areaId)?.access;
   if (!access) return null;
@@ -89,6 +98,26 @@ async function toTodos(deps: AppDeps, ctx: CloudCtx, rows: TodoRow[]): Promise<T
         .from(todoMilestones)
         .where(inArray(todoMilestones.id, milestoneIds))
     : [];
+  const projectIds = [...new Set(rows.map((row) => row.projectId).filter(Boolean))] as string[];
+  const projects = projectIds.length
+    ? await deps.db
+        .select({ id: todoProjects.id, name: todoProjects.name })
+        .from(todoProjects)
+        .where(inArray(todoProjects.id, projectIds))
+    : [];
+  // What each waits on – of its own place (moved, its links went), so seen by whoever sees it.
+  const waits = rows.length
+    ? await deps.db
+        .select({ todoId: todoDependencies.todoId, blockedById: todoDependencies.blockedById })
+        .from(todoDependencies)
+        .where(
+          inArray(
+            todoDependencies.todoId,
+            rows.map((row) => row.id),
+          ),
+        )
+        .orderBy(todoDependencies.createdAt)
+    : [];
   const agents = found.map((one) => ({
     id: one.id,
     title:
@@ -103,6 +132,7 @@ async function toTodos(deps: AppDeps, ctx: CloudCtx, rows: TodoRow[]): Promise<T
     id: row.id,
     workspaceId: row.workspaceId,
     areaId: row.areaId,
+    project: projects.find((one) => one.id === row.projectId) ?? null,
     number: row.number,
     title: row.title,
     description: row.description,
@@ -114,6 +144,8 @@ async function toTodos(deps: AppDeps, ctx: CloudCtx, rows: TodoRow[]): Promise<T
     startOn: row.startOn,
     dueOn: row.dueOn,
     milestone: milestones.find((one) => one.id === row.milestoneId) ?? null,
+    position: row.position,
+    blockedBy: waits.filter((one) => one.todoId === row.id).map((one) => one.blockedById),
     source: row.source,
     createdBy: (row.createdBy && people.get(row.createdBy)) || null,
     agent: agents.find((one) => one.id === row.createdByAgent) ?? null,
@@ -206,6 +238,24 @@ function placeOf(ctx: CloudCtx, areaId: string | null | undefined) {
   return { areaId, ownerId: null };
 }
 
+/**
+ * Where it may go, with its project: one's own or an area one may edit in – its „Allgemein“
+ * (`projectId` null) or one of its projects. `stays`: the area is the one it is
+ * in already (only its project changes) – checked as when it came there.
+ */
+async function placeIn(
+  deps: AppDeps,
+  ctx: CloudCtx,
+  areaId: string | null | undefined,
+  projectId: string | null | undefined,
+  stays = false,
+) {
+  const place = stays && areaId ? { areaId, ownerId: null } : placeOf(ctx, areaId);
+  if (!projectId) return { ...place, projectId: null };
+  await projectHere(deps, ctx, place.areaId, projectId);
+  return { ...place, projectId };
+}
+
 /** Who may do it: on one's own, only oneself; in an area, someone of the workspace who sees it. */
 async function checkAssignee(
   deps: AppDeps,
@@ -251,7 +301,7 @@ export async function createTodo(
   const agentId = by.agentId ?? null;
   if (input.assigneeAgentId && !by.viewer) throw badRequest(NO_SENDING);
   const ctx = await cloudContext(deps.db, workspaceId, userId);
-  const place = placeOf(ctx, input.areaId);
+  const place = await placeIn(deps, ctx, input.areaId, input.projectId);
   await checkAssignee(deps, ctx, place.areaId, input.assigneeId);
   if (input.assigneeAgentId) await sendable(deps, ctx, place.areaId, input.assigneeAgentId);
   if (input.milestoneId) await milestoneHere(deps, ctx.workspaceId, place, input.milestoneId);
@@ -275,6 +325,7 @@ export async function createTodo(
           workspaceId,
           ...place,
           number: sql`(select coalesce(max(${todos.number}), 0) + 1 from ${todos} where ${todos.workspaceId} = ${workspaceId})`,
+          position: lastPosition(workspaceId),
           title: input.title.trim(),
           description: input.description ?? '',
           status,
@@ -312,7 +363,14 @@ export async function updateTodo(
   const { row, ctx, access } = await loadTodo(deps, userId, todoId);
   if (access !== 'edit') throw forbidden('In diesem Bereich darfst du nur ansehen.');
   const moved = change.areaId !== undefined && change.areaId !== row.areaId;
-  const place = moved ? placeOf(ctx, change.areaId) : { areaId: row.areaId, ownerId: row.ownerId };
+  // Moved to another area, it leaves its project (unless one of the new area's is named).
+  const projectId =
+    change.projectId !== undefined ? change.projectId : moved ? null : row.projectId;
+  const place =
+    moved || projectId !== row.projectId
+      ? await placeIn(deps, ctx, moved ? change.areaId : row.areaId, projectId, !moved)
+      : { areaId: row.areaId, ownerId: row.ownerId, projectId: row.projectId };
+  const replaced = moved || place.projectId !== row.projectId;
   // Moved where the one doing it does not see it: no one does it.
   let assigneeId = change.assigneeId !== undefined ? change.assigneeId : row.assigneeId;
   if (moved && change.assigneeId === undefined && assigneeId) {
@@ -338,52 +396,140 @@ export async function updateTodo(
     );
     if (!kept) assigneeAgentId = null;
   }
-  // A milestone is its place's: moved, it leaves it (unless one of the new place's is named).
+  // A milestone is its place's (area and project): moved, it leaves it (unless one of the new
+  // place's is named).
   let milestoneId = change.milestoneId !== undefined ? change.milestoneId : row.milestoneId;
   if (change.milestoneId) await milestoneHere(deps, ctx.workspaceId, place, change.milestoneId);
-  else if (moved && change.milestoneId === undefined) milestoneId = null;
+  else if (replaced && change.milestoneId === undefined) milestoneId = null;
+  if (change.blockedBy !== undefined) await checkBlockers(deps.db, row, place, change.blockedBy);
   const status = change.status ?? row.status;
   const now = deps.clock.now();
-  // Its files as asked: the new ones taken (one's own, waiting), the ones left out deleted after.
-  let files = row.attachments;
-  let gone: Attachment[] = [];
-  if (change.attachments !== undefined) {
-    const wanted = new Set(change.attachments);
-    const known = new Set(files.map((one) => one.id));
-    gone = files.filter((one) => !wanted.has(one.id));
-    const added = await claimAttachments(
-      deps.db,
-      now,
-      userId,
-      row.workspaceId,
-      change.attachments.filter((id) => !known.has(id)),
-    );
-    files = [...files.filter((one) => wanted.has(one.id)), ...added];
-  }
-  const [updated] = await deps.db
-    .update(todos)
-    .set({
-      ...place,
-      ...(change.title !== undefined ? { title: change.title.trim() } : {}),
-      ...(change.description !== undefined ? { description: change.description } : {}),
-      ...(change.attachments !== undefined ? { attachments: files } : {}),
-      ...(change.priority !== undefined ? { priority: change.priority } : {}),
-      ...(change.startOn !== undefined ? { startOn: change.startOn } : {}),
-      ...(change.dueOn !== undefined ? { dueOn: change.dueOn } : {}),
-      milestoneId,
-      assigneeId,
-      assigneeAgentId,
-      status,
-      completedAt: isOpenTodo(status) ? null : (row.completedAt ?? now),
-      updatedAt: now,
-    })
-    .where(eq(todos.id, row.id))
-    .returning();
+  // Its files as asked: the ones left out deleted after, the new ones taken below.
+  const wantedFiles = new Set(change.attachments ?? []);
+  const gone =
+    change.attachments !== undefined
+      ? row.attachments.filter((one) => !wantedFiles.has(one.id))
+      : [];
+  // What it waits on is checked again and written in one go, one change at a time per place: two
+  // at once never close a loop (A on B, B on A) nor write the same link twice. Moved, its old place
+  // and its new one both (in one order, so two such moves never wait on each other).
+  const linkKey = (at: Pick<TodoRow, 'areaId' | 'ownerId' | 'projectId'>) =>
+    `todo-links:${row.workspaceId}:${at.areaId ?? `own:${at.ownerId}`}:${at.projectId ?? ''}`;
+  const updated = await deps.db.transaction(async (tx) => {
+    const locks = new Set([
+      ...(change.blockedBy !== undefined || replaced ? [linkKey(place)] : []),
+      ...(replaced ? [linkKey(row)] : []),
+    ]);
+    for (const key of [...locks].sort()) await advisoryXactLock(tx, key);
+    if (change.blockedBy !== undefined) await checkBlockers(tx, row, place, change.blockedBy);
+    // The new files taken with it: refused, none is left taken by no to-do.
+    let files = row.attachments;
+    if (change.attachments !== undefined) {
+      const known = new Set(files.map((one) => one.id));
+      const added = await claimAttachments(
+        tx,
+        now,
+        userId,
+        row.workspaceId,
+        change.attachments.filter((id) => !known.has(id)),
+      );
+      files = [...files.filter((one) => wantedFiles.has(one.id)), ...added];
+    }
+    const [one] = await tx
+      .update(todos)
+      .set({
+        ...place,
+        ...(change.title !== undefined ? { title: change.title.trim() } : {}),
+        ...(change.description !== undefined ? { description: change.description } : {}),
+        ...(change.attachments !== undefined ? { attachments: files } : {}),
+        ...(change.priority !== undefined ? { priority: change.priority } : {}),
+        ...(change.startOn !== undefined ? { startOn: change.startOn } : {}),
+        ...(change.dueOn !== undefined ? { dueOn: change.dueOn } : {}),
+        // Where it was put; into another milestone or place without one: last there.
+        ...(change.position !== undefined
+          ? { position: change.position }
+          : milestoneId !== row.milestoneId || replaced
+            ? { position: lastPosition(row.workspaceId) }
+            : {}),
+        milestoneId,
+        assigneeId,
+        assigneeAgentId,
+        status,
+        completedAt: isOpenTodo(status) ? null : (row.completedAt ?? now),
+        updatedAt: now,
+      })
+      .where(eq(todos.id, row.id))
+      .returning();
+    // Another place: a place's to-dos wait on each other alone – its links go, both ways.
+    if (replaced)
+      await tx
+        .delete(todoDependencies)
+        .where(or(eq(todoDependencies.todoId, row.id), eq(todoDependencies.blockedById, row.id)));
+    if (change.blockedBy !== undefined) {
+      const wanted = [...new Set(change.blockedBy)];
+      await tx.delete(todoDependencies).where(eq(todoDependencies.todoId, row.id));
+      if (wanted.length)
+        await tx
+          .insert(todoDependencies)
+          .values(wanted.map((blockedById) => ({ todoId: row.id, blockedById, createdAt: now })));
+    }
+    return one;
+  });
   await deleteAttachments(deps, gone);
   await tellTodos(deps, row);
   if (moved) await tellTodos(deps, updated!);
   const [todo] = await toTodos(deps, ctx, [updated!]);
   return todo!;
+}
+
+/**
+ * That what it is to wait on are to-dos of its very place (area and project, or the same owner's)
+ * – not itself, and none that waits on it already, however far round (a loop never ends).
+ */
+async function checkBlockers(
+  db: Executor,
+  row: Pick<TodoRow, 'id' | 'workspaceId'>,
+  place: { areaId: string | null; ownerId: string | null; projectId: string | null },
+  blockedBy: readonly string[],
+) {
+  const wanted = [...new Set(blockedBy)];
+  if (wanted.length === 0) return;
+  if (wanted.includes(row.id)) throw badRequest('Eine Aufgabe kann nicht auf sich selbst warten.');
+  const here = await db
+    .select({ id: todos.id })
+    .from(todos)
+    .where(
+      and(
+        eq(todos.workspaceId, row.workspaceId),
+        place.areaId
+          ? eq(todos.areaId, place.areaId)
+          : and(isNull(todos.areaId), eq(todos.ownerId, place.ownerId!)),
+        place.projectId ? eq(todos.projectId, place.projectId) : isNull(todos.projectId),
+      ),
+    );
+  const ids = new Set(here.map((one) => one.id));
+  if (wanted.some((id) => !ids.has(id)))
+    throw badRequest('Eine Aufgabe kann nur auf Aufgaben ihres eigenen Projekts warten.');
+  // Who waits on whom in this place now (its own links left out – they are being replaced).
+  const links = await db
+    .select({ todoId: todoDependencies.todoId, blockedById: todoDependencies.blockedById })
+    .from(todoDependencies)
+    .where(inArray(todoDependencies.todoId, [...ids]));
+  const waitsOn = new Map<string, string[]>();
+  for (const link of links) {
+    if (link.todoId === row.id) continue;
+    waitsOn.set(link.todoId, [...(waitsOn.get(link.todoId) ?? []), link.blockedById]);
+  }
+  const seen = new Set<string>();
+  const next = [...wanted];
+  while (next.length) {
+    const id = next.pop()!;
+    if (id === row.id)
+      throw badRequest('Das wäre ein Kreis – eine dieser Aufgaben wartet schon auf diese.');
+    if (seen.has(id)) continue;
+    seen.add(id);
+    next.push(...(waitsOn.get(id) ?? []));
+  }
 }
 
 /**
@@ -527,11 +673,40 @@ export async function todoByRef(
   return todo;
 }
 
+/**
+ * Where an agent or app puts a to-do among its milestone's lines on the timeline (as dragged
+ * there): before `before` – one of the same place and milestone, by id or number – halfway to the
+ * one above it; `null`: last there. Refused for one of another place or milestone.
+ */
+export async function positionBefore(
+  deps: AppDeps,
+  userId: string,
+  todo: Todo,
+  before: string | null,
+): Promise<number> {
+  const same = (one: Todo) =>
+    one.areaId === todo.areaId &&
+    (one.project?.id ?? null) === (todo.project?.id ?? null) &&
+    (one.milestone?.id ?? null) === (todo.milestone?.id ?? null);
+  const lines = (await listTodos(deps, userId, todo.workspaceId))
+    .filter((one) => one.id !== todo.id && same(one))
+    .sort((a, b) => a.position - b.position || a.number - b.number);
+  if (before === null) return Math.max(0, ...lines.map((one) => one.position)) + 1;
+  const next = await todoByRef(deps, userId, todo.workspaceId, before);
+  const at = lines.findIndex((one) => one.id === next.id);
+  if (at < 0)
+    throw badRequest(
+      `#${next.number} is not in the same milestone and place as #${todo.number} – put it there first (its other changes are made).`,
+    );
+  const prev = lines[at - 1];
+  return prev ? (prev.position + next.position) / 2 : next.position - 1;
+}
+
 /** A to-do in one line, for an agent or an app to read. */
 export function todoLine(todo: Todo, areaName: (areaId: string) => string | undefined) {
   const place = todo.areaId
-    ? `area „${areaName(todo.areaId) ?? 'Bereich'}“ (${todo.areaId})`
-    : 'own';
+    ? `area „${areaName(todo.areaId) ?? 'Bereich'}“ (${todo.areaId}), project „${todo.project?.name ?? DEFAULT_PROJECT_NAME}“`
+    : `own${todo.project ? `, project „${todo.project.name}“` : ''}`;
   return `${todo.id} #${todo.number} [${todo.status}${todo.priority ? `, priority ${todo.priority}` : ''}] ${todo.title} – ${place}${todo.assignee ? `, ${todo.assignee.name} (${todo.assignee.id})` : ''}${todo.assigneeAgent ? `, agent ${todo.assigneeAgent.title}` : ''}${todo.startOn ? `, starts ${todo.startOn}` : ''}${todo.dueOn ? `, due ${todo.dueOn}` : ''}${todo.milestone ? `, milestone „${todo.milestone.name}“${todo.milestone.dueOn ? ` (${todo.milestone.dueOn})` : ''}` : ''}`;
 }
 
@@ -540,6 +715,10 @@ export function todoLine(todo: Todo, areaName: (areaId: string) => string | unde
  * changed as that place's to-dos are. Deleting one leaves its to-dos without it.
  */
 
+/** After every other of the workspace's to-dos – last in any milestone. */
+const lastPosition = (workspaceId: string) =>
+  sql<number>`(select coalesce(max(${todos.position}), 0) + 1 from ${todos} where ${todos.workspaceId} = ${workspaceId})`;
+
 const milestoneNotFound = () => notFound('Diesen Meilenstein gibt es nicht (mehr).');
 
 function toMilestone(ctx: CloudCtx, row: TodoMilestoneRow): TodoMilestone {
@@ -547,6 +726,7 @@ function toMilestone(ctx: CloudCtx, row: TodoMilestoneRow): TodoMilestone {
     id: row.id,
     workspaceId: row.workspaceId,
     areaId: row.areaId,
+    projectId: row.projectId,
     name: row.name,
     dueOn: row.dueOn,
     canEdit: accessTo(ctx, row) === 'edit',
@@ -558,11 +738,11 @@ function toMilestone(ctx: CloudCtx, row: TodoMilestoneRow): TodoMilestone {
 const byDate = (a: TodoMilestone, b: TodoMilestone) =>
   (a.dueOn ?? '9999').localeCompare(b.dueOn ?? '9999') || a.createdAt.localeCompare(b.createdAt);
 
-/** That a milestone is of this very place – a to-do takes only its own place's. */
+/** That a milestone is of this very place (area and project) – a to-do takes only its own place's. */
 async function milestoneHere(
   deps: AppDeps,
   workspaceId: string,
-  place: { areaId: string | null; ownerId: string | null },
+  place: { areaId: string | null; ownerId: string | null; projectId: string | null },
   milestoneId: string,
 ) {
   const [row] = await deps.db
@@ -570,12 +750,14 @@ async function milestoneHere(
       workspaceId: todoMilestones.workspaceId,
       areaId: todoMilestones.areaId,
       ownerId: todoMilestones.ownerId,
+      projectId: todoMilestones.projectId,
     })
     .from(todoMilestones)
     .where(eq(todoMilestones.id, milestoneId));
   const fits =
     row &&
     row.workspaceId === workspaceId &&
+    row.projectId === place.projectId &&
     (place.areaId ? row.areaId === place.areaId : !row.areaId && row.ownerId === place.ownerId);
   if (!fits) throw badRequest('Dieser Meilenstein gehört nicht hierher.');
 }
@@ -616,7 +798,7 @@ export async function createMilestone(
   input: MilestoneInput,
 ): Promise<TodoMilestone> {
   const ctx = await cloudContext(deps.db, workspaceId, userId);
-  const place = placeOf(ctx, input.areaId);
+  const place = await placeIn(deps, ctx, input.areaId, input.projectId);
   const now = deps.clock.now();
   const [row] = await deps.db
     .insert(todoMilestones)
@@ -679,9 +861,11 @@ export async function deleteMilestone(
   await tellTodos(deps, row);
 }
 
+const fold = (text: string) => text.trim().toLowerCase().replace(/\s+/g, ' ');
+
 /**
- * A milestone named by an agent or an app, in a to-do's place: the one of that name there (case
- * and spaces aside), or a new one – they plan by names, not ids.
+ * A milestone named by an agent or an app, in a to-do's place (area and project): the one of that
+ * name there (case and spaces aside), or a new one – they plan by names, not ids.
  */
 export async function milestoneNamed(
   deps: AppDeps,
@@ -689,12 +873,158 @@ export async function milestoneNamed(
   workspaceId: string,
   areaId: string | null,
   name: string,
+  projectId: string | null = null,
 ): Promise<string> {
-  const fold = (text: string) => text.trim().toLowerCase().replace(/\s+/g, ' ');
   const here = (
     await listMilestones(deps, userId, workspaceId, { areaId: areaId ?? undefined })
-  ).filter((one) => one.areaId === areaId);
+  ).filter((one) => one.areaId === areaId && one.projectId === projectId);
   const found = here.find((one) => fold(one.name) === fold(name));
   if (found) return found.id;
-  return (await createMilestone(deps, userId, workspaceId, { name, areaId })).id;
+  return (await createMilestone(deps, userId, workspaceId, { name, areaId, projectId })).id;
+}
+
+/*
+ * Projects: a place's plans beside its „Allgemein“ – an area's seen by whoever sees the area, made,
+ * renamed and deleted by whoever may edit there; one's own by oneself alone. Deleted, its to-dos and milestones go back to
+ * „Allgemein“ (the foreign keys set `project_id` null).
+ */
+
+const projectNotFound = () => notFound('Dieses Projekt gibt es nicht (mehr).');
+
+function toProject(ctx: CloudCtx, row: TodoProjectRow): TodoProject {
+  return {
+    id: row.id,
+    workspaceId: row.workspaceId,
+    areaId: row.areaId,
+    name: row.name,
+    canEdit: accessTo(ctx, row) === 'edit',
+    createdAt: row.createdAt.toISOString(),
+  };
+}
+
+/** That a project is of this place – a to-do or milestone goes only into its own place's. */
+async function projectHere(deps: AppDeps, ctx: CloudCtx, areaId: string | null, projectId: string) {
+  const [row] = await deps.db
+    .select({
+      workspaceId: todoProjects.workspaceId,
+      areaId: todoProjects.areaId,
+      ownerId: todoProjects.ownerId,
+    })
+    .from(todoProjects)
+    .where(eq(todoProjects.id, projectId));
+  if (
+    !row ||
+    row.workspaceId !== ctx.workspaceId ||
+    row.areaId !== areaId ||
+    (!areaId && row.ownerId !== ctx.userId)
+  )
+    throw badRequest('Dieses Projekt gehört nicht hierher.');
+}
+
+/** The projects of one area (`areaId`), or one's own and every area's one sees – the oldest first. */
+export async function listProjects(
+  deps: AppDeps,
+  userId: string,
+  workspaceId: string,
+  options: { areaId?: string } = {},
+): Promise<TodoProject[]> {
+  const ctx = await cloudContext(deps.db, workspaceId, userId);
+  let where;
+  if (options.areaId) {
+    if (!ctx.areas.get(options.areaId)?.access) throw areaNotFound();
+    where = and(eq(todoProjects.workspaceId, workspaceId), eq(todoProjects.areaId, options.areaId));
+  } else {
+    const seen = [...ctx.areas.entries()].filter(([, one]) => one.access).map(([id]) => id);
+    const own = and(isNull(todoProjects.areaId), eq(todoProjects.ownerId, userId));
+    where = and(
+      eq(todoProjects.workspaceId, workspaceId),
+      seen.length ? or(inArray(todoProjects.areaId, seen), own) : own,
+    );
+  }
+  const rows = await deps.db
+    .select()
+    .from(todoProjects)
+    .where(where)
+    .orderBy(todoProjects.createdAt)
+    .limit(MAX_LISTED);
+  return rows.map((row) => toProject(ctx, row));
+}
+
+export async function createProject(
+  deps: AppDeps,
+  userId: string,
+  workspaceId: string,
+  input: ProjectInput,
+): Promise<TodoProject> {
+  const ctx = await cloudContext(deps.db, workspaceId, userId);
+  const { areaId, ownerId } = placeOf(ctx, input.areaId);
+  const now = deps.clock.now();
+  const [row] = await deps.db
+    .insert(todoProjects)
+    .values({
+      id: crypto.randomUUID(),
+      workspaceId,
+      areaId,
+      ownerId,
+      name: input.name.trim(),
+      createdAt: now,
+      updatedAt: now,
+    })
+    .returning();
+  await tellTodos(deps, row!);
+  return toProject(ctx, row!);
+}
+
+async function loadProject(deps: AppDeps, userId: string, projectId: string) {
+  const [row] = await deps.db.select().from(todoProjects).where(eq(todoProjects.id, projectId));
+  if (!row) throw projectNotFound();
+  const ctx = await cloudContext(deps.db, row.workspaceId, userId).catch(() => {
+    throw projectNotFound();
+  });
+  const access = accessTo(ctx, row);
+  if (!access) throw projectNotFound();
+  if (access !== 'edit') throw forbidden('In diesem Bereich darfst du nur ansehen.');
+  return { row, ctx };
+}
+
+export async function updateProject(
+  deps: AppDeps,
+  userId: string,
+  projectId: string,
+  change: ProjectChange,
+): Promise<TodoProject> {
+  const { row, ctx } = await loadProject(deps, userId, projectId);
+  const [updated] = await deps.db
+    .update(todoProjects)
+    .set({ name: change.name.trim(), updatedAt: deps.clock.now() })
+    .where(eq(todoProjects.id, row.id))
+    .returning();
+  await tellTodos(deps, row);
+  return toProject(ctx, updated!);
+}
+
+export async function deleteProject(deps: AppDeps, userId: string, projectId: string) {
+  const { row } = await loadProject(deps, userId, projectId);
+  await deps.db.delete(todoProjects).where(eq(todoProjects.id, row.id));
+  await tellTodos(deps, row);
+}
+
+/**
+ * A project named by an agent or an app, in an area or one's own (`areaId` null): „Allgemein“ (or
+ * nothing) is the place's own (`null`); else the one of that name (case and spaces aside), or a new
+ * one – as milestones.
+ */
+export async function projectNamed(
+  deps: AppDeps,
+  userId: string,
+  workspaceId: string,
+  areaId: string | null,
+  name: string | null | undefined,
+): Promise<string | null> {
+  if (!name || fold(name) === fold(DEFAULT_PROJECT_NAME)) return null;
+  const found = (await listProjects(deps, userId, workspaceId, areaId ? { areaId } : {})).find(
+    (one) => one.areaId === areaId && fold(one.name) === fold(name),
+  );
+  if (found) return found.id;
+  return (await createProject(deps, userId, workspaceId, { name, areaId })).id;
 }

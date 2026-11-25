@@ -71,13 +71,13 @@ export function useMailView(): MailViewState {
   const folder =
     asked.folder === OVERVIEW || folders.some((each) => each.key === asked.folder)
       ? asked.folder
-      : 'inbox';
+      : OVERVIEW;
   const unread = useSyncExternalStore(unreadStore.subscribe, unreadStore.getSnapshot);
   const [query, setQuery] = useState('');
   const searchOf = (accountId: string, key: string) =>
     mailViewSearch({ accountId, folder: key }, accounts?.[0]?.id === accountId);
   const search = account ? searchOf(account.id, folder) : '';
-  const listHref = (accountId: string, key = 'inbox') =>
+  const listHref = (accountId: string, key = OVERVIEW) =>
     `${ui.mailPath}${searchOf(accountId, key)}`;
   return {
     accounts,

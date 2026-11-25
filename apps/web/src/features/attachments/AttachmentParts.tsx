@@ -4,6 +4,7 @@ import {
   CLOUD_FOLDER_TYPE,
   isCloudReference,
   isPictureAttachment,
+  isVideoAttachment,
   type Attachment,
 } from '@slider/shared';
 import { attachmentUrl } from '@/lib/api';
@@ -195,8 +196,10 @@ export function SentAttachments({
   const pictures = attachments.filter(
     (one) => isPictureAttachment(one.type) && !isCloudReference(one),
   );
+  const videos = attachments.filter((one) => isVideoAttachment(one.type) && !isCloudReference(one));
   const others = attachments.filter(
-    (one) => !isPictureAttachment(one.type) || isCloudReference(one),
+    (one) =>
+      (!isPictureAttachment(one.type) && !isVideoAttachment(one.type)) || isCloudReference(one),
   );
   return (
     <div className={cn('flex min-w-0 flex-col gap-1.5', className)}>
@@ -226,6 +229,24 @@ export function SentAttachments({
           ))}
         </ul>
       )}
+      {videos.map((one) => (
+        <div key={one.id} className="group/thumb relative w-full max-w-md">
+          {/* Safari draws a video on its own layer, past the radius: a clipping wrapper rounds it. */}
+          <div className="relative isolate overflow-hidden rounded-control bg-canvas ring-hairline [transform:translateZ(0)]">
+            <video
+              aria-label={one.name}
+              // Safari draws no first frame for `metadata` alone; a start just past 0 makes it.
+              src={`${attachmentUrl(one.id)}#t=0.001`}
+              controls
+              playsInline
+              preload="metadata"
+              // Its room held before it loads: the conversation stays scrolled to its end.
+              className="block aspect-video max-h-80 w-full bg-canvas object-contain"
+            />
+          </div>
+          {off(one, true)}
+        </div>
+      ))}
       {others.length > 0 && (
         <ul aria-label="Dateien" className="flex min-w-0 flex-wrap gap-1">
           {others.map((one) => (
