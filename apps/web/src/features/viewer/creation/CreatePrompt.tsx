@@ -1,6 +1,5 @@
-import { useQuery } from '@tanstack/react-query';
 import { useEffect, useId, useRef, useState, type CSSProperties, type KeyboardEvent } from 'react';
-import { boardSchema, DEFAULT_DECK_KIND, MAX_CREATION_PROMPT_LENGTH } from '@slider/shared';
+import { DEFAULT_DECK_KIND, MAX_CREATION_PROMPT_LENGTH } from '@slider/shared';
 import { useHeardWords } from '../voice/hooks/useHeardWords';
 import {
   clearCreationDraft,
@@ -9,32 +8,26 @@ import {
   type CreationDraft,
 } from './creation-draft';
 import { KindChoice, MasterChoice, PagesChoice, pagesOf } from '@/features/onboarding';
-import { api } from '@/lib/api-client';
-import { queryKeys, useDismissCreation, useStartCreation, useWorkspaceMasters } from '@/lib/api';
+import {
+  useAttachMaterial,
+  useDeckMaterial,
+  useDismissCreation,
+  useStartCreation,
+  useWorkspaceMasters,
+} from '@/lib/api';
 import { isModEnter } from '@/lib/keyboard';
-import { Button, Icon, IconButton, TextLink, useFocusLoop } from '@/ui';
-import { useBoard } from '../board/useBoard';
-import { DeckBoardOwner } from '../components/DeckBoardOwner';
-import { useViewerDispatch } from '../state/viewer-state';
+import { Button, Icon, IconButton, useFocusLoop } from '@/ui';
 import { useViewerData } from '../state/viewer-data';
+import { useViewerDispatch } from '../state/viewer-state';
 import { useViewerToast } from '../state/viewer-toast';
 
 /**
  * Folie 1 of a new deck while it is still blank: a large window on the slide to have the AI
  * build the deck – what it is about, the kind (8 cards, one picked), the workspace's template,
- * how many slides – and how much material lies on the material page (always read, never a switch).
+ * how many slides – and the files given to it (pasted or picked here; always read, never a switch).
  * „Erstellen“ starts the run (the window closes at once, the progress shows), „Leer anfangen“
  * closes it for good.
  */
-export function CreatePrompt(props: PromptProps) {
-  // The deck's board: files pasted or picked here lie down in its material.
-  return (
-    <DeckBoardOwner>
-      <Prompt {...props} />
-    </DeckBoardOwner>
-  );
-}
-
 interface PromptProps {
   x: number;
   w: number;
@@ -43,19 +36,16 @@ interface PromptProps {
   templateId: string | null;
 }
 
-function Prompt({ x, w, h, templateId }: PromptProps) {
+export function CreatePrompt({ x, w, h, templateId }: PromptProps) {
   const { deck } = useViewerData();
   const toast = useViewerToast();
-  const dispatch = useViewerDispatch();
   const start = useStartCreation(deck.id);
   const dismiss = useDismissCreation(deck.id);
   const masters =
     useWorkspaceMasters(deck.workspaceId).data?.filter((master) => master.format === 'odp') ?? [];
-  const board = useQuery({
-    queryKey: queryKeys.board(deck.id),
-    queryFn: async () => boardSchema.parse(await api.get(`/decks/${deck.id}/board`)),
-    networkMode: 'always',
-  }).data;
+  const board = useDeckMaterial(deck.id).data;
+  // Files on their way up: named in the line under the field until the server has them.
+  const [sending, setSending] = useState<readonly string[]>([]);
 
   // What is typed here is kept per deck in the browser – the window goes and comes back (the
   // editor, the track scrolled away, a reload) with it – until „Erstellen“ or „Leer anfangen“.
@@ -85,22 +75,36 @@ function Prompt({ x, w, h, templateId }: PromptProps) {
   const kindsId = useId();
   const textId = useId();
 
+  const dispatch = useViewerDispatch();
   const files = board?.materials ?? [];
   const reading = files.filter((file) => file.readState === 'pending').length;
   const items = board?.items.length ?? 0;
+  // One just up may still count as on its way for a moment: named once.
+  const names = [
+    ...files.map((file) => file.name),
+    ...sending.filter((name) => !files.some((file) => file.name === name)),
+  ];
+  const named =
+    names.length <= 3
+      ? names.map((name) => `„${name}“`).join(', ')
+      : `${names
+          .slice(0, 2)
+          .map((name) => `„${name}“`)
+          .join(', ')} und ${names.length - 2} weitere`;
   const materialLine =
-    files.length + items === 0
-      ? 'Noch kein Material da.'
-      : `Die KI nutzt das Material: ${[
-          files.length > 0 && `${files.length} ${files.length === 1 ? 'Datei' : 'Dateien'}`,
+    names.length + items === 0
+      ? 'Noch keine Dateien angehängt.'
+      : `Die KI nutzt ${[
+          names.length > 0 && named,
           items > 0 && `${items} ${items === 1 ? 'Notiz oder Link' : 'Notizen und Links'}`,
         ]
           .filter(Boolean)
           .join(
             ', ',
-          )}.${reading > 0 ? ` ${reading === 1 ? 'Eine Datei wird' : `${reading} Dateien werden`} noch gelesen, die KI wartet darauf.` : ''}`;
+          )}.${sending.length > 0 ? ` ${sending.length === 1 ? 'Eine Datei wird' : `${sending.length} Dateien werden`} hochgeladen.` : ''}${reading > 0 ? ` ${reading === 1 ? 'Eine Datei wird' : `${reading} Dateien werden`} noch gelesen, die KI wartet darauf.` : ''}`;
 
-  const ready = description.trim().length > 0;
+  // Not while a file is still on its way: the run would start without it (the line says so).
+  const ready = description.trim().length > 0 && sending.length === 0;
   const create = () => {
     if (!ready || start.isPending) return;
     start.mutate(
@@ -124,19 +128,27 @@ function Prompt({ x, w, h, templateId }: PromptProps) {
     }
   };
 
-  const toBoard = () => dispatch({ type: 'materialSet', open: true });
-  // Files pasted into the description or picked with the paper clip: into the material, which
-  // the AI reads – the line under the field counts them once they are up.
-  const { addFiles } = useBoard();
+  // Files pasted into the description or picked with the paper clip: into the deck's material,
+  // which the AI reads – the line under the field names them.
+  const attach = useAttachMaterial(deck.id);
   const picker = useRef<HTMLInputElement>(null);
   const toMaterial = (list: File[]) => {
-    if (list.length === 0) return;
-    addFiles(list, { x: 0, y: 0 });
-    toast(
-      list.length === 1
-        ? `„${list[0]?.name ?? 'Datei'}“ liegt im Material`
-        : `${list.length} Dateien liegen im Material`,
-    );
+    for (const file of list) {
+      setSending((now) => [...now, file.name]);
+      void attach(file)
+        .catch((error: unknown) =>
+          toast(
+            error instanceof Error ? error.message : `„${file.name}“ nicht angehängt`,
+            'danger',
+          ),
+        )
+        .finally(() =>
+          setSending((now) => {
+            const at = now.indexOf(file.name);
+            return at < 0 ? now : [...now.slice(0, at), ...now.slice(at + 1)];
+          }),
+        );
+    }
   };
 
   // The slide itself is the window: its whole area, no card in it. Too small for everything, the
@@ -232,7 +244,7 @@ function Prompt({ x, w, h, templateId }: PromptProps) {
               <IconButton
                 icon="attachFile"
                 label="Datei anhängen"
-                title="Dateien ins Material legen – oder direkt ins Textfeld einfügen"
+                title="Dateien anhängen – oder direkt ins Textfeld einfügen"
                 size="compact"
                 onClick={() => picker.current?.click()}
               />
@@ -260,10 +272,20 @@ function Prompt({ x, w, h, templateId }: PromptProps) {
             <p className="flex items-start gap-1.5 text-xs text-fg-subtle">
               <Icon name="attachFile" size={14} className="mt-px shrink-0" />
               <span>
-                {materialLine}{' '}
-                <TextLink variant="underline" tone="muted" onClick={toBoard}>
-                  Zum Material
-                </TextLink>
+                {materialLine}
+                {/* What it uses, with „Löschen“ for a file given by mistake: „Material“. */}
+                {files.length + items > 0 && (
+                  <>
+                    {' '}
+                    <button
+                      type="button"
+                      onClick={() => dispatch({ type: 'materialPanelSet', open: true })}
+                      className="font-medium text-fg-muted underline-offset-2 hover:text-fg hover:underline"
+                    >
+                      Ansehen
+                    </button>
+                  </>
+                )}
               </span>
             </p>
           </div>

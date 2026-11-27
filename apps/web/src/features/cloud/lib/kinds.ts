@@ -29,6 +29,12 @@ export const FILE_KINDS: Record<CloudFileType, Kind> = {
     tile: 'bg-success/15',
     ink: 'text-success',
   },
+  diagram: {
+    label: 'Diagramm',
+    icon: 'accountTree',
+    tile: 'bg-accent-blue/15',
+    ink: 'text-accent-blue',
+  },
   pdf: { label: 'PDF', icon: 'pictureAsPdf', tile: 'bg-danger/15', ink: 'text-danger' },
   image: { label: 'Bild', icon: 'image', tile: 'bg-accent-violet/15', ink: 'text-accent-violet' },
   video: { label: 'Video', icon: 'movie', tile: 'bg-warning/15', ink: 'text-warning' },
@@ -43,17 +49,20 @@ const SLIDER_DECKS = new Set(['pptx', 'pptm', 'ppsx', 'odp']);
 
 /**
  * Which of the apps opens the file: a presentation Slider (`decks`: the caller may make
- * presentations), a PDF Reader, a text document Writer. `null`: none – it belongs to an app on the
- * computer.
+ * presentations), a PDF Reader, a text document Writer, a Markdown file Cloud itself as a page,
+ * a diagram Cloud's drawing board.
+ * `null`: none – it belongs to an app on the computer.
  */
 export function appFor(
   node: Pick<CloudNode, 'name' | 'fileType'>,
   decks: boolean,
-): 'slider' | 'reader' | 'writer' | null {
+): 'slider' | 'reader' | 'writer' | 'page' | 'diagram' | null {
   const extension = cloudExtension(node.name);
   if (node.fileType === 'presentation' && decks && SLIDER_DECKS.has(extension)) return 'slider';
   if (extension === 'pdf') return 'reader';
-  if (['odt', 'md', 'markdown'].includes(extension)) return 'writer';
+  if (extension === 'odt') return 'writer';
+  if (extension === 'md' || extension === 'markdown') return 'page';
+  if (extension === 'diagram') return 'diagram';
   return null;
 }
 
@@ -64,6 +73,7 @@ export const TYPE_FILTERS = [
   { value: 'presentations', label: 'Präsentationen', icon: 'slideshow', types: ['presentation'] },
   { value: 'pdf', label: 'PDF', icon: 'pictureAsPdf', types: ['pdf'] },
   { value: 'spreadsheets', label: 'Tabellen', icon: 'tableChart', types: ['spreadsheet'] },
+  { value: 'diagrams', label: 'Diagramme', icon: 'accountTree', types: ['diagram'] },
   { value: 'media', label: 'Medien', icon: 'image', types: ['image', 'video', 'audio'] },
 ] as const satisfies readonly {
   value: string;
@@ -85,6 +95,8 @@ export const SORT_LABELS: Record<CloudSort, string> = {
 /** `columns` only where there are folders to step into (a place); elsewhere it shows as the list. */
 export const CLOUD_VIEWS = ['list', 'tiles', 'columns'] as const;
 export type CloudView = (typeof CLOUD_VIEWS)[number];
+/** The view last switched to anywhere in Cloud: where a place has none of its own yet. */
+export const CLOUD_VIEW_KEY = 'slider.cloud.view';
 
 const collator = new Intl.Collator('de', { numeric: true, sensitivity: 'base' });
 

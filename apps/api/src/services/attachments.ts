@@ -6,6 +6,7 @@ import {
   cloudReference,
   isCloudReference,
   isPictureAttachment,
+  isAudioAttachment,
   isVideoAttachment,
   MAX_ATTACHMENTS,
   type Attachment,
@@ -142,9 +143,17 @@ export async function uploadAttachment(
   return { id, name, type, size: file.bytes.byteLength };
 }
 
-/** A file's blobs: its bytes, and a video's digest beside them (`video-digest.ts`). */
-const attachmentBlobs = (keys: readonly string[]) =>
-  storageBlobs(keys.flatMap((key) => [key, key + VIDEO_DIGEST_SUFFIX]));
+/** Where a sent document's pages lie, drawn for its preview (`attachment-pages.ts`). */
+export const pagesPrefix = (key: string) => `${key}.pages/`;
+
+/**
+ * A file's blobs: its bytes, a video's digest beside them (`video-digest.ts`) and a document's
+ * pages as drawn for its preview (`attachment-pages.ts`).
+ */
+export const attachmentBlobs = (keys: readonly string[]): BlobDeletion[] => [
+  ...storageBlobs(keys.flatMap((key) => [key, key + VIDEO_DIGEST_SUFFIX])),
+  ...keys.map((key) => ({ store: 'storage' as const, key: pagesPrefix(key), prefix: true })),
+];
 
 /** Takes a waiting file off again: gone, bytes and all. Taken ones stay (they are a message's). */
 export async function dropAttachment(deps: AppDeps, userId: string, id: string): Promise<void> {
@@ -400,14 +409,20 @@ export async function attachmentRow(
   deps: AppDeps,
   userId: string,
   id: string,
-): Promise<{ name: string; type: string; size: number; key: string }> {
+): Promise<{ name: string; type: string; size: number; key: string; workspaceId: string }> {
   const [row] = await deps.db.select().from(attachments).where(eq(attachments.id, id));
   if (!row) throw notThere();
   if (!row.takenAt && row.userId !== userId) throw notThere();
   await requireRole(deps.db, row.workspaceId, userId).catch(() => {
     throw notThere();
   });
-  return { name: row.name, type: row.type, size: row.size, key: row.key };
+  return {
+    name: row.name,
+    type: row.type,
+    size: row.size,
+    key: row.key,
+    workspaceId: row.workspaceId,
+  };
 }
 
 /** Files put on things never sent: gone after seven days (the hourly retention job). */
@@ -529,7 +544,7 @@ export async function attachmentBlocks(
         continue;
       }
     }
-    if (isVideoAttachment(row.type)) {
+    if (isVideoAttachment(row.type) || isAudioAttachment(row.type)) {
       const video = await videoBlocks(deps, row, name);
       if (video) {
         blocks.push(...video);

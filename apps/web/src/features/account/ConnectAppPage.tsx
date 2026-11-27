@@ -5,8 +5,11 @@ import { CenteredCard, CenteredLayout } from '@/shell/layouts/CenteredLayout';
 import { Button, ErrorText, Icon, Select } from '@/ui';
 
 const ALL = '__all__';
-/** The connection is to Slider's tools (the MCP server „Slider“): the page wears Slider. */
-const DOC_TITLE = 'KI-App verbinden | Slider';
+/**
+ * The connection is to all the apps (the MCP server „Office“): the page says Office, its head
+ * the app one is in (Office has no mark of its own).
+ */
+const DOC_TITLE = 'KI-App verbinden | Office';
 
 /**
  * `/verbinden?anfrage=…` – an AI app (Claude, ChatGPT …) asks to be let into the account over
@@ -27,7 +30,7 @@ export function Component() {
 
   if (!request || asked.isError) {
     return (
-      <CenteredLayout app="slider" docTitle={DOC_TITLE}>
+      <CenteredLayout docTitle={DOC_TITLE}>
         <CenteredCard
           icon={<Icon name="error" size={28} />}
           title="Diese Anfrage gilt nicht mehr"
@@ -38,7 +41,7 @@ export function Component() {
   }
   if (!asked.data) {
     return (
-      <CenteredLayout app="slider" docTitle={DOC_TITLE}>
+      <CenteredLayout docTitle={DOC_TITLE}>
         <CenteredCard
           icon={<Icon name="autoAwesome" size={28} />}
           title="KI-App verbinden"
@@ -68,7 +71,7 @@ export function Component() {
 
   if (done) {
     return (
-      <CenteredLayout app="slider" docTitle={DOC_TITLE}>
+      <CenteredLayout docTitle={DOC_TITLE}>
         <CenteredCard
           icon={<Icon name={done === 'approve' ? 'checkCircle' : 'close'} size={28} />}
           title={done === 'approve' ? `${clientName} ist verbunden` : 'Abgelehnt'}
@@ -79,10 +82,10 @@ export function Component() {
   }
 
   return (
-    <CenteredLayout app="slider" docTitle={DOC_TITLE}>
+    <CenteredLayout docTitle={DOC_TITLE}>
       <CenteredCard
         icon={<Icon name="autoAwesome" size={28} />}
-        title={`${clientName} mit Slider verbinden?`}
+        title={`${clientName} mit Office verbinden?`}
         message={
           <>
             {clientName} handelt dann {me?.user ? `als ${me.user.name}` : 'in deinem Namen'}, mit

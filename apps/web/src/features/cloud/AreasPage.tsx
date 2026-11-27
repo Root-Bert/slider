@@ -40,7 +40,7 @@ const VIEW_KEY = 'slider.cloud.areasView';
 const LINE = 'bg-hairline-strong';
 /** A branch: its tile, a stub up to the line of its siblings, and that line's two halves. */
 const BRANCH = cn(
-  'relative flex flex-col items-center px-2 pt-6',
+  'relative flex flex-col items-center px-2 pt-6 max-sm:items-stretch max-sm:px-0 max-sm:pt-3 max-sm:before:hidden max-sm:after:hidden',
   'before:absolute before:top-0 before:right-1/2 before:left-0 before:h-px before:bg-hairline-strong first-of-type:before:hidden',
   'after:absolute after:top-0 after:right-0 after:left-1/2 after:h-px after:bg-hairline-strong last:after:hidden',
 );
@@ -100,7 +100,7 @@ function AreaCard({
   const actions = areaActions(ui, area, areas);
   const shown = area.members.slice(0, SHOWN_PEOPLE);
   return (
-    <div className="glass group relative flex w-60 flex-col gap-3 rounded-panel p-4 text-left transition-colors hover:bg-glass-hover has-[a:focus-visible]:ring-2 has-[a:focus-visible]:ring-focus">
+    <div className="glass group relative flex w-60 flex-col gap-3 rounded-panel p-4 max-sm:w-full text-left transition-colors hover:bg-glass-hover has-[a:focus-visible]:ring-2 has-[a:focus-visible]:ring-focus">
       <div className="flex items-start gap-3">
         <AreaMark area={area} size="lg" />
         <div className="flex min-w-0 flex-1 flex-col gap-0.5">
@@ -192,11 +192,21 @@ function Branches({
   );
   if (under.length === 0) return null;
   return (
-    <ul className="relative flex justify-center pt-6">
-      <span aria-hidden className={cn('absolute top-0 left-1/2 h-6 w-px', LINE)} />
+    // On a phone a list down the page instead: each area under its own, set in by a line.
+    <ul
+      className={cn(
+        'relative flex justify-center pt-6 max-sm:flex-col max-sm:justify-start max-sm:pt-0',
+        parentId !== null &&
+          'max-sm:ml-4 max-sm:border-l max-sm:border-hairline-strong max-sm:pl-3',
+      )}
+    >
+      <span aria-hidden className={cn('absolute top-0 left-1/2 h-6 w-px max-sm:hidden', LINE)} />
       {under.map((area) => (
         <li key={area.id} className={BRANCH}>
-          <span aria-hidden className={cn('absolute top-0 left-1/2 h-6 w-px', LINE)} />
+          <span
+            aria-hidden
+            className={cn('absolute top-0 left-1/2 h-6 w-px max-sm:hidden', LINE)}
+          />
           <AreaCard area={area} areas={areas} view={view} />
           <Branches parentId={area.id} areas={areas} view={view} />
         </li>
@@ -307,7 +317,7 @@ export function Component() {
               )}
               {/* Wider than the page it scrolls sideways; `w-max` keeps the tree in one piece. */}
               <div className={cn('-mx-3 overflow-x-auto px-3 pb-4', view === 'people' && 'hidden')}>
-                <div className="mx-auto flex w-max flex-col items-center">
+                <div className="mx-auto flex w-max flex-col items-center max-sm:w-full max-sm:items-stretch">
                   {/* The workspace itself: an area as those under it, to open as they are. */}
                   {root ? (
                     <AreaCard area={root} areas={ui.home.areas} view={view} />

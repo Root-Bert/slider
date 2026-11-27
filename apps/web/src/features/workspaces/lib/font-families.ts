@@ -7,7 +7,8 @@ import {
 import { workspaceCssFamily } from '@/lib/workspace-fonts';
 import { cssFamily, officeFontStyles } from '@/features/viewer';
 
-export type MaterialView = 'grid' | 'list';
+export const MATERIAL_VIEWS = ['grid', 'list'] as const;
+export type MaterialView = (typeof MATERIAL_VIEWS)[number];
 
 /** One face of a family: regular, italic, bold or bold italic. */
 export interface FontStyle {

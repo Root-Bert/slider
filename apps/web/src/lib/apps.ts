@@ -85,6 +85,8 @@ export function appOfPath(pathname: string): AppId | null {
     matchPath(CLOUD_START, pathname) ||
     matchPath(OLD_START, pathname) ||
     matchPath('/w/:workspaceId/dateien/*', pathname) ||
+    // A diagram: drawn on in Cloud.
+    matchPath('/diagramm/:diagramId', pathname) ||
     // What a link of Cloud's shows to someone outside.
     matchPath('/s/:token', pathname)
   )

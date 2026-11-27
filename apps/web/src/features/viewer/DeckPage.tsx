@@ -13,7 +13,7 @@ import { useColorOverrides } from './hooks/useColorOverrides';
 import { useLiveConnected } from './live/lib/live-store';
 import { blockingError } from './lib/blocking-error';
 import { useDocumentTitle } from './hooks/usePageSession';
-import { MATERIAL_PARAM, SLIDE_PARAM } from './hooks/useSlideUrlSync';
+import { SLIDE_PARAM } from './hooks/useSlideUrlSync';
 import { RevisionProvider } from './state/RevisionProvider';
 import { deriveViewerData } from './state/viewer-data';
 import { ViewerStoreProvider } from './state/ViewerStoreProvider';
@@ -32,8 +32,6 @@ export function DeckRoute({ deckId }: { deckId: string }) {
   const [searchParams] = useSearchParams();
   const [initialSlideId] = useState(() => searchParams.get(SLIDE_PARAM));
   const location = useLocation();
-  // `?material` opens on the material page; a new deck on Folie 1, its prompt.
-  const [initialMaterial] = useState(() => searchParams.has(MATERIAL_PARAM));
 
   const deck = useDeck(deckId);
   // ⌘K: „Gehe zu“ and the apps lead into the deck's workspace, which the address does not say.
@@ -109,11 +107,7 @@ export function DeckRoute({ deckId }: { deckId: string }) {
   if (!data) return <DeckLoading />;
 
   return (
-    <ViewerStoreProvider
-      data={data}
-      initialSlideId={initialSlideId}
-      initialMaterial={initialMaterial}
-    >
+    <ViewerStoreProvider data={data} initialSlideId={initialSlideId}>
       <RevisionProvider>
         <Viewer />
       </RevisionProvider>

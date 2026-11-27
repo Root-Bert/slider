@@ -298,6 +298,50 @@ export function useRenameCloudAgent(workspaceId: string) {
   });
 }
 
+/** A file of the agent's memory changed by hand – at once on its page; an empty text deletes it. */
+export function useRememberCloudAgent(workspaceId: string, agentId: string) {
+  const queryClient = useQueryClient();
+  const key = cloudAgentKeys.one(workspaceId, agentId);
+  return useMutation({
+    mutationFn: (file: { path: string; content: string }) =>
+      api.put<void>(`/cloud/agents/${agentId}/memories`, file),
+    onMutate: ({ path, content }) => {
+      queryClient.setQueryData<CloudAgentDetail>(
+        key,
+        (agent) =>
+          agent && {
+            ...agent,
+            memories: content.trim()
+              ? agent.memories.map((each) => (each.path === path ? { ...each, content } : each))
+              : agent.memories.filter((each) => each.path !== path),
+          },
+      );
+    },
+    onSettled: () => {
+      void queryClient.invalidateQueries({ queryKey: key });
+      // How many files it has the list knows: asked before it is shared.
+      void queryClient.invalidateQueries({ queryKey: cloudAgentKeys.list(workspaceId) });
+    },
+  });
+}
+
+/** „Anweisungen“: how its owner wants the agent to work – at once on its page. */
+export function useInstructCloudAgent(workspaceId: string, agentId: string) {
+  const queryClient = useQueryClient();
+  const key = cloudAgentKeys.one(workspaceId, agentId);
+  return useMutation({
+    mutationFn: (instructions: string) =>
+      api.put<void>(`/cloud/agents/${agentId}/instructions`, { instructions }),
+    onMutate: (instructions) => {
+      queryClient.setQueryData<CloudAgentDetail>(
+        key,
+        (agent) => agent && { ...agent, instructions },
+      );
+    },
+    onSettled: () => void queryClient.invalidateQueries({ queryKey: key }),
+  });
+}
+
 /** „Wiederholen“: the order the agent takes up again by itself, and when – `null` ends that. */
 export function useRepeatCloudAgent(workspaceId: string, agentId: string) {
   const queryClient = useQueryClient();

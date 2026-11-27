@@ -24,6 +24,7 @@ import { CloudCommands } from './components/CloudCommands';
 import { useBarSearch } from './hooks/useBarSearch';
 import { SearchResults } from './SearchResults';
 import { CloudProvider } from './hooks/useCloud';
+import { useKeptPanel } from './hooks/useKeptPanel';
 import { useStoredChoice } from './hooks/useStoredChoice';
 import { PageBefore, usePageBefore } from './hooks/useOpenedFrom';
 import { SIDEBAR_KEY, SIDEBAR_STATES } from './lib/kinds';
@@ -35,6 +36,9 @@ import { SIDEBAR_KEY, SIDEBAR_STATES } from './lib/kinds';
 export function Component() {
   const workspace = useWorkspace();
   const location = useLocation();
+  // The panel beside the page (a to-do, a file's details, an event, a call) goes along from page
+  // to page; only ✕ or Esc closes it.
+  useKeptPanel(workspace.id);
   // Where one came from: a page opened from an overview keeps its path (`useOpenedFrom`).
   const before = usePageBefore();
   // On narrow screens the side bar slides in over the page; a place picked closes it.
@@ -80,7 +84,8 @@ export function Component() {
     >
       <CloudProvider workspace={workspace}>
         <PageBefore value={before}>
-          <div className="relative flex min-h-0 flex-1 items-start">
+          {/* The side bar stands on the plain canvas, the dots behind the page only. */}
+          <div className="relative flex min-h-0 flex-1 items-start bg-canvas">
             {narrow ? (
               open && (
                 // The panel of the file's details (`SidePanel`), at the left.
@@ -125,7 +130,8 @@ export function Component() {
               column beside its content (`data-page-aside`: the calendar's, „KI zur Mail“) is lain
               over instead: only the content gives way, as far as the panel reaches past it.
               At once, not eased: a grid of tiles drawn anew each frame flickers. */}
-            <div className="min-w-0 flex-1 px-4 pt-4 md:[body:has([data-cloud-panel]):not(:has([data-page-aside]))_&]:mr-[400px] lg:pr-6 lg:pl-9">
+            {/* Its dots fade out towards the side bar; a page's own grid (the Bibliothek's) gives way. */}
+            <div className="dot-grid min-w-0 flex-1 self-stretch px-4 pt-4 [--dot-fade-l:120px] [&_.dot-grid]:bg-none md:[body:has([data-cloud-panel]):not(:has([data-page-aside]))_&]:mr-[400px] lg:pr-6 lg:pl-9">
               <BarFolded value={!narrow && sidebar === 'icons'}>
                 {/* Below lg the places' button stands at the start of the page's head, as in
                   Sender (`MenuButton`): nothing floats over the page or its composer. */}

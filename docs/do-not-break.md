@@ -180,20 +180,22 @@ Parity script (from `apps/web`): `bun --tsconfig-override=tsconfig.app.json scri
   `useMarkMenu`, `services/comments.ts`, `ai-proposals.ts`. Check: api `ai-proposals.test.ts`,
   `comments.test.ts`.
 
-## Material page and deck creation
+## Material and deck creation
 
-- **Material never goes into the file** – lives in `deck_materials`/`deck_board_items` + media
-  store; never in the ODP, exports, LibreOffice or slide count; a page of its own beside the
-  presentation, never in the track; rights as comments. Where: `services/materials.ts`, `routes/materials.ts`, `features/viewer/board/`,
-  `timeline-layout.ts`. Check: api `materials.test.ts`, `timeline-layout.test.ts`,
-  `board-outbox.test.ts`.
+- **Material never goes into the file** – what is attached for a deck (the paper clip on Folie 1,
+  MCP `add_file`/`add_note`) lives in `deck_materials`/`deck_board_items` + media store; never in
+  the ODP, exports, LibreOffice or slide count; no page or tile of its own (the board is gone);
+  the AI reads it, „Material“ lists it with „Löschen“ (`viewer/material/MaterialList.tsx`); rights
+  as comments, from deck access. Where: `services/materials.ts`,
+  `routes/materials.ts`, `lib/api/deck-material.ts`, `timeline-layout.ts`. Check: api
+  `materials.test.ts`, `timeline-layout.test.ts`, e2e `02-upload`.
 - **The AI reads material through tools** – first message only lists files (`materialsBrief`);
   content only via `list_materials`, `read_material`, `read_sheet`, `search_materials`,
   `view_material`; text extracted in background, encrypted in `material_chunks`, searched in the
   server. Where: `material-extract.ts`, `material-tools.ts`, `ai-context.ts`. Check: api
   `materials.test.ts`, `ai-proposals.test.ts`.
 - **A new deck is built from the prompt on Folie 1** – „Neue Präsentation“ opens on Folie 1, the
-  prompt (not the material page); while the deck is its blank start Folie 1 is the prompt (description kept per deck, takes live speech
+  prompt; while the deck is its blank start Folie 1 is the prompt (description kept per deck, takes live speech
   with a strict `claim`; 8 kinds; Stil = templates; 5–30 pages; material always used); „Erstellen“
   closes at once, outline shows, each slide its own AI step, Abbrechen keeps what is built; „Leer
   anfangen“ closes for good. Where: `services/deck-creation/`, `CreatePrompt`, `creation-draft.ts`,
@@ -260,6 +262,13 @@ Parity script (from `apps/web`): `bun --tsconfig-override=tsconfig.app.json scri
 - **Uploaded files run nothing in Slider's origin** – only pictures, video, audio and PDFs are
   sent as what they are; text as plain text, the rest as a download, with a sandbox CSP. Where:
   `routes/cloud.ts` `inlineType` / `sendVersion`. Check: api `cloud.test.ts`.
+- **The panel beside the page stays until ✕ or Esc** (the user, 2026-11-26) – a to-do, a file's
+  details, an event or a call goes along to every other Cloud page (side bar, links, the to-do's
+  „Zu den Aufgaben“/„Chat mit …“), set on the way itself so it neither closes nor slides in
+  anew; a click beside the files lets go of the pick only. Closes otherwise only when another
+  panel takes its place or its thing is deleted. Where: `hooks/useKeptPanel.ts`, `CloudPage`
+  (Esc-only unpick), `CloudLayout`. Check: by hand – open a to-do, click through the side bar, the
+  panel's node stays (no slide-in), ✕ and Esc close it.
 
 ## Writer (text documents)
 

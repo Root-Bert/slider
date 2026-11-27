@@ -70,11 +70,14 @@ export { MenuDivider, MenuHeading, MenuItem, type MenuItemProps } from './MenuIt
 export { Notice, type NoticeProps, type NoticeTone, type NoticeVariant } from './Notice';
 export { PageHeader, type PageHeaderProps } from './PageHeader';
 export {
+  FloatingPanel,
   PopoverPanel,
+  type FloatingPanelProps,
   type PopoverAlign,
   type PopoverPanelProps,
   type PopoverSide,
 } from './Popover';
+export { PageStrip } from './PageStrip';
 export { ProgressBar } from './ProgressBar';
 export { Section, type SectionProps } from './Section';
 export { Subsection, type SubsectionProps } from './Subsection';

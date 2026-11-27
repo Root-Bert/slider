@@ -119,6 +119,8 @@ export type DocumentEvent =
   | { type: 'board' }
   /** An earlier version was brought back (`restoreVersion`): read the document anew. */
   | { type: 'restored' }
+  /** A diagram was saved (`services/diagrams.ts`): joined into what is open, but by who saved it. */
+  | { type: 'diagram'; versionId: string; clientId: string }
   /** Where someone's caret stands now (`POST …/presence`); gone with them from `people`. */
   | { type: 'cursor'; author: Author; sel: WriterPresence['sel'] }
   | { type: 'people'; people: Author[] };

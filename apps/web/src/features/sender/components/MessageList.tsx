@@ -1,4 +1,5 @@
 import { SentAttachments } from '@/features/attachments';
+import { LinkCard } from './LinkCard';
 import { Fragment, useEffect, useLayoutEffect, useRef, useState, type ReactNode } from 'react';
 import {
   DELETED_ACCOUNT_NAME,
@@ -344,6 +345,18 @@ export function MessageList({
     }
   }, [conversationId, messages.length, last?.id, last?.text, lastPending, editing]);
 
+  // What grows once it came – a picture, a document's pages, a link's card – keeps a list that
+  // stood at its end there.
+  useEffect(() => {
+    const list = listRef.current;
+    if (!list || inline || typeof ResizeObserver === 'undefined') return;
+    const observer = new ResizeObserver(() => {
+      if (pinned.current) list.scrollTop = list.scrollHeight;
+    });
+    for (const child of list.children) observer.observe(child);
+    return () => observer.disconnect();
+  }, [messages.length, inline]);
+
   const onScroll = () => {
     const list = listRef.current;
     if (!list) return;
@@ -530,8 +543,14 @@ export function MessageList({
                     )}
                   </div>
                 )}
+                {message.text && !isPending(message) && (
+                  <div className="pt-1.5">
+                    <LinkCard text={message.text} />
+                  </div>
+                )}
                 <SentAttachments
                   attachments={message.attachments}
+                  pages
                   className={cn(message.text && 'pt-1.5')}
                 />
               </>

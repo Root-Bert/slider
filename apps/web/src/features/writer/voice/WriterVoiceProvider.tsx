@@ -115,6 +115,14 @@ interface Run {
 
 const BUSY_STATES = new Set(['draft', 'queued', 'working']);
 
+/** What a document shows, for speaking to its AI: Writer's sheets or a page (`features/pages`). */
+export interface DocumentVoiceLook {
+  /** What is on screen now: the paragraphs in the window, the one under the pointer, the pick. */
+  sample: (pointer: { x: number; y: number } | null) => Omit<Sample, 'atMs'>;
+  /** A paragraph brought into the window („geh zum Fazit“). */
+  show: (paragraphId: string) => void;
+}
+
 /** What Writer's tools need of speaking to the AI besides the session (`VoiceContext`). */
 interface WriterVoice {
   /** The document's AI, as an author. */
@@ -144,8 +152,81 @@ export function WriterVoiceProvider({
   children: ReactNode;
 }) {
   const { engine, document: file } = useWriter();
-  const documentId = file.id;
-  const mayComment = file.permissions.canComment;
+  const look = useMemo<DocumentVoiceLook>(
+    () => ({
+      sample: (at) => {
+        const stage = document.querySelector<HTMLElement>('.writer-stage');
+        if (!stage) return { paragraphs: [], pointer: null, selection: null };
+        const frame = stage.getBoundingClientRect();
+        const paragraphs: string[] = [];
+        for (const element of stage.querySelectorAll<HTMLElement>('[data-p]')) {
+          const id = element.dataset.id;
+          if (!id) continue;
+          const rect = element.getBoundingClientRect();
+          if (rect.bottom > frame.top && rect.top < frame.bottom && rect.height > 0) {
+            paragraphs.push(id);
+          }
+        }
+        let pointer: string | null = null;
+        if (at) {
+          const under = document.elementFromPoint(at.x, at.y);
+          const paragraph = under?.closest<HTMLElement>('[data-p]');
+          if (paragraph && stage.contains(paragraph)) pointer = paragraph.dataset.id ?? null;
+        }
+        const { blocks, sel } = engine.getState();
+        let selection: Selection = null;
+        if (sel) {
+          const { from, to } = ordered(blocks, sel);
+          const block = paragraphOf(blocks, from.id);
+          if (block) {
+            // Words picked through several paragraphs: those of the first.
+            const end = isCollapsed(sel) || to.id === from.id ? to.offset : lengthOf(block);
+            selection = {
+              paragraphId: block.id,
+              start: from.offset,
+              end: Math.max(from.offset, end),
+              text: writerText(block).slice(from.offset, end).slice(0, 600),
+            };
+          }
+        }
+        return { paragraphs, pointer, selection };
+      },
+      show: (paragraphId) => {
+        const at = { id: paragraphId, offset: 0 };
+        engine.showRange(at, at);
+      },
+    }),
+    [engine],
+  );
+  return (
+    <DocumentVoiceProvider
+      documentId={file.id}
+      mayComment={file.permissions.canComment}
+      look={look}
+      onOpen={onOpen}
+    >
+      {children}
+    </DocumentVoiceProvider>
+  );
+}
+
+/**
+ * Speaking to the AI in a text document – Writer's or a page's –, as `VoiceProvider` does on a
+ * presentation (the same `VoiceContext`, so the same bar). `look` is what the document shows.
+ */
+export function DocumentVoiceProvider({
+  documentId,
+  mayComment,
+  look,
+  onOpen,
+  children,
+}: {
+  documentId: string;
+  mayComment: boolean;
+  look: DocumentVoiceLook;
+  onOpen: (item: DocumentVoiceItem) => void;
+  children: ReactNode;
+}) {
   const online = useOnline();
   const info = useQuery<DocumentVoiceInfo>({
     queryKey: ['document-voice', documentId],
@@ -163,9 +244,9 @@ export function WriterVoiceProvider({
   const [live, setLive] = useState<LiveCaption | null>(null);
 
   // What callbacks need of the latest render.
-  const latest = useRef({ session, onOpen });
+  const latest = useRef({ session, onOpen, look });
   useEffect(() => {
-    latest.current = { session, onOpen };
+    latest.current = { session, onOpen, look };
   });
 
   const run = useRef<Run | null>(null);
@@ -186,24 +267,17 @@ export function WriterVoiceProvider({
   }, []);
 
   /** An answer of the server: the session as it is, its commands done. */
-  const apply = useCallback(
-    (next: DocumentVoiceSession) => {
-      const current = run.current;
-      if (!current || current.sessionId !== next.id) return;
-      setSession(next);
-      for (const { id, command } of next.commands) {
-        if (current.commandsDone.has(id)) continue;
-        current.commandsDone.add(id);
-        if (command.type === 'scrollTo') {
-          const at = { id: command.paragraphId, offset: 0 };
-          engine.showRange(at, at);
-        } else {
-          stopRef.current();
-        }
-      }
-    },
-    [engine],
-  );
+  const apply = useCallback((next: DocumentVoiceSession) => {
+    const current = run.current;
+    if (!current || current.sessionId !== next.id) return;
+    setSession(next);
+    for (const { id, command } of next.commands) {
+      if (current.commandsDone.has(id)) continue;
+      current.commandsDone.add(id);
+      if (command.type === 'scrollTo') latest.current.look.show(command.paragraphId);
+      else stopRef.current();
+    }
+  }, []);
 
   /** Comments still being said are finished – after a while of quiet. */
   const scheduleFlush = useCallback(() => {
@@ -305,46 +379,13 @@ export function WriterVoiceProvider({
   const sample = useCallback(() => {
     const current = run.current;
     if (!current) return;
-    const stage = document.querySelector<HTMLElement>('.writer-stage');
-    if (!stage) return;
-    const frame = stage.getBoundingClientRect();
-    const paragraphs: string[] = [];
-    for (const element of stage.querySelectorAll<HTMLElement>('[data-p]')) {
-      const id = element.dataset.id;
-      if (!id) continue;
-      const rect = element.getBoundingClientRect();
-      if (rect.bottom > frame.top && rect.top < frame.bottom && rect.height > 0) {
-        paragraphs.push(id);
-      }
-    }
-    let pointer: string | null = null;
-    if (current.pointer) {
-      const under = document.elementFromPoint(current.pointer.x, current.pointer.y);
-      const paragraph = under?.closest<HTMLElement>('[data-p]');
-      if (paragraph && stage.contains(paragraph)) pointer = paragraph.dataset.id ?? null;
-    }
-    const { blocks, sel } = engine.getState();
-    let selection: Selection = null;
-    if (sel) {
-      const { from, to } = ordered(blocks, sel);
-      const block = paragraphOf(blocks, from.id);
-      if (block) {
-        // Words picked through several paragraphs: those of the first.
-        const end = isCollapsed(sel) || to.id === from.id ? to.offset : lengthOf(block);
-        selection = {
-          paragraphId: block.id,
-          start: from.offset,
-          end: Math.max(from.offset, end),
-          text: writerText(block).slice(from.offset, end).slice(0, 600),
-        };
-      }
-    }
+    const seen = latest.current.look.sample(current.pointer);
     const atMs = performance.now() - current.startedAt;
-    current.samples.push({ atMs, paragraphs, pointer, selection });
+    current.samples.push({ atMs, ...seen });
     while (current.samples.length > 0 && current.samples[0]!.atMs < atMs - KEPT_MS) {
       current.samples.shift();
     }
-  }, [engine]);
+  }, []);
 
   const start = useCallback(async () => {
     if (run.current && !run.current.stopped) return;

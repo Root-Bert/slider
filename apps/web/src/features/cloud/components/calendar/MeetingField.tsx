@@ -3,7 +3,7 @@ import { meetingUrlSchema } from '@slider/shared';
 import { useState } from 'react';
 import { useOpenSenderDirect, useSenderHome } from '@/lib/api';
 import { useCallsOrNull } from '@/features/calls';
-import { Avatar, Button, Icon, MenuDivider, MenuHeading, MenuItem } from '@/ui';
+import { Avatar, Button, Icon, MenuDivider, MenuItem } from '@/ui';
 import { useCloud } from '../../hooks/useCloud';
 import { AreaMark } from '../AreaMark';
 import { Picker } from '../todos/TodoList';
@@ -11,7 +11,46 @@ import { Picker } from '../todos/TodoList';
 /** Where a meeting is held, as one says it: Sender's conversation by name, a link by its host. */
 export function meetingPlace(meeting: EventMeeting, channel: SenderChannel | undefined): string {
   if (meeting.kind === 'link') return hostOf(meeting.url);
-  return channel ? `Anruf in ${channel.name}` : 'Anruf in Slider';
+  return channel ? `Anruf in ${channel.name}` : 'Anruf in Sender';
+}
+
+/** Hosts whose links are meetings: one typed or pasted into the place becomes the meeting. */
+const MEETING_HOSTS = [
+  'zoom.us',
+  'zoom.com',
+  'meet.google.com',
+  'teams.microsoft.com',
+  'teams.live.com',
+  'webex.com',
+  'meet.jit.si',
+  'whereby.com',
+  'gotomeeting.com',
+  'gotomeet.me',
+  'meet.goto.com',
+  'chime.aws',
+  'facetime.apple.com',
+  'join.skype.com',
+];
+
+/**
+ * A meeting's link in what was typed as the place („Raum 3 zoom.us/j/123“): the link, made whole,
+ * and the place without it. `null` where no word is a meeting's link.
+ */
+export function meetingLinkIn(text: string): { url: string; rest: string } | null {
+  for (const word of text.split(/\s+/)) {
+    const url = /^https?:\/\//i.test(word) ? word : `https://${word}`;
+    let host: string;
+    try {
+      host = new URL(url).host.toLowerCase().replace(/^www\./, '');
+    } catch {
+      continue;
+    }
+    if (!MEETING_HOSTS.some((each) => host === each || host.endsWith(`.${each}`))) continue;
+    const parsed = meetingUrlSchema.safeParse(url);
+    if (!parsed.success) continue;
+    return { url: parsed.data, rest: text.replace(word, ' ').replace(/\s+/g, ' ').trim() };
+  }
+  return null;
 }
 
 /** „zoom.us“, „meet.google.com“ – a link's host, the whole link if it has none. */
@@ -69,7 +108,7 @@ function PlaceMark({ channel }: { channel: SenderChannel }) {
 }
 
 /**
- * „Beitreten“ for a meeting: a call in Slider joined where one is (while one is in it: „Im
+ * „Beitreten“ for a meeting: a call in Sender joined where one is (while one is in it: „Im
  * Anruf“, which brings the call up), a link opened outside.
  */
 export function JoinMeeting({
@@ -117,9 +156,11 @@ export function JoinMeeting({
 }
 
 /**
- * An event's meeting, a line of the panel: none, a call in one of Sender's conversations (an
- * area's channel, a group, a person – a direct one opened where none is yet) or a link elsewhere
- * (Zoom, Meet, Teams), typed in place. „Beitreten“ beside it.
+ * An event's meeting, a line of the panel: none or a call in one of Sender's conversations (an
+ * area's channel, a group, a person – a direct one opened where none is yet) – only the
+ * workspace's own. A link elsewhere (Zoom, Meet, Teams) is not picked here: typed or pasted as the
+ * place it is taken out of it (`meetingLinkIn`), shown here by its host and changed in place.
+ * „Beitreten“ beside it.
  */
 export function MeetingField({
   meeting,
@@ -136,11 +177,11 @@ export function MeetingField({
   const ui = useCloud();
   const places = useCallPlaces(ui.workspace.id, canEdit || meeting?.kind === 'call');
   const openDirect = useOpenSenderDirect(ui.workspace.id);
-  // A link being typed: shown from „Externer Link“ on, kept on leaving the field.
+  // The link being changed, kept on leaving the field (emptied: the meeting goes).
   const [typing, setTyping] = useState<string | null>(null);
   const [filter, setFilter] = useState('');
   const channel = meeting?.kind === 'call' ? places.byId(meeting.channelId) : undefined;
-  const linkShown = typing !== null || meeting?.kind === 'link';
+  const linkShown = meeting?.kind === 'link';
   const keepLink = () => {
     if (typing === null) return;
     const text = typing.trim();
@@ -170,13 +211,10 @@ export function MeetingField({
       (made) => onChange({ kind: 'call', channelId: made.id }),
       (error: Error) => ui.notify(error.message, 'danger'),
     );
-  const label = meeting
-    ? meeting.kind === 'link'
-      ? 'Externer Link'
-      : meetingPlace(meeting, channel)
-    : 'Kein Meeting';
+  const label = meeting ? meetingPlace(meeting, channel) : 'Kein Meeting';
 
-  if (!canEdit && !meeting) return null;
+  // Nothing to pick where no call may be set (a mailbox's calendar): its link comes as the place.
+  if (!meeting && (!canEdit || !callsAllowed)) return null;
   return (
     <div className="flex flex-col gap-1.5">
       <div className="flex min-w-0 items-center gap-2 text-sm">
@@ -220,23 +258,21 @@ export function MeetingField({
                 >
                   Kein Meeting
                 </MenuItem>
-                <MenuItem
-                  role="menuitemradio"
-                  aria-checked={meeting?.kind === 'link'}
-                  selected={meeting?.kind === 'link'}
-                  icon="link"
-                  onClick={() => {
-                    close();
-                    setTyping(meeting?.kind === 'link' ? meeting.url : '');
-                  }}
-                >
-                  Externer Link
-                  <span className="ml-1 text-fg-subtle">Zoom, Meet, Teams …</span>
-                </MenuItem>
+                {meeting?.kind === 'link' && (
+                  <MenuItem
+                    role="menuitemradio"
+                    aria-checked
+                    selected
+                    icon="link"
+                    truncate
+                    onClick={close}
+                  >
+                    {hostOf(meeting.url)}
+                  </MenuItem>
+                )}
                 {callsAllowed && (
                   <>
                     <MenuDivider />
-                    <MenuHeading className="normal-case">Anruf in Slider</MenuHeading>
                     <label className="flex h-8 items-center gap-2 px-2 text-sm">
                       <Icon name="search" size="sm" className="shrink-0 text-fg-subtle" />
                       <input
@@ -311,7 +347,6 @@ export function MeetingField({
           <input
             value={typing ?? (meeting?.kind === 'link' ? meeting.url : '')}
             readOnly={!canEdit}
-            autoFocus={typing === ''}
             onFocus={() => {
               if (typing === null && meeting?.kind === 'link') setTyping(meeting.url);
             }}

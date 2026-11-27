@@ -1015,28 +1015,92 @@ export const realMailServers: MailServers = {
 
   async send(login, mail) {
     const transport = await smtp(login);
+    // One date for the mail and its copy in „Gesendet“.
+    const date = new Date();
+    const fields = (messageId = mail.messageId) => ({
+      from: login.name ? { name: login.name, address: login.address } : login.address,
+      to: mail.to,
+      cc: mail.cc.length > 0 ? mail.cc : undefined,
+      bcc: mail.bcc && mail.bcc.length > 0 ? mail.bcc : undefined,
+      messageId,
+      date,
+      attachments: mail.attachments?.map((one) => ({
+        filename: one.name,
+        contentType: one.type,
+        content: Buffer.from(one.content),
+      })),
+      subject: mail.subject,
+      text: mail.text,
+      inReplyTo: mail.inReplyTo ?? undefined,
+      references: mail.references.length > 0 ? mail.references : undefined,
+    });
+    let messageId: string;
     try {
-      const info = await transport.sendMail({
-        from: login.name ? { name: login.name, address: login.address } : login.address,
-        to: mail.to,
-        cc: mail.cc.length > 0 ? mail.cc : undefined,
-        bcc: mail.bcc && mail.bcc.length > 0 ? mail.bcc : undefined,
-        messageId: mail.messageId,
-        attachments: mail.attachments?.map((one) => ({
-          filename: one.name,
-          contentType: one.type,
-          content: Buffer.from(one.content),
-        })),
-        subject: mail.subject,
-        text: mail.text,
-        inReplyTo: mail.inReplyTo ?? undefined,
-        references: mail.references.length > 0 ? mail.references : undefined,
-      });
-      return { messageId: info.messageId };
+      messageId = (await transport.sendMail(fields())).messageId;
     } catch (error) {
       throw new Error(mailErrorText(error, 'SMTP', login), { cause: error });
     } finally {
       transport.close();
     }
+    // Gone out: its copy goes to „Gesendet“ meanwhile – not waited for, and its failing changes
+    // nothing about the mail having gone (sent again it would go twice).
+    if (!KEEPS_SENT.test(login.imapHost))
+      void keepSentCopy(login, new MailComposer(fields(messageId)), date, messageId).catch(
+        () => {},
+      );
+    return { messageId };
   },
 };
+
+/**
+ * Servers that put what goes out through their SMTP into „Gesendet“ themselves: Gmail (also a
+ * company's Google Workspace) and Microsoft. A copy from here would lie there twice.
+ */
+const KEEPS_SENT = /(^|\.)(gmail\.com|googlemail\.com|office365\.com|outlook\.com)$/i;
+
+/**
+ * A mail sent from here into the mailbox's „Gesendet“ (IMAP APPEND, read, with its Bcc) – SMTP
+ * only sends, and most servers keep nothing of it (a university's, one's own domain's), so it
+ * would be in Office alone. As mail programs do. Not when a mail of its `Message-ID` lies there
+ * already (a server that keeps one itself); not without a sent folder.
+ */
+async function keepSentCopy(
+  login: MailLogin,
+  composer: MailComposer,
+  date: Date,
+  messageId: string,
+): Promise<void> {
+  const node = composer.compile();
+  node.keepBcc = true;
+  const raw = await new Promise<Buffer>((resolve, reject) =>
+    node.build((error, message) => (error ? reject(error) : resolve(message))),
+  );
+  const client = await imap(login);
+  await client.connect();
+  try {
+    await appendSent(client, raw, date, messageId);
+  } finally {
+    await client.logout().catch(() => client.close());
+  }
+}
+
+/** `keepSentCopy` on a connected server: the copy's folder found, the copy put there. */
+export async function appendSent(
+  client: Pick<ImapFlow, 'list' | 'getMailboxLock' | 'search' | 'append'>,
+  raw: Uint8Array,
+  date: Date,
+  messageId: string,
+): Promise<boolean> {
+  const sent = foldersToRead(await client.list()).find((one) => one.role === 'sent');
+  if (!sent) return false;
+  const lock = await client.getMailboxLock(sent.path, { readOnly: true });
+  let there: number[] | false | undefined;
+  try {
+    there = await client.search({ header: { 'message-id': messageId } }, { uid: true });
+  } finally {
+    lock.release();
+  }
+  if (there && there.length > 0) return false;
+  await client.append(sent.path, raw, ['\\Seen'], date);
+  return true;
+}

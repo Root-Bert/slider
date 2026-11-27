@@ -9,7 +9,7 @@ import {
 } from 'react';
 import { Link, Outlet, useNavigate } from 'react-router';
 import { useQueryClient } from '@tanstack/react-query';
-import type { MailFolderRole } from '@slider/shared';
+import { ALL_MAILBOXES, type MailFolderRole } from '@slider/shared';
 import { prefetchMailFolder, useSyncMailAccount } from '@/lib/api';
 import { isTextTarget, tabStep } from '@/lib/dom';
 import { readString, writeString } from '@/lib/storage';
@@ -56,8 +56,9 @@ function toListTop() {
  * The mailboxes as the page's title, side by side – the open one large, the others smaller links,
  * as a workspace's views (`ViewTitles`): switching morphs the names into each other and the mail
  * list flips like a departure board (`styles/index.css`). Its own name or its default
- * (`mailboxLabels`); without a mailbox, „Post“. A double click on the open one or „Umbenennen“ on
- * any (right click) makes the name a field where it stands. Too many for a phone: the row scrolls.
+ * (`mailboxLabels`); without a mailbox, „Post“. From two on „Alle“ leads them – every mailbox at
+ * once, the default. A double click on the open one or „Umbenennen“ on any (right click) makes the
+ * name a field where it stands. Too many for a phone: the row scrolls.
  */
 export function MailboxTabs({ view }: { view: MailViewState }) {
   const ui = useSender();
@@ -65,14 +66,16 @@ export function MailboxTabs({ view }: { view: MailViewState }) {
   const [renaming, setRenaming] = useState<string | null>(null);
   const [menu, setMenu] = useState<{ id: string; at: { x: number; y: number } } | null>(null);
   const accounts = view.accounts ?? [];
-  const current = view.account?.id ?? '';
+  const current = view.all ? ALL_MAILBOXES : (view.account?.id ?? '');
+  // „Alle“ first, from two mailboxes on: the names after it morph by their place one further.
+  const lead = accounts.length > 1 ? 1 : 0;
   useViewSwitchTop(current);
   // The others' Posteingang ahead: switched to, the list flips straight to their mails.
   const others = accounts.map((account) => account.id).join(' ');
   useEffect(() => {
-    for (const id of others.split(' '))
+    for (const id of [...others.split(' '), ...(lead ? [ALL_MAILBOXES] : [])])
       if (id && id !== current) prefetchMailFolder(queryClient, ui.workspace.id, id);
-  }, [others, current, queryClient, ui.workspace.id]);
+  }, [others, lead, current, queryClient, ui.workspace.id]);
   if (accounts.length === 0) return <>Post</>;
   const menuFor = (id: string) => (event: MouseEvent) => {
     if (event.shiftKey) return;
@@ -83,11 +86,39 @@ export function MailboxTabs({ view }: { view: MailViewState }) {
   return (
     // On a phone the row fades out at its end: there is more to scroll to.
     <span className="-m-1 flex min-w-0 items-baseline gap-5 overflow-x-auto p-1 [scrollbar-width:none] max-sm:pr-8 max-sm:mask-r-from-80%">
+      {lead > 0 &&
+        (view.all ? (
+          <span
+            aria-current="page"
+            title="Alle Postfächer"
+            style={{ viewTransitionName: 'mailbox-title-0' }}
+            className="shrink-0 [view-transition-class:view-title]"
+          >
+            Alle
+          </span>
+        ) : (
+          <Link
+            to={view.listHref(ALL_MAILBOXES)}
+            viewTransition
+            onClick={() => {
+              toListTop();
+              startViewSwitch();
+            }}
+            title="Alle Postfächer"
+            style={{ viewTransitionName: 'mailbox-title-0' }}
+            className={cn(
+              VIEW_LINK_CLASS,
+              'shrink-0 rounded-control-sm outline-none [view-transition-class:view-title] focus-visible:ring-2 focus-visible:ring-focus',
+            )}
+          >
+            Alle
+          </Link>
+        ))}
       {accounts.map((account, at) => {
         const label = view.labels.get(account.id) ?? account.address;
         // Each its own name to morph under, by its place (the order stays).
         const name = {
-          viewTransitionName: `mailbox-title-${at}`,
+          viewTransitionName: `mailbox-title-${at + lead}`,
         } satisfies CSSProperties;
         if (renaming === account.id)
           return (
@@ -257,14 +288,15 @@ export function MailFolderPicker({ view }: { view: MailViewState }) {
  */
 export function MailToolbar({ view }: { view: MailViewState }) {
   return (
-    <div className="flex min-w-0 shrink-0 items-center gap-2">
+    <div className="flex min-w-0 shrink-0 items-center gap-2 max-sm:flex-wrap">
       <MailFolderPicker view={view} />
       <NewMailButton className="shrink-0" />
       <ViewSearch
         label="Mails durchsuchen"
         value={view.query}
         onChange={view.setQuery}
-        className="ml-auto min-w-36 shrink"
+        // On a phone on a line of its own, under the folders – as a chat's search.
+        className="ml-auto min-w-36 shrink max-sm:order-last max-sm:ml-0"
       />
       {view.wide && <MailAsideButton disabled={!isMailThreadOpen(view.threadId)} />}
     </div>
@@ -277,7 +309,7 @@ export function MailToolbar({ view }: { view: MailViewState }) {
  */
 export function UnreadFilter({ view }: { view: MailViewState }) {
   const narrow = useMediaQuery('(max-width: 639px)');
-  if (!view.account) return null;
+  if (!view.account && !view.all) return null;
   return (
     // Free on the page as „Postfächer“ beside it; on, it stands out as a picked choice.
     <Button
@@ -305,7 +337,7 @@ function useFetchMailboxes(view: MailViewState) {
   const [busy, setBusy] = useState(false);
   const ready = (view.accounts ?? []).filter((each) => each.state !== 'signin');
   return {
-    can: !!view.account && ready.length > 0,
+    can: (!!view.account || view.all) && ready.length > 0,
     busy,
     fetch: () => {
       if (busy) return;
@@ -432,7 +464,20 @@ const MAIL_MIN = 480;
  * The list scrolls in itself in both apps – the same list, its rows rolling away at the top as a
  * chat's messages do.
  */
-export function MailBody({ view }: { view: MailViewState }) {
+/** The list shows a mailbox's „Übersicht“ (widgets, `Triage`) – not a folder, not a search. */
+export const showsOverview = (view: MailViewState) =>
+  view.folder === OVERVIEW && !view.query.trim();
+
+export function MailBody({
+  view,
+  editing = false,
+  onEdit = () => {},
+}: {
+  view: MailViewState;
+  /** The overview's widgets being arranged („Anpassen“ in the page's head). */
+  editing?: boolean;
+  onEdit?: (editing: boolean) => void;
+}) {
   const listRef = useRef<HTMLDivElement>(null);
   const [expanded, setExpandedState] = useState(() => readString(EXPANDED_KEY) === '1');
   const [listWidth, setListWidth] = useKeptWidth(LIST_WIDTH_KEY);
@@ -442,7 +487,11 @@ export function MailBody({ view }: { view: MailViewState }) {
   // place – no shift as a mail opens), only narrowing to its width; the mail comes in beside it.
   const open = !!view.threadId && view.wide;
   // Pulled down at its top, the list fetches what is new – on every device, as a phone's mail.
-  const pull = usePullToRefresh(listRef, fetching.fetch, fetching.can && !(open && expanded));
+  const pull = usePullToRefresh(
+    listRef,
+    fetching.fetch,
+    fetching.can && !(open && expanded) && !editing,
+  );
   const pane: MailOutlet = {
     split: true,
     expanded,
@@ -468,16 +517,21 @@ export function MailBody({ view }: { view: MailViewState }) {
             // Rows leave at the top as a chat's messages do (`roll-away`), never cut off – up to
             // the toolbar: the list reaches into the 20px above it (`-mt-5`), as the chat.
             className={cn(
-              'roll-away-list -mx-2 -mt-5 flex min-h-0 flex-col overflow-y-auto overscroll-contain px-2 pt-5 pb-6 [--roll-scale:0.8] [&_li]:roll-away',
+              'roll-away-list -mt-5 flex min-h-0 flex-col overflow-y-auto overscroll-contain pt-5 pb-6 [--roll-scale:0.8] [&_li]:roll-away',
+              // Arranging, the widgets' „–“ stand 16px out at their corner: room for them.
+              editing ? '-mx-5 px-5' : '-mx-2 px-2',
               open ? 'shrink-0' : 'min-w-0 flex-1',
             )}
           >
             {fetching.can && <PullSign pull={pull} busy={fetching.busy} />}
-            {view.folder === OVERVIEW && !view.query.trim() ? (
+            {showsOverview(view) ? (
               <Triage
-                key={view.account?.id}
-                mailbox={view.account?.id}
+                key={view.all ? ALL_MAILBOXES : view.account?.id}
+                place="post"
+                mailbox={view.all ? ALL_MAILBOXES : view.account?.id}
                 mailHref={view.threadHref}
+                editing={editing}
+                onEdit={onEdit}
               />
             ) : (
               <MailInbox view={view} />

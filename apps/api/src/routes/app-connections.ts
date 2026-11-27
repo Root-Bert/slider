@@ -79,7 +79,7 @@ export function wellKnownRoutes(deps: AppDeps) {
     authorization_servers: [issuerOf(deps)],
     bearer_methods_supported: ['header'],
     scopes_supported: ['slider'],
-    resource_name: 'Slider',
+    resource_name: 'Office',
     resource_documentation: `${issuerOf(deps)}/konto`,
   });
   const server = () => {
@@ -138,7 +138,7 @@ const oauthError = (c: Context, error: unknown) => {
 
 /** A plain page for what cannot go back to the app (unknown app, foreign redirect). */
 const problemPage = (message: string) =>
-  `<!doctype html><html lang="de"><meta charset="utf-8"><meta name="viewport" content="width=device-width"><title>Slider</title><body style="font:16px/1.5 system-ui,sans-serif;max-width:32rem;margin:15vh auto;padding:0 1rem;color:#222"><h1 style="font-size:1.25rem">Verbindung nicht möglich</h1><p>${message.replace(/[<>&]/g, '')}</p></body></html>`;
+  `<!doctype html><html lang="de"><meta charset="utf-8"><meta name="viewport" content="width=device-width"><title>Office</title><body style="font:16px/1.5 system-ui,sans-serif;max-width:32rem;margin:15vh auto;padding:0 1rem;color:#222"><h1 style="font-size:1.25rem">Verbindung nicht möglich</h1><p>${message.replace(/[<>&]/g, '')}</p></body></html>`;
 
 /** `live`: who has a document open – the same one the documents' routes tell through. */
 export function appConnectionsRoutes(deps: AppDeps, live = new DocumentLive()) {
@@ -170,7 +170,7 @@ export function appConnectionsRoutes(deps: AppDeps, live = new DocumentLive()) {
           error: given ? 'invalid_token' : 'unauthorized',
           error_description: given
             ? 'The token is unknown, expired or was removed.'
-            : 'Sign in to Slider (OAuth) or send a token from Slider → Konto → KI-Apps.',
+            : 'Sign in to Office (OAuth) or send a token from Office → Konto → KI-Apps.',
         },
         401,
         { 'WWW-Authenticate': challenge },
@@ -275,13 +275,22 @@ export function appConnectionsRoutes(deps: AppDeps, live = new DocumentLive()) {
         // only has the site's favicon.
         const server = new Server(
           {
-            name: 'slider',
-            title: 'Slider',
+            name: 'office',
+            title: 'Office',
             version: '1.0.0',
             websiteUrl: issuerOf(deps),
             icons: [
-              { src: `${issuerOf(deps)}/favicon.svg`, mimeType: 'image/svg+xml', sizes: ['any'] },
-              { src: `${issuerOf(deps)}/icon-192.png`, mimeType: 'image/png', sizes: ['192x192'] },
+              // Office has no mark of its own: Cloud's, the suite's app (its start page's too).
+              {
+                src: `${issuerOf(deps)}/cloud-favicon.svg`,
+                mimeType: 'image/svg+xml',
+                sizes: ['any'],
+              },
+              {
+                src: `${issuerOf(deps)}/cloud-icon-192.png`,
+                mimeType: 'image/png',
+                sizes: ['192x192'],
+              },
             ],
           },
           { capabilities: { tools: {}, resources: {} }, instructions: MCP_INSTRUCTIONS },

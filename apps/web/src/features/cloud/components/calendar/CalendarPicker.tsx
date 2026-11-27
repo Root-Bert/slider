@@ -65,7 +65,7 @@ export function CalendarPicker({
     const index = (ui.home?.areas ?? []).findIndex((area) => area.id === calendar.areaId);
     return index < 0 ? 1e6 : index;
   };
-  /** Under its parent, as beside the calendar: depth by its chain of parents. */
+  /** After its area's or one's own, as beside the calendar – side by side, not indented. */
   const ordered = (list: Calendar[]) => {
     const out: { calendar: Calendar; depth: number }[] = [];
     const walk = (parentId: string | null, depth: number) => {
@@ -112,7 +112,7 @@ export function CalendarPicker({
           {groups.map((group) => (
             <div key={group.title} role="group" aria-label={group.title} className="flex flex-col">
               <MenuHeading className="truncate normal-case">{group.title}</MenuHeading>
-              {group.list.map(({ calendar, depth }) => (
+              {group.list.map(({ calendar }) => (
                 <MenuItem
                   key={calendar.id}
                   role="menuitemradio"
@@ -120,7 +120,6 @@ export function CalendarPicker({
                   selected={calendar.id === value}
                   icon={<CalendarMark calendar={calendar} />}
                   truncate
-                  style={{ paddingLeft: 8 + depth * 16 }}
                   onClick={() => {
                     close();
                     if (calendar.id !== value) onPick(calendar.id);

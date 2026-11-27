@@ -8,6 +8,7 @@ import {
   boardSchema,
   materialSchema,
   type Board,
+  type Comment,
   type MaterialChatDto,
   type MaterialQuestion,
 } from '@slider/shared';
@@ -22,6 +23,7 @@ import {
 } from '../src/db/schema';
 import { LiveHub } from '../src/realtime/live-hub';
 import { materialsBrief } from '../src/services/ai-context';
+import { commentLine } from '../src/services/mcp';
 import { deckBoard } from '../src/services/board-owner';
 import { documentAiIdle } from '../src/services/document-ai';
 import { runMaterialTool } from '../src/services/material-tools';
@@ -863,7 +865,7 @@ describe('the material page', () => {
       (await workspaceStorageUsage(ctx.deps.db, ctx.workspaceId)).other,
     ).toBeGreaterThanOrEqual(pdf.length);
 
-    // „Fragen“ and the chat answer from this board; the chat's note lands on it.
+    // „Fragen“ and the chat answer from this board.
     await ctx.request(`/api/workspaces/${ctx.workspaceId}/integrations/keys`, {
       method: 'POST',
       json: { kind: 'ai', provider: 'anthropic', apiKey: 'sk-ant-api03-good-AbCdEfGhIjKlMnOpQrSt' },
@@ -877,7 +879,15 @@ describe('the material page', () => {
       [{ type: 'tool_use', id: 'toolu_1', name: 'read_material', input: { material: report.id } }],
       'tool_use',
     );
-    answers.push(readsReport, (body) => {
+    // Reading to its last turn: that one may only answer – its tools still named, as the talk has
+    // their calls (the API refuses it otherwise).
+    const lastTurn = (body: unknown) => {
+      const sent = body as { tools?: unknown[]; tool_choice?: unknown };
+      expect(sent.tools?.length).toBeGreaterThan(0);
+      expect(sent.tool_choice).toEqual({ type: 'none' });
+    };
+    answers.push(...Array.from({ length: 13 }, () => readsReport), (body) => {
+      lastTurn(body);
       expect(JSON.stringify(body.messages.at(-1))).toContain('12 Prozent');
       expect(JSON.stringify(body)).toContain('The document: „Bericht“');
       return aiMessage([{ type: 'text', text: 'Um 12 Prozent.', citations: null }], 'end_turn');
@@ -897,24 +907,19 @@ describe('the material page', () => {
       question: { deckId: null, documentId, state: 'done', answer: 'Um 12 Prozent.' },
     });
     expect(await (await ctx.request(`${base}/material-questions`)).json()).toHaveLength(1);
-    answers.push(
-      aiMessage(
-        [
-          {
-            type: 'tool_use',
-            id: 'toolu_2',
-            name: 'add_note',
-            input: { text: 'Markt: plus 12 Prozent' },
-          },
-        ],
-        'tool_use',
-      ),
-      aiMessage([{ type: 'text', text: 'Notiert.', citations: null }], 'end_turn'),
-    );
+    // The chat reads and answers – nothing of it lands anywhere (no board to write on).
+    answers.push(...Array.from({ length: 23 }, () => readsReport), (body) => {
+      lastTurn(body);
+      const names = (body as unknown as { tools: { name: string }[] }).tools.map((t) => t.name);
+      expect(names).toContain('read_material');
+      expect(names).not.toEqual(expect.arrayContaining(['add_note']));
+      expect(names).not.toEqual(expect.arrayContaining(['add_file']));
+      return aiMessage([{ type: 'text', text: 'Um 12 Prozent.', citations: null }], 'end_turn');
+    });
     const said = await heard(
       await ctx.request(`${base}/material-chat`, {
         method: 'POST',
-        json: { chatId: null, text: 'Notier das Wachstum' },
+        json: { chatId: null, text: 'Wie stark wächst der Markt?' },
       }),
     );
     expect(said.at(-1)).toMatchObject({ type: 'done' });
@@ -922,8 +927,6 @@ describe('the material page', () => {
     expect(await (await ctx.request(`${base}/material-chats`, { cookie: reader })).json()).toEqual(
       [],
     );
-    const withNote = boardSchema.parse(await (await ctx.request(`${base}/board`)).json());
-    expect(withNote.items.map((each) => each.text)).toContain('Markt: plus 12 Prozent');
 
     // A comment handed to the AI: the board is listed, the material tools stand beside
     // edit_document, what it read goes into the text.
@@ -1138,7 +1141,7 @@ describe('the material page', () => {
     const tokens = (await granted.json()) as { access_token: string; refresh_token: string };
     expect(tokens.access_token).toMatch(/^slider_at_/);
     expect((await token({ ...exchange, code_verifier: verifier })).status).toBe(400);
-    // The app shows Slider's mark for the connector (MCP `icons`, absolute, on the site).
+    // The app shows Office as the connector, with Cloud's mark (MCP `icons`, absolute, on the site).
     const hello = await rpc(tokens.access_token, 'initialize', {
       protocolVersion: '2025-11-25',
       capabilities: {},
@@ -1146,10 +1149,10 @@ describe('the material page', () => {
     });
     expect(hello.body?.result).toMatchObject({
       serverInfo: {
-        title: 'Slider',
+        title: 'Office',
         icons: [
-          { src: `${origin}/favicon.svg`, mimeType: 'image/svg+xml' },
-          { src: `${origin}/icon-192.png`, mimeType: 'image/png', sizes: ['192x192'] },
+          { src: `${origin}/cloud-favicon.svg`, mimeType: 'image/svg+xml' },
+          { src: `${origin}/cloud-icon-192.png`, mimeType: 'image/png', sizes: ['192x192'] },
         ],
       },
     });
@@ -1176,6 +1179,7 @@ describe('the material page', () => {
       body: {
         result: {
           content: { type: string; text?: string; resource?: { mimeType: string; text: string } }[];
+          structuredContent?: { a2ui?: unknown };
         };
       };
     };
@@ -1194,6 +1198,8 @@ describe('the material page', () => {
         catalogId: 'https://a2ui.org/specification/v1_0/catalogs/basic/catalog.json',
       },
     });
+    // The same messages in the spec's field for the page – hosts that pass on only that still draw it.
+    expect(card.body.result.structuredContent?.a2ui).toEqual(JSON.parse(a2ui!.resource!.text));
     // Files come from the app – the server fetches no address for it (the page has none either).
     expect(
       await call(tokens.access_token, 'add_file', {
@@ -1209,7 +1215,7 @@ describe('the material page', () => {
       presentation: deck.deckId,
       text: '## Marktanteil\n\nNord: **12 Prozent**',
     });
-    expect(noted.text).toMatch(/^Put on the board as sticker /);
+    expect(noted.text).toMatch(/^Note .* is in the material/);
     const sticker = (await board()).items.find((item) => item.text.startsWith('## Marktanteil'));
     expect(sticker).toMatchObject({ kind: 'box', author: { id: ctx.ownerId } });
     const found = JSON.parse(
@@ -1256,6 +1262,23 @@ describe('the material page', () => {
     );
     await call(tokens.access_token, 'resolve_comment', { ...at, comment: commentId, done: false });
     expect((await call(tokens.access_token, 'list_comments', at)).text).toContain('Zu viel Text');
+    // A voice memo is read as what was said in it, not taken for a drawing.
+    const memo = {
+      id: 'c1',
+      author: { name: 'Anna' },
+      createdAt: '2026-11-27T09:30:00.000Z',
+      status: 'open',
+      body: '',
+      strokes: [],
+      images: [{ id: 'i1' }, { id: 'i2' }],
+      media: { kind: 'audio', durationMs: 72_400, transcript: ' Die Zahl stimmt nicht. ' },
+    } as unknown as Comment;
+    expect(commentLine(memo)).toBe(
+      '- c1 Anna, 2026-11-27 09:30: (voice memo, 1:12, said: Die Zahl stimmt nicht.) (2 pictures)',
+    );
+    expect(
+      commentLine({ ...memo, media: null, images: [], strokes: [{}] } as unknown as Comment),
+    ).toBe('- c1 Anna, 2026-11-27 09:30: (drawn on the slide)');
     expect(await call(tokens.access_token, 'undo_edit', { ...at, edit: 'nope' })).toMatchObject({
       error: true,
       text: expect.stringMatching(/^No change "nope"/),
@@ -1446,22 +1469,27 @@ describe('the material page', () => {
       '„Protokoll.odt“ is not shared with Mona.',
     );
     // Copied, coloured, pinned; a version named and one deleted; no link where links are off.
-    expect((await call(tokens.access_token, 'copy_files', { items: [docId], own: true })).text).toMatch(
-      /^Copied: 1 \(\S+ „Protokoll\.odt“\)\.$/,
-    );
-    expect((await call(tokens.access_token, 'set_color', { item: ablageId, color: 'green' })).text).toMatch(
-      / is green now\.$/,
-    );
-    expect((await call(tokens.access_token, 'pin_folder', { item: ablageId, pinned: true })).text).toMatch(
-      / is pinned\.$/,
-    );
     expect(
-      (await call(tokens.access_token, 'label_version', { item: docId, version: before, label: 'Für Kunde' }))
-        .text,
+      (await call(tokens.access_token, 'copy_files', { items: [docId], own: true })).text,
+    ).toMatch(/^Copied: 1 \(\S+ „Protokoll\.odt“\)\.$/);
+    expect(
+      (await call(tokens.access_token, 'set_color', { item: ablageId, color: 'green' })).text,
+    ).toMatch(/ is green now\.$/);
+    expect(
+      (await call(tokens.access_token, 'pin_folder', { item: ablageId, pinned: true })).text,
+    ).toMatch(/ is pinned\.$/);
+    expect(
+      (
+        await call(tokens.access_token, 'label_version', {
+          item: docId,
+          version: before,
+          label: 'Für Kunde',
+        })
+      ).text,
     ).toMatch(/^Version \d+ is „Für Kunde“ now\.$/);
-    expect((await call(tokens.access_token, 'delete_version', { item: docId, version: before })).text).toBe(
-      'That version is deleted.',
-    );
+    expect(
+      (await call(tokens.access_token, 'delete_version', { item: docId, version: before })).text,
+    ).toBe('That version is deleted.');
     expect(await call(tokens.access_token, 'share_link', { item: docId })).toEqual({
       text: expect.stringContaining('Links nach außen gibt es hier nicht'),
       error: true,

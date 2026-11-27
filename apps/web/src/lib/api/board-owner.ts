@@ -26,18 +26,8 @@ export const boardKeys = {
     owner.kind === 'deck'
       ? queryKeys.board(owner.id)
       : (['document-material', owner.id, 'board'] as const),
-  questions: (owner: BoardRef) =>
-    owner.kind === 'deck'
-      ? queryKeys.materialQuestions(owner.id)
-      : (['document-material', owner.id, 'material-questions'] as const),
   chats: (owner: BoardRef) =>
     owner.kind === 'deck'
       ? queryKeys.materialChats(owner.id)
       : (['document-material', owner.id, 'material-chats'] as const),
 };
-
-/** What a file sent in parts for the board says it is for (`sendInParts`). */
-export const boardUploadTarget = (owner: BoardRef) =>
-  owner.kind === 'deck'
-    ? ({ purpose: 'material', deckId: owner.id } as const)
-    : ({ purpose: 'material', documentId: owner.id } as const);

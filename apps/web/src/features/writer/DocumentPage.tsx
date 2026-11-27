@@ -73,6 +73,11 @@ export function Component() {
   }
   const author = me.data?.viewer.author;
   if (!opened.data || !author) return <LoadingState fullPage height="screen" />;
+  // A Markdown file is a page: read and written in Cloud, where it lies.
+  const { document } = opened.data;
+  if (/\.(md|markdown)$/i.test(document.fileName)) {
+    return <Navigate to={routes.cloudPage(document.workspaceId, document.id)} replace />;
+  }
   // A document of its own each time: nothing typed into one reaches the next. Another view of a
   // Markdown file is drawn anew from the file as it is now.
   return (

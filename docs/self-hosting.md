@@ -15,7 +15,7 @@ Let's Encrypt übernimmt. Ein fertiges Image gibt es nicht, es wird aus dem Repo
 
 ```bash
 curl -fsSL https://get.docker.com | sh       # falls Docker fehlt
-git clone https://github.com/Root-Bert/slider.git /opt/slider
+git clone https://github.com/Root-Bert/office.git /opt/slider
 cd /opt/slider/deploy
 cp .env.example .env
 sed -i "s/^POSTGRES_PASSWORD=.*/POSTGRES_PASSWORD=$(openssl rand -hex 24)/" .env

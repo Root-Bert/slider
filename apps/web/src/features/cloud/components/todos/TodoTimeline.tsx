@@ -7,6 +7,7 @@ import {
 } from '@slider/shared';
 import {
   useEffect,
+  useId,
   useLayoutEffect,
   useRef,
   useState,
@@ -22,15 +23,42 @@ import {
 } from '@/lib/api';
 import { ROW_MENU_CLASS } from '@/features/sender';
 import { Avatar, Button, ConfirmDialog, Icon, IconButton, Menu, cn, useMediaQuery } from '@/ui';
+import { roundedPath } from '@/lib/rounded-path';
 import { useCloud } from '../../hooks/useCloud';
 import { at, iso, plus, todayNoon } from '../calendar/days';
 import { TodoActions } from './TodoActions';
 import { StatusMark } from './TodoMarks';
-import { between, heldUpBy, rangeOf, spanOf, startingTooEarly } from './timeline';
+import {
+  between,
+  chevronsAlong,
+  heldUpBy,
+  linkRoute,
+  rangeOf,
+  spanOf,
+  startingTooEarly,
+  type BarBox,
+} from './timeline';
 
 /** One day's width, one line's height (px). */
 const DAY = 28;
 const LINE = 36;
+/** The days' head over the lines (px, with its border). */
+const HEAD = 53;
+/** A bar's gap to its line's edge, above and below (px; `top-1.5 bottom-1.5`). */
+const BAR_INSET = 6;
+/**
+ * A line from what one waits on to it: a band, chevrons cut out of it the way it runs – its width,
+ * its corners' radius, a chevron's depth and stroke, the room between two (px). Its ends meet the
+ * bars' edges (the bars let what is under them show).
+ */
+const LINK = { width: 6, radius: 8, depth: 4.5, stroke: 2, spacing: 2 * DAY } as const;
+/** Its tone: quiet; of the one open or dragged; starting too early. */
+const LINK_TONES = {
+  plain: 'var(--color-fg)',
+  marked: 'var(--color-accent-blue)',
+  late: 'var(--color-danger)',
+} as const;
+type LinkTone = keyof typeof LINK_TONES;
 /** Press length (ms) that lifts a line by touch – as a row's menu opens on a long press. */
 const HOLD_MS = 500;
 /** Finger travel (px) that turns the press into scrolling (before), or into a move (after). */
@@ -74,7 +102,9 @@ interface Lift {
  * The to-dos on a timeline („Zeitplan“) – Linear's, simpler: one line each, grouped under the
  * milestone they lead to (its date a diamond, a dashed line down the chart), those without one
  * last. A bar runs from start to due; dragged it moves, its ends change start or due; a line with
- * no dates is drawn on. The diamond is dragged to another day. A click opens the to-do.
+ * no dates is drawn on. The diamond is dragged to another day. A click opens the to-do. A line
+ * runs from what one waits on to it (`linkRoute`): a band with round corners as the comments' lines
+ * (`roundedPath`), chevrons cut out of it the way it runs (`chevronsAlong`).
  */
 export function TodoTimeline({
   todos,
@@ -108,6 +138,7 @@ export function TodoTimeline({
   const xOf = (day: string) => between(from, at(day)) * DAY;
   const dayAt = (x: number) => iso(plus(from, Math.floor(x / DAY)));
   const scroller = useRef<HTMLDivElement>(null);
+  const linkId = `todo-link-${useId().replace(/[^\w-]/g, '')}`;
   const [drag, setDrag] = useState<Drag | null>(null);
   const [shut, setShut] = useState<Set<string>>(new Set());
   const [lift, setLift] = useState<Lift | null>(null);
@@ -226,8 +257,9 @@ export function TodoTimeline({
     return todo ? preview(id, spanOf(todo)) : null;
   });
   const focus = byId.get(drag?.key ?? openId ?? '');
+  const held = focus ? heldUpBy(todos, focus.id) : new Set<string>();
   const linked = focus
-    ? new Set([...heldUpBy(todos, focus.id), ...focus.blockedBy.filter((id) => byId.has(id))])
+    ? new Set([...held, ...focus.blockedBy.filter((id) => byId.has(id))])
     : new Set<string>();
 
   // Lines dragged up or down: to another place among its milestone's, or into another milestone of
@@ -400,6 +432,47 @@ export function TodoTimeline({
     setShut((now) => (now.has(key) ? new Set([...now].filter((each) => each !== key)) : now));
   };
 
+  // What waits on what, drawn: a line from the blocker's end to the start of each that waits on
+  // it – both planned and shown (not in a folded milestone). Where each line's middle stands, by
+  // the order drawn: the days' head, then each milestone's line and its lines.
+  const middles = new Map<string, number>();
+  let top = HEAD;
+  for (const group of groups) {
+    top += LINE;
+    if (shut.has(group.key)) continue;
+    for (const todo of group.todos) {
+      middles.set(todo.id, top + LINE / 2);
+      top += LINE;
+    }
+  }
+  const barOf = (todo: Todo): BarBox | null => {
+    const y = middles.get(todo.id);
+    const span = preview(todo.id, spanOf(todo));
+    if (y === undefined || !span) return null;
+    return { y, left: xOf(span[0]) + 2, right: xOf(span[1]) + DAY - 2 };
+  };
+  const links = todos.flatMap((todo) => {
+    const to = barOf(todo);
+    if (!to) return [];
+    return todo.blockedBy.flatMap((id) => {
+      const blocker = byId.get(id);
+      const from = blocker && barOf(blocker);
+      if (!from) return [];
+      // Red where it starts too early; marked from the one open or dragged on to what it holds
+      // up, and into it from what it waits on.
+      const tone: LinkTone = late.get(todo.id)?.some((one) => one.id === id)
+        ? 'late'
+        : focus &&
+            (todo.id === focus.id || (held.has(todo.id) && (id === focus.id || held.has(id))))
+          ? 'marked'
+          : 'plain';
+      const route = linkRoute(from, to, LINE, LINE / 2 - BAR_INSET);
+      const chevrons = chevronsAlong(route, LINK.radius, LINK.spacing, LINK.depth + 6);
+      const d = roundedPath(route, LINK.radius);
+      return [{ key: `${id}>${todo.id}`, tone, d, chevrons }];
+    });
+  });
+
   const width = names + count * DAY;
   const days = Array.from({ length: count }, (_, index) => plus(from, index));
   const nameCell = 'sticky left-0 z-(--z-raised) flex shrink-0 items-center bg-canvas';
@@ -430,16 +503,24 @@ export function TodoTimeline({
       )}
       <div ref={scroller} className="overflow-x-auto overscroll-x-contain">
         <div className="relative" style={{ width }}>
-          {/* Behind every line: weekends, today, each milestone's day. */}
+          {/* Weekends: over the lines, but they only lift the canvas to their tone (darken it in
+              the light theme) – hairlines, picked lines and bars, already stronger, stay as they
+              are; nothing adds up at their edges. Under the sticky names. */}
           <div
             aria-hidden
-            className="pointer-events-none absolute inset-y-0"
+            className="pointer-events-none absolute inset-y-0 z-1 mix-blend-lighten [--weekend:color-mix(in_srgb,var(--color-canvas),white_5%)] [[data-theme=light]_&]:mix-blend-darken [[data-theme=light]_&]:[--weekend:color-mix(in_srgb,var(--color-canvas),black_4%)]"
             style={{
               left: names,
               width: count * DAY,
-              backgroundImage: `linear-gradient(to right, transparent ${5 * DAY}px, var(--color-surface-1) ${5 * DAY}px)`,
+              backgroundImage: `linear-gradient(to right, transparent ${5 * DAY}px, var(--weekend) ${5 * DAY}px)`,
               backgroundSize: `${7 * DAY}px 100%`,
             }}
+          />
+          {/* Behind every line: today, each milestone's day. */}
+          <div
+            aria-hidden
+            className="pointer-events-none absolute inset-y-0"
+            style={{ left: names, width: count * DAY }}
           >
             {milestones.map(
               (milestone) =>
@@ -460,6 +541,68 @@ export function TodoTimeline({
               style={{ left: todayX + DAY / 2 }}
             />
           </div>
+
+          {/* What waits on what: under the bars and names, over weekends and today. */}
+          {links.length > 0 && (
+            <svg
+              aria-hidden
+              className="pointer-events-none absolute inset-y-0 overflow-visible"
+              style={{ left: names, width: count * DAY }}
+            >
+              {/* The chevrons cut out of every band: what lies under shows through. */}
+              <defs>
+                <mask
+                  id={linkId}
+                  maskUnits="userSpaceOnUse"
+                  x={-1e5}
+                  y={-1e5}
+                  width={2e5}
+                  height={2e5}
+                >
+                  <rect x={-1e5} y={-1e5} width={2e5} height={2e5} fill="white" />
+                  {links.flatMap((link) =>
+                    link.chevrons.map((at) => (
+                      <path
+                        key={`${link.key}@${at.x},${at.y}`}
+                        d={`M${-LINK.depth / 2} ${-LINK.width / 2 - 1}L${LINK.depth / 2} 0L${-LINK.depth / 2} ${LINK.width / 2 + 1}`}
+                        transform={`translate(${at.x} ${at.y}) rotate(${at.angle})`}
+                        fill="none"
+                        stroke="black"
+                        strokeWidth={LINK.stroke}
+                        strokeLinejoin="miter"
+                      />
+                    )),
+                  )}
+                </mask>
+              </defs>
+              {/* One group per tone, the marked and red over the quiet: where lines of a tone run
+                  together they stay as one, never darker. One open or dragged: the others step
+                  back. */}
+              {(['plain', 'marked', 'late'] as const).map((tone) => (
+                <g
+                  key={tone}
+                  mask={`url(#${linkId})`}
+                  className="transition-opacity duration-200"
+                  style={{
+                    stroke: LINK_TONES[tone],
+                    opacity: tone === 'plain' ? (focus ? 0.12 : 0.28) : 1,
+                  }}
+                >
+                  {links
+                    .filter((link) => link.tone === tone)
+                    .map((link) => (
+                      <path
+                        key={link.key}
+                        d={link.d}
+                        fill="none"
+                        strokeWidth={LINK.width}
+                        strokeLinejoin="round"
+                      />
+                    ))}
+                </g>
+              ))}
+            </svg>
+          )}
 
           {/* The days: months above, each day's letter and number under them. */}
           <div className="relative flex border-b border-hairline">
@@ -699,7 +842,10 @@ export function TodoTimeline({
                             nameCell,
                             ROW_MENU_CLASS,
                             'gap-2 border-r border-hairline pr-3 pl-8 text-left text-sm',
-                            !open && 'hover:bg-hover',
+                            // Tinted over its canvas, not instead: what scrolls under it never
+                            // shows through.
+                            !open &&
+                              'hover:bg-[linear-gradient(var(--color-hover),var(--color-hover))]',
                             lift?.id === todo.id && 'cursor-grabbing',
                           )}
                           style={{ width: names }}

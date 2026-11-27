@@ -9,6 +9,7 @@ import {
   type Announcements,
   type DragStartEvent,
 } from '@dnd-kit/core';
+import { createPortal } from 'react-dom';
 import { getEventCoordinates } from '@dnd-kit/utilities';
 import {
   useEffect,
@@ -20,28 +21,32 @@ import {
   type PointerEvent as ReactPointerEvent,
 } from 'react';
 import { isTextTarget } from '@/lib/dom';
-import { Button, cn, Icon } from '@/ui';
+import { Button, cn, Icon, type ShowToast } from '@/ui';
 import type { CloudSelection } from '../components/CloudPage';
-import { useCloud } from '../hooks/useCloud';
 import { HomeCustomize } from './HomeCustomize';
+import type { BoardKit } from './kit';
 import {
   addWidget,
+  arrange,
   changeWidget,
-  DEFAULT_LAYOUT,
+  defaultLayout,
   MAX_ROWS,
-  moveWidget,
   nearestWidth,
   newWidget,
+  pinWidgets,
+  placeWidget,
   removeWidget,
-  spanOf,
+  rivalOf,
+  settleWidgets,
+  ROW_STEPS,
   useHomeLayout,
   type HomeLayout,
+  type Spot,
   type Widget,
   type WidgetLook,
   type NewDragData,
-  type WidgetType,
 } from './layout';
-import { FrameContext, HomePageContext, useAvailable, WIDGET_INFO, WIDGET_VIEWS } from './widgets';
+import { FrameContext, HomePageContext } from './frame';
 
 /** One row of a widget's height, the gap below it included – and the gap between widgets. */
 export const ROW_PX = 72;
@@ -50,7 +55,13 @@ const GAP_PX = 24;
  * The grid's own rows: fine, so a widget as high as its content takes just that (rounded to
  * these), the gap carried in each widget's foot. Twelve columns where the page is wide.
  */
-const STEP_PX = 4;
+const STEP_PX = ROW_PX / ROW_STEPS;
+/** What a widget as high as its content counts as before it is measured. */
+const UNMEASURED_STEPS = Math.ceil(120 / STEP_PX);
+/** Free rows below the last widget while arranging – somewhere to put one under all. */
+const SPARE_ROWS = 4;
+/** Where a new one from the panel is held: its top left corner this near the pointer. */
+const NEW_GRAB_PX = 16;
 /** A mouse moves this far before a press is a drag; a finger rests this long (and moves less). */
 const DRAG_PX = 4;
 const TOUCH_DELAY_MS = 250;
@@ -80,27 +91,43 @@ function columnsFor(width: number) {
   return 1;
 }
 
-type Drag = { kind: 'move'; id: string } | { kind: 'new'; type: WidgetType; id: string };
+type Drag = { kind: 'move'; id: string } | { kind: 'new'; type: string; id: string };
 
 type Resize = { id: string; left: number; top: number };
 
+/** Where the pointer holds the dragged one, from its top left corner. */
+type Grab = { x: number; y: number };
+
+const bottomOf = (spots: ReadonlyMap<string, Spot>) =>
+  Math.max(0, ...[...spots.values()].map((spot) => spot.top + spot.steps));
+
 /**
- * „Zuletzt“'s widgets – and, while they are being arranged (`editing`), dragged about, made
- * larger by their corner, picked to change in the panel beside, taken off; new ones are dragged
- * in from the panel or put at the end with a click.
+ * A page's widgets („Zuletzt“, „Aktuell“, a mailbox's „Übersicht“: `kit`) – and, while they are
+ * being arranged (`editing`), dragged about, made larger by their corner, picked to change in the
+ * panel beside, taken off; new ones are dragged in from the panel or put at the end with a click.
  */
 export function HomeBoard({
+  kit,
+  userId,
+  workspaceId,
+  notify,
+  available = () => true,
   selection,
   editing,
   onEdit,
 }: {
-  selection: CloudSelection;
+  kit: BoardKit;
+  userId: string;
+  workspaceId: string;
+  notify: ShowToast;
+  /** What may stand on one's page now (on „Zuletzt“ the order field: members and admins). */
+  available?: (type: string) => boolean;
+  selection?: CloudSelection;
   editing: boolean;
   onEdit: (editing: boolean) => void;
 }) {
-  const ui = useCloud();
-  const available = useAvailable();
-  const [stored, setStored] = useHomeLayout(ui.userId, ui.workspace.id);
+  const { spec } = kit;
+  const [stored, setStored] = useHomeLayout(spec, userId, workspaceId);
   const layout = stored.filter((widget) => available(widget.type));
   // While something is dragged or stretched: how the page looks if it is let go now.
   const [draft, setDraft] = useState<HomeLayout | null>(null);
@@ -118,6 +145,33 @@ export function HomeBoard({
   const save = (next: HomeLayout) => setStored(next);
   // Only while arranging is anything picked.
   const pickedWidget = (editing && layout.find((widget) => widget.id === picked)) || null;
+
+  // Heights as the content, measured (in steps); where each stands on the field.
+  const [measured, setMeasured] = useState<Readonly<Record<string, number>>>({});
+  const measure = (id: string, steps: number) =>
+    setMeasured((now) => (now[id] === steps ? now : { ...now, [id]: steps }));
+  const stepsOf = (widget: Widget) =>
+    widget.h === 'auto' ? (measured[widget.id] ?? UNMEASURED_STEPS) : widget.h * ROW_STEPS;
+  const spots = arrange(layout, stepsOf, columns);
+  // What is moved, stretched or dragged in goes first; what is in its way yields below it.
+  const [lead, setLead] = useState<string | null>(null);
+  // Only on the full field: on fewer columns the rows are a stack, and keeping what it pushed
+  // there would pull apart what stands side by side on the wide page.
+  const wide = columns >= 12;
+  const shownSpots = draft ? arrange(draft, stepsOf, columns, (wide && lead) || undefined) : spots;
+  /** `next` with what `id` pushed down kept there – then saved. */
+  const settle = (next: HomeLayout, id: string) =>
+    save(wide ? settleWidgets(next, stepsOf, columns, id) : next);
+  // Taken off, it leaves its place empty.
+  const remove = (id: string) => {
+    save(removeWidget(pinned(), id));
+    if (picked === id) setPicked(null);
+  };
+  /** The layout with every widget at the cell it is seen at – before one is put elsewhere. */
+  // Always the wide page's cells: pinned from a tablet's or a phone's stack, every widget would
+  // stand where it stood there – on the wide page in one column.
+  const pinned = () =>
+    pinWidgets(layout, columns >= 12 ? spots : arrange(layout, stepsOf, 12), 12);
 
   useLayoutEffect(() => {
     // While it is arranged the panel takes 400 px beside: the columns stay as they were, so what
@@ -163,80 +217,62 @@ export function HomeBoard({
   };
   const [resizing, setResizing] = useState(false);
   const stopFollowing = useRef<(() => void) | null>(null);
-
-  // Where the boxes stood when the drag began, and how far the page was scrolled then: the place
-  // is found on those – the page flowing anew under the pointer would swing it back and forth.
-  const startRects = useRef<{ rects: Map<string, DOMRect>; scroll: number } | null>(null);
+  // The layout as the drag began (every widget pinned where it was seen): each place the pointer
+  // means is tried on it, so one pushed down comes back up once the dragged one goes on.
+  const startRef = useRef<HomeLayout>(layout);
+  const grabRef = useRef<Grab>({ x: NEW_GRAB_PX, y: NEW_GRAB_PX });
   const scrollerOf = (): HTMLElement | null =>
     gridRef.current?.closest<HTMLElement>('.overflow-y-auto') ??
     (document.scrollingElement as HTMLElement | null);
-  const rectOf = (id: string): DOMRect | undefined => {
-    const start = startRects.current;
-    const rect = start?.rects.get(id);
-    if (!start || !rect) return undefined;
-    const shift = start.scroll - (scrollerOf()?.scrollTop ?? 0);
-    return new DOMRect(rect.x, rect.y + shift, rect.width, rect.height);
-  };
 
   // The panel stands over the page (a phone's sheet over its lower half): what is over it is not
   // on the page.
   const panelRect = () => document.querySelector('[data-side-panel]')?.getBoundingClientRect();
 
-  /** Where in the list (without the dragged one) the pointer means: before or after the nearest. */
-  const placeAt = (x: number, y: number, without: string, list: HomeLayout): number | null => {
+  /**
+   * The cell the pointer means for `widget` (held at `grabRef`): its top left corner snapped to
+   * the nearest column and row – in twelfths of the field, on one column its own. Off the page or
+   * over the panel: none.
+   */
+  const cellAt = (x: number, y: number, widget: Widget): { x: number; y: number } | null => {
     const grid = gridRef.current;
     if (!grid) return null;
     const area = grid.getBoundingClientRect();
     const reach = 48;
     if (x < area.left - reach || x > area.right + reach || y < area.top - reach) return null;
-    if (y > area.bottom + reach * 3) return null;
     const panel = panelRect();
     if (panel && x >= panel.left && x <= panel.right && y >= panel.top && y <= panel.bottom)
       return null;
-    const rest = list.filter((widget) => widget.id !== without);
-    if (rest.length === 0) return 0;
-    // Over where it stood at first: back there.
-    const own = rectOf(without);
-    if (own && x >= own.left && x <= own.right && y >= own.top && y <= own.bottom)
-      return layout.findIndex((widget) => widget.id === without);
-    let best: { index: number; rect: DOMRect; distance: number } | null = null;
-    rest.forEach((widget, index) => {
-      const rect = rectOf(widget.id);
-      if (!rect) return;
-      const dx = Math.max(rect.left - x, 0, x - rect.right);
-      const dy = Math.max(rect.top - y, 0, y - rect.bottom);
-      const distance = Math.hypot(dx, dy);
-      if (!best || distance < best.distance) best = { index, rect, distance };
-    });
-    if (!best) return rest.length;
-    const { index, rect } = best as { index: number; rect: DOMRect };
-    // Below everything: at the end.
-    if (y > area.bottom) return rest.length;
-    // A wide one is before or after by height, the others by side.
-    const after =
-      rect.width > area.width * 0.6
-        ? y > rect.top + rect.height / 2
-        : x > rect.left + rect.width / 2;
-    return index + (after ? 1 : 0);
+    const pitch = (area.width + GAP_PX) / columns;
+    const grab = grabRef.current;
+    const col = Math.round((x - grab.x - area.left) / pitch);
+    const row = Math.max(0, Math.round((y - grab.y - area.top) / ROW_PX));
+    return {
+      x: columns <= 1 ? (widget.x ?? 0) : Math.max(0, (col * 12) / columns),
+      y: row,
+    };
   };
 
   const follow = () => {
     const current = dragRef.current;
-    const list = draftRef.current;
-    if (!current || !list) return;
-    const at = placeAt(pointer.current.x, pointer.current.y, current.id, list);
-    const has = list.some((widget) => widget.id === current.id);
-    if (at === null) {
+    if (!current) return;
+    const start = startRef.current;
+    const widget =
+      current.kind === 'new'
+        ? newWidget(spec, current.type, current.id)
+        : start.find((each) => each.id === current.id);
+    if (!widget) return;
+    const cell = cellAt(pointer.current.x, pointer.current.y, widget);
+    if (!cell) {
       // Out of the page: a new one is not put in; a moved one stays where it was shown last.
-      if (current.kind === 'new' && has) putDraft(removeWidget(list, current.id));
+      if (current.kind === 'new') putDraft(start);
       return;
     }
-    if (current.kind === 'new' && !has) {
-      putDraft(addWidget(list, newWidget(current.type, current.id), at));
-      return;
-    }
-    if (list.findIndex((widget) => widget.id === current.id) !== at)
-      putDraft(moveWidget(list, current.id, at));
+    putDraft(
+      current.kind === 'new'
+        ? addWidget(spec, start, widget, cell)
+        : placeWidget(start, current.id, cell.x, cell.y),
+    );
   };
 
   // Near the scrolling box's edge the page scrolls under the drag – ours, as dnd-kit scrolls only
@@ -282,12 +318,12 @@ export function HomeBoard({
     const current = dragRef.current;
     const final = draftRef.current;
     if (drop && current && final?.some((widget) => widget.id === current.id)) {
-      save(final);
+      settle(final, current.id);
       setPicked(current.id);
     }
+    setLead(null);
     stopFollowing.current?.();
     stopFollowing.current = null;
-    startRects.current = null;
     putDrag(null);
     putDraft(null);
   };
@@ -295,15 +331,17 @@ export function HomeBoard({
   const onDragStart = ({ active, activatorEvent }: DragStartEvent) => {
     const data = active.data.current as NewDragData | undefined;
     const drag: Drag = data?.type
-      ? { kind: 'new', type: data.type, id: newWidget(data.type).id }
+      ? { kind: 'new', type: data.type, id: newWidget(spec, data.type).id }
       : { kind: 'move', id: String(active.id) };
     pointer.current = getEventCoordinates(activatorEvent) ?? pointer.current;
-    startRects.current = {
-      rects: new Map([...boxes.current].map(([id, box]) => [id, box.getBoundingClientRect()])),
-      scroll: scrollerOf()?.scrollTop ?? 0,
-    };
+    const box = drag.kind === 'move' ? boxes.current.get(drag.id)?.getBoundingClientRect() : null;
+    grabRef.current = box
+      ? { x: pointer.current.x - box.left, y: pointer.current.y - box.top }
+      : { x: NEW_GRAB_PX, y: NEW_GRAB_PX };
+    startRef.current = pinned();
+    setLead(drag.id);
     putDrag(drag);
-    putDraft(layout);
+    putDraft(startRef.current);
     // The pointer itself (dnd-kit's delta carries the scrolling in it).
     const onMouse = (event: MouseEvent) => {
       pointer.current = { x: event.clientX, y: event.clientY };
@@ -327,9 +365,9 @@ export function HomeBoard({
   const labelOf = (id: string | number) => {
     const text = String(id);
     const type = text.startsWith('new:')
-      ? (text.slice(4) as WidgetType)
+      ? text.slice(4)
       : layout.find((widget) => widget.id === text)?.type;
-    return type ? WIDGET_INFO[type].label : 'Widget';
+    return (type && kit.info[type]?.label) || 'Widget';
   };
   const announcements: Announcements = {
     onDragStart: ({ active }) => `${labelOf(active.id)} aufgenommen.`,
@@ -353,14 +391,18 @@ export function HomeBoard({
     resizeRef.current = { id: widget.id, left: box.left, top: box.top };
     setPicked(widget.id);
     setResizing(true);
-    let last: HomeLayout = layout;
+    setLead(widget.id);
+    const start = pinned();
+    // Wider only as far as the field goes to its right – it does not move.
+    const room = columns >= 12 ? 12 - (spots.get(widget.id)?.col ?? 0) : 12;
+    let last: HomeLayout = start;
     const move = (e: PointerEvent) => {
       const at = resizeRef.current;
       if (!at) return;
       const twelfths = (12 * (e.clientX - at.left + GAP_PX / 2)) / (grid.width + GAP_PX);
       const rows = Math.round((e.clientY - at.top + GAP_PX) / ROW_PX);
-      last = changeWidget(layout, widget.id, {
-        ...(columns > 1 ? { w: nearestWidth(twelfths) } : {}),
+      last = changeWidget(start, widget.id, {
+        ...(columns > 1 ? { w: nearestWidth(twelfths, room) } : {}),
         h: Math.max(1, Math.min(MAX_ROWS, rows)),
       });
       setDraft(last);
@@ -370,8 +412,9 @@ export function HomeBoard({
       window.removeEventListener('pointerup', end);
       window.removeEventListener('pointercancel', end);
       resizeRef.current = null;
-      save(last);
+      settle(last, widget.id);
       setDraft(null);
+      setLead(null);
       setResizing(false);
     };
     window.addEventListener('pointermove', move);
@@ -397,13 +440,20 @@ export function HomeBoard({
     if (target?.closest?.('[data-side-panel] button, [data-side-panel] [role="radio"]')) return;
     if (event.key === 'Backspace' || event.key === 'Delete') {
       event.preventDefault();
-      save(removeWidget(layout, pickedWidget.id));
-      setPicked(null);
+      remove(pickedWidget.id);
     } else if (['ArrowLeft', 'ArrowUp', 'ArrowRight', 'ArrowDown'].includes(event.key)) {
+      // A cell on: a column of the grid sideways (none on one), a row up or down – from where
+      // it is seen.
       event.preventDefault();
-      const index = layout.findIndex((widget) => widget.id === pickedWidget.id);
-      const step = event.key === 'ArrowLeft' || event.key === 'ArrowUp' ? -1 : 1;
-      save(moveWidget(layout, pickedWidget.id, index + step));
+      const spot = spots.get(pickedWidget.id);
+      if (!spot) return;
+      const across = event.key === 'ArrowLeft' ? -1 : event.key === 'ArrowRight' ? 1 : 0;
+      const down = event.key === 'ArrowUp' ? -1 : event.key === 'ArrowDown' ? 1 : 0;
+      if (across && columns <= 1) return;
+      const x = columns <= 1 ? (pickedWidget.x ?? 0) : ((spot.col + across) * 12) / columns;
+      const y = Math.floor(spot.top / ROW_STEPS) + down;
+      if (x < 0 || y < 0) return;
+      settle(placeWidget(pinned(), pickedWidget.id, x, y), pickedWidget.id);
     }
   });
   // A press beside every widget and the panel lets go of the picked one (as Figma's empty canvas).
@@ -430,11 +480,15 @@ export function HomeBoard({
 
   /* ----- Changing one ----- */
 
+  // Wider or higher in the panel, what is in its way yields too.
   const change = (id: string, patch: Partial<Omit<Widget, 'id' | 'type'>>) =>
-    save(changeWidget(layout, id, patch));
-  const add = (type: WidgetType) => {
-    const widget = newWidget(type);
-    save(addWidget(layout, widget));
+    settle(changeWidget(pinned(), id, patch), id);
+  const add = (type: string) => {
+    const widget = newWidget(spec, type);
+    // Below all – or where its rival stood.
+    const rival = layout.some((each) => each.type === rivalOf(spec, type));
+    const end = { x: 0, y: Math.ceil(bottomOf(spots) / ROW_STEPS) };
+    save(addWidget(spec, pinned(), widget, rival ? undefined : end));
     setPicked(widget.id);
     requestAnimationFrame(() =>
       boxes.current.get(widget.id)?.scrollIntoView({ block: 'nearest', behavior: 'smooth' }),
@@ -446,9 +500,9 @@ export function HomeBoard({
   };
   const reset = () => {
     const before = stored;
-    save(DEFAULT_LAYOUT);
+    save(defaultLayout(spec));
     setPicked(null);
-    ui.notify('Standard wiederhergestellt', 'neutral', {
+    notify('Standard wiederhergestellt', 'neutral', {
       label: 'Rückgängig',
       run: () => save(before),
     });
@@ -480,7 +534,7 @@ export function HomeBoard({
           // Its own drags while arranging – never the page's selection box.
           data-own-drag={editing || undefined}
           className={cn(
-            'grid min-w-0 grid-flow-row-dense gap-x-6',
+            'grid min-w-0 gap-x-6',
             // A finger resting on a widget lifts it – no text picked, no menu of the system.
             editing && 'select-none [-webkit-touch-callout:none]',
             // The panel a sheet below: the last widgets can still go above it.
@@ -494,8 +548,11 @@ export function HomeBoard({
           {shown.map((widget) => (
             <WidgetBox
               key={widget.id}
+              kit={kit}
               widget={widget}
+              spot={shownSpots.get(widget.id)}
               columns={columns}
+              onMeasure={(steps) => measure(widget.id, steps)}
               editing={editing}
               widen={editing ? pageWidth - gridWidth : 0}
               picked={pickedWidget?.id === widget.id}
@@ -506,12 +563,18 @@ export function HomeBoard({
               }}
               onPick={() => setPicked(widget.id)}
               onCorner={(event) => pressCorner(event, widget)}
-              onRemove={() => {
-                save(removeWidget(layout, widget.id));
-                if (pickedWidget?.id === widget.id) setPicked(null);
-              }}
+              onRemove={() => remove(widget.id)}
             />
           ))}
+          {editing && shown.length > 0 && (
+            <div
+              aria-hidden
+              style={{
+                gridColumn: '1 / -1',
+                gridRow: `${bottomOf(shownSpots) + 1} / span ${SPARE_ROWS * ROW_STEPS}`,
+              }}
+            />
+          )}
           {shown.length === 0 && (
             <div
               className="col-span-full flex flex-col items-center justify-center gap-3 rounded-panel border-2 border-dashed border-handle p-10 text-center"
@@ -531,46 +594,51 @@ export function HomeBoard({
           )}
         </div>
 
-        {editing && (
-          <HomeCustomize
-            layout={layout}
-            picked={pickedWidget}
-            columns={columns}
-            sheet={sheet}
-            available={available}
-            onAdd={add}
-            onShow={show}
-            onChange={change}
-            onRemove={(id) => {
-              save(removeWidget(layout, id));
-              setPicked(null);
-            }}
-            onDeselect={() => setPicked(null)}
-            onReset={reset}
-            onDone={() => onEdit(false)}
-          />
-        )}
+        {/* On `document.body`: in „Post“ the board stands in the mail list, whose fade (a mask)
+          cuts off anything fixed in it – the panel, the corner's cover, the lifted card. */}
+        {createPortal(
+          <>
+            {editing && (
+              <HomeCustomize
+                kit={kit}
+                layout={layout}
+                picked={pickedWidget}
+                columns={columns}
+                sheet={sheet}
+                available={available}
+                onAdd={add}
+                onShow={show}
+                onChange={change}
+                onRemove={remove}
+                onDeselect={() => setPicked(null)}
+                onReset={reset}
+                onDone={() => onEdit(false)}
+              />
+            )}
 
-        {resizing && (
-          // Over everything while the corner is held: its arrows everywhere, nothing lights up.
-          <div aria-hidden className="fixed inset-0 z-(--z-toast) cursor-nwse-resize" />
-        )}
-        {/* What is dragged, lifted under the pointer; its place on the page shows faint. A new one
+            {resizing && (
+              // Over everything while the corner is held: its arrows everywhere, nothing lights up.
+              <div aria-hidden className="fixed inset-0 z-(--z-toast) cursor-nwse-resize" />
+            )}
+            {/* What is dragged, lifted under the pointer; its place on the page shows faint. A new one
           does not fly back to the panel when it is let go. */}
-        <DragOverlay dropAnimation={drag?.kind === 'new' ? null : undefined}>
-          {drag && <DragGhost drag={drag} layout={shown} />}
-        </DragOverlay>
+            <DragOverlay dropAnimation={drag?.kind === 'new' ? null : undefined}>
+              {drag && <DragGhost kit={kit} drag={drag} layout={shown} />}
+            </DragOverlay>
+          </>,
+          document.body,
+        )}
       </HomePageContext.Provider>
     </DndContext>
   );
 }
 
 /** What is dragged, as large as it was where it was picked up: its mark and its name. */
-function DragGhost({ drag, layout }: { drag: Drag; layout: HomeLayout }) {
+function DragGhost({ kit, drag, layout }: { kit: BoardKit; drag: Drag; layout: HomeLayout }) {
   const type =
     drag.kind === 'new' ? drag.type : layout.find((widget) => widget.id === drag.id)?.type;
-  if (!type) return null;
-  const info = WIDGET_INFO[type];
+  const info = type ? kit.info[type] : undefined;
+  if (!info) return null;
   return (
     <div
       aria-hidden
@@ -587,8 +655,11 @@ function DragGhost({ drag, layout }: { drag: Drag; layout: HomeLayout }) {
 
 /** One widget in the grid: its box, its look, and while arranging its handles. */
 function WidgetBox({
+  kit,
   widget,
+  spot,
   columns,
+  onMeasure,
   editing,
   widen,
   picked,
@@ -598,8 +669,13 @@ function WidgetBox({
   onCorner,
   onRemove,
 }: {
+  kit: BoardKit;
   widget: Widget;
+  /** Where it stands on the field (none for a moment before it is placed). */
+  spot: Spot | undefined;
   columns: number;
+  /** Its height as the content, in the grid's steps (its gap below carried along). */
+  onMeasure: (steps: number) => void;
   editing: boolean;
   /** How much wider the grid is on the page than now (the panel beside while arranging). */
   widen: number;
@@ -611,24 +687,22 @@ function WidgetBox({
   onRemove: () => void;
 }) {
   const headingId = useId();
-  const info = WIDGET_INFO[widget.type];
-  const View = WIDGET_VIEWS[widget.type];
+  const info = kit.info[widget.type]!;
+  const View = kit.views[widget.type]!;
   const frameRef = useRef<HTMLElement>(null);
   const fixed = widget.h !== 'auto';
-  const [measured, setMeasured] = useState(Math.ceil(120 / STEP_PX));
-  const rows = fixed ? ((widget.h as number) * ROW_PX) / STEP_PX : measured;
+  const report = useEffectEvent(onMeasure);
   // As high as its content: the grid's rows follow it, its gap below carried along.
   useLayoutEffect(() => {
     const frame = frameRef.current;
     if (widget.h !== 'auto' || !frame) return;
-    const measure = () =>
-      setMeasured(Math.max(1, Math.ceil((frame.offsetHeight + GAP_PX) / STEP_PX)));
+    const measure = () => report(Math.max(1, Math.ceil((frame.offsetHeight + GAP_PX) / STEP_PX)));
     measure();
     const observer = new ResizeObserver(measure);
     observer.observe(frame);
     return () => observer.disconnect();
   }, [widget.h]);
-  const span = spanOf(widget.w, columns);
+  const span = spot?.span ?? columns;
   const { setNodeRef, setActivatorNodeRef, attributes, listeners } = useDraggable({
     id: widget.id,
     disabled: !editing,
@@ -643,7 +717,14 @@ function WidgetBox({
       data-widget={widget.type}
       // As high as the widget, not its grid rows (they carry the gap below): the handles sit on it.
       className={cn('relative min-w-0 self-start', editing && 'group/widget')}
-      style={{ gridColumn: `span ${span} / span ${span}`, gridRowEnd: `span ${rows}` }}
+      style={
+        spot
+          ? {
+              gridColumn: `${spot.col + 1} / span ${spot.span}`,
+              gridRow: `${spot.top + 1} / span ${spot.steps}`,
+            }
+          : { display: 'none' }
+      }
     >
       <section
         ref={frameRef}
@@ -661,7 +742,7 @@ function WidgetBox({
         <FrameContext.Provider
           // Its part of what the grid is wider on the page: its content fits itself to that, so
           // nothing comes and goes when arranging begins and ends.
-          value={{ widget, headingId, widen: (widen * span) / columns }}
+          value={{ widget, label: info.label, headingId, widen: (widen * span) / columns }}
         >
           <div
             inert={editing}

@@ -1352,6 +1352,41 @@
       "when": 1801396800000,
       "tag": "0192_call_model",
       "breakpoints": true
+    },
+    {
+      "idx": 193,
+      "version": "7",
+      "when": 1801483200000,
+      "tag": "0193_agent_harness",
+      "breakpoints": true
+    },
+    {
+      "idx": 194,
+      "version": "7",
+      "when": 1801569600000,
+      "tag": "0194_calendar_recurrence",
+      "breakpoints": true
+    },
+    {
+      "idx": 195,
+      "version": "7",
+      "when": 1801656000000,
+      "tag": "0195_calendar_feeds",
+      "breakpoints": true
+    },
+    {
+      "idx": 196,
+      "version": "7",
+      "when": 1801742400000,
+      "tag": "0196_calendar_series_root",
+      "breakpoints": true
+    },
+    {
+      "idx": 197,
+      "version": "7",
+      "when": 1801828800000,
+      "tag": "0197_calendar_series_root_idx",
+      "breakpoints": true
     }
   ]
 }

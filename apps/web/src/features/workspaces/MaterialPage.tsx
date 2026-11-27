@@ -20,6 +20,7 @@ import { useCollectionSelection } from '@/lib/collection-selection';
 import { isOnControl } from '@/lib/marquee-select';
 import { readString, writeString } from '@/lib/storage';
 import { useWorkspaceFontFaces } from '@/lib/workspace-fonts';
+import { useViewChoice } from '@/lib/view-choice';
 import { useAccount } from '@/features/auth';
 import { searchIcons, useIconLibrary, type IconFilter } from '@/features/icons';
 import { registerOfficeFonts } from '@/features/viewer';
@@ -66,7 +67,7 @@ import {
   groupFamilies,
   sliderFamilies,
   type FontFamily,
-  type MaterialView,
+  MATERIAL_VIEWS,
 } from './lib/font-families';
 import { downloadMaster } from './lib/masters';
 import { atLeast } from './lib/roles';
@@ -251,7 +252,8 @@ export function Component() {
     );
   const [query, setQuery] = useState('');
   const [sort, setSort] = useState<MaterialSort>('name');
-  const [view, setView] = useState<MaterialView>('grid');
+  // Each filter its own „Liste“ / „Kacheln“.
+  const [view, setView] = useViewChoice(`slider.material.view:${kind}`, MATERIAL_VIEWS, 'grid');
 
   // Names by default; with the search's button also a template's layouts and a font's „für
   // Calibri“ and „aus „…““, as the cards show them. Off again on every visit, as on "Präsentationen".

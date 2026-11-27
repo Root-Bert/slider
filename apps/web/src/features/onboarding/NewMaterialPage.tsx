@@ -91,7 +91,7 @@ export function Component() {
                     ? 'Wird hochgeladen …'
                     : library.app === 'writer'
                       ? 'Schriften (.ttf, .otf, .zip)'
-                      : 'Vorlagen (.otp, .potx) oder Schriften (.ttf, .otf, .zip) – Slider erkennt, was es ist.'
+                      : 'Vorlagen (.otp, .potx) oder Schriften (.ttf, .otf, .zip) – Office erkennt, was es ist.'
                 }
                 error={null}
               />

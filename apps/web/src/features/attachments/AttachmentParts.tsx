@@ -1,16 +1,23 @@
-import { useRef, type ChangeEvent } from 'react';
+import { useRef, useState, type ChangeEvent } from 'react';
 import { Link } from 'react-router';
+import { useQuery } from '@tanstack/react-query';
 import {
+  API_PREFIX,
   CLOUD_FOLDER_TYPE,
+  cloudFileType,
+  cloudPaths,
   isCloudReference,
+  isAudioAttachment,
   isPictureAttachment,
   isVideoAttachment,
   type Attachment,
 } from '@slider/shared';
 import { attachmentUrl } from '@/lib/api';
+import { api } from '@/lib/api-client';
+import { AudioPlayer } from '@/features/viewer';
 import { useActiveWorkspace } from '@/features/workspaces';
 import { formatFileSize } from '@/lib/format';
-import { cn, ErrorText, Icon, IconButton } from '@/ui';
+import { cn, ErrorText, Icon, IconButton, PageStrip } from '@/ui';
 import type { Attachments, FieldAttachment } from './useAttachments';
 import { referenceRoute } from './useFileDrop';
 
@@ -189,11 +196,14 @@ export function SentAttachments({
   attachments,
   className,
   onDelete,
+  pages = false,
 }: {
   attachments: readonly Attachment[] | undefined;
   className?: string;
   /** Where they stay on what is kept (a to-do): each with ✕ – it asks first. */
   onDelete?: (one: Attachment) => void;
+  /** A document (PDF, office file) shows its pages over its chip, as in Cloud (Sender). */
+  pages?: boolean;
 }) {
   const workspace = useActiveWorkspace();
   if (!attachments?.length) return null;
@@ -217,9 +227,48 @@ export function SentAttachments({
     (one) => isPictureAttachment(one.type) && !isCloudReference(one),
   );
   const videos = attachments.filter((one) => isVideoAttachment(one.type) && !isCloudReference(one));
+  const voices = attachments.filter((one) => isAudioAttachment(one.type) && !isCloudReference(one));
   const others = attachments.filter(
     (one) =>
-      (!isPictureAttachment(one.type) && !isVideoAttachment(one.type)) || isCloudReference(one),
+      (!isPictureAttachment(one.type) &&
+        !isVideoAttachment(one.type) &&
+        !isAudioAttachment(one.type)) ||
+      isCloudReference(one),
+  );
+  const documents = pages ? others.filter(hasPages) : [];
+  const files = others.filter((one) => !documents.includes(one));
+  const chipOf = (one: Attachment) => (
+    <>
+      {isCloudReference(one) && workspace ? (
+        <Link
+          to={referenceRoute(workspace.id, one)}
+          title={`${one.name} in Cloud öffnen`}
+          className={cn(CHIP, 'pr-2 hover:bg-selected', onDelete && 'rounded-r-none')}
+        >
+          <Icon name={chipIcon(one)} size={14} className="shrink-0 text-fg-subtle" />
+          <span className="truncate">{one.name}</span>
+          {one.type !== CLOUD_FOLDER_TYPE && (
+            <span className="shrink-0 text-xs text-fg-subtle">{formatFileSize(one.size)}</span>
+          )}
+        </Link>
+      ) : (
+        <a
+          href={attachmentUrl(one.id, true)}
+          download={one.name}
+          title={`${one.name} laden`}
+          className={cn(CHIP, 'pr-2 hover:bg-selected', onDelete && 'rounded-r-none')}
+        >
+          <Icon name="attachFile" size={14} className="shrink-0 text-fg-subtle" />
+          <span className="truncate">{one.name}</span>
+          <span className="shrink-0 text-xs text-fg-subtle">{formatFileSize(one.size)}</span>
+        </a>
+      )}
+      {onDelete && (
+        <span className="flex h-7 items-center rounded-r-chip bg-surface-2 pr-1">
+          {off(one, false)}
+        </span>
+      )}
+    </>
   );
   return (
     <div className={cn('flex min-w-0 flex-col gap-1.5', className)}>
@@ -267,47 +316,145 @@ export function SentAttachments({
           {off(one, true)}
         </div>
       ))}
-      {others.length > 0 && (
+      {voices.map((one) => (
+        <div key={one.id} className="group/thumb relative w-full max-w-xs">
+          <VoiceMessage one={one} />
+          {off(one, true)}
+        </div>
+      ))}
+      {documents.map((one) => (
+        <div key={one.id} className="flex min-w-0 flex-col items-start gap-1">
+          <DocumentPages one={one} />
+          <div className="flex max-w-full min-w-0 items-center">{chipOf(one)}</div>
+        </div>
+      ))}
+      {files.length > 0 && (
         <ul aria-label="Dateien" className="flex min-w-0 flex-wrap gap-1">
-          {others.map((one) => (
+          {files.map((one) => (
             <li key={one.id} className="flex max-w-full min-w-0 items-center">
-              {isCloudReference(one) && workspace ? (
-                <Link
-                  to={referenceRoute(workspace.id, one)}
-                  title={`${one.name} in Cloud öffnen`}
-                  className={cn(CHIP, 'pr-2 hover:bg-selected', onDelete && 'rounded-r-none')}
-                >
-                  <Icon name={chipIcon(one)} size={14} className="shrink-0 text-fg-subtle" />
-                  <span className="truncate">{one.name}</span>
-                  {one.type !== CLOUD_FOLDER_TYPE && (
-                    <span className="shrink-0 text-xs text-fg-subtle">
-                      {formatFileSize(one.size)}
-                    </span>
-                  )}
-                </Link>
-              ) : (
-                <a
-                  href={attachmentUrl(one.id, true)}
-                  download={one.name}
-                  title={`${one.name} laden`}
-                  className={cn(CHIP, 'pr-2 hover:bg-selected', onDelete && 'rounded-r-none')}
-                >
-                  <Icon name="attachFile" size={14} className="shrink-0 text-fg-subtle" />
-                  <span className="truncate">{one.name}</span>
-                  <span className="shrink-0 text-xs text-fg-subtle">
-                    {formatFileSize(one.size)}
-                  </span>
-                </a>
-              )}
-              {onDelete && (
-                <span className="flex h-7 items-center rounded-r-chip bg-surface-2 pr-1">
-                  {off(one, false)}
-                </span>
-              )}
+              {chipOf(one)}
             </li>
           ))}
         </ul>
       )}
     </div>
+  );
+}
+
+/** Whether a sent file may show as its pages: a PDF or an office file, not a folder. */
+function hasPages(one: Attachment): boolean {
+  if (one.type === CLOUD_FOLDER_TYPE) return false;
+  const kind = cloudFileType(one.name, one.type);
+  return kind === 'pdf' || kind === 'document' || kind === 'presentation' || kind === 'spreadsheet';
+}
+
+/** A document's preview in a message: an upright page this tall, a slide this wide at most. */
+const PAGES_HEIGHT = 400;
+const PAGES_WIDTH = 512;
+
+/** Bars only for a recording's size (5 minutes of voice are ~2 MB): a long song stays flat. */
+const VOICE_BARS_UP_TO_BYTES = 4 * 1024 * 1024;
+const VOICE_BARS = 64;
+
+/** Its length as the browser reads it from the file's head – a recorded WebM may not say. */
+function lengthOf(url: string): Promise<number> {
+  return new Promise((resolve) => {
+    const audio = new Audio();
+    audio.preload = 'metadata';
+    const done = () => resolve(Number.isFinite(audio.duration) ? audio.duration * 1000 : 0);
+    audio.addEventListener('loadedmetadata', done, { once: true });
+    audio.addEventListener('error', () => resolve(0), { once: true });
+    audio.src = url;
+  });
+}
+
+/**
+ * How long a voice message is and how loud along the way – an attachment keeps neither. Decoded
+ * where it is small enough; else (or where this browser cannot decode it) the length alone.
+ */
+async function voiceShape(
+  url: string,
+  size: number,
+): Promise<{ durationMs: number; peaks: number[] }> {
+  if (size > VOICE_BARS_UP_TO_BYTES) return { durationMs: await lengthOf(url), peaks: [] };
+  try {
+    const bytes = await (await fetch(url, { credentials: 'include' })).arrayBuffer();
+    const sound = await new OfflineAudioContext(1, 1, 44_100).decodeAudioData(bytes);
+    const samples = sound.getChannelData(0);
+    const bars = Math.min(VOICE_BARS, samples.length);
+    const levels = Array.from({ length: bars }, (_, bar) => {
+      const from = Math.floor((bar * samples.length) / bars);
+      const to = Math.floor(((bar + 1) * samples.length) / bars);
+      let sum = 0;
+      for (let at = from; at < to; at += 1) sum += (samples[at] ?? 0) ** 2;
+      return Math.sqrt(sum / Math.max(1, to - from));
+    });
+    const loudest = Math.max(...levels, 0);
+    return {
+      durationMs: sound.duration * 1000,
+      peaks: loudest > 0 ? levels.map((level) => Math.round((level / loudest) * 100) / 100) : [],
+    };
+  } catch {
+    return { durationMs: await lengthOf(url), peaks: [] };
+  }
+}
+
+/**
+ * A voice message, played in the message as a voice comment is (`AudioPlayer`). Its length and
+ * bars are read from the sound once it is there; till then the bars are even.
+ */
+function VoiceMessage({ one }: { one: Attachment }) {
+  const src = attachmentUrl(one.id);
+  const shape = useQuery({
+    queryKey: ['voice-shape', one.id],
+    queryFn: () => voiceShape(src, one.size),
+    staleTime: Infinity,
+    retry: false,
+  });
+  return (
+    <AudioPlayer
+      src={src}
+      durationMs={shape.data?.durationMs ?? 0}
+      peaks={shape.data?.peaks ?? []}
+      className="w-full"
+    />
+  );
+}
+
+/**
+ * A sent document's pages over its chip – Cloud's preview (`PageStrip`), sized to the file's
+ * pages: an upload's drawn for it (`/attachments/:id/pages`), a Cloud file's as Cloud draws it.
+ * Its room is held while the server draws it; one it cannot show (not drawable, not to be seen)
+ * leaves the chip alone.
+ */
+function DocumentPages({ one }: { one: Attachment }) {
+  const base = isCloudReference(one)
+    ? `/cloud/nodes/${encodeURIComponent(one.nodeId!)}`
+    : `/attachments/${encodeURIComponent(one.id)}`;
+  const pages = useQuery({
+    queryKey: ['attachment-pages', base],
+    queryFn: () => api.get<{ pages: number; ratio?: number }>(`${base}/pages`),
+    staleTime: Infinity,
+    retry: false,
+  });
+  const [shape, setShape] = useState<number | null>(null);
+  if (pages.isError) return null;
+  const guess = cloudFileType(one.name, one.type) === 'presentation' ? 16 / 9 : 210 / 297;
+  const ratio = pages.data?.ratio ?? shape ?? guess;
+  const small = isCloudReference(one)
+    ? `${API_PREFIX}${cloudPaths.thumbnail(one.nodeId!)}`
+    : pages.data
+      ? `${API_PREFIX}${base}/thumbnail`
+      : null;
+  return (
+    <PageStrip
+      count={pages.data?.pages ?? 1}
+      ratio={ratio}
+      pageSrc={(index) => (pages.data ? `${API_PREFIX}${base}/pages/${index + 1}` : null)}
+      small={small}
+      onShape={setShape}
+      maxHeight={PAGES_HEIGHT}
+      maxWidth={PAGES_WIDTH}
+    />
   );
 }

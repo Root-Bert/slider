@@ -119,6 +119,8 @@ export interface AppDeps {
   mailDns?: DkimDns;
   /** DNS and the web for the firms' logos beside their mails; absent → the real ones (tests: fakes). */
   senderLogos?: SenderLogoNetwork;
+  /** The web for the cards of links in messages; absent → the real one (tests: fakes). */
+  linkPreviews?: Pick<SenderLogoNetwork, 'fetch' | 'lookup'>;
   /** rembg; absent → the real one with `config.rembg` (tests inject a fake). */
   cutOuts?: CutOutSource;
   /** Stripe for the paid plan (BER-152); `null` without `config.billing` (self-hosting). */

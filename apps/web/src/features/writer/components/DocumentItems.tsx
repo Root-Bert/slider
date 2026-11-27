@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState, type ReactNode } from 'react';
-import { Link } from 'react-router';
-import { CLOUD_TRASH_DAYS, type WriterDocument } from '@slider/shared';
+import { Link, useNavigate } from 'react-router';
+import { CLOUD_TRASH_DAYS, isWriterMarkdown, type WriterDocument } from '@slider/shared';
 import {
   documentFilePath,
   documentThumbnailUrl,
@@ -221,11 +221,23 @@ function useDocumentActions(
   onRename: () => void,
 ): { actions: MenuAction[]; dialog: ReactNode } {
   const [deleting, setDeleting] = useState(false);
+  const navigate = useNavigate();
   const mayManage = document.permissions.canManage;
   const actions: MenuAction[] = [
     ...(mayManage
       ? [{ label: 'Umbenennen', icon: 'edit', onSelect: onRename } satisfies MenuAction]
       : []),
+    // What was collected for it: its „Material“ in the open document, beside the text – not for a
+    // Markdown file, which opens as a page in Cloud.
+    ...(isWriterMarkdown(document.fileName)
+      ? []
+      : [
+          {
+            label: 'Material',
+            icon: 'folderOpen',
+            onSelect: () => void navigate(routes.documentMaterial(document.id)),
+          } satisfies MenuAction,
+        ]),
     {
       label: 'Herunterladen',
       icon: 'download',

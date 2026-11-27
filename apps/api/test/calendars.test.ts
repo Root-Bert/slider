@@ -11,7 +11,7 @@ import type {
   SenderHome,
   WorkspaceRole,
 } from '@slider/shared';
-import { calendarEvents, calendars, mailAccounts, workspaceMembers } from '../src/db/schema';
+import { calendarEvents, calendars, mailAccounts, users, workspaceMembers } from '../src/db/schema';
 import { holdMailToken } from '../src/mail/oauth';
 import {
   CONFLICT,
@@ -1053,5 +1053,304 @@ describe('Calendars', () => {
     const stranger = await signedInUser(ctx, { name: 'Fremd', email: 'fremd@else.de' });
     expect((await overview([], stranger.cookie)).status).toBeGreaterThanOrEqual(403);
     expect((await overview(['x'.repeat(101)])).status).toBe(400);
+
+    // Series (the workspace's own calendars), walked in the person's zone: a weekly 9:00 stays
+    // 9:00 across the switch to summer time (28 March 2027).
+    const weekly = await ok<CalendarEvent>(
+      send('POST', '/calendar-events', {
+        calendarId: privateCal.id,
+        title: 'Wochenrunde',
+        allDay: false,
+        start: '2027-03-15T09:00:00+01:00',
+        end: '2027-03-15T09:30:00+01:00',
+        repeat: { freq: 'weekly', interval: 1, until: '2027-04-12' },
+        timeZone: 'Europe/Berlin',
+      }),
+      201,
+    );
+    const series = weekly.seriesId!;
+    expect(weekly).toMatchObject({
+      id: `${series}@20270315T080000Z`,
+      repeat: { freq: 'weekly', interval: 1, until: '2027-04-12' },
+    });
+    const at = (stamp: string) => `/calendar-events/${encodeURIComponent(`${series}@${stamp}`)}`;
+    const jour = async () =>
+      (await eventsOf('2027-03-01T00:00:00Z', '2027-05-01T00:00:00Z'))
+        .filter((one) => one.title.startsWith('Wochenrunde'))
+        .map((one) => `${one.start} ${one.title}${one.seriesId ? '' : ' (allein)'}`);
+    expect(await jour()).toEqual([
+      '2027-03-15T08:00:00.000Z Wochenrunde',
+      '2027-03-22T08:00:00.000Z Wochenrunde',
+      '2027-03-29T07:00:00.000Z Wochenrunde',
+      '2027-04-05T07:00:00.000Z Wochenrunde',
+      '2027-04-12T07:00:00.000Z Wochenrunde',
+    ]);
+    // A series from before shows in a following range; one is opened by its id, none where none is.
+    expect(
+      (await eventsOf('2027-04-05T00:00:00Z', '2027-04-06T00:00:00Z')).map((one) => one.id),
+    ).toContain(`${series}@20270405T070000Z`);
+    expect((await ok<CalendarEvent>(send('GET', at('20270322T080000Z')))).title).toBe(
+      'Wochenrunde',
+    );
+    expect((await send('GET', at('20270323T080000Z'))).status).toBe(404);
+    // This one alone: an event of its own (no files of the series), the series leaves it out.
+    const alone = await ok<CalendarEvent>(
+      send('PATCH', at('20270329T070000Z'), { title: 'Wochenrunde (Raum B)' }),
+    );
+    expect(alone.id).not.toContain('@');
+    expect(alone).toMatchObject({ start: '2027-03-29T07:00:00.000Z', attachments: [] });
+    expect((await send('PATCH', at('20270405T070000Z'), { repeat: null })).status).toBe(400);
+    // This and the ones after: a new series from it, an hour later; the old ends the day before.
+    const following = await ok<CalendarEvent>(
+      send('PATCH', at('20270405T070000Z'), {
+        scope: 'following',
+        start: '2027-04-05T10:00:00+02:00',
+        end: '2027-04-05T10:30:00+02:00',
+      }),
+    );
+    expect(following.seriesId).not.toBe(series);
+    expect(following).toMatchObject({
+      start: '2027-04-05T08:00:00.000Z',
+      repeat: { until: '2027-04-12' },
+    });
+    expect((await ok<CalendarEvent>(send('GET', at('20270315T080000Z')))).repeat?.until).toBe(
+      '2027-04-04',
+    );
+    // All of it: its first one moves on the wall clock as this one does.
+    await ok(
+      send('PATCH', at('20270322T080000Z'), {
+        scope: 'all',
+        title: 'Wochenrunde alt',
+        start: '2027-03-22T09:15:00+01:00',
+        end: '2027-03-22T09:45:00+01:00',
+      }),
+    );
+    expect(await jour()).toEqual([
+      '2027-03-15T08:15:00.000Z Wochenrunde alt',
+      '2027-03-22T08:15:00.000Z Wochenrunde alt',
+      '2027-03-29T07:00:00.000Z Wochenrunde (Raum B) (allein)',
+      '2027-04-05T08:00:00.000Z Wochenrunde',
+      '2027-04-12T08:00:00.000Z Wochenrunde',
+    ]);
+    // A series is not moved into a mailbox's calendar.
+    expect(
+      (
+        await send('PATCH', `/calendar-events/${encodeURIComponent(following.id)}`, {
+          scope: 'all',
+          calendarId: withMail[0]!.id,
+        })
+      ).status,
+    ).toBe(400);
+    // Deleted: one of it (the default); this and the following – the series split off from it
+    // on; all of it – with the ones changed alone and split off, nothing of it left.
+    await ok(
+      send(
+        'DELETE',
+        `/calendar-events/${encodeURIComponent(`${following.seriesId}@20270412T080000Z`)}`,
+      ),
+      204,
+    );
+    await ok(
+      send(
+        'DELETE',
+        `/calendar-events/${encodeURIComponent(`${following.seriesId}@20270405T080000Z`)}?scope=following`,
+      ),
+      204,
+    );
+    expect(await jour()).toEqual([
+      '2027-03-15T08:15:00.000Z Wochenrunde alt',
+      '2027-03-22T08:15:00.000Z Wochenrunde alt',
+      '2027-03-29T07:00:00.000Z Wochenrunde (Raum B) (allein)',
+    ]);
+    // The one changed alone, given a repeat of its own: a series of its own – deleting all of it
+    // leaves the one it came from.
+    const own = await ok<CalendarEvent>(
+      send('PATCH', `/calendar-events/${encodeURIComponent(alone.id)}`, {
+        repeat: { freq: 'weekly', interval: 1, until: '2027-04-05' },
+        timeZone: 'Europe/Berlin',
+      }),
+    );
+    await ok(send('DELETE', `/calendar-events/${encodeURIComponent(own.id)}?scope=all`), 204);
+    expect(await jour()).toEqual([
+      '2027-03-15T08:15:00.000Z Wochenrunde alt',
+      '2027-03-22T08:15:00.000Z Wochenrunde alt',
+    ]);
+    await ok(send('DELETE', `${at('20270315T081500Z')}?scope=all`), 204);
+    expect(await jour()).toEqual([]);
+    // Two changes of one series at once – a day deleted alone, the following ones renamed: one
+    // after the other, the day stays deleted (its left out ones are not written back from before).
+    const both = (
+      await ok<CalendarEvent>(
+        send('POST', '/calendar-events', {
+          calendarId: privateCal.id,
+          title: 'Wochenrunde zwei',
+          allDay: false,
+          start: '2027-03-15T09:00:00+01:00',
+          end: '2027-03-15T09:30:00+01:00',
+          repeat: { freq: 'weekly', interval: 1, until: '2027-04-05' },
+          timeZone: 'Europe/Berlin',
+        }),
+        201,
+      )
+    ).seriesId!;
+    const of = (stamp: string) => `/calendar-events/${encodeURIComponent(`${both}@${stamp}`)}`;
+    await Promise.all([
+      ok(
+        send('PATCH', of('20270329T070000Z'), {
+          title: 'Wochenrunde neu',
+          scope: 'following',
+        }),
+      ),
+      ok(send('DELETE', of('20270322T080000Z')), 204),
+    ]);
+    expect(await jour()).toEqual([
+      '2027-03-15T08:00:00.000Z Wochenrunde zwei',
+      '2027-03-29T07:00:00.000Z Wochenrunde neu',
+      '2027-04-05T07:00:00.000Z Wochenrunde neu',
+    ]);
+    await ok(send('DELETE', `${of('20270315T080000Z')}?scope=all`), 204);
+    expect(await jour()).toEqual([]);
+    // Refused: a series in a mailbox's calendar (made there or moved), one ending before it starts.
+    const repeatIn = (calendarId: string, until: string | null = null) =>
+      send('POST', '/calendar-events', {
+        calendarId,
+        title: 'Serie',
+        allDay: true,
+        start: '2027-02-28',
+        end: '2027-03-01',
+        repeat: { freq: 'yearly', interval: 1, until },
+      });
+    expect((await repeatIn(withMail[0]!.id)).status).toBe(400);
+    expect((await repeatIn(privateCal.id, '2027-01-01')).status).toBe(400);
+    // A whole-day series: by its days, every year.
+    await ok(repeatIn(privateCal.id), 201);
+    expect(
+      (await eventsOf('2029-01-01T00:00:00Z', '2029-12-31T00:00:00Z'))
+        .filter((one) => one.title === 'Serie')
+        .map((one) => [one.start, one.end]),
+    ).toEqual([['2029-02-28', '2029-03-01']]);
+    // The feed to subscribe to (webcal): one link per person, read by its secret alone – the own
+    // calendars' events, a series as its rule (on the zone's wall clock) with the ones left out.
+    const runde = await ok<CalendarEvent>(
+      send('POST', '/calendar-events', {
+        calendarId: privateCal.id,
+        title: 'Feedrunde',
+        location: 'Raum 1\rX-EVIL:1',
+        allDay: false,
+        start: '2027-05-03T09:00:00+02:00',
+        end: '2027-05-03T09:30:00+02:00',
+        repeat: { freq: 'weekly', interval: 1, until: '2027-05-31' },
+        timeZone: 'Europe/Berlin',
+      }),
+      201,
+    );
+    // Left out, two of them at once: both stay out.
+    await Promise.all(
+      ['20270510T070000Z', '20270517T070000Z'].map((at) =>
+        ok(
+          send('DELETE', `/calendar-events/${encodeURIComponent(`${runde.seriesId}@${at}`)}`),
+          204,
+        ),
+      ),
+    );
+    // „Werktags“ asked on a Saturday: its first one is Monday's, at the same time.
+    const werktags = await ok<CalendarEvent>(
+      send('POST', '/calendar-events', {
+        calendarId: privateCal.id,
+        title: 'Werktags',
+        allDay: false,
+        start: '2027-05-08T10:00:00+02:00',
+        end: '2027-05-08T10:30:00+02:00',
+        repeat: { freq: 'weekly', interval: 1, days: [0, 1, 2, 3, 4], until: '2027-05-14' },
+        timeZone: 'Europe/Berlin',
+      }),
+      201,
+    );
+    expect(werktags).toMatchObject({
+      start: '2027-05-10T08:00:00.000Z',
+      end: '2027-05-10T08:30:00.000Z',
+    });
+    const feedLink = (cookie?: string) =>
+      ok<{ url: string }>(
+        send('GET', `/workspaces/${ctx.workspaceId}/calendar-feed`, undefined, cookie),
+      );
+    const subscribed = await feedLink();
+    expect((await feedLink()).url).toBe(subscribed.url);
+    expect(subscribed.url).toMatch(/\/api\/calendar-feed\/[\w-]+\.ics$/);
+    const annasLink = await feedLink(anna.cookie);
+    expect(annasLink.url).not.toBe(subscribed.url);
+    // A new link ends the old one.
+    const renewed = await ok<{ url: string }>(
+      send('POST', `/workspaces/${ctx.workspaceId}/calendar-feed`),
+    );
+    expect(renewed.url).not.toBe(subscribed.url);
+    expect((await feedLink()).url).toBe(renewed.url);
+    // Fetched as a calendar app does: no session at all (dev login off – a route needing one
+    // refuses); an old or a made-up link is not found.
+    const auth = ctx.deps.config.auth as { devLogin: boolean };
+    auth.devLogin = false;
+    expect((await ctx.request(`/api/workspaces/${ctx.workspaceId}/calendars`)).status).toBe(401);
+    const feed = (url: string) => ctx.request(new URL(url).pathname);
+    const fetched = await feed(renewed.url);
+    expect(fetched.status).toBe(200);
+    expect(fetched.headers.get('content-type')).toContain('text/calendar');
+    const ics = await fetched.text();
+    expect(ics.startsWith('BEGIN:VCALENDAR\r\nVERSION:2.0\r\n')).toBe(true);
+    expect(ics.endsWith('END:VCALENDAR\r\n')).toBe(true);
+    expect(ics).toContain(
+      [
+        'DTSTART;TZID=Europe/Berlin:20270503T090000',
+        'DTEND;TZID=Europe/Berlin:20270503T093000',
+        'RRULE:FREQ=WEEKLY;UNTIL=20270531T215959Z',
+      ].join('\r\n'),
+    );
+    expect(ics).toMatch(
+      /EXDATE;TZID=Europe\/Berlin:(20270510T090000,20270517T090000|20270517T090000,20270510T090000)\r\nSUMMARY:Feedrunde\r\n/,
+    );
+    // A line break in a value stays in it: never a line of its own.
+    expect(ics).toContain('LOCATION:Raum 1\\nX-EVIL:1\r\n');
+    expect(ics).not.toContain('\rX-EVIL');
+    // Its zone as RFC 5545 asks for every TZID (Outlook reads only this).
+    expect(ics).toContain(
+      [
+        'BEGIN:VTIMEZONE',
+        'TZID:Europe/Berlin',
+        'BEGIN:DAYLIGHT',
+        'TZOFFSETFROM:+0100',
+        'TZOFFSETTO:+0200',
+        'DTSTART:19700329T020000',
+        'RRULE:FREQ=YEARLY;BYMONTH=3;BYDAY=-1SU',
+        'END:DAYLIGHT',
+        'BEGIN:STANDARD',
+        'TZOFFSETFROM:+0200',
+        'TZOFFSETTO:+0100',
+        'DTSTART:19701025T030000',
+        'RRULE:FREQ=YEARLY;BYMONTH=10;BYDAY=-1SU',
+        'END:STANDARD',
+        'END:VTIMEZONE',
+      ].join('\r\n'),
+    );
+    expect(ics).toMatch(
+      /DTSTART;VALUE=DATE:20270228\r\nDTEND;VALUE=DATE:20270301\r\nRRULE:FREQ=YEARLY\r\n/,
+    );
+    expect(ics.split('\r\n').every((line) => Buffer.byteLength(line) <= 75)).toBe(true);
+    // Anna's own feed: not the owner's private calendar.
+    expect(await (await feed(annasLink.url)).text()).not.toContain('Feedrunde');
+    expect((await feed(subscribed.url)).status).toBe(404);
+    expect((await ctx.request('/api/calendar-feed/ausgedacht.ics')).status).toBe(404);
+    // A blocked account's link opens nothing; one who left the workspace and was invited again
+    // has to subscribe anew.
+    const blockAnna = (at: Date | null) =>
+      ctx.deps.db.update(users).set({ blockedAt: at }).where(eq(users.id, anna.user.id));
+    await blockAnna(new Date());
+    expect((await feed(annasLink.url)).status).toBe(404);
+    await blockAnna(null);
+    expect((await feed(annasLink.url)).status).toBe(200);
+    auth.devLogin = true;
+    await ok(send('DELETE', `/workspaces/${ctx.workspaceId}/members/${anna.user.id}`), 204);
+    await ctx.deps.db
+      .insert(workspaceMembers)
+      .values({ workspaceId: ctx.workspaceId, userId: anna.user.id, role: 'member' });
+    expect((await feed(annasLink.url)).status).toBe(404);
   });
 });

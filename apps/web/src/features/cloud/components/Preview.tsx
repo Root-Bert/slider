@@ -244,10 +244,7 @@ export function Preview() {
               loading={ui.fetching.get(node.id) === 'loading'}
               disabled={!!why}
               title={why ?? undefined}
-              onClick={() => {
-                if (node.kind === 'folder') close();
-                ui.open(node);
-              }}
+              onClick={() => ui.open(node)}
             >
               Öffnen
             </Button>

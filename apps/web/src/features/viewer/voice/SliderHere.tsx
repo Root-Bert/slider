@@ -102,13 +102,15 @@ export function SliderHere() {
       pointed?.slideId === slide?.id ? '' : ` auf Folie ${at + 1}${inFile(pointed!.slideId, at)}`;
     lines.push(`Mit dem Zeiger gezeigt${where}: ${shapeWords(pointedShape)}`);
   }
+  // The open thread: whose it is and what it marks – never its words (another's message would
+  // reach orders as one's own; one's own draft goes with `Composer`).
   const thread = focusedThreadId ? threadById.get(focusedThreadId) : undefined;
   if (thread) {
     const on = slideOf(thread.root.slideId);
     const shapes = on ? markedShapes(on, thread.root.anchor, thread.root.strokes) : [];
     lines.push(
-      `Offener Kommentar von ${thread.root.author.name}: ${hereQuote(commentWords(thread.root))}${
-        shapes.length > 0 ? ` – zu ${shapes.map(shapeWords).join(', ')}` : ''
+      `Offener Kommentar von ${thread.root.author.name}${
+        shapes.length > 0 ? ` zu ${shapes.map(shapeWords).join(', ')}` : ''
       }${thread.replies.length > 0 ? ` (${thread.replies.length} Antworten)` : ''}`,
     );
   }

@@ -6,6 +6,7 @@ import { media, workspaceMembers, workspaces } from '../src/db/schema';
 import { attachmentBlocks } from '../src/services/attachments';
 import { blobKeys } from '../src/storage/blob-storage';
 import { slipsFrom } from '../src/services/video-cuts';
+import { spokenWords, withSpokenWords } from '../src/services/video-digest';
 import {
   createReadyDeck,
   createTestContext,
@@ -228,6 +229,11 @@ describe('PUT /comments/:commentId/recording', () => {
         // The one that is no JPEG left out. Taken off again, the digest goes with it.
         expect(read.slice(1).map((one) => one.type)).toEqual(['text', 'image']);
         expect(read[1]).toEqual({ type: 'text', text: '[Bild bei 0:04 aus „erklärt.mp4“]' });
+        // An app's or an agent's read_conversation: the same words in its line, other files named.
+        const spoken = await spokenWords(speech.deps, [video]);
+        expect(withSpokenWords('Schau', [video, { id: 'x', name: 'a.pdf' }], spoken)).toBe(
+          'Schau [„erklärt.mp4“: video, 0:12, said: Also hier ist der Plan. Hier ist der Plan.] [file „a.pdf“]',
+        );
         const digests = async () =>
           (
             await speech.deps.storage.list(

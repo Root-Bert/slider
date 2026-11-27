@@ -904,6 +904,12 @@ async function buildExport(
         allDay: row.allDay,
         startsAt: row.startsAt.toISOString(),
         endsAt: row.endsAt.toISOString(),
+        // A series: its RRULE from the first one, in its zone, the starts left out.
+        ...(row.recurrence && {
+          recurrence: row.recurrence,
+          timeZone: row.timeZone,
+          exdates: row.exdates,
+        }),
         madeByYou: row.createdBy === userId,
         createdAt: row.createdAt.toISOString(),
       })),
@@ -1360,7 +1366,7 @@ anrufe.json           Anrufe, in denen du warst: wann, mit wem, was du gesagt ha
 dokumente.json        Deine Kommentare in Textdokumenten und PDFs, deine Reaktionen, KI-Aufträge dort, was du in PDFs ausgefüllt hast; Unterschriften in unterschriften/
 todos.json            Deine eigenen Aufgaben und die, die du in Bereichen angelegt hast
 meilensteine.json     Deine eigenen Meilensteine
-kalender.json         Deine eigenen Kalender (privat, Unterkalender, die Namen der Kalender deiner Postfächer) mit ihren Terminen und die Termine, die du in Kalendern von Bereichen angelegt hast; Termine aus Postfächern bleiben beim Anbieter
+kalender.json         Deine eigenen Kalender (dein privater und die du angelegt hast, die Namen der Kalender deiner Postfächer) mit ihren Terminen und die Termine, die du in Kalendern von Bereichen angelegt hast; Termine aus Postfächern bleiben beim Anbieter
 mail.json             Deine Postfächer (Adresse, Server – ohne Anmeldedaten), die hier gelesenen und geschriebenen Mails (Text und gestaltete Fassung, Empfänger mit Bcc, was noch im Postausgang liegt) mit dem, was die KI dazu notiert hat; Anhänge und Bilder der Mails und Dateien, die an noch nicht gesendeten Mails hängen, in mail/
 mail-regeln.json      Deine Regeln für Absender: blockiert (landet in Spam) oder vertraut (nie in Spam)
 

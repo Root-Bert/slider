@@ -10,12 +10,13 @@ import {
   attachmentLimit,
   isCloudReference,
   isPictureAttachment,
+  isAudioAttachment,
   isVideoAttachment,
   MAX_ATTACHMENTS,
   type Attachment,
 } from '@slider/shared';
 import { digestVideo, dropAttachment, uploadAttachment } from '@/lib/api';
-import { videoDigestForm } from './lib/video-digest';
+import { audioDigestForm, videoDigestForm } from './lib/video-digest';
 
 /** A file put on what is being written: up already (`id`), or on its way (`progress`). */
 export interface FieldAttachment {
@@ -159,11 +160,13 @@ export function useAttachments({
             else kept.delete(field);
           }
         };
-        // A video's stills and sound, taken while it goes up: the AI reads it by them. Up only
-        // once they are handed over – an agent answering at once has them.
+        // A video's stills and sound (a voice message's sound), taken while it goes up: the AI
+        // reads it by them. Up only once they are handed over – an agent answering at once has them.
         const digest = isVideoAttachment(type)
           ? videoDigestForm(file, controller.signal).catch(() => null)
-          : null;
+          : isAudioAttachment(type)
+            ? audioDigestForm(file, controller.signal).catch(() => null)
+            : null;
         uploadAttachment(
           workspaceId,
           file,
@@ -247,6 +250,12 @@ export function useAttachments({
     [update],
   );
 
+  /** Out of the field, kept up: it went with a message of its own (a voice message). */
+  const take = useCallback(
+    (key: string) => update(current.current.filter((each) => each.key !== key)),
+    [update],
+  );
+
   /** Sent: the field is empty again (the files are the message's now – not dropped). */
   const clear = useCallback(() => {
     setError(null);
@@ -299,6 +308,7 @@ export function useAttachments({
     add,
     point,
     remove,
+    take,
     clear,
     restore,
     onPaste,

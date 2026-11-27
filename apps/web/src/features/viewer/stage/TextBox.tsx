@@ -411,9 +411,10 @@ export function TextBoxField({
                 !event.nativeEvent.isComposing;
               if (toComment && onLeave()) event.preventDefault();
             }}
+            // As big as the slide shows it, on a touch screen too (`.scaled-field`).
             className={cn(
               TEXT_CLASS,
-              'absolute inset-0 size-full resize-none overflow-hidden bg-transparent outline-none',
+              'scaled-field absolute inset-0 size-full resize-none overflow-hidden bg-transparent outline-none',
             )}
           />
         </div>

@@ -65,12 +65,7 @@ export function KeyRow({
         size="xs"
         variant="ghost"
         loading={pending('active')}
-        onClick={() =>
-          update.mutate(
-            { keyId: key.id, active: false },
-            { onSuccess: () => onNotify(`${name} ist nicht mehr aktiv`) },
-          )
-        }
+        onClick={() => update.mutate({ keyId: key.id, active: false })}
       >
         Nicht mehr nutzen
       </Button>
@@ -80,12 +75,7 @@ export function KeyRow({
       size="xs"
       variant="soft"
       loading={pending('active')}
-      onClick={() =>
-        update.mutate(
-          { keyId: key.id, active: true },
-          { onSuccess: () => onNotify(`${name} ist jetzt aktiv`) },
-        )
-      }
+      onClick={() => update.mutate({ keyId: key.id, active: true })}
     >
       Aktiv setzen
     </Button>
@@ -138,12 +128,7 @@ export function KeyRow({
               disabled={update.isPending}
               // Until the service answered (or when it does not): just the current one.
               options={options.map((model) => ({ value: model.id, label: model.name }))}
-              onChange={(model) =>
-                update.mutate(
-                  { keyId: key.id, model },
-                  { onSuccess: () => onNotify(`${name} nutzt jetzt ${model}`) },
-                )
-              }
+              onChange={(model) => update.mutate({ keyId: key.id, model })}
             />
             {models.isFetching && !models.data && (
               <Spinner size="sm" label="Modelle werden geladen" />
@@ -160,17 +145,7 @@ export function KeyRow({
               standardLabel={`Wie oben (${nameOf(key.model)})`}
               current={key.createModel}
               disabled={update.isPending}
-              onPick={(model) =>
-                update.mutate(
-                  { keyId: key.id, createModel: model },
-                  {
-                    onSuccess: () =>
-                      onNotify(
-                        `${AI_MODEL_ROLES.create.label} nutzt jetzt ${nameOf(model ?? key.model)}`,
-                      ),
-                  },
-                )
-              }
+              onPick={(model) => update.mutate({ keyId: key.id, createModel: model })}
             />
           </ModelLine>
         )}
@@ -188,17 +163,7 @@ export function KeyRow({
               }
               current={key.quickModel}
               disabled={update.isPending}
-              onPick={(model) =>
-                update.mutate(
-                  { keyId: key.id, quickModel: model },
-                  {
-                    onSuccess: () =>
-                      onNotify(
-                        `${AI_MODEL_ROLES.quick.label} nutzen jetzt ${nameOf(model ?? quickStandard)}`,
-                      ),
-                  },
-                )
-              }
+              onPick={(model) => update.mutate({ keyId: key.id, quickModel: model })}
             />
           </ModelLine>
         )}
@@ -241,14 +206,7 @@ export function KeyRow({
         confirmIcon="delete"
         pending={remove.isPending}
         error={remove.error?.message}
-        onConfirm={() =>
-          remove.mutate(key.id, {
-            onSuccess: () => {
-              setRemoving(false);
-              onNotify(key.hint ? 'API-Key entfernt' : `${name} entfernt`);
-            },
-          })
-        }
+        onConfirm={() => remove.mutate(key.id, { onSuccess: () => setRemoving(false) })}
       />
     </li>
   );

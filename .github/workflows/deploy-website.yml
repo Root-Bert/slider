@@ -4,7 +4,7 @@ name: Deploy website
 # that touches it is checked (astro check, build) and deployed right away. The job copies the
 # checkout to /opt/slider-site on the server and runs deploy/deploy-website.sh there, which swaps
 # only the website container; Slider keeps running on its release. Same secrets as deploy.yml.
-# Runs only in the development repository (Root-Bert/slider-dev), never in the public one or a fork.
+# Runs only in the development repository (Root-Bert/eigen-office), never in the public one or a fork.
 
 on:
   push:
@@ -38,7 +38,7 @@ concurrency:
 jobs:
   check:
     name: Check the site
-    if: github.repository == 'Root-Bert/slider-dev'
+    if: github.repository == 'Root-Bert/eigen-office'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v5

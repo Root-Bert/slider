@@ -269,6 +269,11 @@ interface Call {
    */
   orderOnSlide: Set<string>;
   /**
+   * Orders proposed from others' words too – someone else in the call or heard in it then: sent
+   * later, even once they left, its run is not only the words of who sends it (`Waiting.foreign`).
+   */
+  orderForeign: Set<string>;
+  /**
    * The agent that writes along, once someone spoke to it („Agent, …“): a Cloud agent made then,
    * as who spoke – it answers in the call (the notes stand at the call's entry, `call-records.ts`).
    */
@@ -468,6 +473,7 @@ export class CallHub {
         orders: [],
         orderHere: new Map(),
         orderOnSlide: new Set(),
+        orderForeign: new Set(),
         notesAgent: null,
         joined: new Map(),
         lines: [],
@@ -564,6 +570,7 @@ export class CallHub {
         orders: [],
         orderHere: new Map(),
         orderOnSlide: new Set(),
+        orderForeign: new Set(),
         notesAgent: null,
         joined: new Map(),
         lines: [],
@@ -821,7 +828,9 @@ export class CallHub {
           undefined,
           undefined,
           undefined,
-          false,
+          // With others in the call, its order is the voice's words from what anyone said: no
+          // mail, no connections of who asked (`Waiting.foreign`) – as for a look-up (`ask`).
+          peopleIn(call) > 1,
           [],
           false,
           undefined,
@@ -1613,6 +1622,7 @@ export class CallHub {
     for (const order of gone) {
       call.orderHere.delete(order.id);
       call.orderOnSlide.delete(order.id);
+      call.orderForeign.delete(order.id);
     }
     const listed = propose(
       call.orders,
@@ -1625,6 +1635,10 @@ export class CallHub {
       call.orderOnSlide,
     ).filter((order) => order.state === 'proposed');
     if (here) for (const order of [...listed, ...sent]) call.orderHere.set(order.id, here);
+    const othersHeard =
+      peopleIn(call) > 1 ||
+      call.record.some((turn) => turn.userId !== null && turn.userId !== viewer.author.id);
+    if (othersHeard) for (const order of [...listed, ...sent]) call.orderForeign.add(order.id);
     for (const order of sent) {
       order.state = 'running';
       order.sentBy = viewer.author as AccountAuthor;
@@ -1655,6 +1669,7 @@ export class CallHub {
       for (const order of picked) {
         call.orderHere.delete(order.id);
         call.orderOnSlide.delete(order.id);
+        call.orderForeign.delete(order.id);
       }
       this.changed(call);
       if (spoken) await this.say(deps, call, `Verworfen: ${names}.`);
@@ -1695,6 +1710,12 @@ export class CallHub {
     const here = call.orderHere.get(order.id);
     call.orderHere.delete(order.id);
     const onSlide = call.orderOnSlide.delete(order.id);
+    // Others' words: proposed with them there, others still in the call, or anyone but who sends
+    // it heard in it (anyone may send it with ✓ – who proposed it may have left).
+    const foreign =
+      call.orderForeign.delete(order.id) ||
+      peopleIn(call) > 1 ||
+      call.record.some((turn) => turn.userId !== null && turn.userId !== viewer.author.id);
     const front = onSlide && here?.userId === viewer.author.id ? slideInFront(here.text) : null;
     if (front) return this.toSlide(deps, viewer, call, order, front);
     const text = [
@@ -1709,7 +1730,20 @@ export class CallHub {
     let problem: unknown = null;
     for (const areaId of call.areaId ? [call.areaId, null] : [null]) {
       try {
-        agentId = (await createCloudAgent(deps, viewer, call.workspaceId, text, areaId)).id;
+        agentId = (
+          await createCloudAgent(
+            deps,
+            viewer,
+            call.workspaceId,
+            text,
+            areaId,
+            undefined,
+            undefined,
+            undefined,
+            // From others' words too: not only those of who sent it off (`Waiting.foreign`).
+            foreign,
+          )
+        ).id;
         break;
       } catch (error) {
         problem = error;

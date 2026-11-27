@@ -1,6 +1,12 @@
 import { createContext, use, useState, type ReactNode } from 'react';
 import { Link, useNavigate } from 'react-router';
-import type { SenderTriage, TriageAgendaItem, TriageGroup, TriageItem } from '@slider/shared';
+import {
+  ALL_MAILBOXES,
+  type SenderTriage,
+  type TriageAgendaItem,
+  type TriageGroup,
+  type TriageItem,
+} from '@slider/shared';
 import {
   useMailThreads,
   useMembers,
@@ -10,8 +16,22 @@ import {
   useSenderTriage,
   useUnsubscribeMail,
 } from '@/lib/api';
-import { AsideAgent, CloudProvider } from '@/features/cloud';
-import { setDraft } from '@/lib/drafts';
+import { useAccount } from '@/features/auth';
+import {
+  AgentComposer,
+  AsideAgent,
+  CloudProvider,
+  HomeBoard,
+  Nothing,
+  SHARED_DEFAULTS,
+  SHARED_INFO,
+  SHARED_VIEWS,
+  useFrame,
+  useHomeLayout,
+  WidgetHead,
+  type BoardKit,
+} from '@/features/cloud';
+import { draftKeys, setDraft } from '@/lib/drafts';
 import { formatRelativeTime } from '@/lib/format';
 import { useOverviewAgent } from '@/lib/overview-agents';
 import { CLOUD_TODO_PARAM, routes } from '@/lib/routes';
@@ -60,7 +80,10 @@ function useTriageStamp(mailbox: string | undefined) {
   const mail = useMailThreads(ui.workspace.id).data;
   if (!ui.home || !mail) return null;
   const chats = mailbox ? [] : [...allChannels(ui.home), ...ui.home.agents];
-  return [...chats, ...mail.filter((each) => !mailbox || each.accountId === mailbox)]
+  return [
+    ...chats,
+    ...mail.filter((each) => !mailbox || mailbox === ALL_MAILBOXES || each.accountId === mailbox),
+  ]
     .filter((each) => each.unread > 0)
     .map((each) => `${each.id}:${each.unread}:${each.updatedAt}`)
     .sort()
@@ -73,14 +96,27 @@ const MailHref = createContext<((threadId: string) => string) | undefined>(undef
 /** What is being done with some items, in the page under their group's head. */
 type Pending = { kind: 'agent' | 'talk'; group: string; items: TriageItem[]; label: string };
 
-export function Triage({
-  mailbox,
-  mailHref,
-}: {
-  mailbox?: string;
-  /** Where a mail opens – in a mailbox's „Übersicht“, beside it, the view kept. */
-  mailHref?: (threadId: string) => string;
-}) {
+/** What the page's widgets share: the look, what is being done, and what to do with groups. */
+interface TriageState {
+  mailbox: string | undefined;
+  /** The board's first widget of the look's: it alone waits (skeleton) or says it failed. */
+  lead: string | undefined;
+  triage: SenderTriage | null;
+  /** Not come (`Failed`), or asked again (the AI's look). */
+  failed: Error | null;
+  asking: boolean;
+  retryPlain: () => void;
+  retryTold: () => void;
+  pages: ReadonlyMap<string, string>;
+  pending: Pending | null;
+  setPending: (pending: Pending | null) => void;
+  markRead: (items: readonly TriageItem[]) => void;
+  unsubscribe: (senders: readonly NewsletterSender[]) => void;
+}
+const TriageContext = createContext<TriageState | null>(null);
+const useTriage = () => use(TriageContext)!;
+
+function useTriageState(mailbox: string | undefined, lead: string | undefined): TriageState {
   const ui = useSender();
   const stamp = useTriageStamp(mailbox);
   const { plain, told } = useSenderTriage(ui.workspace.id, stamp, mailbox);
@@ -130,47 +166,237 @@ export function Triage({
     );
   };
 
-  if (!triage) {
-    return plain.isError ? (
-      <Failed message={plain.error.message} onRetry={() => void plain.refetch()} />
-    ) : (
-      <UnreadSkeleton />
-    );
-  }
-  const asking = told.isFetching;
-  const count = triage.groups.reduce((sum, group) => sum + group.items.length, 0);
+  return {
+    mailbox,
+    lead,
+    triage: triage ?? null,
+    failed: plain.isError ? plain.error : null,
+    asking: told.isFetching,
+    retryPlain: () => void plain.refetch(),
+    retryTold: () => void told.refetch(),
+    pages,
+    pending,
+    setPending,
+    markRead,
+    unsubscribe,
+  };
+}
 
+const unreadCount = (triage: SenderTriage) =>
+  triage.groups.reduce((sum, group) => sum + group.items.length, 0);
+
+/* The page's widgets (the user, 2026-11-25: „alle übersichts seiten sollen so widgety customizable
+ * sein“) – as on Cloud's „Zuletzt“, arranged with „Anpassen“. */
+
+/** Before the look has come: the first of its widgets waits or says it failed, the rest stay out. */
+function Waiting() {
+  const state = useTriage();
+  const frame = useFrame();
+  if (frame.widget.id !== state.lead) return null;
+  return state.failed ? (
+    <Failed message={state.failed.message} onRetry={state.retryPlain} />
+  ) : (
+    <UnreadSkeleton />
+  );
+}
+
+/** The order field, under it what the AI makes of all that is unread. */
+function BriefWidget() {
+  const state = useTriage();
+  const { triage } = state;
+  if (!triage) return <Waiting />;
+  return (
+    <Headline
+      triage={triage}
+      asking={state.asking}
+      count={unreadCount(triage)}
+      mailbox={state.mailbox}
+      onRetry={state.retryTold}
+    />
+  );
+}
+
+/**
+ * „Auftrag“: as Cloud's (`cloud/home/widgets.tsx`) – the order becomes an agent of one's own,
+ * opened at once; without the overview („Ohne Übersicht dazu.“).
+ */
+function OrderWidget() {
+  const ui = useSender();
+  const { triage } = useTriage();
+  const { workspace } = ui;
+  const order = useOrderCloudAgent(workspace.id);
+  const navigate = useNavigate();
+  if (triage?.ai === 'off') return <Nothing>Die KI ist in diesem Workspace aus.</Nothing>;
+  return (
+    <>
+      <WidgetHead />
+      <AgentComposer
+        top
+        placeholder="Was soll erledigt werden?"
+        keep={{
+          key: draftKeys.newAgent(workspace.id),
+          target: { kind: 'agent-new', workspaceId: workspace.id },
+        }}
+        busy={order.isPending}
+        workspaceId={workspace.id}
+        onSend={(text, attachments) =>
+          order.mutateAsync({ text, attachments }).then(
+            (agent) => {
+              void navigate(ui.agentPath(agent.id));
+              return true;
+            },
+            (error: Error) => {
+              ui.notify(error.message, 'danger');
+              return false;
+            },
+          )
+        }
+      />
+    </>
+  );
+}
+
+/** „Heute und diese Woche“: events, to-dos due, what earlier mails say is due. */
+function AgendaWidget() {
+  const { triage } = useTriage();
+  if (!triage) return <Waiting />;
+  return (
+    <>
+      <WidgetHead />
+      {triage.agenda.length > 0 ? (
+        <Agenda agenda={triage.agenda} />
+      ) : (
+        <Nothing>Für heute und diese Woche steht nichts an.</Nothing>
+      )}
+    </>
+  );
+}
+
+/** What is unread, in groups – side by side where there is room. */
+function UnreadWidget() {
+  const state = useTriage();
+  const { triage } = state;
+  if (!triage) return <Waiting />;
+  if (triage.groups.length === 0)
+    return <Nothing>Nichts Ungelesenes. Was neu dazukommt, steht hier.</Nothing>;
+  return (
+    <div className="@container">
+      <div
+        className={cn(
+          'grid grid-cols-1 items-start gap-x-12 gap-y-8',
+          triage.groups.length > 1 && '@5xl:grid-cols-2',
+        )}
+      >
+        {triage.groups.map((group) => (
+          <Group
+            key={group.key}
+            group={group}
+            pages={state.pages}
+            pending={state.pending?.group === group.key ? state.pending : null}
+            setPending={state.setPending}
+            onRead={state.markRead}
+            onUnsubscribe={state.unsubscribe}
+          />
+        ))}
+      </div>
+    </div>
+  );
+}
+
+/**
+ * „Aktuell“, and „Übersicht“ in „Post“ (every mailbox's the same arrangement). Made when first
+ * drawn, not as the module loads: Cloud's board parts come through Cloud, which imports Sender.
+ */
+type Place = 'aktuell' | 'post';
+/** The kinds that show the look (not „Heute“, „Notiz“). */
+const TRIAGE_KINDS = { brief: true, agenda: true, unread: true };
+const kits = new Map<Place, BoardKit>();
+function kitOf(place: Place): BoardKit {
+  let kit = kits.get(place);
+  if (kit) return kit;
+  const defaults = {
+    order: { w: 12, h: 'auto', look: 'none', untitled: true },
+    brief: { w: 12, h: 'auto', look: 'none', untitled: true },
+    agenda: { w: 12, h: 'auto', look: 'none' },
+    unread: { w: 12, h: 'auto', look: 'none', untitled: true },
+    ...SHARED_DEFAULTS,
+  } as const;
+  kit = {
+    spec: {
+      key: place === 'aktuell' ? 'slider.sender.aktuell.v1' : 'slider.sender.post.v1',
+      types: Object.keys(defaults),
+      defaults,
+      defaultTypes: ['brief', 'agenda', 'unread'],
+      // The field with the sentence or alone, as on „Zuletzt“: one replaces the other.
+      rival: { order: 'brief' },
+    },
+    info: {
+      order: {
+        label: 'Auftrag',
+        icon: 'send',
+        about: 'Was soll erledigt werden? Daraus wird ein Agent. Ohne Übersicht dazu.',
+      },
+      brief: {
+        label: 'Für dich',
+        icon: 'autoAwesome',
+        about: 'Der Auftrag, darunter, was die KI vom Ungelesenen sagt',
+      },
+      agenda: {
+        label: 'Heute und diese Woche',
+        icon: 'event',
+        about: 'Termine, fällige Aufgaben und Fristen aus Mails',
+      },
+      unread: {
+        label: 'Ungelesen',
+        icon: 'markEmailUnread',
+        about: 'Alles Ungelesene nach Art, mit dem, was sich auf einmal tun lässt',
+      },
+      ...SHARED_INFO,
+    },
+    views: {
+      order: OrderWidget,
+      brief: BriefWidget,
+      agenda: AgendaWidget,
+      unread: UnreadWidget,
+      ...SHARED_VIEWS,
+    },
+  };
+  kits.set(place, kit);
+  return kit;
+}
+
+export function Triage({
+  place,
+  mailbox,
+  mailHref,
+  editing,
+  onEdit,
+}: {
+  place: Place;
+  mailbox?: string | undefined;
+  /** Where a mail opens – in a mailbox's „Übersicht“, beside it, the view kept. */
+  mailHref?: ((threadId: string) => string) | undefined;
+  editing: boolean;
+  onEdit: (editing: boolean) => void;
+}) {
+  const ui = useSender();
+  const { user } = useAccount();
+  const kit = kitOf(place);
+  const [layout] = useHomeLayout(kit.spec, user.id, ui.workspace.id);
+  const lead = layout.find((widget) => widget.type in TRIAGE_KINDS)?.id;
+  const state = useTriageState(mailbox, lead);
   return (
     <MailHref value={mailHref}>
-      {/* The whole width, as Cloud's overview: groups side by side where there is room. */}
-      <div className="@container flex flex-col gap-8">
-        <Headline
-          triage={triage}
-          asking={asking}
-          count={count}
-          mailbox={mailbox}
-          onRetry={() => void told.refetch()}
+      <TriageContext value={state}>
+        <HomeBoard
+          kit={kit}
+          userId={user.id}
+          workspaceId={ui.workspace.id}
+          notify={ui.notify}
+          editing={editing}
+          onEdit={onEdit}
         />
-        {triage.agenda.length > 0 && <Agenda agenda={triage.agenda} />}
-        <div
-          className={cn(
-            'grid grid-cols-1 items-start gap-x-12 gap-y-8',
-            triage.groups.length > 1 && '@5xl:grid-cols-2',
-          )}
-        >
-          {triage.groups.map((group) => (
-            <Group
-              key={group.key}
-              group={group}
-              pages={pages}
-              pending={pending?.group === group.key ? pending : null}
-              setPending={setPending}
-              onRead={markRead}
-              onUnsubscribe={unsubscribe}
-            />
-          ))}
-        </div>
-      </div>
+      </TriageContext>
     </MailHref>
   );
 }
@@ -188,20 +414,13 @@ function Headline({
   mailbox: string | undefined;
   onRetry: () => void;
 }) {
-  // Answered, asked about or handed on right under it – not without the AI.
+  // The order field on top, as over Cloud's „Für dich“ – answered, asked about or handed on
+  // there; not without the AI.
   const ask = triage.ai !== 'off' && <OverviewAsk mailbox={mailbox} />;
-  if (count === 0 && !triage.headline && triage.agenda.length === 0)
-    return (
-      <div className="flex flex-col gap-3">
-        <p className="py-2 text-body text-fg-muted">
-          Alles gelesen. Was neu dazukommt, steht hier.
-        </p>
-        {ask}
-      </div>
-    );
   // No spinner: the AI's look is made ahead on the server – until there is one, the count.
   return (
     <div className="flex flex-col gap-1.5">
+      {ask && <div className="mb-2.5">{ask}</div>}
       <p className="flex items-start gap-2.5 text-base leading-6 font-medium text-fg">
         <span className="flex h-6 shrink-0 items-center text-fg-muted">
           <Icon name="autoAwesome" size={18} />
@@ -224,13 +443,12 @@ function Headline({
       {!asking && triage.ai === 'off' && triage.reason && (
         <p className="pl-7 text-body text-fg-muted">{triage.reason}</p>
       )}
-      {ask && <div className="mt-1.5 pl-7">{ask}</div>}
     </div>
   );
 }
 
 /**
- * Under the headline: a reply, a question or an order to an agent of one's own, its chat right
+ * Over the headline, the order field: a reply, a question or an order to an agent of one's own, its chat right
  * there („Nachfragen“ as beside a mail) – the agent is told what the page shows, by id.
  */
 function OverviewAsk({ mailbox }: { mailbox: string | undefined }) {
@@ -246,7 +464,7 @@ function OverviewAsk({ mailbox }: { mailbox: string | undefined }) {
       onAgent={setAgentId}
       order={order}
       overview={overview}
-      placeholder="Frag dazu oder gib einen Auftrag …"
+      placeholder="Was soll erledigt werden?"
       agentPath={ui.agentPath}
       notify={ui.notify}
       wrapChat={(chat) => <CloudProvider workspace={ui.workspace}>{chat}</CloudProvider>}
@@ -273,11 +491,7 @@ function Agenda({ agenda }: { agenda: TriageAgendaItem[] }) {
         : mailHref(each.id);
   return (
     <section aria-label="Heute und diese Woche" className="flex min-w-0 flex-col gap-1">
-      <div className="flex items-center gap-x-2">
-        <Icon name="event" size={18} className="shrink-0 text-fg-muted" />
-        <h2 className="text-base font-semibold text-fg">Heute und diese Woche</h2>
-      </div>
-      <RowList variant="hover" aria-label="Heute und diese Woche" className="mt-1">
+      <RowList variant="hover" aria-label="Heute und diese Woche">
         {agenda.map((each) => (
           <ListRow
             key={`${each.kind}:${each.id}`}

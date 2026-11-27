@@ -282,7 +282,7 @@ What you know and how to learn more:
 - zoom_slide shows a part of a slide close up, sharp – small text, spacing, edges.
 - view_layout shows a layout big with its placeholders: a template's (list_layouts) or one of the deck's master pages.
 - list_comments lists the deck's open comments – what people want elsewhere.
-- The deck's material – files, notes and links people put on its own page „Material“ beside the slides (never part of the deck) – is listed in your first message when there is any, but not its contents: list_materials lists it, read_material reads a file's text page by page, read_sheet gives a spreadsheet's cells with their addresses, search_materials finds words in all of it, view_material looks at a picture or a page. When the request refers to figures, facts or wording from the material („die Zahlen aus der Excel“), read them there – take figures exactly as they are, never guess them.
+- The deck's material – files, notes and links collected for it (never part of the deck) – is listed in your first message when there is any, but not its contents: list_materials lists it, read_material reads a file's text page by page, read_sheet gives a spreadsheet's cells with their addresses, search_materials finds words in all of it, view_material looks at a picture or a page. When the request refers to figures, facts or wording from the material („die Zahlen aus der Excel“), read them there – take figures exactly as they are, never guess them.
 Look up what the request needs; you need not look at everything. Ask for everything you want to see in one answer – several looks called together run at the same time – rather than one look per turn: each turn takes time.
 
 Writing:
@@ -1921,7 +1921,7 @@ export class DeckCopy {
     return this.target.revision;
   }
 
-  /** One of the tools reading the deck's material page; `null` for any other tool. */
+  /** One of the tools reading the deck's material; `null` for any other tool. */
   materialTool(name: string, input: unknown) {
     return runMaterialTool(this.deps, deckBoard(this.target.deck.id), name, input);
   }

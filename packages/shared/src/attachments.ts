@@ -69,6 +69,9 @@ export const isPictureAttachment = (type: string) => /^image\/(png|jpeg|gif|webp
 /** Videos a browser plays in the message (a recording sent in Sender). */
 export const isVideoAttachment = (type: string) => /^video\/(mp4|webm)$/.test(type);
 
+/** Sound a browser plays in the message (a voice message sent in Sender). */
+export const isAudioAttachment = (type: string) => /^audio\/(mp4|x-m4a|webm|ogg|mpeg)$/.test(type);
+
 /**
  * A part of a recorded video the AI would cut („KI-Schnitt“, `POST …/video-cuts`), in seconds –
  * and why („Pause“, „Versprecher“).

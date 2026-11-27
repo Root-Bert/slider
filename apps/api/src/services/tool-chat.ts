@@ -19,6 +19,9 @@ type ToolResult = Anthropic.Beta.BetaToolResultBlockParam;
 
 /** Turns before it must answer: a listing, some reading, a few changes. */
 const MAX_TURNS = 40;
+/** Told before the last turn: it answers now, with no more tools. */
+export const LAST_TURN =
+  'That was your last step with tools: answer now – what is done, what is not, and what is left.';
 /** Tokens one answer may take, all its turns. */
 const TASK_BUDGET_TOKENS = 600_000;
 
@@ -42,10 +45,19 @@ export interface ToolChat {
   filesOwner?: string;
   /** Who the AI works for: Cloud files pointed to are read only as far as they may see them. */
   filesReader?: string;
-  /** Asked once – and again whenever the tools changed (`tools` as a function). */
+  /** Asked each turn: what the run allows may change while it works (unchanged, the cache holds). */
   system: () => string | Promise<string>;
   /** As a function asked each turn: what it may do can change while it works. */
   tools: Anthropic.Beta.BetaTool[] | (() => Anthropic.Beta.BetaTool[]);
+  /**
+   * Tools the model finds when it needs them instead of reading them all each turn (tool search,
+   * where the service has it – `findsTools`); elsewhere every tool goes whole.
+   */
+  deferred?: (name: string) => boolean;
+  /** Tools whose calls side by side run at once (they only read and take long – helpers). */
+  parallel?: (name: string) => boolean;
+  /** How often a tool may be called in one turn; the calls beyond are refused. */
+  perTurn?: (name: string) => number | undefined;
   /** Runs one tool as the person; `changed`: something was touched. Throws what went wrong. */
   run: (
     name: string,
@@ -64,6 +76,8 @@ export interface ToolChat {
   doneSoFar?: () => string;
   /** The answer is over: its slot is free again. */
   release: () => void;
+  /** Told after each turn how much of the model's context its request filled. */
+  measured?: (tokens: number) => void;
 }
 
 /**
@@ -111,24 +125,42 @@ export async function answerToolChat(
     await say('user', chat.text, chat.attachments);
     // The talk begins with the person (a history cut at its start may not).
     while (messages[0]?.role === 'assistant') messages.shift();
-    const toolsNow = () => (typeof chat.tools === 'function' ? chat.tools() : chat.tools);
-    const namesOf = (list: readonly Anthropic.Beta.BetaTool[]) =>
-      list.map((tool) => tool.name).join(' ');
-    let tools = toolsNow();
+    // In a run its tools only grow: one offered stays named, in its place – the talk may have its
+    // calls and tool search's references to it, which the API refuses without it. What the run no
+    // longer allows (a message of others' words taken in) its `run` refuses.
+    const given = new Map<string, Anthropic.Beta.BetaTool>();
+    const toolsNow = () => {
+      for (const tool of typeof chat.tools === 'function' ? chat.tools() : chat.tools)
+        given.set(tool.name, tool);
+      const list = [...given.values()];
+      const { deferred } = chat;
+      return deferred
+        ? list.map((tool) => (deferred(tool.name) ? { ...tool, defer_loading: true } : tool))
+        : list;
+    };
     const system = async () =>
       filesSent ? `${await chat.system()}\n\n${ATTACHED_FILES_ARE_DATA}` : chat.system();
-    let prompt = await system();
     for (let turn = 0; ; turn += 1) {
       let turnText = '';
-      const now = toolsNow();
-      if (namesOf(now) !== namesOf(tools)) {
-        tools = now;
-        prompt = await system();
-      }
+      // Asked each turn: what the run allows may change with a message taken in (others' words),
+      // and the prompt says it – unchanged, the same text, the cache holds.
+      const tools = toolsNow();
+      const prompt = await system();
+      // The last turn may only answer – told so also where the turn before ended without tools (a
+      // message taken in); after a paused turn nothing may stand between, the flag alone holds.
+      const asked = messages.at(-1);
+      if (
+        turn === MAX_TURNS - 1 &&
+        asked?.role === 'user' &&
+        Array.isArray(asked.content) &&
+        !asked.content.some((block) => block.type === 'text' && block.text === LAST_TURN)
+      )
+        asked.content.push({ type: 'text', text: LAST_TURN });
       const result = await runTurn(deps, connection, {
         system: prompt,
-        // The last turn may only answer.
-        tools: turn < MAX_TURNS - 1 ? tools : [],
+        // The last turn may only answer – its tools still named: the talk has calls in it.
+        tools,
+        answerOnly: turn >= MAX_TURNS - 1,
         messages,
         taskBudgetTokens: TASK_BUDGET_TOKENS,
         effort: 'medium',
@@ -144,6 +176,7 @@ export async function answerToolChat(
           emit({ type: 'text', text });
         },
       });
+      if (result.contextTokens) chat.measured?.(result.contextTokens);
       // What did not stream (another provider tells it whole) is sent now.
       const written = result.content
         .flatMap((block) => (block.type === 'text' ? [block.text] : []))
@@ -168,37 +201,49 @@ export async function answerToolChat(
         streamed = true;
         break;
       }
+      // A tool the service runs itself (tool search) took long: it goes on where it stopped.
+      if (result.stop === 'pause_turn' && turn < MAX_TURNS - 1) continue;
+      // A service that calls a tool in the last turn anyway: the run ends here.
+      if (result.stop === 'tool_use' && turn >= MAX_TURNS - 1) break;
       if (result.stop !== 'tool_use') {
         // Written to meanwhile: that is answered too – while it may still use its tools.
         const more = turn < MAX_TURNS - 1 ? chat.more?.() : null;
         if (!more) break;
-        say('user', more);
+        await say('user', more);
         continue;
       }
       const results: ToolResult[] = [];
-      for (const block of result.content) {
-        if (block.type !== 'tool_use') continue;
-        if (result.unreadable?.includes(block.id)) {
-          results.push({
+      const calledNow = new Map<string, number>();
+      const runOne = async (block: Anthropic.Beta.BetaToolUseBlock): Promise<ToolResult> => {
+        const most = chat.perTurn?.(block.name);
+        const nth = (calledNow.get(block.name) ?? 0) + 1;
+        calledNow.set(block.name, nth);
+        if (most !== undefined && nth > most)
+          return {
+            type: 'tool_result',
+            tool_use_id: block.id,
+            content: `Not done: at most ${most} ${block.name} calls in one step – call the rest once these have answered.`,
+            is_error: true,
+          };
+        if (result.unreadable?.includes(block.id))
+          return {
             type: 'tool_result',
             tool_use_id: block.id,
             content: 'Your input was not readable JSON – send the call again.',
             is_error: true,
-          });
-          continue;
-        }
+          };
         const label = chat.label(block.name, block.input);
         const app = chat.app?.(block.name);
         if (label) emit({ type: 'reading', label, ...(app ? { app } : {}) });
         try {
           const ran = await chat.run(block.name, block.input ?? {});
           if (ran.changed) emit({ type: 'changed' });
-          results.push({
+          return {
             type: 'tool_result',
             tool_use_id: block.id,
             content: ran.content,
             ...(ran.isError ? { is_error: true } : {}),
-          });
+          };
         } catch (caught) {
           // What the page would say to the person (no right, name taken, gone) the AI is told.
           // Anything else (the storage, the database) is told too, without its words: the answer
@@ -211,7 +256,7 @@ export async function answerToolChat(
             if (controller.signal.aborted) throw caught;
             deps.log.warn(`${chat.name} tool ${block.name} failed: ${String(caught)}`);
           }
-          results.push({
+          return {
             type: 'tool_result',
             tool_use_id: block.id,
             content: !expected
@@ -220,9 +265,21 @@ export async function answerToolChat(
                 ? `Invalid input: ${caught.message}`
                 : caught.message,
             is_error: true,
-          });
+          };
         }
-        if (controller.signal.aborted) break;
+      };
+      const calls = result.content.filter((block) => block.type === 'tool_use');
+      for (let at = 0; at < calls.length && !controller.signal.aborted;) {
+        // Calls side by side that may run at once (helpers looking into things) run at once.
+        let end = at + 1;
+        while (
+          end < calls.length &&
+          chat.parallel?.(calls[at]?.name ?? '') &&
+          chat.parallel(calls[end]?.name ?? '')
+        )
+          end += 1;
+        results.push(...(await Promise.all(calls.slice(at, end).map(runOne))));
+        at = end;
       }
       if (controller.signal.aborted) {
         state = 'stopped';
@@ -231,7 +288,7 @@ export async function answerToolChat(
       const more = chat.more?.();
       messages.push({
         role: 'user',
-        content: more ? [...results, { type: 'text', text: more }] : results,
+        content: [...results, ...(more ? [{ type: 'text' as const, text: more }] : [])],
       });
     }
     if (state === 'done' && !wrote) {

@@ -3,10 +3,10 @@ import { Link } from 'react-router';
 import { searchFold, type CloudAgentSummary } from '@slider/shared';
 import { formatRelativeTime } from '@/lib/format';
 import { routes } from '@/lib/routes';
+import { useViewChoice } from '@/lib/view-choice';
 import { useDeckContextMenu } from '@/features/reviews';
 import { Avatar, cn, Icon, IconButton, Toolbar, Tooltip } from '@/ui';
 import { useCloud } from '../hooks/useCloud';
-import { useStoredChoice } from '../hooks/useStoredChoice';
 import { agentState, autoWords } from '../lib/kinds';
 import { AgentFace } from './AgentFace';
 import { AgentActions, AgentTitleInput, hasAgentActions } from './AgentActions';
@@ -267,7 +267,7 @@ function AreaMark({ agent, bar = false }: { agent: CloudAgentSummary; bar?: bool
 const AGENT_VIEWS = ['tiles', 'list'] as const;
 export type AgentView = (typeof AGENT_VIEWS)[number];
 /** Tiles or rows: one choice for every list of agents. */
-export const useAgentView = () => useStoredChoice('slider.cloud.agents-view', AGENT_VIEWS, 'tiles');
+export const useAgentView = () => useViewChoice('slider.cloud.agents-view', AGENT_VIEWS, 'tiles');
 
 export function AgentViewToggle({
   view,

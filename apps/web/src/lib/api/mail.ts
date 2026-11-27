@@ -19,7 +19,7 @@ import type {
   MailThreadSummary,
   MailUpload,
 } from '@slider/shared';
-import { withSignature } from '@slider/shared';
+import { ALL_MAILBOXES, withSignature } from '@slider/shared';
 import {
   keepPreviousData,
   useMutation,
@@ -74,6 +74,10 @@ export function mailChanged(
   });
 }
 
+/** `&account=` for one mailbox; none for every one (`''`, „Alle“'s `ALL_MAILBOXES`). */
+const accountParam = (accountId: string) =>
+  accountId && accountId !== ALL_MAILBOXES ? `&account=${encodeURIComponent(accountId)}` : '';
+
 export const useMailAccounts = (workspaceId: string) =>
   useQuery({
     queryKey: mailKeys.accounts(workspaceId),
@@ -109,7 +113,7 @@ export const useMailSearch = (
     queryKey: mailKeys.search(workspaceId, query, accountId, inText),
     queryFn: () =>
       api.get<MailThreadSummary[]>(
-        `/workspaces/${workspaceId}/mail/threads?q=${encodeURIComponent(query)}${accountId ? `&account=${encodeURIComponent(accountId)}` : ''}${inText ? '&in=all' : ''}`,
+        `/workspaces/${workspaceId}/mail/threads?q=${encodeURIComponent(query)}${accountParam(accountId)}${inText ? '&in=all' : ''}`,
       ),
     enabled: enabled && query !== '',
     placeholderData: keepPreviousData,
@@ -132,7 +136,7 @@ export const useMailSearchOnServer = (workspaceId: string) => {
       inText: boolean;
     }) =>
       api.post<void>(
-        `/workspaces/${workspaceId}/mail/search?q=${encodeURIComponent(query)}&account=${encodeURIComponent(accountId)}${inText ? '&in=all' : ''}`,
+        `/workspaces/${workspaceId}/mail/search?q=${encodeURIComponent(query)}${accountParam(accountId)}${inText ? '&in=all' : ''}`,
       ),
     onSuccess: (_none, { query, accountId, inText }) =>
       queryClient.invalidateQueries({
@@ -162,7 +166,7 @@ const folderQuery = (
       : mailKeys.folder(workspaceId, accountId, folder),
   queryFn: () =>
     api.get<MailThreadSummary[]>(
-      `/workspaces/${workspaceId}/mail/threads?account=${encodeURIComponent(accountId)}&folder=${encodeURIComponent(folder)}${limit > MAIL_LISTED ? `&limit=${limit}` : ''}`,
+      `/workspaces/${workspaceId}/mail/threads?folder=${encodeURIComponent(folder)}${accountParam(accountId)}${limit > MAIL_LISTED ? `&limit=${limit}` : ''}`,
     ),
 });
 
@@ -194,7 +198,7 @@ export const useOlderMail = (workspaceId: string) => {
   return useMutation({
     mutationFn: ({ accountId, folder }: { accountId: string; folder: string }) =>
       api.post<{ more: boolean; failed: boolean }>(
-        `/workspaces/${workspaceId}/mail/older?account=${encodeURIComponent(accountId)}&folder=${encodeURIComponent(folder)}`,
+        `/workspaces/${workspaceId}/mail/older?folder=${encodeURIComponent(folder)}${accountParam(accountId)}`,
       ),
     onSuccess: () => queryClient.invalidateQueries({ queryKey: mailKeys.threads(workspaceId) }),
   });

@@ -15,7 +15,6 @@ import { basicCatalog } from '@a2ui/web_core/catalogs/basic/v1';
 import { setMarkdownRenderer } from '@a2ui/web_core/universal';
 
 const PROTOCOL_VERSION = '2026-01-26';
-const A2UI_MIME = 'application/a2ui+json';
 
 type Content =
   | { type: 'text'; text: string }
@@ -23,8 +22,25 @@ type Content =
   | { type: 'resource'; resource: { uri: string; mimeType?: string; text?: string } };
 interface ToolResult {
   content?: Content[];
+  structuredContent?: { a2ui?: unknown };
   isError?: boolean;
 }
+
+// ── Nothing fails silently ───────────────────────────────────────────────────
+// A blank frame in the host tells nobody anything: every failure writes a line into the page, in
+// a grey that reads on a light host and a dark one alike.
+
+function say(text: string) {
+  const line = document.createElement('p');
+  line.style.cssText = 'margin:0;padding:8px 0;font-size:13px;color:#888';
+  line.textContent = text;
+  document.getElementById('root')?.append(line);
+  requestAnimationFrame(sizeChanged);
+}
+// Errors while loading (A2UI's imports run before this module) are caught by the classic script
+// build.ts puts before it; from here on the same handlers see them.
+let lastHeight = 0;
+let waited = false;
 
 // The card's texts need headings and lines only – no markdown library in the bundle.
 const escape = (text: string) => text.replace(/[&<>"']/g, (char) => `&#${char.charCodeAt(0)};`);
@@ -98,21 +114,60 @@ function makeProcessor() {
   return made;
 }
 
-function show(result: ToolResult | undefined) {
-  const content = result?.content ?? [];
-  const a2ui = content.find(
-    (part): part is Extract<Content, { type: 'resource' }> =>
-      part.type === 'resource' && part.resource.mimeType === A2UI_MIME,
-  );
-  if (!a2ui?.resource.text) {
-    const said = content.find((part) => part.type === 'text') as { text: string } | undefined;
-    root.textContent = result?.isError ? (said?.text ?? 'Fehler') : '';
-    sizeChanged();
-    return;
+/** A2UI messages: a list whose entries carry `version` and `createSurface` among them. */
+const isA2ui = (value: unknown): value is Array<Record<string, unknown>> =>
+  Array.isArray(value) && value.some((m) => m && typeof m === 'object' && 'createSurface' in m);
+
+const parsed = (text: string | undefined) => {
+  try {
+    return text ? (JSON.parse(text) as unknown) : undefined;
+  } catch {
+    return undefined;
   }
-  const messages = JSON.parse(a2ui.resource.text) as Array<Record<string, unknown>>;
+};
+
+/** The card's messages wherever the host left them: structuredContent (the spec's field for the
+ *  page), the a2ui resource, or that resource flattened into a text block. */
+function messagesOf(result: ToolResult) {
+  if (isA2ui(result.structuredContent?.a2ui)) return result.structuredContent.a2ui;
+  for (const part of result.content ?? []) {
+    const value =
+      part.type === 'resource' ? parsed(part.resource.text) : part.type === 'text' ? parsed(part.text) : undefined;
+    if (isA2ui(value)) return value;
+    // „[Resource from … at ui://…] [ … ]“ – a host that turned the resource into text.
+    if (part.type === 'text' && part.text.includes('"createSurface"')) {
+      const flattened = parsed(part.text.slice(part.text.indexOf('[{')));
+      if (isA2ui(flattened)) return flattened;
+    }
+  }
+  return null;
+}
+
+function show(result: ToolResult | undefined) {
+  waited = true;
+  const content = result?.content ?? [];
   const picture = content.find((part) => part.type === 'image') as
     Extract<Content, { type: 'image' }> | undefined;
+  const messages = result ? messagesOf(result) : null;
+  if (!messages) {
+    const said = content.find((part) => part.type === 'text') as { text: string } | undefined;
+    root.replaceChildren();
+    if (result?.isError) say(said?.text ?? 'Fehler');
+    else {
+      // No card: at least the slide, and what came – so a blank frame never hides the cause.
+      if (picture) {
+        const image = document.createElement('img');
+        image.src = `data:${picture.mimeType};base64,${picture.data}`;
+        image.style.cssText = 'display:block;width:100%;border-radius:12px';
+        image.onload = () => sizeChanged();
+        root.append(image);
+      }
+      const kinds = content.map((part) => part.type).join(', ') || 'nichts';
+      const structured = result?.structuredContent ? ', structuredContent' : '';
+      say(`Keine Kartendaten im Ergebnis (erhalten: ${kinds}${structured}).`);
+    }
+    return;
+  }
   const surfaceId = surfaceOf(messages);
   presentation = presentationOf(messages) ?? presentation;
   // A new card replaces the old one (another slide): a fresh processor, no surface twice.
@@ -169,7 +224,6 @@ async function onAction(action: { name: string; context: Record<string, unknown>
 
 // ── Host frame ───────────────────────────────────────────────────────────────
 
-let lastHeight = 0;
 function sizeChanged() {
   const height = Math.ceil(document.documentElement.getBoundingClientRect().height);
   if (height === lastHeight) return;
@@ -179,9 +233,21 @@ function sizeChanged() {
 new ResizeObserver(sizeChanged).observe(document.documentElement);
 
 // Slider is dark only (the slide the one bright thing) – the host's theme changes nothing here.
-await request('ui/initialize', {
-  appInfo: { name: 'Slider', version: '1.0.0' },
-  appCapabilities: { availableDisplayModes: ['inline'] },
-  protocolVersion: PROTOCOL_VERSION,
-});
+// The host sends nothing before `initialized` (spec): a refused or unanswered initialize must
+// not leave the page waiting forever – say so and go on.
+try {
+  await Promise.race([
+    request('ui/initialize', {
+      appInfo: { name: 'Slider', version: '1.0.0' },
+      appCapabilities: { availableDisplayModes: ['inline'] },
+      protocolVersion: PROTOCOL_VERSION,
+    }),
+    new Promise((_, reject) => setTimeout(() => reject(new Error('keine Antwort')), 5000)),
+  ]);
+} catch (error) {
+  say(`ui/initialize: ${(error as Error).message}`);
+}
 notify('ui/notifications/initialized');
+setTimeout(() => {
+  if (!waited) say('Kein Ergebnis vom Host bekommen (ui/notifications/tool-result).');
+}, 8000);

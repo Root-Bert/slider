@@ -34,14 +34,18 @@ export function namedBy(agent: CloudAgentDetail): Named[] {
 
 /**
  * Where a file opens from a link, as Cloud opens it: a PDF in Reader, a document in Writer –
- * where it is read and written –, anything else as its details in Cloud.
+ * where it is read and written –, a diagram where it is drawn, anything else as its details in Cloud.
  */
 export const fileHref = (workspaceId: string, file: { id: string; name: string }) =>
   /\.pdf$/i.test(file.name)
     ? routes.pdf(file.id)
-    : /\.(odt|md|markdown)$/i.test(file.name)
+    : /\.odt$/i.test(file.name)
       ? routes.document(file.id)
-      : routes.cloudFile(workspaceId, file.id);
+      : /\.(md|markdown)$/i.test(file.name)
+        ? routes.cloudPage(workspaceId, file.id)
+        : /\.diagram$/i.test(file.name)
+          ? routes.diagram(file.id)
+          : routes.cloudFile(workspaceId, file.id);
 
 /** Where what an answer named opens: a file in its app (`fileHref`), the rest as its page. */
 export const namedHref = (workspaceId: string, named: Named) =>

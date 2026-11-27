@@ -43,13 +43,13 @@ export const MATERIAL_TOOLS: Anthropic.Beta.BetaTool[] = [
   {
     name: 'list_materials',
     description:
-      "Lists the presentation's material (its own page „Material“ beside the slides): files with id, name, kind, size, pages or sheets, whether their text is read, the beginning of their text and the notes people put on them; notes and links people put on the material page with their text.",
+      "Lists the material (what was collected for the presentation or document, never part of it): files with id, name, kind, size, pages or sheets, whether their text is read, the beginning of their text and the notes people put on them; notes and links with their text.",
     input_schema: { type: 'object', properties: {} },
   },
   {
     name: 'read_material',
     description:
-      'The text of a file of the board, page by page (`from`/`to`: pages of a PDF, document or presentation; parts of a spreadsheet or text file). At most about 24 000 characters at once – read on with `from` where it stopped.',
+      'The text of a file of the material, page by page (`from`/`to`: pages of a PDF, document or presentation; parts of a spreadsheet or text file). At most about 24 000 characters at once – read on with `from` where it stopped.',
     input_schema: {
       type: 'object',
       properties: {
@@ -63,7 +63,7 @@ export const MATERIAL_TOOLS: Anthropic.Beta.BetaTool[] = [
   {
     name: 'read_sheet',
     description:
-      'Cells of a spreadsheet (or CSV) of the board as a table with their addresses – each row starts with its number, the head names the columns (A, B, …). `sheet`: its name (default: the first); `range`: e.g. "A1:F40" (default: from the top, at most 300 rows and 40 columns).',
+      'Cells of a spreadsheet (or CSV) of the material as a table with their addresses – each row starts with its number, the head names the columns (A, B, …). `sheet`: its name (default: the first); `range`: e.g. "A1:F40" (default: from the top, at most 300 rows and 40 columns).',
     input_schema: {
       type: 'object',
       properties: {
@@ -77,7 +77,7 @@ export const MATERIAL_TOOLS: Anthropic.Beta.BetaTool[] = [
   {
     name: 'search_materials',
     description:
-      'Finds words in the text of all files on the board (any case, accents ignored; several words: places with most of them first). Returns where – file, page or sheet and rows, part – with the text around it; read on with read_material or read_sheet.',
+      'Finds words in the text of all files of the material (any case, accents ignored; several words: places with most of them first). Returns where – file, page or sheet and rows, part – with the text around it; read on with read_material or read_sheet.',
     input_schema: {
       type: 'object',
       properties: { query: { type: 'string', minLength: 1 } },
@@ -87,7 +87,7 @@ export const MATERIAL_TOOLS: Anthropic.Beta.BetaTool[] = [
   {
     name: 'view_material',
     description:
-      'Looks at a file of the board: a picture as it is, or page `page` (default 1) of a PDF, document or presentation drawn as it looks – for charts, photos, layouts the text does not tell.',
+      'Looks at a file of the material: a picture as it is, or page `page` (default 1) of a PDF, document or presentation drawn as it looks – for charts, photos, layouts the text does not tell.',
     input_schema: {
       type: 'object',
       properties: { material: { type: 'string' }, page: { type: 'integer', minimum: 1 } },
@@ -129,7 +129,7 @@ async function findMaterial(deps: AppDeps, owner: BoardOwner, wanted: string) {
     rows.find((each) => each.id === key) ??
     rows.find((each) => each.name === key) ??
     rows.find((each) => each.name.toLowerCase() === key.toLowerCase());
-  if (!row) throw new ToolError(`No material "${key}" on the board – list_materials names them.`);
+  if (!row) throw new ToolError(`No material "${key}" – list_materials names them.`);
   return row;
 }
 
@@ -160,7 +160,7 @@ async function listMaterials(deps: AppDeps, owner: BoardOwner): Promise<string> 
       .where(ownedBy(deckBoardItems, owner))
       .orderBy(asc(deckBoardItems.createdAt)),
   ]);
-  if (rows.length === 0 && items.length === 0) return 'The board is empty.';
+  if (rows.length === 0 && items.length === 0) return 'There is no material.';
   const folderOf = new Map(
     items
       .filter((item) => item.kind === 'folder')
@@ -186,7 +186,7 @@ async function listMaterials(deps: AppDeps, owner: BoardOwner): Promise<string> 
     }
     if (item.kind === 'box') {
       lines.push(
-        `- box by ${item.author.name}${item.boundIds.length > 0 ? ` holding ${item.boundIds.length} thing(s) of the board` : ''}: ${item.text.slice(0, 2000)}`,
+        `- box by ${item.author.name}${item.boundIds.length > 0 ? ` holding ${item.boundIds.length} thing(s) of the material` : ''}: ${item.text.slice(0, 2000)}`,
       );
       continue;
     }
@@ -229,7 +229,7 @@ export function notesOn(
     .map((item) => {
       const others = item.boundIds.length - 1;
       return item.kind === 'box'
-        ? `in the box „${item.text.slice(0, 200)}“ by ${item.author.name}${others > 0 ? ` with ${others} more thing(s) of the board` : ''}`
+        ? `in the box „${item.text.slice(0, 200)}“ by ${item.author.name}${others > 0 ? ` with ${others} more thing(s) of the material` : ''}`
         : `note${item.id ? ` ${item.id}` : ''} on this ${thing} by ${item.author.name}: ${item.text.slice(0, 2000)}`;
     });
 }
@@ -340,6 +340,43 @@ const columnLetters = (index: number): string => {
 };
 
 /**
+ * How well `text` matches the (folded) words: words found first, then how often; with a snippet
+ * around the first – `before` characters ahead of it, `length` in all.
+ */
+export function matchOf(
+  text: string,
+  words: string[],
+  before = 100,
+  length = 300,
+): { score: number; snippet: string } | null {
+  const folded = searchFold(text);
+  let found = 0;
+  let count = 0;
+  let first = -1;
+  for (const word of words) {
+    let at = folded.indexOf(word);
+    if (at === -1) continue;
+    found += 1;
+    if (first === -1 || at < first) first = at;
+    while (at !== -1) {
+      count += 1;
+      at = folded.indexOf(word, at + word.length);
+    }
+  }
+  if (found === 0) return null;
+  // Folding keeps lengths for the letters that matter here; good enough for a snippet.
+  const start = Math.max(0, first - before);
+  const snippet = text
+    .slice(start, start + length)
+    .replace(/\s+/g, ' ')
+    .trim();
+  return {
+    score: found * 1000 + Math.min(count, 999),
+    snippet: `${start > 0 ? '…' : ''}${snippet}…`,
+  };
+}
+
+/**
  * Finds the words in the pieces of text of every file of the deck – read and compared here, not
  * in SQL: the text is encrypted at rest. Places holding more of the words, more often, first.
  */
@@ -366,35 +403,16 @@ async function searchMaterials(deps: AppDeps, owner: BoardOwner, query: string):
   for (const chunk of chunks) {
     const part = (parts.get(chunk.materialId) ?? 0) + 1;
     parts.set(chunk.materialId, part);
-    const folded = searchFold(chunk.text);
-    let found = 0;
-    let count = 0;
-    let first = -1;
-    for (const word of words) {
-      let at = folded.indexOf(word);
-      if (at === -1) continue;
-      found += 1;
-      if (first === -1 || at < first) first = at;
-      while (at !== -1) {
-        count += 1;
-        at = folded.indexOf(word, at + word.length);
-      }
-    }
-    if (found === 0) continue;
-    // Folding keeps lengths for the letters that matter here; good enough for a snippet.
-    const start = Math.max(0, first - 120);
-    const snippet = chunk.text
-      .slice(start, start + 360)
-      .replace(/\s+/g, ' ')
-      .trim();
+    const match = matchOf(chunk.text, words, 120, 360);
+    if (!match) continue;
     const where = chunk.page
       ? `page ${chunk.page}`
       : chunk.sheet
         ? `sheet „${chunk.sheet}“, ${chunk.text.split('\n')[0]?.split(', ').at(-1)?.replace(/:$/, '') ?? ''}`
         : `part ${part}`;
     hits.push({
-      score: found * 1000 + count,
-      line: `- „${names.get(chunk.materialId) ?? chunk.materialId}“ (${chunk.materialId}), ${where}: …${snippet}…`,
+      score: match.score,
+      line: `- „${names.get(chunk.materialId) ?? chunk.materialId}“ (${chunk.materialId}), ${where}: ${match.snippet}`,
     });
   }
   if (hits.length === 0) {

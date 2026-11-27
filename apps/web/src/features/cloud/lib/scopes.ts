@@ -67,9 +67,10 @@ export function scopeTabs(
   areas: readonly CloudArea[],
   scope: string,
   hints: { own: string; workspace: string },
+  { all = true }: { all?: boolean } = {},
 ) {
   const tabs: ScopeTab[] = [
-    { key: ALL_SCOPE, label: 'Alle' },
+    ...(all ? [{ key: ALL_SCOPE, label: 'Alle' }] : []),
     { key: OWN_SCOPE, label: 'Meine', hint: hints.own },
     { key: WORKSPACE_SCOPE, label: 'Workspace', hint: hints.workspace },
     ...areas.filter((area) => !area.root).map((area) => ({ key: area.id, label: area.name })),

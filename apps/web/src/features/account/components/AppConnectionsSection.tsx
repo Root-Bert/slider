@@ -28,7 +28,7 @@ import {
 } from '@/ui';
 
 /*
- * „KI-Apps“ on `/konto`: Claude, ChatGPT, Claude Code … reach Slider over MCP with the person's
+ * „KI-Apps“ on `/konto`: Claude, ChatGPT, Claude Code … reach Office over MCP with the person's
  * rights. The address to give them, how to add it, the apps let in („Entfernen“ ends their
  * access) and „Token erstellen“ for apps that take a token instead of signing in.
  */
@@ -151,8 +151,7 @@ export function AppConnectionsSection({ onNotify }: { onNotify: ShowToast }) {
 }
 
 /**
- * How to add the MCP address to Claude, ChatGPT and Claude Code – here and in the material page's
- * „Mit KI-Apps verbinden“ (`ConnectAppsPanel`).
+ * How to add the MCP address to Claude, ChatGPT and Claude Code.
  */
 export function McpSteps({ mcpUrl, oauth }: { mcpUrl: string; oauth: boolean }) {
   return (
@@ -162,11 +161,11 @@ export function McpSteps({ mcpUrl, oauth }: { mcpUrl: string; oauth: boolean }) 
           <li>
             <strong className="font-medium text-fg">Claude und ChatGPT:</strong> in den
             Einstellungen unter „Konnektoren“ einen eigenen Konnektor mit dieser Adresse hinzufügen.
-            Slider fragt dann, ob die App darf.
+            Office fragt dann, ob die App darf.
           </li>
           <li>
             <strong className="font-medium text-fg">Claude Code:</strong>{' '}
-            <code className="font-mono">claude mcp add --transport http slider {mcpUrl}</code>, dann{' '}
+            <code className="font-mono">claude mcp add --transport http office {mcpUrl}</code>, dann{' '}
             <code className="font-mono">/mcp</code> zum Anmelden.
           </li>
           <li>Apps ohne Anmeldung bekommen ein Token.</li>
@@ -175,7 +174,7 @@ export function McpSteps({ mcpUrl, oauth }: { mcpUrl: string; oauth: boolean }) 
         <li>
           Erstelle ein Token und gib es der App mit – Claude Code etwa so:{' '}
           <code className="font-mono">
-            claude mcp add --transport http slider {mcpUrl} --header "Authorization: Bearer …"
+            claude mcp add --transport http office {mcpUrl} --header "Authorization: Bearer …"
           </code>
         </li>
       )}
@@ -253,7 +252,7 @@ function CreatedToken({
           <CopyField label="Token" icon="key" value={created.token} />
           <CopyField
             label="Befehl für Claude Code"
-            value={`claude mcp add --transport http slider ${mcpUrl} --header "Authorization: Bearer ${created.token}"`}
+            value={`claude mcp add --transport http office ${mcpUrl} --header "Authorization: Bearer ${created.token}"`}
           />
         </div>
       }

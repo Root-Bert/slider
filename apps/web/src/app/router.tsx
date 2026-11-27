@@ -39,6 +39,8 @@ export const router = createBrowserRouter([
       { path: 'd/:deckId', lazy: () => import('@/features/viewer/DeckPage') },
       // Writer: one document, open – like the deck viewer it sends signed-out visitors on itself.
       { path: 't/:documentId', lazy: () => import('@/features/writer/DocumentPage') },
+      // A diagram: drawn on in a page of its own, as a document is written in Writer.
+      { path: 'diagramm/:diagramId', lazy: () => import('@/features/diagrams/DiagramPage') },
       // Reader: one PDF, open – it sends signed-out visitors on itself too.
       { path: 'r/:pdfId', lazy: () => import('@/features/reader/PdfPage') },
       // Cloud: what a link shows to someone outside – no account needed.
@@ -116,7 +118,20 @@ export const router = createBrowserRouter([
                 children: [
                   { index: true, lazy: () => import('@/features/cloud/RecentPage') },
                   { path: 'meine', lazy: () => import('@/features/cloud/FilesPage') },
-                  { path: 'bereich/:areaId', lazy: () => import('@/features/cloud/FilesPage') },
+                  { path: 'bereich/:areaId', lazy: () => import('@/features/cloud/AreaHomePage') },
+                  {
+                    path: 'bereich/:areaId/dateien',
+                    lazy: () => import('@/features/cloud/FilesPage'),
+                  },
+                  { path: 'seite/:pageId', lazy: () => import('@/features/cloud/PagePage') },
+                  { path: 'seiten', lazy: () => import('@/features/cloud/PagesPage') },
+                  {
+                    // Links from before „Seiten“.
+                    path: 'notizen',
+                    lazy: async () => ({
+                      Component: (await import('@/features/cloud/PagesPage')).Redirect,
+                    }),
+                  },
                   {
                     path: 'bereich/:areaId/agenten',
                     lazy: () => import('@/features/cloud/AreaAgentsPage'),

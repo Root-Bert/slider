@@ -1,10 +1,10 @@
 import type { ReactNode } from 'react';
 import { searchFold, type CloudNode, type CloudScope } from '@slider/shared';
 import { useCloudList } from '@/lib/api';
+import { useViewChoice } from '@/lib/view-choice';
 import type { IconName } from '@/ui';
 import { useCloud } from '../hooks/useCloud';
-import { useStoredChoice } from '../hooks/useStoredChoice';
-import { CLOUD_VIEWS, type CloudView } from '../lib/kinds';
+import { CLOUD_VIEW_KEY, CLOUD_VIEWS, type CloudView } from '../lib/kinds';
 import { CloudPage } from './CloudPage';
 import { Empty, LoadFailed } from './Empty';
 import { FileBrowser, FileBrowserSkeleton, type BrowserMode } from './FileBrowser';
@@ -41,7 +41,12 @@ export function AcrossPage({
 }) {
   const ui = useCloud();
   const listing = useCloudList(ui.workspace.id, { scope });
-  const [view, setView] = useStoredChoice('slider.cloud.view', CLOUD_VIEWS, 'list');
+  const [view, setView] = useViewChoice(
+    `slider.cloud.view:${scope}`,
+    CLOUD_VIEWS,
+    'list',
+    CLOUD_VIEW_KEY,
+  );
   const all = listing.data?.nodes ?? [];
   const needle = searchFold(query.trim());
   const nodes = needle ? all.filter((node) => searchFold(node.name).includes(needle)) : all;

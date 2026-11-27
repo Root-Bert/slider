@@ -1174,6 +1174,11 @@ export interface TurnRequest {
   /** Anthropic's own tools (web search) only reach Anthropic; the others get the custom ones. */
   tools: Anthropic.Beta.BetaToolUnion[];
   messages: Message[];
+  /**
+   * The tools stay named (a request with tool calls in it must name them), but none may be
+   * called: the model answers in words – a tool loop's last turn.
+   */
+  answerOnly?: boolean;
   /** Anthropic only: how many tokens the whole task may take. */
   taskBudgetTokens: number;
   /** Anthropic only: how hard the model thinks – `medium` when left out. */
@@ -1207,6 +1212,12 @@ const anthropicTokens = (usage: Anthropic.Beta.BetaUsage | undefined) => ({
   cacheWriteTokens: usage?.cache_creation_input_tokens ?? 0,
 });
 
+/** What the request of an Anthropic answer held: read, read from the cache, written to it. */
+const contextOf = (usage: Anthropic.Beta.BetaUsage | undefined) =>
+  (usage?.input_tokens ?? 0) +
+  (usage?.cache_read_input_tokens ?? 0) +
+  (usage?.cache_creation_input_tokens ?? 0);
+
 /** What an OpenAI-compatible service says a chat answer used (OpenRouter adds its cost). */
 const chatUsageSchema = z
   .object({
@@ -1238,6 +1249,8 @@ export interface TurnResult {
   unreadable?: string[];
   /** How long the turn took, for the timing log (Anthropic only). */
   timing?: TurnTiming;
+  /** How much of the model's context this turn's request filled, as the service told it. */
+  contextTokens?: number;
 }
 
 /** Where a turn's time went: waiting for the first token, then writing. */
@@ -1319,13 +1332,18 @@ export async function runTurn(
 const DEFAULT_MAX_TOKENS = 32_000;
 /** The most each model may write in one answer, as Anthropic tells it. */
 const maxTokensOf = new Map<string, number>();
+/** How much each model reads at most (its context window), as Anthropic tells it. */
+const windowOf = new Map<string, number>();
 
 /** The model's own output limit – a large slide fits in one write – or the default. */
 async function maxTokens(client: Anthropic, model: string): Promise<number> {
   const known = maxTokensOf.get(model);
   if (known) return known;
   try {
-    const limit = (await client.models.retrieve(model)).max_tokens;
+    const info = await client.models.retrieve(model);
+    const window = (info as { max_input_tokens?: number | null }).max_input_tokens;
+    if (window) windowOf.set(model, window);
+    const limit = info.max_tokens;
     if (!limit) return DEFAULT_MAX_TOKENS;
     maxTokensOf.set(model, limit);
     return limit;
@@ -1333,6 +1351,21 @@ async function maxTokens(client: Anthropic, model: string): Promise<number> {
     // Asked again next turn; the turn itself tells what is wrong with the key.
     return DEFAULT_MAX_TOKENS;
   }
+}
+
+/**
+ * How much the connection's model reads at most – for the meter of how full an agent's context is.
+ * Anthropic tells it (Models API); `null` where the service does not say.
+ */
+export async function contextWindow(
+  deps: Pick<AppDeps, 'anthropic'>,
+  connection: AiConnection,
+): Promise<number | null> {
+  if (connection.provider !== 'anthropic') return null;
+  const known = windowOf.get(connection.model);
+  if (known) return known;
+  await maxTokens(anthropicClient(deps, connection.apiKey), connection.model);
+  return windowOf.get(connection.model) ?? null;
 }
 
 /**
@@ -1391,6 +1424,33 @@ async function anthropicTurn(
   }
 }
 
+/**
+ * Whether the connection finds tools itself (Anthropic's tool search): then tools marked
+ * `defer_loading` stay out of what the model reads until it looks for them. Only Anthropic's own
+ * API – a gateway in between may not know it; elsewhere every tool is sent whole.
+ */
+export const findsTools = (connection: AiConnection) =>
+  connection.provider === 'anthropic' && connection.baseUrl === null;
+
+const TOOL_SEARCH: Anthropic.Beta.Messages.BetaToolSearchToolBm25_20251119 = {
+  type: 'tool_search_tool_bm25_20251119',
+  name: 'tool_search_tool_bm25',
+};
+
+/** The tools as the connection takes them: deferred ones with the search, or all of them whole. */
+function toolsFor(connection: AiConnection, tools: Anthropic.Beta.BetaToolUnion[]) {
+  const deferred = (tool: Anthropic.Beta.BetaToolUnion) =>
+    'defer_loading' in tool && tool.defer_loading === true;
+  // At least one tool must be loaded from the start.
+  if (tools.some(deferred) && tools.some((tool) => !deferred(tool)) && findsTools(connection))
+    return [...tools, TOOL_SEARCH];
+  return tools.map((tool) => {
+    if (!deferred(tool)) return tool;
+    const { defer_loading: _deferred, ...whole } = tool as Anthropic.Beta.BetaTool;
+    return whole;
+  });
+}
+
 async function anthropicTurnAt(
   deps: Pick<AppDeps, 'anthropic'>,
   connection: AiConnection,
@@ -1398,6 +1458,7 @@ async function anthropicTurnAt(
   fast: boolean,
 ): Promise<TurnResult> {
   const client = anthropicClient(deps, connection.apiKey);
+  const tools = toolsFor(connection, request.tools);
   const clear = request.clearToolResults;
   const turnEffort = TURN_EFFORT_MODELS.test(connection.model);
   const messages = turnEffort
@@ -1409,7 +1470,9 @@ async function anthropicTurnAt(
       model: connection.model,
       max_tokens: await maxTokens(client, connection.model),
       system: request.system,
-      ...(request.tools.length > 0 ? { tools: request.tools } : {}),
+      ...(tools.length > 0
+        ? { tools, ...(request.answerOnly ? { tool_choice: { type: 'none' as const } } : {}) }
+        : {}),
       messages,
       output_config: {
         effort: request.effort ?? 'medium',
@@ -1500,7 +1563,12 @@ async function anthropicTurnAt(
           : message.content.some((block) => block.type === 'tool_use')
             ? 'tool_use'
             : 'end_turn';
-  return { stop, content: message.content, timing: timingOf(message) };
+  return {
+    stop,
+    content: message.content,
+    timing: timingOf(message),
+    contextTokens: contextOf(message.usage),
+  };
 }
 
 /** A part of an OpenAI chat message (Mistral reads the same: words, or a picture's `data:` URL). */
@@ -1656,7 +1724,9 @@ async function openAiTurn(
         model: connection.model,
         messages: chatMessages(request.system, request.messages),
         // Some compatible services refuse an empty list.
-        ...(tools.length > 0 ? { tools } : {}),
+        ...(tools.length > 0
+          ? { tools, ...(request.answerOnly ? { tool_choice: 'none' } : {}) }
+          : {}),
       },
       signal: AbortSignal.any([request.signal, AbortSignal.timeout(TURN_TIMEOUT_MS)]),
     },
@@ -1693,7 +1763,12 @@ async function openAiTurn(
   }
   const calls = content.some((block) => block.type === 'tool_use');
   const stop = choice.finish_reason === 'length' ? 'max_tokens' : calls ? 'tool_use' : 'end_turn';
-  return { stop, content, ...(unreadable.length > 0 ? { unreadable } : {}) };
+  return {
+    stop,
+    content,
+    ...(unreadable.length > 0 ? { unreadable } : {}),
+    ...(completion.usage?.prompt_tokens ? { contextTokens: completion.usage.prompt_tokens } : {}),
+  };
 }
 
 // ── One quick decision ───────────────────────────────────────────────────

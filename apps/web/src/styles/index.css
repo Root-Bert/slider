@@ -1,7 +1,5 @@
 @import 'tailwindcss';
 @import '@fontsource-variable/inter';
-/* React Flow's layout only (the material page, `features/viewer/board/`); its look is Slider's, below. */
-@import '@xyflow/react/dist/base.css' layer(components);
 
 /*
  * Design tokens – mirror the Figma UI kit "UI-Kit | Slider" (node 87:394).
@@ -537,13 +535,25 @@
   }
 }
 
-/* `glass-panel` lifted off the stage: hairline edge and float shadow (thread, deleted slides). */
+/* `glass-panel` lifted off the stage: hairline edge and float shadow (`SidePanel`, positioned).
+   Its glass lies on a layer behind its content, always: the panel itself is no backdrop root, so
+   a menu open in it blurs the page too – and the panel keeps its blur meanwhile (it lost it while
+   one was open, the page showing sharp through the panel: the event panel's calendar picker). */
 @utility glass-floating {
-  background-color: var(--color-glass-panel);
-  backdrop-filter: blur(24px) saturate(140%);
-  box-shadow:
-    inset 0 0 0 1px var(--color-hairline),
-    var(--shadow-float);
+  isolation: isolate;
+  box-shadow: var(--shadow-float);
+  &::before {
+    content: '';
+    position: absolute;
+    inset: 0;
+    z-index: -1;
+    border-radius: inherit;
+    pointer-events: none;
+    background-color: var(--color-glass-panel);
+    -webkit-backdrop-filter: blur(24px) saturate(140%);
+    backdrop-filter: blur(24px) saturate(140%);
+    box-shadow: inset 0 0 0 1px var(--color-hairline);
+  }
 }
 
 /* Buttons and control pills: the side panel's tint, but a light blur, so connector lines and the
@@ -571,7 +581,6 @@
 :is(
   .glass,
   .glass-panel,
-  .glass-floating,
   .glass-control,
   .glass-elevated,
   .glass-dark,
@@ -673,34 +682,52 @@
   }
 }
 
-/* Dot grid used behind the review canvas and on the start screens. */
+/* Dot grid used behind the review canvas and on the start screens. Behind the content only, not
+   the bars: towards the top bar (`--dot-fade-t`) and the side bar (`--dot-fade-l`) its dots fade
+   out under the canvas colour instead of ending on a hard edge (0 = no fade); below the top bar
+   `--dot-gap-t` keeps a strip free before the fade begins. Towards the screen's right and bottom
+   edge they fade out just before it (`--dot-fade-r`, `--dot-fade-b`); the bottom one stays at
+   the window's edge while the page scrolls (`fixed`). Left, right and bottom ease out: a long fade
+   whose dots show faintly right up to the edge (the side bar, the screen's), gone only there –
+   the grid doesn't look cut off.
+   The fade lies over
+   the dots, not over what stands on them. Inherited, so a page's own grid fades like its frame's. */
 @utility dot-grid {
   background-color: var(--color-canvas);
-  background-image: radial-gradient(var(--color-dot) 1px, transparent 1.2px);
-  background-size: 22px 22px;
-}
-
-/* The material page (React Flow): the selection box as the editor's frame-select, React Flow's
-   own chrome away – the group frame (picked cards move together anyway) and the resize controls'
-   look (the picked card's brackets show where to grab, `BoardNodeView`). */
-.material-board {
-  --xy-selection-background-color: color-mix(in srgb, var(--selection) 10%, transparent);
-  --xy-selection-border: 1px solid var(--selection);
-
-  .react-flow__selection {
-    border-radius: var(--radius-mark);
-  }
-  .react-flow__nodesselection {
-    display: none;
-  }
-  .react-flow__resize-control.handle {
-    /* Also on a frame, whose node lets the pointer through to what lies in it. */
-    pointer-events: all;
-    width: 20px;
-    height: 20px;
-    border: 0;
-    background: transparent;
-  }
+  background-image:
+    linear-gradient(
+      var(--color-canvas) var(--dot-gap-t, 0px),
+      transparent calc(var(--dot-gap-t, 0px) + var(--dot-fade-t, 0px))
+    ),
+    linear-gradient(
+      90deg,
+      var(--color-canvas),
+      color-mix(in srgb, var(--color-canvas) 45%, transparent) calc(var(--dot-fade-l, 0px) * 0.08),
+      color-mix(in srgb, var(--color-canvas) 25%, transparent) calc(var(--dot-fade-l, 0px) * 0.35),
+      transparent var(--dot-fade-l, 0px)
+    ),
+    linear-gradient(
+      270deg,
+      var(--color-canvas),
+      color-mix(in srgb, var(--color-canvas) 45%, transparent) calc(var(--dot-fade-r, 0px) * 0.08),
+      color-mix(in srgb, var(--color-canvas) 25%, transparent) calc(var(--dot-fade-r, 0px) * 0.35),
+      transparent var(--dot-fade-r, 0px)
+    ),
+    linear-gradient(
+      0deg,
+      var(--color-canvas),
+      color-mix(in srgb, var(--color-canvas) 45%, transparent) calc(var(--dot-fade-b, 0px) * 0.08),
+      color-mix(in srgb, var(--color-canvas) 25%, transparent) calc(var(--dot-fade-b, 0px) * 0.35),
+      transparent var(--dot-fade-b, 0px)
+    ),
+    radial-gradient(var(--color-dot) 1px, transparent 1.2px);
+  background-size:
+    auto,
+    auto,
+    auto,
+    auto,
+    22px 22px;
+  background-attachment: scroll, scroll, scroll, fixed, scroll;
 }
 
 /* Featured card (the company to join on the welcome page): deep space under a soft light from
@@ -1129,6 +1156,23 @@
 }
 
 @layer base {
+  /*
+   * On a phone the UI's text is one step larger (the user, 2026-11-26: „alles ist bissl zu
+   * klein“) – the sizes themselves, so every `text-*` follows; display and headings stay. By the
+   * window's width, not the pointer: an iPad has the room of a desktop.
+   */
+  @media (max-width: 767px) {
+    :root {
+      --text-sm: 15px;
+      --text-body: 14px;
+      --text-xs: 13px;
+      --text-caption: 12px;
+      --text-tiny: 11px;
+    }
+  }
+}
+
+@layer base {
   :root {
     color-scheme: dark;
 
@@ -1303,6 +1347,7 @@
 ::view-transition-group(workspace-view-material),
 ::view-transition-group(workspace-view-agents),
 ::view-transition-group(workspace-view-todos),
+::view-transition-group(workspace-view-files),
 ::view-transition-group(workspace-view-areas),
 ::view-transition-group(.view-title) {
   animation-duration: 420ms;
@@ -1316,6 +1361,8 @@
 ::view-transition-new(workspace-view-agents),
 ::view-transition-old(workspace-view-todos),
 ::view-transition-new(workspace-view-todos),
+::view-transition-old(workspace-view-files),
+::view-transition-new(workspace-view-files),
 ::view-transition-old(workspace-view-areas),
 ::view-transition-new(workspace-view-areas),
 ::view-transition-old(.view-title),
@@ -1954,6 +2001,47 @@
 }
 
 /*
+ * Fields on a touch screen are typed in at 16px at least: iOS zooms the page in on a field under
+ * 16px once it is tapped, and leaves it zoomed. Unlayered, so it wins over a field's `text-*` –
+ * not over one of 16px and more (a title typed in place, `text-display`), which keeps its size.
+ * Nor over text typed on a slide (`.scaled-field`): it is as big as the slide shows it, with
+ * its box measured by a copy of that size.
+ * A message's field (`RichField`, `.touch-field` round text and placeholder) the same; a page's
+ * or a slide's own text keeps its size.
+ */
+@media (pointer: coarse) {
+  :where(
+    input:not(
+      [type='checkbox'],
+      [type='radio'],
+      [type='range'],
+      [type='color'],
+      [type='file'],
+      [type='button'],
+      [type='submit'],
+      [type='reset'],
+      [type='image']
+    ),
+    textarea,
+    select,
+    .touch-field
+  ):where(
+    :not(
+      .text-base,
+      .text-lg,
+      .text-xl,
+      .text-2xl,
+      .text-3xl,
+      .text-4xl,
+      .text-display,
+      .scaled-field
+    )
+  ) {
+    font-size: max(16px, 1em);
+  }
+}
+
+/*
  * Your own pointer (`shell/OwnCursor`): your speech bubble in your colour that morphs into whatever
  * the page asks for. While it is on (`data-own-cursor-on`), the system's pointer is hidden on every
  * element – not just the one entered: an element appearing under a resting pointer (a re-render, a
@@ -2379,7 +2467,7 @@
   --color-glass-solid: #ffffff;
   --color-placeholder: #e9e9eb;
   --color-surface-raised: #e2e2e5;
-  --color-glass-panel: rgb(250 250 250 / 0.78);
+  --color-glass-panel: rgb(250 250 250 / 0.62);
   --color-glass-control: rgb(255 255 255 / 0.55);
   --color-glass-elevated: rgb(255 255 255 / 0.66);
 

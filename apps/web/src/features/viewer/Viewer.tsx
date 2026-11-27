@@ -25,9 +25,7 @@ import { FindBar } from './find/FindBar';
 import { HandleHint } from './hint/HandleHint';
 import { useGoToSlide } from './hooks/useGoToSlide';
 import { useThreadHover } from './hooks/useThreadHover';
-import { useMaterialUrlSync, useSlideUrlSync } from './hooks/useSlideUrlSync';
-import { MaterialPage } from './board/MaterialPage';
-import { DeckBoardOwner } from './components/DeckBoardOwner';
+import { useSlideUrlSync } from './hooks/useSlideUrlSync';
 import { useViewerShortcuts } from './hooks/useViewerShortcuts';
 import { CursorLayer } from './live/CursorLayer';
 import { useLive } from './live/hooks/useLive';
@@ -46,7 +44,8 @@ import { LayersPanel } from './editing/layers/LayersPanel';
 import { SlideBackgroundPanel } from './editing/SlideBackgroundPanel';
 import { LayersProvider } from './editing/layers/LayersProvider';
 import { DeletedSlidesPanel } from './revisions/DeletedSlidesPanel';
-import { AiChatPanel } from './board/AiChatPanel';
+import { DeckMaterialPanel } from './material/DeckMaterialPanel';
+import { DeckAiChat } from './chat/DeckAiChat';
 import { SyncStatus } from './revisions/SyncStatus';
 import { useViewerData } from './state/viewer-data';
 import { isSidePanelOpen, useViewerState } from './state/viewer-state';
@@ -78,7 +77,7 @@ function ViewerMain() {
   const rootRef = useRef<HTMLDivElement>(null);
   const { deck, slideIndex } = useViewerData();
   const viewerState = useViewerState();
-  const { activeSlideId, commentsClosed, materialOpen } = viewerState;
+  const { activeSlideId, commentsClosed } = viewerState;
   // Thread panel, deleted slides, layers, a slide's background and the layout share the right side.
   const threadPanelOpen = isSidePanelOpen(viewerState);
   const toggleFullscreen = useFullscreen(rootRef);
@@ -106,7 +105,6 @@ function ViewerMain() {
     onPresenterView: startPresenterView,
   });
   useSlideUrlSync(activeSlideId);
-  useMaterialUrlSync(materialOpen);
   useThreadHover();
   useLive();
   useCommentRefusals(showToast);
@@ -125,17 +123,11 @@ function ViewerMain() {
         <LayersProvider>
           <VoiceProvider>
             <SliderHere />
-            {/* The fullscreen target: the presentation and the material page beside it. */}
+            {/* The fullscreen target. */}
             <div ref={rootRef} className="relative h-dvh overflow-hidden">
-              {/* The presentation: slides out to the right while the material page is shown (its
-                floating controls and panels with it – fixed inside a moved box), asleep meanwhile. */}
               <div
                 data-viewer-root
-                inert={materialOpen}
-                className={cn(
-                  'dot-grid relative flex h-dvh flex-col overflow-hidden text-fg transition-[translate] duration-300 ease-sheet',
-                  materialOpen && 'translate-x-full',
-                )}
+                className="dot-grid relative flex h-dvh flex-col overflow-hidden text-fg"
               >
                 {/* The first focus stop: keyboard users skip the slides to the controls row. */}
                 <SkipToControls targetId={CONTROLS_ID} />
@@ -209,10 +201,10 @@ function ViewerMain() {
                 <ThreadPanel />
                 <MediaReplyDialog />
                 <DeletedSlidesPanel />
-                {/* The AI's chat (a click on its avatar), as on the material page. */}
-                <DeckBoardOwner>
-                  <AiChatPanel />
-                </DeckBoardOwner>
+                {/* The AI's chat (a click on its avatar). */}
+                <DeckAiChat />
+                {/* „Material“ (⌘K, `?material`): what was collected for the deck. */}
+                <DeckMaterialPanel />
                 <FormatBar />
                 {/* Tilted elements changed: drawn tilted anew, picked or not. */}
                 <TiltRefreshes />
@@ -234,12 +226,12 @@ function ViewerMain() {
                 <HandleHint slot={findSlot} />
                 <LeaveGuard />
                 <DesktopBar
-                  active={!presenting && !materialOpen}
+                  active={!presenting}
                   onPresent={startPresenting}
                   onPresenterView={startPresenterView}
                 />
                 <DeckCommands
-                  active={!presenting && !materialOpen}
+                  active={!presenting}
                   onPresent={startPresenting}
                   onPresenterView={startPresenterView}
                 />
@@ -250,11 +242,7 @@ function ViewerMain() {
                   <PresenterView startSlideId={activeSlideId} onExit={stopPresenting} />
                 )}
               </div>
-              {/* „Material“: the board's page, left of the presentation. */}
-              <DeckBoardOwner>
-                <MaterialPage />
-              </DeckBoardOwner>
-              {/* Above the thread panel and popovers (`--z-toast`), on either page. */}
+              {/* Above the thread panel and popovers (`--z-toast`). */}
               <Toast toast={toast} />
             </div>
           </VoiceProvider>

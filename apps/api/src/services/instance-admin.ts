@@ -32,6 +32,7 @@ import {
 import type { Viewer } from '@slider/shared';
 import type { Executor } from '../db/client';
 import {
+  calendarFeeds,
   decks,
   sessions,
   users,
@@ -318,7 +319,11 @@ export async function setUserBlocked(
       .update(users)
       .set({ blockedAt: blocked ? deps.clock.now() : null })
       .where(eq(users.id, userId));
-    if (blocked) await tx.delete(sessions).where(eq(sessions.userId, userId));
+    if (blocked) {
+      await tx.delete(sessions).where(eq(sessions.userId, userId));
+      // Its calendar links end too: unblocked, it makes new ones.
+      await tx.delete(calendarFeeds).where(eq(calendarFeeds.userId, userId));
+    }
     return true;
   });
   if (updated)

@@ -1,5 +1,3 @@
-import { lazy } from 'react';
-
 /*
  * Public API of the viewer for other features. The deck page itself is a lazy route
  * (`app/router.tsx` imports `DeckPage` directly), so it is not exported here.
@@ -34,7 +32,7 @@ export {
   saveCreationDraft,
   type CreationDraft,
 } from './creation/creation-draft';
-// The chat with the AI in a side panel – beside the material, and beside the files in Cloud.
+// The chat with the AI in a side panel – over a presentation, and beside the files in Cloud.
 export {
   AnswerBody,
   ChatAnswer,
@@ -42,16 +40,8 @@ export {
   ChatPanel,
   type Chat,
   type ChatEntry,
-} from './board/ChatPanel';
-export { useAgentChat } from './board/agent-chat';
-// „Material“ beside a text document too: the board's page (loaded when first needed), the tile
-// that opens it, and what the page asks of its host (`BoardOwner`).
-export const MaterialPage = lazy(() =>
-  import('./board/MaterialPage').then((module) => ({ default: module.MaterialPage })),
-);
-export { MaterialTile } from './board/MaterialTile';
-export { BoardOwnerContext, DOCUMENT_WORDING, type BoardOwner } from './board/board-owner';
-export { useMaterialUrlSync } from './hooks/useSlideUrlSync';
+} from './chat/ChatPanel';
+export { useAgentChat } from './chat/agent-chat';
 // Speaking to the AI: the microphone, its pieces, the live words and the bar – for a text document
 // too (Writer's `WriterVoiceProvider` gives the same `VoiceContext`).
 export { VoiceBarView, type VoiceBarHost, type VoiceBarItem } from './voice/VoiceBar';
@@ -64,6 +54,10 @@ export { openMicrophone, prepareMicrophone, type Microphone } from './voice/lib/
 export { canRecord } from './media/lib/recording';
 // Recording a video to send – with its editor (a message in Sender).
 export { RecorderPanel } from './media/RecorderPanel';
+// A voice memo in a message's field, and played in the message (Sender).
+export { AudioPlayer } from './media/MediaPlayer';
+export { VoiceMemoBar } from './media/VoiceMemoBar';
+export type { Recording } from './media/hooks/useRecorder';
 export { describeError } from './media/lib/recorder-errors';
 // The photo search, for a text document's pictures too.
 export { PhotoGrid } from './editing/photos/StockPhotoSearch';
@@ -87,3 +81,4 @@ export {
   reactionState,
   type ReactionState,
 } from './comments/hooks/useCommentReaction';
+export { MaterialPanel } from './material/MaterialList';

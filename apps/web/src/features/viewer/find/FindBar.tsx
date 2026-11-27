@@ -57,9 +57,7 @@ export function FindBar({ slot = null }: { slot?: HTMLElement | null }) {
   const onWindowKeyDown = useEffectEvent((event: globalThis.KeyboardEvent) => {
     if (event.key.toLowerCase() !== 'f' || !isModKey(event) || event.altKey || event.shiftKey)
       return;
-    // Modal dialogs (share, delete confirmation) and the material page, where the presentation is
-    // asleep, keep the browser's own find.
-    if (viewerState.materialOpen) return;
+    // Modal dialogs (share, delete confirmation) keep the browser's own find.
     if (event.target instanceof Element && event.target.closest('dialog')) return;
     event.preventDefault();
     if (phase === 'open') {

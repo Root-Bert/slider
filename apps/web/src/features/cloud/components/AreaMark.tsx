@@ -12,15 +12,21 @@ export function AreaMark({
   size = 'sm',
 }: {
   area: Pick<CloudArea, 'color' | 'root'>;
-  size?: 'sm' | 'lg';
+  /** `md`: a folded side bar's, filling its row as an avatar there does. */
+  size?: 'sm' | 'md' | 'lg';
 }) {
   const { workspace } = useCloud();
-  if (!area.root) return <AreaDot color={area.color} size={size} />;
+  if (!area.root)
+    return size === 'md' ? (
+      <AreaDot color={area.color} size="md" className="size-3.5!" />
+    ) : (
+      <AreaDot color={area.color} size={size} />
+    );
   return (
     <WorkspaceMark
       name={workspace.name}
       logoUrl={workspace.logoUrl}
-      size={size === 'lg' ? 32 : 18}
+      size={size === 'lg' ? 32 : size === 'md' ? 24 : 18}
     />
   );
 }

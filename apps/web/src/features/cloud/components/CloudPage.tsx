@@ -177,14 +177,24 @@ export function CloudPage({
   const selected = nodes.filter((node) => selection.selected.has(node.id));
   // In a call, its agent knows where one is in Cloud and what is picked („die hier“).
   useCallHere('cloud', cloudHere(docTitle, crumbs, target, nodes, selected));
-  // The file whose details stand beside: picked with one click, it is the selection – emptied
-  // (Esc, ⌫, a click beside the items), its details go too.
+  // The file whose details stand beside: picked with one click, it is the selection – emptied by
+  // Esc, its details go too. A click beside the items or another page lets go of the pick only:
+  // the panel closes by ✕ or Esc alone (`useKeptPanel`); a file deleted takes its own (`Preview`).
   const [params, setParams] = useSearchParams();
   const shownId = params.get(CLOUD_FILE_PARAM);
   const before = useRef<ReadonlySet<string>>(new Set());
   // What was picked when the selection was emptied, and when – the address may follow a click a
   // moment after the pick (a ⌫ right after the click came before the details did).
   const unpicked = useRef<{ ids: ReadonlySet<string>; at: number } | null>(null);
+  // When Esc was last pressed: the selection's own Esc may hear it before the details' does.
+  const escAt = useRef(0);
+  useEffect(() => {
+    const note = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') escAt.current = Date.now();
+    };
+    window.addEventListener('keydown', note, true);
+    return () => window.removeEventListener('keydown', note, true);
+  }, []);
   const closeDetails = useCallback(
     () =>
       setParams(
@@ -200,7 +210,8 @@ export function CloudPage({
   useEffect(() => {
     const now = selection.selected;
     if (now.size > 0) unpicked.current = null;
-    else if (before.current.size > 0) unpicked.current = { ids: before.current, at: Date.now() };
+    else if (before.current.size > 0 && Date.now() - escAt.current < 500)
+      unpicked.current = { ids: before.current, at: Date.now() };
     before.current = now;
     const gone = unpicked.current;
     if (shownId && gone?.ids.has(shownId) && Date.now() - gone.at < 2000) {
@@ -427,11 +438,12 @@ export function CloudPage({
       <header
         {...(folded ? { [CRUMB_SEARCH]: '' } : {})}
         className={cn(
-          'flex shrink-0 flex-wrap items-end justify-between gap-x-6 gap-y-3',
+          // On a phone one line: the tabs scroll beside the title, the actions keep their icons.
+          'flex shrink-0 flex-wrap items-end justify-between gap-x-6 gap-y-3 max-sm:flex-nowrap max-sm:items-center max-sm:gap-x-3',
           GIVE_WAY_TO_PANEL,
         )}
       >
-        <div className="flex min-w-0 flex-col gap-1">
+        <div className="flex min-w-0 flex-col gap-1 max-sm:flex-1">
           {typing ? (
             // The bar folded: its search stands where the path stands (`CrumbSearch`).
             <div className="absolute inset-x-0 -top-8 z-(--z-overlay) flex h-6 min-w-0 items-center text-body">
@@ -479,8 +491,13 @@ export function CloudPage({
           {/* Anything but words (an agent's chat tabs) stands under the title, as it is. */}
           {typeof subtitle === 'string' ? null : subtitle}
         </div>
-        {/* Pushed to the right also where a long title wraps them onto a line of their own. */}
-        {actions && <div className="ml-auto flex shrink-0 items-center gap-2">{actions}</div>}
+        {/* Pushed to the right also where a long title wraps them onto a line of their own. On a
+            phone only their icons, the words stay their names (`aria`). */}
+        {actions && (
+          <div className="ml-auto flex shrink-0 items-center gap-2 max-sm:gap-1 max-sm:[&_:is(button,a):has(>svg):not([data-popover-panel]_*)]:gap-0 max-sm:[&_:is(button,a):has(>svg):not([data-popover-panel]_*)]:px-2.5 max-sm:[&_:is(button,a):has(>svg):not([data-popover-panel]_*)]:text-[0px]">
+            {actions}
+          </div>
+        )}
       </header>
       {toolbar && (
         <div className={cn('shrink-0', GIVE_WAY_TO_PANEL)}>{selectionBar ?? toolbar}</div>

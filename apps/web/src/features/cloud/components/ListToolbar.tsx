@@ -119,7 +119,8 @@ export function ListToolbar({
       )}
       {filter && onFilterChange && (
         <>
-          <GlassPanel className="p-1">
+          {/* Even its icons too wide (a narrow phone): it scrolls sideways. */}
+          <GlassPanel className="max-w-full overflow-x-auto p-1 [scrollbar-width:none]">
             <SegmentedControl
               label="Nach Art filtern"
               segments={segments}

@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState, type ComponentProps } from 'react';
 import { Link } from 'react-router';
 import { useQueryClient } from '@tanstack/react-query';
-import { mailThreadKind, type MailThreadSummary } from '@slider/shared';
+import { ALL_MAILBOXES, mailThreadKind, type MailThreadSummary } from '@slider/shared';
 import {
   MAIL_LISTED,
   MAIL_LISTED_MAX,
@@ -174,24 +174,21 @@ export function MailInbox({ view }: { view: MailViewState }) {
   const [look] = useMailListLook();
   const queryClient = useQueryClient();
   const { account, folder } = view;
+  // One mailbox's, or every one's („Alle“) – what the list, its search and its end ask for.
+  const scope = view.all ? ALL_MAILBOXES : (account?.id ?? '');
   // Scrolled down to its end: more of the newest – from the start again in another folder.
-  const listKey = `${account?.id ?? ''}|${folder}`;
+  const listKey = `${scope}|${folder}`;
   const [longer, setLonger] = useState({ key: listKey, limit: MAIL_LISTED });
   const limit = longer.key === listKey ? longer.limit : MAIL_LISTED;
   // „Übersicht“ is no folder on the server: there the list only stands for a search.
-  const threads = useMailFolder(
-    ui.workspace.id,
-    folder === OVERVIEW ? '' : (account?.id ?? ''),
-    folder,
-    limit,
-  );
-  // Searched (the toolbar's field): what the words find in this mailbox, whatever its folder –
-  // in what the mails say too.
+  const threads = useMailFolder(ui.workspace.id, folder === OVERVIEW ? '' : scope, folder, limit);
+  // Searched (the toolbar's field): what the words find in this mailbox (in „Alle“ in every one),
+  // whatever its folder – in what the mails say too.
   const query = useDebounced(view.query.trim(), 150);
   const found = useMailSearch(ui.workspace.id, query, {
-    accountId: account?.id ?? '',
+    accountId: scope,
     inText: true,
-    enabled: !!account,
+    enabled: scope !== '',
   });
   const listed = query ? found.data : threads.data;
   // Settled a while: older mails on the server it finds come in too (once per search, words of
@@ -199,7 +196,7 @@ export function MailInbox({ view }: { view: MailViewState }) {
   const settled = useDebounced(query, 700);
   const onServer = useMailSearchOnServer(ui.workspace.id);
   const askServer = onServer.mutate;
-  const accountId = account?.id ?? '';
+  const accountId = scope;
   useEffect(() => {
     if (settled.length < 2 || !accountId) return;
     const key = `${accountId}\n${settled.toLowerCase()}`;
@@ -229,7 +226,7 @@ export function MailInbox({ view }: { view: MailViewState }) {
   const fail = (error: Error) => ui.notify(error.message, 'danger');
   // „Ungelesen“: a mail read while the filter is on (opened, stepped past) stays in the list
   // until the filter, folder or mailbox changes – rows don't jump away under the pointer.
-  const filterKey = `${account?.id ?? ''}|${folder}|${view.unread}|${query}`;
+  const filterKey = `${scope}|${folder}|${view.unread}|${query}`;
   const unreadNow = view.unread
     ? (listed ?? []).filter((each) => each.unread > 0).map((each) => each.id)
     : [];
@@ -238,7 +235,7 @@ export function MailInbox({ view }: { view: MailViewState }) {
   else if (unreadNow.some((id) => !kept.ids.has(id)))
     setKept({ key: filterKey, ids: new Set([...kept.ids, ...unreadNow]) });
   if (!view.accounts) return null;
-  if (!account) {
+  if (!scope) {
     return (
       // In the middle in Sender; on a Cloud page at the height of every empty list there.
       <div className="m-auto in-data-empty-frame:my-0">
@@ -289,7 +286,7 @@ export function MailInbox({ view }: { view: MailViewState }) {
           }
           message={
             query
-              ? `Keine${view.unread ? ' ungelesene' : ''} Mail in „${view.labels.get(account.id) ?? account.address}“ sagt „${query}“ – weder im Betreff noch im Text, bei keinem Namen und keiner Adresse.`
+              ? `Keine${view.unread ? ' ungelesene' : ''} Mail ${account ? `in „${view.labels.get(account.id) ?? account.address}“` : 'in deinen Postfächern'} sagt „${query}“ – weder im Betreff noch im Text, bei keinem Namen und keiner Adresse.`
               : view.unread
                 ? `In „${folderName}“ ist keine Mail ungelesen.`
                 : isSpam
@@ -447,7 +444,10 @@ export function MailInbox({ view }: { view: MailViewState }) {
                   >
                     {formatRelativeTime(thread.updatedAt)}
                   </span>
-                  <Unread count={thread.unread} />
+                  {/* On a phone the name's weight says it: the count's room goes to the name. */}
+                  <span className="max-sm:sr-only">
+                    <Unread count={thread.unread} />
+                  </span>
                   <Menu label={`Aktionen für „${name}“`} actions={actions} />
                 </span>
               }
@@ -459,7 +459,7 @@ export function MailInbox({ view }: { view: MailViewState }) {
       {!query && (
         <ListEnd
           key={listKey}
-          accountId={account.id}
+          accountId={scope}
           folder={folder}
           count={threads.data?.length ?? 0}
           limit={limit}

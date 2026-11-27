@@ -28,7 +28,8 @@ export function Component() {
   const found = peopleFound([...areas, { members: everyone }], query);
   return (
     <section aria-label="Bereiche" className="flex min-h-0 flex-1 flex-col gap-3">
-      <header className={PAGE_HEADER}>
+      {/* On a phone the search takes a line of its own under the title. */}
+      <header className={`${PAGE_HEADER} max-sm:flex-wrap`}>
         <MenuButton />
         <WorkspaceMark name={ui.workspace.name} logoUrl={ui.workspace.logoUrl} size={32} />
         <div className="flex min-w-0 flex-1 flex-col">

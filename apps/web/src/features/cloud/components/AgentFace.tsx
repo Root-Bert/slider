@@ -24,7 +24,7 @@ export function AgentFace({
   agent: { id: string; areaId: string | null; shared: boolean };
   areas: readonly { id: string; name: string; color: CloudAreaColor }[] | undefined;
   workspace: { name: string; logoUrl?: string | null };
-  size: 18 | 32 | 48;
+  size: 18 | 24 | 32 | 48;
   /** The list is not one area's own: an agent's area is news. */
   showArea: boolean;
   working?: boolean;

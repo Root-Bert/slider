@@ -1,7 +1,13 @@
 import { useState, useSyncExternalStore } from 'react';
 import { useNavigate, useOutletContext, useParams, useSearchParams } from 'react-router';
-import { mailboxLabels, type MailAccount, type MailFolder } from '@slider/shared';
-import { useMailAccounts, useMailThreads } from '@/lib/api';
+import {
+  ALL_MAILBOXES,
+  allMailboxFolders,
+  mailboxLabels,
+  type MailAccount,
+  type MailFolder,
+} from '@slider/shared';
+import { useMailAccounts } from '@/lib/api';
 import { createStoredStore } from '@/lib/storage';
 import { useMediaQuery } from '@/ui';
 import { mailViewOf, mailViewSearch, NEW_MAIL, OVERVIEW } from '../lib/mail';
@@ -16,7 +22,10 @@ export const ADD_MAILBOX_HASH = '#hinzufuegen';
 export interface MailViewState {
   /** `undefined` while loading. */
   accounts: MailAccount[] | undefined;
+  /** The open mailbox – `null` in „Alle“ and without any. */
   account: MailAccount | null;
+  /** „Alle“: every mailbox at once (from two on, the default) – their special folders. */
+  all: boolean;
   labels: Map<string, string>;
   folders: MailFolder[];
   folder: string;
@@ -31,7 +40,7 @@ export interface MailViewState {
   threadId: string | undefined;
   /** Wide enough for the list and an opened mail side by side. */
   wide: boolean;
-  /** The list's address for a mailbox (and folder); the open mail closes. */
+  /** The list's address for a mailbox or „Alle“ (`ALL_MAILBOXES`), and folder; the open mail closes. */
   listHref: (accountId: string, folder?: string) => string;
   /** An opened mail's address – the list beside it keeps its mailbox and folder. */
   threadHref: (threadId: string) => string;
@@ -50,7 +59,8 @@ const unreadStore = createStoredStore<boolean>({
 
 /**
  * Which mailbox and folder the mail page shows (`?postfach=&ordner=`, see `mailViewOf`) and the
- * mail open beside it (`…/mail/:threadId`). Without a mailbox named: the open mail's, else the first.
+ * mail open beside it (`…/mail/:threadId`). Without a mailbox named: „Alle“ from two mailboxes on
+ * (as the left-most of a page's views), else the one – so a mail opened in „Alle“ stays there.
  */
 export function useMailView(): MailViewState {
   const ui = useSender();
@@ -59,15 +69,16 @@ export function useMailView(): MailViewState {
   const [params] = useSearchParams();
   const wide = useMediaQuery(SPLIT_QUERY);
   const accounts = useMailAccounts(ui.workspace.id).data;
-  const all = useMailThreads(ui.workspace.id).data;
   const asked = mailViewOf(params);
-  const ofOpen = threadId ? all?.find((each) => each.id === threadId)?.accountId : undefined;
-  const account =
-    accounts?.find((each) => each.id === asked.accountId) ??
-    accounts?.find((each) => each.id === ofOpen) ??
-    accounts?.[0] ??
-    null;
-  const folders = account?.folders ?? [];
+  const withAll = (accounts?.length ?? 0) > 1;
+  const fallback = withAll ? ALL_MAILBOXES : (accounts?.[0]?.id ?? '');
+  const named =
+    (asked.accountId === ALL_MAILBOXES && withAll) ||
+    accounts?.some((each) => each.id === asked.accountId);
+  const current = named && asked.accountId ? asked.accountId : fallback;
+  const all = current === ALL_MAILBOXES;
+  const account = all ? null : (accounts?.find((each) => each.id === current) ?? null);
+  const folders = all ? allMailboxFolders(accounts ?? []) : (account?.folders ?? []);
   const folder =
     asked.folder === OVERVIEW || folders.some((each) => each.key === asked.folder)
       ? asked.folder
@@ -75,13 +86,14 @@ export function useMailView(): MailViewState {
   const unread = useSyncExternalStore(unreadStore.subscribe, unreadStore.getSnapshot);
   const [query, setQuery] = useState('');
   const searchOf = (accountId: string, key: string) =>
-    mailViewSearch({ accountId, folder: key }, accounts?.[0]?.id === accountId);
-  const search = account ? searchOf(account.id, folder) : '';
+    mailViewSearch({ accountId, folder: key }, accountId === fallback);
+  const search = current ? searchOf(current, folder) : '';
   const listHref = (accountId: string, key = OVERVIEW) =>
     `${ui.mailPath}${searchOf(accountId, key)}`;
   return {
     accounts,
     account,
+    all,
     labels: mailboxLabels(accounts ?? []),
     folders,
     folder,
@@ -94,7 +106,7 @@ export function useMailView(): MailViewState {
     threadHref: (id) => `${ui.mailThreadPath(id)}${search}`,
     closeHref: `${ui.mailPath}${search}`,
     setFolder: (key) => {
-      if (account) void navigate(listHref(account.id, key), { replace: true });
+      if (current) void navigate(listHref(current, key), { replace: true });
     },
     // The open mail stays open: only the list beside it changes.
     setUnread: unreadStore.set,

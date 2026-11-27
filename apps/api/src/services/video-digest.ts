@@ -1,7 +1,7 @@
 import type Anthropic from '@anthropic-ai/sdk';
-import { eq } from 'drizzle-orm';
+import { eq, inArray } from 'drizzle-orm';
 import { imageSize } from '@slider/odp';
-import { isVideoAttachment } from '@slider/shared';
+import { isAudioAttachment, isVideoAttachment, type Attachment } from '@slider/shared';
 import { attachments } from '../db/schema';
 import type { AppDeps } from '../deps';
 import { badRequest, notFound } from '../http/errors';
@@ -61,7 +61,10 @@ export async function digestVideo(
   if (!row || row.userId !== userId) throw notFound('Nicht gefunden.');
   // Still in its workspace (the speech service is the workspace's).
   await requireRole(deps.db, row.workspaceId, userId);
-  if (!isVideoAttachment(row.type)) throw badRequest('Das ist kein Video.');
+  // A voice message the same, without stills.
+  if (!isVideoAttachment(row.type) && !isAudioAttachment(row.type)) {
+    throw badRequest('Das ist kein Video und keine Sprachnachricht.');
+  }
   const stills = input.stills
     .filter(
       (still) =>
@@ -112,7 +115,7 @@ async function hear(
   audio: { bytes: Uint8Array; name: string; type: string },
 ): Promise<Pick<VideoDigest, 'said' | 'note'>> {
   const speech = await workspaceSpeechConnection(deps, workspaceId);
-  if (!speech.connection) return { said: null, note: 'Kein Sprachdienst – nur die Bilder.' };
+  if (!speech.connection) return { said: null, note: 'Kein Sprachdienst.' };
   const seconds = wavSeconds(audio.bytes);
   const options = {
     durationMs: seconds ? seconds * 1000 : undefined,
@@ -152,7 +155,7 @@ const framed = (text: string) => text.replace(/<\/?\s*datei\b/gi, '‹');
  */
 export async function videoBlocks(
   deps: Pick<AppDeps, 'storage'>,
-  row: { id: string; key: string },
+  row: { id: string; key: string; type: string },
   name: string,
 ): Promise<Anthropic.Beta.BetaContentBlockParam[] | null> {
   const waiting = hearing.get(row.id)?.job;
@@ -179,7 +182,7 @@ export async function videoBlocks(
   const blocks: Anthropic.Beta.BetaContentBlockParam[] = [
     {
       type: 'text',
-      text: `<datei name="${name}" art="Video"${length}>\n${said}${shown}\n</datei>`,
+      text: `<datei name="${name}" art="${isAudioAttachment(row.type) ? 'Sprachnachricht' : 'Video'}"${length}>\n${said}${shown}\n</datei>`,
     },
   ];
   for (const still of digest.stills) {
@@ -190,4 +193,72 @@ export async function videoBlocks(
     });
   }
   return blocks;
+}
+
+/**
+ * What was said in the voice messages and videos on a message, for a line of text (an app's or an
+ * agent's `read_conversation`): by attachment id, „voice message, 0:12: …“ – as heard so far,
+ * never waited for. Only files with a digest; the rest stay names (`withSpokenWords`).
+ */
+export async function spokenWords(
+  deps: Pick<AppDeps, 'db' | 'storage'>,
+  list: readonly Pick<Attachment, 'id' | 'type'>[],
+): Promise<Map<string, string>> {
+  const sound = list.filter((one) => isAudioAttachment(one.type) || isVideoAttachment(one.type));
+  const said = new Map<string, string>();
+  if (sound.length === 0) return said;
+  const rows = await deps.db
+    .select({ id: attachments.id, key: attachments.key, type: attachments.type })
+    .from(attachments)
+    .where(
+      inArray(
+        attachments.id,
+        sound.map((one) => one.id),
+      ),
+    );
+  for (const row of rows) {
+    const bytes = await deps.storage.get(row.key + VIDEO_DIGEST_SUFFIX).catch(() => null);
+    if (!bytes) continue;
+    let digest: VideoDigest;
+    try {
+      digest = JSON.parse(new TextDecoder().decode(bytes)) as VideoDigest;
+    } catch {
+      continue;
+    }
+    const words = digest.said?.length
+      ? `said: ${digest.said.map((one) => one.text).join(' ')}`
+      : (digest.note ?? (digest.said ? 'Nichts gesagt.' : 'still being transcribed'));
+    const length = digest.duration ? `, ${clock(digest.duration)}` : '';
+    said.set(
+      row.id,
+      `${isAudioAttachment(row.type) ? 'voice message' : 'video'}${length}, ${framed(words)}`,
+    );
+  }
+  return said;
+}
+
+/** Words with the files put on them after – a voice message or video with what was said in it. */
+export const withSpokenWords = (
+  text: string,
+  list: readonly Pick<Attachment, 'id' | 'name'>[],
+  spoken: ReadonlyMap<string, string>,
+) =>
+  [
+    text,
+    ...list.map((one) =>
+      spoken.has(one.id) ? `[„${one.name}“: ${spoken.get(one.id)}]` : `[file „${one.name}“]`,
+    ),
+  ]
+    .filter(Boolean)
+    .join(' ');
+
+/** Each message's files with what was said in them, in one go for a page of messages. */
+export async function spokenOnMessages(
+  deps: Pick<AppDeps, 'db' | 'storage'>,
+  messages: readonly { attachments?: readonly Attachment[] }[],
+) {
+  return spokenWords(
+    deps,
+    messages.flatMap((each) => each.attachments ?? []),
+  );
 }

@@ -30,6 +30,12 @@ function phonesIn(text: string): { start: number; end: number; href: string }[] 
 }
 
 /**
+ * Top-level domains that are file endings too: written bare („start.md“, „notes.zip“) it is a
+ * file's name, not a site – an address there is written with `https://` or `www.`.
+ */
+const FILE_TLD = /^[^/?#]*\.(?:md|zip|mov|py|sh|rs)(?:[/?#:]|$)/i;
+
+/**
  * Plain text cut into its words and what can be opened from it: web addresses (with or without
  * `https://`, `www.` or a known top-level domain, trailing punctuation and unmatched brackets
  * left out – `linkifyjs`), mail addresses and phone numbers. Mentions and the like are the
@@ -38,6 +44,12 @@ function phonesIn(text: string): { start: number; end: number; href: string }[] 
 export function linkify(text: string): LinkPart[] {
   const links = find(text)
     .filter((one) => one.type === 'url' || one.type === 'email')
+    .filter(
+      (one) =>
+        one.type !== 'url' ||
+        /^(?:[a-z][\w+.-]*:|www\.)/i.test(one.value) ||
+        !FILE_TLD.test(one.value),
+    )
     .map((one) => ({
       kind: one.type === 'email' ? ('email' as const) : ('url' as const),
       start: one.start,

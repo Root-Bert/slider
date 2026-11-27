@@ -16,6 +16,8 @@ import {
   type StatusFilter,
   type WorkPreferences,
 } from '@/lib/preferences/work-preferences';
+import { writeString } from '@/lib/storage';
+import { readViewDefault, VIEW_DEFAULT_KEY, type ViewDefault } from '@/lib/view-choice';
 import { ColorSwatches, Icon, Section, SegmentedControl, Toggle, type ShowToast } from '@/ui';
 
 /** Sections of `/einstellungen`: your colour and how presentations open (Slider's part). */
@@ -53,6 +55,43 @@ export function ColorPicker({ color, onNotify }: { color: AccentColor; onNotify:
         disabled={updateMe.isPending}
         size={32}
         className="flex-wrap gap-3"
+      />
+    </div>
+  );
+}
+
+const VIEW_DEFAULT_SEGMENTS = [
+  { value: 'auto', label: 'Automatisch' },
+  { value: 'list', label: 'Liste' },
+  { value: 'tiles', label: 'Kacheln' },
+] as const satisfies readonly { value: ViewDefault; label: string }[];
+
+/**
+ * How every page with „Liste“ / „Kacheln“ opens, in this browser (`useViewChoice`): as one had it
+ * there last, or always as rows or tiles – switched on a page, it stays so until one leaves it.
+ */
+export function ViewDefaultChoice() {
+  const [choice, setChoice] = useState(readViewDefault);
+  const pick = (next: ViewDefault) => {
+    setChoice(next);
+    writeString(VIEW_DEFAULT_KEY, next);
+  };
+  return (
+    <div className="flex flex-wrap items-center justify-between gap-3 pt-3">
+      <span className="text-sm text-fg">
+        Liste oder Kacheln
+        <span className="block text-xs text-fg-subtle">
+          Wie sich jede Seite öffnet, in diesem Browser – automatisch so, wie du sie dort zuletzt
+          hattest
+        </span>
+      </span>
+      <SegmentedControl
+        label="Liste oder Kacheln"
+        size="sm"
+        track="soft"
+        segments={VIEW_DEFAULT_SEGMENTS}
+        value={choice}
+        onChange={pick}
       />
     </div>
   );

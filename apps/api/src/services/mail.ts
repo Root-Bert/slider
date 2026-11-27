@@ -597,9 +597,10 @@ export async function syncMailAccount(deps: AppDeps, accountId: string): Promise
         );
     const touched = new Set<string>();
     const arrived = new Set<string>();
+    const goneIds = goneMessageIds(row.sync);
     for (const mail of fetched.mails) {
       try {
-        const thread = await ingestMail(deps, row, mail);
+        const thread = await ingestMail(deps, row, mail, false, goneIds);
         if (thread) touched.add(thread);
         if (thread && ARRIVES.includes(mail.folder)) arrived.add(thread);
       } catch (error) {
@@ -903,16 +904,40 @@ export async function pushMoves(deps: AppDeps, accountId: string): Promise<void>
 function keepOldest(before: MailSyncState, after: MailSyncState): MailSyncState {
   const kept: MailSyncState = { ...after };
   for (const [folder, now] of Object.entries(after)) {
+    // The deleted mails' Message-IDs hold however the folder is numbered.
+    const goneIds = (before[folder] as FolderKept | undefined)?.goneIds;
+    if (goneIds && !(kept[folder] as FolderKept).goneIds) {
+      const carried: FolderKept = { ...kept[folder]!, goneIds };
+      kept[folder] = carried;
+    }
+    if (before[folder]?.validity !== now.validity) continue;
     const was = before[folder]?.oldest;
-    if (
-      was !== undefined &&
-      before[folder]?.validity === now.validity &&
-      was < (now.oldest ?? Infinity)
-    )
-      kept[folder] = { ...now, oldest: was };
+    if (was !== undefined && was < (now.oldest ?? Infinity))
+      kept[folder] = { ...kept[folder]!, oldest: was };
+    // The deleted mails' UIDs too (`FolderKept.gone`) – numbered anew, they mean nothing.
+    const gone = (before[folder] as FolderKept).gone;
+    if (gone && !(kept[folder] as FolderKept).gone) {
+      const carried: FolderKept = { ...kept[folder]!, gone };
+      kept[folder] = carried;
+    }
   }
   return kept;
 }
+
+/**
+ * A folder's state as kept, with the UIDs of mails deleted here (`gone`): no tombstone row, so
+ * fetching older mails again (`fetchOlder`: „Ältere laden“, a search on the server) skips them –
+ * else a deleted one came back. The newest `GONE_KEPT` per folder.
+ */
+type FolderKept = MailSyncState[string] & { gone?: number[]; goneIds?: string[] };
+
+/**
+ * The deleted mails' Message-IDs (`FolderKept.goneIds`, kept on each folder they lay in): a copy
+ * in another folder (a label) or one filed later (a sent copy) has a UID `gone` never saw.
+ */
+const goneMessageIds = (sync: MailSyncState) =>
+  new Set(Object.values(sync).flatMap((one) => (one as FolderKept).goneIds ?? []));
+const GONE_KEPT = 2000;
 
 /** Older mails fetched per ask and mailbox at the list's end (`readOlderMail`). */
 const OLDER_PER_ASK = 50;
@@ -1001,9 +1026,11 @@ async function fetchOlder(
     });
     // Numbered anew meanwhile: the next round reads it as the first time.
     if (read.validity !== known.validity) return false;
-    for (const mail of read.mails)
+    const gone = new Set((known as FolderKept).gone ?? []);
+    const goneIds = goneMessageIds(row.sync);
+    for (const mail of read.mails.filter((one) => !gone.has(one.uid)))
       try {
-        await ingestMail(deps, row, mail, true);
+        await ingestMail(deps, row, mail, true, goneIds);
       } catch (error) {
         deps.log.warn('Mail: an older mail could not be read', { accountId, error });
       }
@@ -1365,12 +1392,15 @@ export async function ingestMail(
   account: MailAccountRow,
   mail: FetchedMail,
   older = false,
+  /** Message-IDs deleted here (`goneMessageIds`): never kept again. */
+  gone?: ReadonlySet<string>,
 ): Promise<string | null> {
   if (mail.raw.byteLength > MAX_RAW_BYTES) return null;
   const parsed = await simpleParser(Buffer.from(mail.raw), { skipImageLinks: true });
   const messageId =
     parsed.messageId ??
     `<${createHash('sha256').update(mail.raw).digest('hex').slice(0, 32)}@slider>`;
+  if (gone?.has(messageId)) return null;
   const [known] = await deps.db
     .select({
       id: mailMessages.id,
@@ -2019,7 +2049,7 @@ export async function markMailSpam(deps: AppDeps, userId: string, threadId: stri
   filterLearn(deps, await threadMessages(deps, thread.id), spam);
 }
 
-/** Deletes a mail conversation here (on the server it stays). */
+/** Deletes a mail conversation here (on the server it stays) – fetched again never (`keepGone`). */
 export async function deleteMailThread(deps: AppDeps, userId: string, threadId: string) {
   const { thread, account } = await ownThread(deps, userId, threadId);
   const rows = await threadMessages(deps, thread.id);
@@ -2027,6 +2057,50 @@ export async function deleteMailThread(deps: AppDeps, userId: string, threadId: 
   for (const row of rows)
     for (const one of [...row.attachments, ...row.inlineImages]) await deps.storage.delete(one.key);
   tell(account, null);
+  // Not awaited: a round reading the mailbox may hold its turn a while – the answer does not wait.
+  void keepGone(deps, account.id, rows).catch((error: unknown) =>
+    deps.log.warn('Mail: deleted mails not kept as gone', { accountId: account.id, error }),
+  );
+}
+
+/** The deleted mails' UIDs kept per folder (`FolderKept.gone`) – in the mailbox's turn. */
+async function keepGone(
+  deps: AppDeps,
+  accountId: string,
+  rows: readonly { folder: string; folders: string[]; uid: number | null; messageId: string }[],
+) {
+  const byFolder = new Map<string, number[]>();
+  const idsByFolder = new Map<string, string[]>();
+  for (const row of rows) {
+    if (row.uid !== null) byFolder.set(row.folder, [...(byFolder.get(row.folder) ?? []), row.uid]);
+    for (const folder of new Set([row.folder, ...row.folders]))
+      idsByFolder.set(folder, [...(idsByFolder.get(folder) ?? []), row.messageId]);
+  }
+  if (idsByFolder.size === 0) return;
+  // A round reading the mailbox writes its whole state: not meanwhile.
+  if (!(await turnFor(accountId))) {
+    deps.log.warn('Mail: deleted mails not kept as gone', { accountId });
+    return;
+  }
+  try {
+    const [row] = await deps.db.select().from(mailAccounts).where(eq(mailAccounts.id, accountId));
+    if (!row) return;
+    const sync: MailSyncState = { ...row.sync };
+    for (const folder of idsByFolder.keys()) {
+      const known = sync[folder] as FolderKept | undefined;
+      if (!known) continue;
+      const uids = byFolder.get(folder) ?? [];
+      const kept: FolderKept = {
+        ...known,
+        gone: [...(known.gone ?? []), ...uids].slice(-GONE_KEPT),
+        goneIds: [...(known.goneIds ?? []), ...idsByFolder.get(folder)!].slice(-GONE_KEPT),
+      };
+      sync[folder] = kept;
+    }
+    await deps.db.update(mailAccounts).set({ sync }).where(eq(mailAccounts.id, accountId));
+  } finally {
+    working.delete(accountId);
+  }
 }
 
 const reSubject = (subject: string) =>

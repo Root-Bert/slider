@@ -1,5 +1,6 @@
 import { AgentAvatar } from './components/AgentAvatar';
 import { AgentAuto } from './components/AgentAuto';
+import { AgentWays } from './components/AgentWays';
 import { DeleteAgentDialog } from './components/AgentActions';
 import { AgentShare } from './components/AgentShare';
 import { useRef, useState } from 'react';
@@ -201,6 +202,7 @@ export function Component() {
                   <CallBoxes call={call} className="flex flex-col gap-5 max-lg:order-first" />
                 )}
                 <AgentAuto agent={agent} />
+                <AgentWays agent={agent} />
                 <div className={cn('flex flex-1 flex-col', !call && 'min-h-0')}>
                   <AgentDesk agent={agent} workspaceId={ui.workspace.id} notify={ui.notify} />
                 </div>

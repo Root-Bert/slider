@@ -1,15 +1,6 @@
-import {
-  createContext,
-  use,
-  useEffect,
-  useLayoutEffect,
-  useState,
-  useSyncExternalStore,
-  type ReactNode,
-} from 'react';
+import { use, useLayoutEffect, useState, useSyncExternalStore, type ReactNode } from 'react';
 import { Link, useNavigate } from 'react-router';
 import { cloudFileType, type CloudAgentSummary, type CloudNode, type Deck } from '@slider/shared';
-import { useAccount } from '@/features/auth';
 import { SummaryBody, UnreadRow, useUnreadNow, type FileSummaryPart } from '@/features/sender';
 import { canCreateDecks } from '@/features/workspaces';
 import {
@@ -25,12 +16,11 @@ import { draftKeys } from '@/lib/drafts';
 import { formatRelativeTime } from '@/lib/format';
 import { lastVisitsStore, openedIn } from '@/lib/last-visits';
 import { routes } from '@/lib/routes';
-import { Button, cn, Icon, LogoMark, RowList, Spinner, TextLink, type IconName } from '@/ui';
+import { Button, cn, Icon, LogoMark, RowList, Spinner, TextLink } from '@/ui';
 import { ActivityFeed } from '../components/ActivityFeed';
 import { AgentAvatar } from '../components/AgentAvatar';
 import { AgentComposer } from '../components/AgentComposer';
 import { areaColor } from '../components/AreaDot';
-import type { CloudSelection } from '../components/CloudPage';
 import { Empty, LoadFailed } from '../components/Empty';
 import {
   FileBrowser,
@@ -46,26 +36,21 @@ import { MyTodos } from '../components/todos/TodoList';
 import { UpcomingEvents } from '../components/calendar/UpcomingEvents';
 import { useCloud } from '../hooks/useCloud';
 import { useLastVisit } from '../lib/last-visit';
-import type { Widget, WidgetType } from './layout';
-
-/** What the list of widgets says of each: its name, its mark, a line about it. */
-export interface WidgetInfo {
-  label: string;
-  icon: IconName;
-  about: string;
-}
+import { FrameContext, Nothing, SHARED_INFO, SHARED_VIEWS, useHomePage, WidgetHead } from './frame';
+import type { BoardKit, WidgetInfo } from './kit';
+import { CLOUD_BOARD, type Widget, type WidgetType } from './layout';
 
 export const WIDGET_INFO: Record<WidgetType, WidgetInfo> = {
-  today: { label: 'Heute', icon: 'schedule', about: 'Datum, Uhrzeit und ein Gruß' },
+  today: SHARED_INFO.today,
   order: {
     label: 'Auftrag',
     icon: 'send',
-    about: 'Was soll erledigt werden? Daraus wird ein Agent.',
+    about: 'Was soll erledigt werden? Daraus wird ein Agent. Ohne Übersicht dazu.',
   },
   forYou: {
     label: 'Für dich',
     icon: 'autoAwesome',
-    about: 'Was gerade auf dich wartet, von der KI gesagt',
+    about: 'Der Auftrag, darunter, was gerade auf dich wartet, von der KI gesagt',
   },
   continue: {
     label: 'Weiterarbeiten',
@@ -102,108 +87,11 @@ export const WIDGET_INFO: Record<WidgetType, WidgetInfo> = {
   },
   pins: { label: 'Angeheftet', icon: 'pushPin', about: 'Deine angehefteten Ordner' },
   storage: { label: 'Speicher', icon: 'storage', about: 'Wie viel Platz der Workspace belegt' },
-  note: { label: 'Notiz', icon: 'notes', about: 'Ein paar eigene Zeilen' },
+  note: SHARED_INFO.note,
 };
-
-/** What a widget needs of the page around it. */
-export interface HomePage {
-  /** „Zuletzt geändert“: the page's files, as `CloudPage` lets them be picked. */
-  selection: CloudSelection;
-  /** The widgets are being arranged: nothing in them reacts. */
-  editing: boolean;
-  /** A note's words changed. */
-  onText: (id: string, text: string) => void;
-}
-export const HomePageContext = createContext<HomePage | null>(null);
-const useHomePage = () => use(HomePageContext)!;
-
-/** The widget round what is drawn: its name, whether its heading shows, the heading's id. */
-interface Frame {
-  widget: Widget;
-  headingId: string;
-  /** How much wider it is on the page than now (while arranging, the panel beside). */
-  widen: number;
-}
-export const FrameContext = createContext<Frame | null>(null);
 
 /** The listing „Zuletzt“'s files and cards come from – one query for both widgets. */
 export const RECENT: CloudPlace = { scope: 'recent' };
-
-/**
- * A widget's heading – with a link or a spinner at its end; hidden where the widget's heading is
- * switched off (its link too: the widget alone is left).
- */
-export function WidgetHead({ action }: { action?: ReactNode }) {
-  const frame = use(FrameContext)!;
-  if (!frame.widget.title) return null;
-  return (
-    <div className="flex shrink-0 items-baseline justify-between gap-3 pb-2">
-      <h2 id={frame.headingId} className="min-w-0 truncate text-base font-semibold text-fg">
-        {WIDGET_INFO[frame.widget.type].label}
-      </h2>
-      {action}
-    </div>
-  );
-}
-
-/** What a widget shows while it has nothing: a quiet line, so it stays there to be seen. */
-function Nothing({ children }: { children: ReactNode }) {
-  return <p className="text-body text-fg-subtle">{children}</p>;
-}
-
-/* ---------- Heute ---------- */
-
-/** Ticks once a minute, at the minute. */
-function useMinute() {
-  const [now, setNow] = useState(() => new Date());
-  useEffect(() => {
-    let timer = 0;
-    const next = () => {
-      timer = window.setTimeout(
-        () => {
-          setNow(new Date());
-          next();
-        },
-        60_000 - (Date.now() % 60_000) + 50,
-      );
-    };
-    next();
-    return () => window.clearTimeout(timer);
-  }, []);
-  return now;
-}
-
-const dateFormat = new Intl.DateTimeFormat('de-DE', {
-  weekday: 'long',
-  day: 'numeric',
-  month: 'long',
-});
-const timeFormat = new Intl.DateTimeFormat('de-DE', { hour: '2-digit', minute: '2-digit' });
-
-function greeting(hour: number) {
-  if (hour < 5) return 'Gute Nacht';
-  if (hour < 11) return 'Guten Morgen';
-  if (hour < 18) return 'Guten Tag';
-  return 'Guten Abend';
-}
-
-function TodayWidget() {
-  const { user } = useAccount();
-  const now = useMinute();
-  const first = user.name.trim().split(/\s+/)[0];
-  return (
-    <div className="flex min-w-0 flex-col gap-1">
-      <p className="text-body text-fg-muted">
-        {greeting(now.getHours())}
-        {first ? `, ${first}` : ''}
-      </p>
-      <p className="text-[44px] leading-none font-semibold tracking-tight text-fg tabular-nums">
-        {timeFormat.format(now)}
-      </p>
-      <p className="text-sm text-fg-muted">{dateFormat.format(now)}</p>
-    </div>
-  );
-}
 
 /* ---------- Auftrag ---------- */
 
@@ -580,7 +468,7 @@ function EventsWidget() {
 
 function ChangedWidget() {
   const ui = useCloud();
-  const { selection } = useHomePage();
+  const selection = useHomePage().selection!;
   const listing = useCloudList(ui.workspace.id, RECENT);
   const nodes = listing.data?.nodes ?? [];
   const target = { name: 'Meine Dateien' };
@@ -795,29 +683,10 @@ function StorageWidget() {
   );
 }
 
-/* ---------- Notiz ---------- */
-
-function NoteWidget() {
-  const frame = use(FrameContext)!;
-  const page = useHomePage();
-  return (
-    <>
-      <WidgetHead />
-      <textarea
-        aria-label="Notiz"
-        value={frame.widget.text ?? ''}
-        onChange={(event) => page.onText(frame.widget.id, event.target.value)}
-        placeholder="Etwas notieren …"
-        className="min-h-16 w-full flex-1 resize-none bg-transparent text-sm leading-6 text-fg outline-none placeholder:text-fg-subtle"
-      />
-    </>
-  );
-}
-
 /* ---------- Registry ---------- */
 
 export const WIDGET_VIEWS: Record<WidgetType, () => ReactNode> = {
-  today: TodayWidget,
+  today: SHARED_VIEWS.today,
   order: OrderWidget,
   forYou: ForYouWidget,
   continue: ContinueWidget,
@@ -831,11 +700,13 @@ export const WIDGET_VIEWS: Record<WidgetType, () => ReactNode> = {
   decks: DecksWidget,
   pins: PinsWidget,
   storage: StorageWidget,
-  note: NoteWidget,
+  note: SHARED_VIEWS.note,
 };
 
+export const CLOUD_KIT: BoardKit = { spec: CLOUD_BOARD, info: WIDGET_INFO, views: WIDGET_VIEWS };
+
 /** What may stand on one's page: the order field for members and admins, as the server says. */
-export function useAvailable(): (type: WidgetType) => boolean {
+export function useAvailable(): (type: string) => boolean {
   const ui = useCloud();
   return (type) => type !== 'order' || canCreateDecks(ui.workspace.role);
 }

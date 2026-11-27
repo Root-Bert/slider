@@ -20,6 +20,7 @@ import { findDeck, memberNamed } from './mcp';
 import { listMilestones, todoByRef } from './todos';
 import { listMembers } from './workspaces/members';
 import { ToolChatError } from './tool-chat';
+import { TOOL_CARDS } from './agent-catalog';
 
 /*
  * What an agent wants done that cannot be undone or reaches out – deleting, sending under the
@@ -29,28 +30,9 @@ import { ToolChatError } from './tool-chat';
  */
 
 /** The tools that wait for „Bestätigen“, with the word on the button that does it. */
-export const NEEDS_OK = new Map<string, string>([
-  ['delete', 'Löschen'],
-  ['delete_event', 'Löschen'],
-  ['delete_mail', 'Löschen'],
-  ['send_mail', 'Senden'],
-  ['delete_presentation', 'Löschen'],
-  ['delete_item', 'Löschen'],
-  ['delete_message', 'Löschen'],
-  ['remove_from_group', 'Entfernen'],
-  ['leave_group', 'Verlassen'],
-  ['unsubscribe_mail', 'Abbestellen'],
-  ['delete_todo', 'Löschen'],
-  ['delete_milestone', 'Löschen'],
-  ['delete_calendar', 'Löschen'],
-  ['share_link', 'Freigeben'],
-  ['delete_version', 'Löschen'],
-  ['delete_area', 'Löschen'],
-  // Others then see what was the person's: a group's whole history, a file, a copy in an area.
-  ['add_to_group', 'Hinzufügen'],
-  ['share_file', 'Freigeben'],
-  ['copy_files', 'Kopieren'],
-]);
+export const NEEDS_OK: ReadonlyMap<string, string> = new Map(
+  Object.entries(TOOL_CARDS).flatMap(([name, card]) => (card.ok ? [[name, card.ok]] : [])),
+);
 
 /** Asked only when it reaches others (`mustAsk`): copying into one's own files is just done. */
 const ASKED_WHEN_SHARED = new Set(['copy_files']);
@@ -403,7 +385,9 @@ export async function askText(
       if (names.length === 0)
         throw new ToolChatError('None of these items is there (list_folder).');
       const they = names.length > 1 ? 'sie' : 'es';
-      const into = folder ? (await loadNode(deps, userId, folder, 'edit').catch(asMistake)).node : null;
+      const into = folder
+        ? (await loadNode(deps, userId, folder, 'edit').catch(asMistake)).node
+        : null;
       // Into a folder of their own or one shared with them, outside an area: its people see it.
       if (into && !into.areaId)
         return `${named(names)} in „${into.name}“ kopieren? Wer den Ordner sieht, sieht ${they} dann.`;

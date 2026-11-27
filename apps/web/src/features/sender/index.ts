@@ -38,6 +38,7 @@ export { isNewKind, type NewKind } from './lib/new';
 export { MailAccounts, NewMailbox, NewMailboxButton } from './components/mail/MailAccounts';
 export {
   MailBody,
+  showsOverview,
   MailboxTabs,
   MailToolbar,
   UnreadFilter,

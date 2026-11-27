@@ -10,7 +10,13 @@ import {
 import type { Config } from '../src/config';
 import { RecordingMailer, type Mailer } from '../src/mail/mailer';
 import { SSO_LOGINS_PER_HOUR } from '../src/routes/auth';
-import { userIdentities, workspaceMembers, workspaces, workspaceSso } from '../src/db/schema';
+import {
+  userIdentities,
+  users,
+  workspaceMembers,
+  workspaces,
+  workspaceSso,
+} from '../src/db/schema';
 import type { FetchLike } from '../src/sources/safe-fetch';
 import {
   cookiePair,
@@ -305,7 +311,16 @@ describe('company login per workspace (BER-162)', () => {
   it('signs colleagues in, links existing accounts, refuses other domains and a closed domain', async () => {
     const idp = fakeIdp();
     const mailer = new RecordingMailer();
-    await context(idp, {}, mailer);
+    // The instance's own SSO too (same fake provider): a way in besides the company login.
+    const oidc = {
+      issuer: ISSUER,
+      clientId: 'slider-client',
+      clientSecret: 'oidc-secret',
+      label: 'SSO',
+      scopes: 'openid profile email',
+      redirectUri: 'http://localhost:5173/api/auth/oidc/callback',
+    };
+    await context(idp, { oidc }, mailer);
     const admin = await activeSso();
 
     const { authorize, callback } = await ssoLogin(idp, 'Ben@Firma.de', '/decks');
@@ -405,6 +420,21 @@ describe('company login per workspace (BER-162)', () => {
           .where(eq(userIdentities.userId, body.user!.id))
       ).map((row) => row.provider),
     ).toEqual(['sso']);
+    // Nor does another way in make the account first (and join the workspace) only to be refused.
+    idp.claims = { ...idp.claims, sub: 'kc-cleo', email: 'cleo@firma.de', name: 'Cleo' };
+    const oidcStart = await ctx.request('/api/auth/oidc/login?returnTo=%2F');
+    const oidcAuthorize = new URL(oidcStart.headers.get('location') ?? '');
+    idp.nonce = oidcAuthorize.searchParams.get('nonce') ?? '';
+    const viaOidc = await ctx.request(
+      `/api/auth/oidc/callback?state=${oidcAuthorize.searchParams.get('state')}&code=the-code`,
+      { cookie: (oidcStart.headers.get('set-cookie') ?? '').split(';')[0] ?? '' },
+    );
+    expect(viaOidc.headers.get('location')).toContain('/login?error=sso_required');
+    expect(sessionCookieFrom(viaOidc)).toBeNull();
+    expect(await ctx.deps.db.select().from(users).where(eq(users.email, 'cleo@firma.de'))).toEqual(
+      [],
+    );
+    idp.claims = { ...idp.claims, sub: 'kc-anna', email: 'anna@firma.de', name: 'Anna' };
     expect(
       (
         await ctx.request('/api/auth/email/start', {
@@ -415,6 +445,33 @@ describe('company login per workspace (BER-162)', () => {
     ).toBe(204);
     expect(sessionCookieFrom((await ssoLogin(idp, 'anna@firma.de')).callback)).toBeTruthy();
     // Off again: the switch answers as it is.
+    expect(
+      workspaceSsoSchema.parse(await (await setRequired(admin.cookie, false)).json()).required,
+    ).toBe(false);
+    // Another provider: Anna's sign-in through the earlier one proves nothing for it – only one
+    // through it since (her identity's subject stays the same).
+    ctx.clock.advance(1000);
+    const other = workspaceSsoSchema.parse(
+      await (
+        await saveSso(admin.workspaceId, admin.cookie, {
+          clientId: 'other-client',
+          clientSecret: 'other-secret',
+        })
+      ).json(),
+    );
+    txt['_slider-sso.firma.de'] = [[other.dnsRecord!.value]];
+    const reverified = await ctx.request(`/api/workspaces/${admin.workspaceId}/sso/verify`, {
+      method: 'POST',
+      cookie: admin.cookie,
+    });
+    expect(reverified.status).toBe(200);
+    expect((await setRequired(admin.cookie, true)).status).toBe(400);
+    ctx.clock.advance(1000);
+    idp.claims = { ...idp.claims, aud: 'other-client' };
+    expect(sessionCookieFrom((await ssoLogin(idp, 'anna@firma.de')).callback)).toBeTruthy();
+    expect((await setRequired(admin.cookie, true)).status).toBe(200);
+    // Off needs no sign-in: with the provider broken at its end, an admin's open session (a
+    // session from before, not the company login's) is the way out.
     expect(
       workspaceSsoSchema.parse(await (await setRequired(admin.cookie, false)).json()).required,
     ).toBe(false);

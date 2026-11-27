@@ -137,7 +137,6 @@ function AreaSection({
                 activeKeyId={editable ? (keys.find((key) => key.active)?.id ?? null) : null}
                 choosable={editable && keys.length > 0}
                 pickModel={!instance && rule.inherit === 'key'}
-                onNotify={onNotify}
               />
             )}
             {editable &&
@@ -163,14 +162,7 @@ function AreaSection({
             <KeyForm
               workspaceId={workspaceId}
               kind={kind}
-              onDone={(activated) => {
-                setAdding(false);
-                onNotify(
-                  activated
-                    ? 'API-Key gespeichert – er ist aktiv'
-                    : 'API-Key gespeichert – setzt ihn aktiv, um ihn zu nutzen',
-                );
-              }}
+              onDone={() => setAdding(false)}
               onCancel={
                 keys.length > 0 || inherited || OPTIONAL.has(kind)
                   ? () => setAdding(false)
@@ -289,7 +281,6 @@ function CallNotesToggle({
         update.mutate(
           { callNotes: next },
           {
-            onSuccess: () => onNotify(next ? 'Notizen in Anrufen an' : 'Notizen in Anrufen aus'),
             onError: (error) => {
               setOn(!next);
               onNotify(error.message, 'danger');
@@ -335,10 +326,6 @@ function CallModelSelect({
           update.mutate(
             { callModel: next },
             {
-              onSuccess: () =>
-                onNotify(
-                  `Der Agent im Anruf denkt jetzt mit dem Modell für ${AI_MODEL_ROLES[next].label}`,
-                ),
               onError: (error) => {
                 setModel(before);
                 onNotify(error.message, 'danger');
@@ -378,10 +365,7 @@ function NameForm({
         event.preventDefault();
         if (!changed) return;
         update.mutate(parsed.data, {
-          onSuccess: (integrations) => {
-            setName(integrations.aiName ?? DEFAULT_AI_NAME);
-            onNotify('Name gespeichert');
-          },
+          onSuccess: (integrations) => setName(integrations.aiName ?? DEFAULT_AI_NAME),
           onError: (error) => onNotify(error.message, 'danger'),
         });
       }}

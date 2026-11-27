@@ -9,6 +9,7 @@ import { AsideAgent, AsideBullets, AsidePart } from '../AsidePart';
 import { CalendarList } from './CalendarList';
 import { iso } from './days';
 import { MonthGrid } from './MonthGrid';
+import { hiddenIn } from './sources';
 
 /** The agent asked beside the calendar, per workspace – opened again, its chat is back. */
 const agentsStore = createStoredStore<Record<string, string>>({
@@ -45,18 +46,21 @@ export function CalendarAside({
   busy,
   calendars,
   hidden,
+  source,
   onToggle,
 }: {
   anchor: Date;
   onPick: (day: string) => void;
   busy: ReadonlySet<string>;
   calendars: Calendar[] | undefined;
+  /** What the list hides – the page's source (`sources.ts`) leaves the others' out besides. */
   hidden: ReadonlySet<string>;
+  source: string | null;
   onToggle: (id: string) => void;
 }) {
   const ui = useCloud();
   const workspaceId = ui.workspace.id;
-  const overview = useCalendarOverview(workspaceId, hidden);
+  const overview = useCalendarOverview(workspaceId, hiddenIn(hidden, calendars, source));
   const [agentId, setAgentId] = useCalendarAgent(workspaceId);
   const order = useOrderCloudAgent(workspaceId);
   const data = overview.data;
@@ -121,7 +125,12 @@ export function CalendarAside({
         {calendars && (
           <AsidePart label="Kalender" icon="calendar">
             <div className="-mx-2">
-              <CalendarList calendars={calendars} hidden={hidden} onToggle={onToggle} />
+              <CalendarList
+                calendars={calendars}
+                hidden={hidden}
+                source={source}
+                onToggle={onToggle}
+              />
             </div>
           </AsidePart>
         )}

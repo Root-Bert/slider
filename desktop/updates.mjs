@@ -1,4 +1,4 @@
-// Updates from the GitHub releases of Root-Bert/slider (package.json → build.publish): looked for
+// Updates from the GitHub releases of Root-Bert/office (package.json → build.publish): looked for
 // at start and every 6 h, loaded in the background, installed on „Neu starten“ or the next quit.
 // Only the packaged app; macOS installs only signed updates, so an unsigned build just logs the
 // refusal to logs/updates.log and keeps running.

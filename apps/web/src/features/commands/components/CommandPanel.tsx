@@ -240,6 +240,8 @@ function CommandBody({
     const app = hitApp(node);
     if (app === 'slider') openDeck(node);
     else if (app === 'writer') openApp({ id: 'writer', to: routes.document(node.id) });
+    else if (app === 'page') openApp({ id: 'cloud', to: routes.cloudPage(workspaceId, node.id) });
+    else if (app === 'diagram') openApp({ id: 'cloud', to: routes.diagram(node.id) });
     else if (app === 'reader') openApp({ id: 'reader', to: routes.pdf(node.id) });
     else openApp({ id: 'cloud', to: routes.cloudFile(workspaceId, node.id) });
   };

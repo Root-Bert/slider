@@ -288,6 +288,7 @@ export const iconPaths = {
   /** A sticker's text as a heading. */
   title: 'M5 4v3h5.5v12h3V7H19V4z',
   remove: 'M19 13H5v-2h14v2z',
+  repeat: 'M7 7h10v3l4-4-4-4v3H5v6h2V7zm10 10H7v-3l-4 4 4 4v-3h12v-6h-2v4z',
   formatBold:
     'M15.6 10.79c.97-.67 1.65-1.77 1.65-2.79 0-2.26-1.75-4-4-4H7v14h7.04c2.09 0 3.71-1.7 3.71-3.79 0-1.52-.86-2.82-2.15-3.42zM10 6.5h3c.83 0 1.5.67 1.5 1.5s-.67 1.5-1.5 1.5h-3v-3zm3.5 9H10v-3h3.5c.83 0 1.5.67 1.5 1.5s-.67 1.5-1.5 1.5z',
   formatItalic: 'M10 4v3h2.21l-3.42 8H6v3h8v-3h-2.21l3.42-8H18V4z',
@@ -372,6 +373,8 @@ export const iconPaths = {
   sameHeight: 'M3 3h18v2H3zM3 19h18v2H3zM6 7h4v10H6zM14 7h4v10h-4z',
   /** Own drawing: boxes placed freely, in a row, in a column – a group's „Fluss“. */
   flowFree: 'M3 4h7v6H3zM14 7h7v5h-7zM6 14h7v6H6z',
+  /** Material Icons „account_tree“: a diagram on a page. */
+  accountTree: 'M22 11V3h-7v3H9V3H2v8h7V8h2v10h4v3h7v-8h-7v3h-2V8h2v3z',
   flowRow: 'M2 7h5.5v10H2zM9.25 7h5.5v10h-5.5zM16.5 7H22v10h-5.5z',
   flowColumn: 'M7 2h10v5.5H7zM7 9.25h10v5.5H7zM7 16.5h10V22H7z',
   /** Arrows pointing in at a bar or a square: a box fitted to its text („An Text anpassen“). */

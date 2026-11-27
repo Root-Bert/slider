@@ -134,6 +134,9 @@ const MAILBOX = {
   description: 'Its id (from list_mailboxes) or its address.',
 } as const;
 
+/** Said to agents and the panel only: an app has no card – its client asks (`destructiveHint`). */
+export const UNSUBSCRIBE_ON_CARD = ' Waits for their „Abbestellen“ on a card in this chat.';
+
 /** No tool takes a password, none gives one back (asserted in the API tests). */
 export const MAIL_TOOLS: Anthropic.Beta.BetaTool[] = [
   {
@@ -379,10 +382,13 @@ export const MAIL_TOOLS: Anthropic.Beta.BetaTool[] = [
   {
     name: 'unsubscribe_mail',
     description:
-      'Leaves the list a newsletter conversation came from, as „Abbestellen“ on the mail does – by the one click or the mail the sender offers; where only their page does it, you get its link to give the person. Waits for their „Abbestellen“ on a card in this chat.',
+      'Leaves the list a newsletter conversation came from, as „Abbestellen“ on the mail does – by the one click or the mail the sender offers; where only their page does it, you get its link to give the person.' +
+      UNSUBSCRIBE_ON_CARD,
     input_schema: {
       type: 'object',
-      properties: { thread: { type: 'string', description: 'The conversation (from search_mail).' } },
+      properties: {
+        thread: { type: 'string', description: 'The conversation (from search_mail).' },
+      },
       required: ['thread'],
     },
   },

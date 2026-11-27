@@ -132,7 +132,9 @@ Decrypt the deck's blob (`EncryptedBlobStorage` + `.data/data-key`), then from `
 ## Shared checkout
 
 - Commit with paths: `git commit -m … -- <your files>` (or `--only`). A bare `git commit` after
-  `git add` takes whatever another agent staged too (a rename slipped into a foreign commit so).
+  `git add` takes whatever another agent staged too (a rename slipped into a foreign commit so;
+  a `git rm --cached` left staged for later went into another agent's style commit). Stage and
+  commit in one command – nothing of yours stays in the index between calls.
 - Waiting for others' checks: `pgrep -f "vitest|tsc --noEmit|playwright"` also matches shells
   whose command quotes those words (your own wait loop, another agent's multi-line command) and
   never ends. Match only node/bun processes:
@@ -144,6 +146,10 @@ Decrypt the deck's blob (`EncryptedBlobStorage` + `.data/data-key`), then from `
 
 - Bun's transpiler treats a statement starting with `declare(` as ambient and drops it – never
   name a function `declare` (seen silently skipped, Bun 1.3.14).
+- Bun's `formData()` / Hono's `parseBody()` ignore a part's `Content-Type` and take a file's type
+  from its name: `.webm` is `video/webm` though the browser sent `audio/webm`, `.m4a` is
+  `audio/x-m4a`, no ending is `''`. A recording put up as an attachment is named for the type it
+  should get (`.weba` for WebM sound, `Composer.tsx` `recordingFile`) – Bun 1.3.14.
 
 ## AI (`ai-context.ts`, `ai-proposals.ts`)
 
@@ -176,52 +182,118 @@ Decrypt the deck's blob (`EncryptedBlobStorage` + `.data/data-key`), then from `
   gerade überlastet“ (`failureMessage`), so the real cause is hidden: probe the poll and the
   `delivery.*.bfl.ai` fetch yourself (both free; the POST costs). Polls are pinned to the IP.
 
-## Material page
+## Agent harness (`agent-catalog.ts`, `tool-chat.ts`, `cloud-agents.ts`)
 
-- A page of its own beside the presentation, not in the track (`board/MaterialPage.tsx`): the
-  store's `materialOpen` (`?material`, a new deck via `OPEN_ON_BOARD`); the presentation root
-  slides out right (`translate`, `inert`), the page in from the left; the fullscreen target wraps
-  both. The minimap's paperclip tile (left of the thumbnails, the bracket never on it) and M open
-  it; „Präsentation →“ / M go back. Viewer and editor keys sleep there (`keysActive`), the board
-  panel portals into `[data-material-page]` and is no longer one of the deck's side panels.
-- The same board beside a text document (Writer): everything in `board/` reads its host from
-  `BoardOwnerContext` (`board/board-owner.tsx`: kind `deck`/`document`, id, rights, author, AI,
-  toast, the page's and its panel's open flags, wording) – never the viewer's stores. The deck's
-  host is `components/DeckBoardOwner.tsx` (round `MaterialPage` and `AiChatPanel`), the document's
-  `writer/editor/DocumentMaterial.tsx` (`Editor` holds `materialOpen`, moves `[data-writer-root]`
-  out and makes it inert; M, the tile above the page strip, `?material`). Routes, query keys and
-  the tus target by owner: `lib/api/board-owner.ts` (`boardPath`, `boardKeys` – a deck's keys are
-  `queryKeys.board` etc. as ever, a document's `['document-material', id, …]`). Outbox entries
-  keep the owner's id in `deckId`; a document's carry `kind: 'document'`, none means a deck. A
-  document hears `{ type: 'board' }` on its live stream and refetches board and questions.
+- Every agent tool has one card in `TOOL_CARDS` (app, `reads`, `ok`, `askedOnly`, `inTheirName`,
+  `changesDeck`); `toolsWhere` builds the sets from it. The cards only shape what the model sees –
+  `refuse()` enforces every call, also for helpers and asked cards.
+- Tool search: `ToolChat.deferred` marks tools `defer_loading`; `toolsFor` (`ai-providers.ts`)
+  adds `tool_search_tool_bm25_20251119` only on Anthropic's own API (`findsTools`: provider
+  anthropic, `baseUrl` null) and only while at least one tool stays loaded – else it strips the
+  flag (gateways, OpenAI-style providers get every tool whole). No beta header with SDK 0.133.
+  `server_tool_use`/`tool_search_tool_result` blocks go back unchanged with the assistant turn; a
+  `pause_turn` stop is continued. Agents keep `AT_HAND` (`cloud`, `agent`) loaded, the rest is
+  found. Diagrams are an app of their own (`diagram`): their three tools are ~8.5k characters
+  (the changes' guide), a third of all `cloud` tools – loaded each turn they cost ~2k tokens a
+  turn for something rarely asked. Probed live 2026-11-26: a deferred `create_todo` was found and used.
+- Provider capabilities are asked, never listed: the context window comes from Anthropic's Models
+  API (`contextWindow`, `max_input_tokens`), `null` elsewhere.
+  Context editing (`clear_tool_uses_20250919`) and tool search are Anthropic-only.
+- Memory (`agent-memory.ts`, table `agent_memories`): a custom `memory` tool with Anthropic's
+  memory_20250818 commands and result texts, under `/memories`, ≤ 50 files of ≤ 20 000 chars.
+  Path and content are sealed (encryptedText), so rows are matched in JS and updated by id.
+  Writes refused when the run is `unattended` or `foreign`; views allowed (and count as reads in
+  the work note, `memoryReads`). Never injected into the prompt – the model views it itself. A
+  shared agent has one memory its members see and edit (`PUT /cloud/agents/:id/memories`;
+  bad path/too long = 400 in German). Sharing empties it (`forgetMemory`; the share menu asks
+  first when `memoryFiles > 0`), unsharing deletes what others wrote (`updatedBy` ≠ owner).
+- One's own agent (`own-agent.ts`, `ownAgentId` – deterministic UUID): the AI in Cloud
+  (`cloud-chat.ts`) and on the start page (`home-chat.ts`) get its „Anweisungen“ and its memory
+  (`ownWays`, `waysPrompt`) – only while that agent exists and is not shared.
+- Helpers (`agent-helpers.ts`, `ask_helper`): a question runs in its own small loop with the
+  run's tools whose card `reads` (each through `runAgentTool` → `refuse()`; a call to anything
+  else is refused), at most 12 turns, `fast`, context editing on. Only its answer goes back;
+  nothing is stored, no list shows it. `ToolChat.parallel` runs neighbouring `ask_helper` calls
+  at once (only those), at most 4 per turn (`ToolChat.perTurn`, the rest refused) and 12 per run.
+  Probed live: two helpers side by side, correct ids.
+- Within one run the tool list only grows (`given` in `answerToolChat`): something taken in mid-run
+  that allows less (`confined`, `foreign`) does not remove tools – the history's `tool_use` and
+  tool search's `tool_reference` blocks need them – `refuse()` refuses instead (also before
+  `ask_helper`); the system prompt is rebuilt each turn, so it says what the run allows now. Same
+  rule in `material-chat.ts`/`material-questions.ts`: tools stay named, the last turn (and every
+  turn once the web searches are used up) is `answerOnly`. The last turn
+  sends the tools with `answerOnly` (`tool_choice: none`) plus `LAST_TURN` text; the OpenAI path
+  (`tool_choice: 'none'`) is untested live.
+- A summary of a long chat is keyed by `HistoryEntry.same` (who + text + work note, never the
+  writer-dependent rendering), so another writer reuses it; it reads `HistoryEntry.named` (every
+  message with its writer's name), and its input is capped (`SUMMARY_INPUT`, then it says so).
+- Sharing an agent: one transaction – `shared` set first, memory emptied, then 409 (rollback) if a
+  run holds its place (`runsOf`). `begin()` re-reads the agent row `FOR SHARE` after `runs.set`,
+  so a run never works private on a just-shared agent. The AI in Cloud/start writes the own
+  agent's memory via `runOwnMemory` (check + write in one transaction, row `FOR SHARE`).
+- Call orders: `Call.orderForeign` marks orders proposed while others were in the call or heard in
+  `record`; `dispatch` passes it as `foreign` even when sent after they left, and also when anyone
+  but the sender is in `record` (anyone in the call may send with ✓).
+- Summaries: `SUMMARY_VERSION` in `agent-transcripts.ts` – raise it when what a summary reads
+  changes, so stored ones are made anew.
+- Writer for agents: `create_document`/`edit_document` land on the desk – a new one is trashed on
+  take-back, an edit restores the version from before the agent's first change to it
+  (`documentOnDesk` keeps the first `from`; take-back refused if someone wrote a later version).
+  `create_diagram`/`edit_diagram` the same – `documentOnDesk` takes any versioned Cloud file; a
+  new one is found by „(diagram id …)“ in the tool's reply.
+
+## Material (what a deck is built from)
+
+- The board is gone (the user's call, 2026-11-26: „nette Idee, aber noch nicht reif“): no
+  material page, no paperclip tile in the minimap or above Writer's page strip, no M key, no
+  „im Material“ in the avatars, no React Flow. Files come in at the paper clip / paste on Folie 1's
+  `CreatePrompt` (`lib/api/deck-material.ts`: `useAttachMaterial` – a card's frame is still sent,
+  `MATERIAL_CARD` at 0/0) and MCP `add_file`; notes and links only from MCP `add_note`/`add_link`/
+  `update_note`. The AI reads it (creation, comments, the avatar chat `chat/DeckAiChat.tsx` with
+  `chat/sources.tsx` opening a cited file; `material-chat.ts` has `MATERIAL_TOOLS` only and writes
+  into its answer). The API, tables and routes are the board's as before; the IndexedDB store
+  `board` stays for old databases.
+- „Material“ (2026-11-26, with the session that reviews: nothing invisible, nothing undeletable):
+  one side panel listing files, notes, links and folders newest first (`viewer/material/
+  MaterialList.tsx`, `MaterialPanel` exported for Writer) – a file opens in a tab, a link on its
+  site, a note unfolds; „Löschen“ after asking where `deleteBoardItem` allows it (own with comment
+  rights, anyone's managing), no toast. Ways in: a presentation's ⋯ menu in the lists
+  (`DeckActions` → `/d/:id?material`), ⌘K „Material“ (`DeckCommands`), „Ansehen“ after the line
+  under the prompt on Folie 1; a document's ⋯ menu (`DocumentItems` → `/t/:id?material`) and ⌘K
+  in Writer. The open presentation and document have no ⋯ of their own and no bar button for it.
+  Viewer state `materialPanelOpen` is one of the right side panels (opening one closes the others).
+- Material vs. Cloud (decided 2026-11-26, not built): moving it into a Cloud folder next to the
+  presentation was dropped – Cloud checks the folder's ACL (`storeUpload`, `loadNode`,
+  `trashNodes`), and a presentation in its owner's „Meine Dateien“ shared by deck access gives
+  the others no right to a sibling folder; it would need a deck-access bypass in Cloud's core and
+  notes as `.md` lose place, bindings, colours and questions for good. So material stays the
+  deck's (`deck_materials`/`deck_board_items`, `deck_id` or `document_id`): rights = deck access
+  (`requireBoardAccess` → `deckAccess`; documents `documentBoardRights`); moved, renamed,
+  archived, put in „Gelöscht“: it stays with the deck/document and comes back with it; deleted
+  for good: rows cascade (FKs to `decks` / `cloud_nodes`), bytes go with `decks/<id>/` (media
+  store, `deckBlobs`) or `documents/<id>/materials/` (`cloud/blobs.ts`); a copy (`copyNodes`)
+  takes no material.
 - Not in the ODP: `deck_materials`, `deck_board_items`, `material_chunks`; bytes under
   `decks/<id>/materials/`. Files only via tus (`purpose material`), client id makes retries
   idempotent. Files > 150 MB are not read.
 - SheetJS 0.20.3 pinned as the CDN tarball (npm `xlsx` is stale); no formulas run.
 - No `tsvector`: content is encrypted at rest, so search decrypts and ranks in the server.
-- Offline board outbox (IndexedDB store `board`, DB v3); files are not queued. Server-taken
-  actions stay laid over the board until a later fetch (`taken`/`forget`) – else a drop jumps back.
-- React Flow (`@xyflow/react` 12.12.0): drag frames must be `flushSync`ed; grid 1 unit; never
-  `zoomIn`/`zoomOut` (use `zoomBy`); give every node its size and `measured`, and measure free text
-  off-screen – otherwise „ResizeObserver loop completed with undelivered notifications“. Its own
-  delete/arrow keys are off (it listens page-wide). Non-interactive nodes get
-  `pointer-events: none` → their cards need `pointer-events-auto`.
 - Material upload completions use unique blob keys and a per-material transaction lock.
   A completed request can be retried after tus cleanup; only a losing attempt's own blob is deleted.
 - Folder upload: server appends to `bound_ids` with jsonb `||` (no read-modify-write race).
 - Live words arrive as word parts: join where the previous part left off, outside the state
   updater (strict mode runs it twice → „Präs entation“).
 - Deck creation: limit 45 min, 3 M tokens; waits ≤ 3 min for files still being read.
-- Open / later: cards opened in place (PDF, sheet on the board); drawing, arrows, groups on the
-  board; material linked from Nextcloud (picking one copies its bytes today); material in
+- Open / later: a board again once it is ripe; adding notes, links and files from the panel
+  (today only the prompt and the AI apps add); material linked from Nextcloud; material in
   templates.
 
 ## KI-Apps over MCP (`services/mcp.ts`, `services/app-connections.ts`)
 
 - One catalogue for agents and apps – keep them level when a feature comes: apps get
   `APP_TOOLS` (`mcp-cloud.ts`: Slider's, Cloud's, Writer's, to-dos, and `PERSON_TOOLS` – Sender's
-  conversations posted under the person's name, their mail as the agents' `MAIL_TOOLS` (drafts,
-  nothing sent), their agents (`list_agents`, `read_agent`, `message_agent`), their settings –
+  conversations posted under the person's name, their mail as the agents' `MAIL_TOOLS` (send,
+  delete and unsubscribe too – `destructiveHint`, the app's client asks; no card there), their agents (`list_agents`, `read_agent`, `message_agent`), their settings –
   read only: `change_settings` is the agents' alone, an app never changes them).
   Cloud agents take Slider's by name (`FROM_MCP`), Cloud's file details, sharing, deleted and
   areas from `APP_TOOLS` (`FROM_APPS`, run through `runAppTool` with the agent's workspace), and
@@ -258,7 +330,8 @@ Decrypt the deck's blob (`EncryptedBlobStorage` + `.data/data-key`), then from `
   delete. Web: `BlockedByPicker` in the panel (under it „#n wartet darauf“); the Zeitplan marks
   what the dragged/open one holds up (`heldUpBy`, blue) and red what starts on or before an open
   blocker's due day (`startingTooEarly`, also after the drop) – marked, never moved. The Zeitplan
-  is `data-own-drag` (no page selection box). Not yet in agents' tools (`mcp-cloud.ts`).
+  is `data-own-drag` (no page selection box). Agents/apps: `update_todo`'s `blocked_by` (the whole
+  list, ids or numbers, `blockersByRef`); lines say „waits on #n“, `read_todo` „Waiting on it“.
 - Zeitplan order (`todos.position`, migration 0187, user's call 2026-11-25): a milestone's lines
   stand as put by hand – sorted by `position`, then number; the backfill took the old order (by
   start, the unplanned last). A line dragged up/down (by its name, or its bar pulled vertically
@@ -292,18 +365,25 @@ Decrypt the deck's blob (`EncryptedBlobStorage` + `.data/data-key`), then from `
   zod 3, the root `overrides` force zod 4 and then nothing binds) writes the gzipped page into
   `mcp-view-html.ts`. No `color-scheme: dark` there: a dark iframe in a light host gets an opaque
   canvas round the card. Checked in a sandboxed srcdoc frame under the spec's default CSP with a
-  fake host; not yet in Claude itself (MCP Apps are not on in every organisation).
+  fake host. In ChatGPT (2026-11-26) the card shows as meant; in Claude (2026-11-25) the frame came up
+  blank – the cause there not yet known (the server's result was complete). Since then nothing fails silently: a classic script before the module
+  writes load errors into the page (grey, readable on light and dark hosts), an unanswered
+  `ui/initialize` and a missing `tool-result` say so, a result without card data shows the slide
+  and which parts arrived. The messages also go as `structuredContent.a2ui` (per the spec's best
+  practices the field for UI rendering); the page takes them from there, the resource, or that resource
+  flattened to text. Replay test: a white host page, the spec's default CSP, `srcdoc` with `</`
+  escaped (the page's own `</script>` ends the host's script otherwise); a grey line „In diesem
+  Rahmen laufen keine Skripte.“ stands in the HTML until the first script removes it.
 - OAuth 2.1, PKCE S256 only, dynamic registration and https client ids (metadata document,
   fetched via `safeFetch`); loopback redirects match on any port. Codes 5 min, single use – a
   wrong verifier spends the code too. Access `slider_at_` 1 h, refresh `slider_rt_` rotates (old
   one dead) and dies after 180 days unused, tokens from /konto `slider_pat_` never expire. Only
   SHA-256 hashes are stored; „Entfernen“ ends access at once.
 - The connector's icon: before connecting, the app only has the site (`/api/mcp` is 401 without a
-  token) – `/favicon.ico` (light mark, PNG inside, made from `favicon.svg`; renderers outside
-  browsers ignore its `<style>`) is what such fetchers find; once connected, `serverInfo.icons`
-  (`favicon.svg`, `icon-192.png`, absolute on `webOrigin`). Since 2026-11-22 `index.html` names
-  Cloud's icons (the start page's app), no longer the `.ico` – a fetcher reading the page's links
-  finds Cloud's SVG, one asking for `/favicon.ico` still Slider's.
+  token) – `/favicon.ico` (16/32/48 px PNGs inside, Cloud's mark since 2026-11-25, rendered from
+  `cloud-favicon.svg` by Chromium; no page links it, Slider's tab icon is `favicon.svg`) is what
+  such fetchers find; once connected, `serverInfo.icons` (`cloud-favicon.svg`,
+  `cloud-icon-192.png`, absolute on `webOrigin`). `index.html` names Cloud's icons too.
 - Discovery lives at the origin's root (`/.well-known/oauth-protected-resource/api/mcp`,
   `oauth-authorization-server`, `openid-configuration`); issuer = `webOrigin`. Vite proxies
   `/.well-known` in dev; a reverse proxy in front of the API must pass it too. Desktop: no OAuth
@@ -508,6 +588,21 @@ Unsplash can revoke the key; production approval needs screenshots of credits.
   `localStorage` (`slider.spelling.accepted`) until the server has it – offline, signed out; plain
   strings there are words from before and go to the account only.
 
+## Liste / Kacheln on every page (`lib/view-choice.ts`)
+
+Every page with a rows/tiles switch keeps its own choice in this browser (localStorage, never the
+account – user 2026-11-26: each device its own) through `useViewChoice(key, options, fallback,
+inherit?)`: Präsentationen, Dokumente, PDFs, Bibliothek (per filter), Cloud per place (folder,
+area, „Alle“, „Meine Dateien“ – `slider.cloud.view:<id>`; „Geteilt“/„Gelöscht“ per scope),
+Entwürfe, Aufgaben, Agenten. `/einstellungen` → Darstellung „Liste oder Kacheln“
+(`slider.view.default`, also per browser): „Automatisch“ (default) opens each page as it was
+there last; „Liste“/„Kacheln“ open every page so, and a switch holds only until the page is left
+(it is still written, so „Automatisch“ finds it again). „Kacheln“ maps to the page's own word
+(`tiles` or `grid`); a page without rows/tiles (Bereiche' Ordner/Personen, Kalender) keeps its own.
+Cloud's places inherit `slider.cloud.view` (written on every switch): a folder never switched
+opens as the last one did, no flip on stepping down. Cloud's own „Darstellung“ row is gone –
+one setting for all.
+
 ## Cloud – the workspace's files (`services/cloud/`, `features/cloud/`)
 
 - View transitions (`startViewSwitch`, `styles/index.css`): an own `animation` on
@@ -521,9 +616,19 @@ Unsplash can revoke the key; production approval needs screenshots of credits.
   since 2026-11-22 (the user), in the app wherever the software, the instance or the account is
   meant: „Office einrichten“, „diese Office-Instanz“, „wer Office betreibt“, „bei Office
   anmelden“, „dein Konto“ (never „Slider-Konto“), the privacy template, the passkey's RP name,
-  Nextcloud's app password (`DEVICE_NAME`), the OAuth client name towards foreign MCP servers.
-  „Slider“ stays for presentations, the deck app's own pages and titles, its desktop app and the
-  MCP connector with its tools; code identifiers, env vars, packages, docker and the self-hosting
+  Nextcloud's app password (`DEVICE_NAME`), the OAuth client name towards foreign MCP servers,
+  and since 2026-11-25 (the user: „slider ist ja nicht mehr die hauptbrand“) our own MCP connector –
+  „… mit Office verbinden?“, `serverInfo` `office`/„Office“, `resource_name`, the 401 text, the
+  instructions' opening, „Search Office“, `claude mcp add … office`; its icons are Cloud's (Office
+  has no mark). The sweep of 2026-11-26 (the user: „Das Produkt heißt nicht mehr Slider … einfach
+  Office“) took the rest: „wer Office betreibt“, Cloud's „Office kann diese Datei nicht öffnen“ (no
+  app opens it), the library's built-in fonts „Office-Schriften“/„Office“ (they serve every app;
+  the templates stay „Slider-Vorlagen“, they are Slider's), the upload hint „Office erkennt, was es
+  ist“, the AI's „Office adds the sign-in“/„Office then checks both servers“, MCP „signed in to
+  Office“, the desktop guard's and the shared desktop service's errors; a `docTitle`'s „| Slider“
+  is `appTitle`'s placeholder for the current app and stays. „Slider“ stays for presentations, the deck app's own pages and titles, its desktop
+  app and the tools that mean presentations („Slider's AI“, the card's „In Slider öffnen“); the
+  OAuth scope `slider` and the token prefixes stay (protocol, connections made); code identifiers, env vars, packages, docker and the self-hosting
   docs keep „Slider“ as the project's name. System mails (`inviteMail`, `mail/mailer.ts`): without
   `app` the head is the word „Office“ alone (no picture) and the text ends „– Office“; with `app`
   (a presentation's mails – shared deck, sent export, unused deck – are `slider`) the app's mark
@@ -533,19 +638,31 @@ Unsplash can revoke the key; production approval needs screenshots of credits.
   (über Slider)“). In code „office“ otherwise means LibreOffice or an office file (`officePreviewable`,
   `office-fonts`). Left from before: `/office` still leads to `/cloud` (`router.tsx`, `OLD_START`),
   the usage feature is still `office` (rows in the database).
+  Repositories and checkout (2026-11-26, the user: „eigen-office bzw office soll das heißen“):
+  development `Root-Bert/eigen-office` (was `slider-dev`), public `Root-Bert/office` (was
+  `slider`; the desktop app's update feed – `desktop/package.json` `build.publish` – GitHub
+  redirects the old names, so installed apps keep finding releases); the checkout is
+  `~/Developer/eigen-office` (`~/Developer/slider-dev` a symlink to it for sessions started
+  before). Workflows test `github.repository` against these names – a rename changes them too.
 - „Nur Firmen-Login“ (`workspace_sso.required`, migration 0189, 2026-11-25 the user's call): while
   a workspace's company login is active, addresses at its domain sign in through it alone – the
   check is in `startSession` (every login passes it; the SSO callback passes `companyLogin`),
   plus `/auth/email/start` sends no mail. Not in `createSession`: the desktop handoff comes from a
   session that exists. Sessions already open stay. On only once an admin at the domain signed in
-  through it (else 400), off by itself with another provider or a lapsed proof/plan
-  (`companyLoginRequired` → `findSsoForWorkspace`), so nobody is shut out with no way in. A proof
-  for another domain (`verifyWorkspaceSso`) turns it off like another provider does. A mailed link
-  or code is refused before `signInWithEmail` writes anything (no account, no domain join, no
-  „E-Mail“ login); `/auth/email/start` counts against its limit before that check (it may ask the
-  domain's DNS). Still open: the OAuth callbacks create the account before `startSession` refuses;
-  the „tried“ check counts an identity from an earlier provider (the subject carries no issuer); a
-  provider broken at its own end does not turn it off.
+  through it since the provider was last saved or proven (`workspace_sso.updated_at`, which the
+  switch itself leaves alone; a company login's `user_identities.created_at` is its last use,
+  stamped in `signInWithIdentity` – no schema change; else 400), off by itself with another
+  provider or a lapsed proof/plan (`companyLoginRequired` → `findSsoForWorkspace`), so nobody is
+  shut out with no way in. A proof for another domain (`verifyWorkspaceSso`) turns it off like
+  another provider does. Before anything is written the new login is refused: a mailed link or
+  code before `signInWithEmail`, Google/Microsoft/OIDC/Nextcloud in `signInWithIdentity` after a
+  known identity and before account, domain join or attach (also before a Nextcloud confirmation
+  mail); `/auth/email/start` counts against its limit before that check (it may ask the domain's
+  DNS). Still open: a provider broken at its own end does not turn it off (by design – an outage
+  must not lower the rule): admins with an open session turn it off (needs no provider); with all
+  admins at the domain signed out, only removing the TXT record (off within 7 days) or the
+  operator helps. A same-provider save with a wrong new secret keeps it on; the Nextcloud flow
+  keeps the grant (`keepAccess`) before `startSession` refuses a known account.
 - Login by mail (`services/email-login.ts`, since 2026-11-24 after the user's report of a login
   mail without code): every account of the address gets link + code, also one that signs in with
   Microsoft/Google/passkey (`signInWithEmail` adds „E-Mail“ to its logins; removing it on /konto
@@ -557,7 +674,8 @@ Unsplash can revoke the key; production approval needs screenshots of credits.
   `img.send.bertro.dev` (Brevo's images and open pixel) had an expired certificate then (still
   2026-11-25): its CNAME `send-bertro-dev.img.brand.brevosend.com` leads on to Brevo's generic
   `img.mailin.fr`, which serves `CN=ssl867385.cloudflaressl.com`, expired 2020-10-15 – Brevo never
-  issued one for our name; only Brevo (support) can fix it, our DNS is right.
+  issued one for our name; only Brevo (support) can fix it, our DNS is right. Known and settled
+  with the user (2026-11-26): not an open point, don't list it as a to-do in reports.
 - Cut shadows and focus rings: every Cloud page's content scrolls in `CloudPage`'s scroll box, and
   a scroll box cuts what reaches past its padding – `shadow-float` (`glass-elevated`, the agents'
   order field, tooltips) reaches 24 px up, 32 px sideways, 40 px down; a focus ring 4 px. The box
@@ -626,7 +744,7 @@ Unsplash can revoke the key; production approval needs screenshots of credits.
   presentation („presentation ID“). Such a step is told with `app: 'slider'` on the `reading`
   event (`doingIn` on an agent) and shown with Slider's mark (`ChatAnswer`).
 - The AI in Cloud: ✨ in the header (`CloudChatButton`, only under `/dateien`) opens `CloudChat`,
-  the same `ChatPanel` as the material chat (`features/viewer/board/ChatPanel.tsx`, exported by
+  the same `ChatPanel` as the material chat (`features/viewer/chat/ChatPanel.tsx`, exported by
   the viewer). Server: `services/cloud-chat.ts` + `routes/cloud-chat.ts` (`POST
 /workspaces/:id/cloud/chat`, SSE as the material chat, usage feature `office`). Its tools
   (`list_folder`, `search_files`, `read_file`, `rename`, `create_folder`, `move`, `delete`) call
@@ -930,7 +1048,7 @@ Unsplash can revoke the key; production approval needs screenshots of credits.
   `runMcpTool` with the person as caller held to the workspace – a new thing it should do is a
   name in that list, not new code – plus `show_in_list`, which only tells the page (`filter`
   event → the list's search field). Both chats share the loop (`services/tool-chat.ts`) and the
-  page's hook (`useAgentChat`, `features/viewer/board/agent-chat.ts`). Main and header step
+  page's hook (`useAgentChat`, `features/viewer/chat/agent-chat.ts`). Main and header step
   aside for any `[data-cloud-panel]`. Tested inside the same `it` as Cloud's chat; the changing
   tools were not run against real presentations in a browser.
 - Side panels in Cloud (details, AI) take the whole height and carry `data-cloud-panel`; the
@@ -1305,16 +1423,27 @@ the two it names first is gone the headline is the count again. A share row open
 list is asked anew each time „Zuletzt“ opens.
 
 „Zuletzt“ is widgets (`features/cloud/home/`, user 2026-11-25: „so frei wie möglich“, as Apple /
-Samsung home screens). `layout.ts` is the model: an ordered list `{id, type, w, h, look, title,
-text?}` – `w` in twelfths (3 4 6 8 9 12), `h` `'auto'` or 1–12 rows of 72 px (gap 24 included),
-`look` Ohne / Glas / Fläche / Linie. One of each kind, notes as many as one likes. Kept per browser
-in localStorage (`slider.cloud.home.v1:<user>:<workspace>`, `createStoredStore`, crossTab) – on
-purpose, not on the account (user 2026-11-25: phone and desktop each have their own; the ordered
-grid, not free x/y, is wanted too). `parseLayout` drops unknown kinds and doubles and
-clamps fields, nothing stored = `DEFAULT_LAYOUT` (the page as it was). `HomeBoard.tsx` lays them
-out in a dense CSS grid: 12 columns from 960 px, 6 from 560, else 1 (frozen while arranging – the
-panel takes 400 px); rows of 4 px, each box spans its measured height, so auto heights pack without
-gaps and order alone places them – no free x/y.
+Samsung home screens). `layout.ts` is the model: a list `{id, type, w, h, look, title, text?, x?,
+y?}` – `w` in twelfths (3 4 6 8 9 12), `h` `'auto'` or 1–12 rows of 72 px (gap 24 included),
+`look` Ohne / Glas / Fläche / Linie, `x`/`y` its cell (column of twelve, row). One of each kind,
+notes as many as one likes. Kept per browser in localStorage (`slider.cloud.home.v1:<user>:
+<workspace>`, `createStoredStore`, crossTab) – on purpose, not on the account (user 2026-11-25:
+phone and desktop each have their own). Placed freely (user 2026-11-26: „frei platzieren auf dem
+feld also auch reihen boxen frei lassen“ – replaces the ordered grid of 11-25): `arrange` gives
+each its spot – placed ones top down at their row, or the first free place *below* it when
+something is in the way (never above, so empty rows and cells stay), the one being moved/stretched
+first (`first`: what is in its way yields – unless it reaches less than a row into one above,
+then it goes snug below that: a pinned stack of auto heights has each row start inside the one
+above, so without this a mere Überschrift toggle shoved the widget above away); never placed ones (the default, layouts from before)
+first-fit from the top in order = the old CSS dense packing, so such a page looks as it did. The
+first change pins every widget where it is seen (`pinWidgets`), a drop keeps what it pushed down
+(`settleWidgets`, on the full 12 columns only – on 6/1 the rows are a stack, kept pushes would
+pull apart what stands side by side wide); growth of an auto-height widget only pushes at render,
+never saved. `parseLayout`
+drops unknown kinds and doubles and clamps fields (x to 12 − w), nothing stored = `DEFAULT_LAYOUT`.
+`HomeBoard.tsx` puts each box at its spot in a CSS grid of 4 px rows (`gridRow`/`gridColumn`
+explicit): 12 columns from 960 px, 6 from 560 (x scales), else 1 (a stack in row order) – frozen
+while arranging (the panel takes 400 px), with four free rows below the last to drop into.
 While arranging, `RecentPage` hands `CloudPage` no nodes – no file is picked, so its ⌫ / ↵ / ↑↓ /
 ⌘A cannot act under the widgets; keys wait while a corner is held.
 „Anpassen“ (page head) opens `HomeCustomize.tsx`, a `SidePanel` with `data-cloud-panel` (the page
@@ -1325,12 +1454,13 @@ to resize (snaps to the widths and rows), the round „–“ on its corner take
 arrows move it, Esc deselects then ends – a capture listener so CloudPage's ⌫ / arrows (files)
 do not run. Dragging (move and from the panel) is `@dnd-kit/core`: mouse after 4 px, a finger
 after resting 250 ms (before that the page and the panel scroll), Esc cancels, the drop's click
-is swallowed, `DragOverlay` lifts a card. Where it lands is ours (`placeAt`): the nearest box
-*as it stood when the drag began* (`startRects`, shifted by the scroll) decides before/after –
-measuring the live, reflowing page swung it back and forth. Auto-scroll is ours too
+is swallowed, `DragOverlay` lifts a card. Where it lands is ours (`cellAt`): its top left corner
+(pointer minus where it was grabbed) snapped to the nearest column and row; each preview is tried
+on the layout as the drag began (`startRef`), so what it pushed comes back when it goes on; arrows
+step a cell. Auto-scroll is ours too
 (`autoScroll={false}`): dnd-kit scrolls only what holds the dragged node, the panel for a new one.
-The corner is own pointer code with `setPointerCapture` + `touch-none` (no library resizes an
-ordered, content-height grid); „–“ and the grip have 40 px hit areas. Where less than 640 px of
+The corner is own pointer code with `setPointerCapture` + `touch-none` (no library resizes a
+content-height grid; wider only up to the field's right edge); „–“ and the grip have 40 px hit areas. Where less than 640 px of
 the page would stay beside the panel (phone, iPad, a window under ~1300 px) it is a sheet below
 (`SidePanel side="bottom"`, 50dvh, at most 720 px wide, no `data-cloud-panel`): the page keeps its
 width and columns, the grid gets 50dvh bottom padding, a drop over the sheet adds nothing, the
@@ -1342,6 +1472,25 @@ the narrower page beside the panel, cards went and came back and their pictures 
 `Input.dispatchTouchEvent`), not on a real iPad/iPhone. Content is `inert` while arranging. „Standard wiederherstellen“ toasts with
 „Rückgängig“. Each widget owns its queries (`widgets.tsx`), so a removed AI widget asks nothing;
 „Auftrag“ only with `canCreateDecks`. Empty widgets say so in a line instead of vanishing.
+The order field stands on top of every overview (user 2026-11-25: „die leiste soll über der
+übersicht sein und basically die auftrag leiste sein“): „Für dich“ carries it over its sentence
+(an agent of one's own told what the overview shows, its chat right there); „Auftrag“ alone is
+the field without the overview – rivals (`BoardSpec.rival`): adding one swaps the other in place,
+a layout kept with both keeps „Für dich“. Every overview is a board (user 2026-11-25: „alle
+übersichts seiten sollen so widgety customizable sein“): `HomeBoard` takes a `BoardKit` (`kit.ts`:
+spec with store key, kinds, defaults – plus names and views); „Heute“ and „Notiz“ are on every
+board (`frame.tsx`, with the contexts and `WidgetHead`). Sender's „Aktuell“
+(`slider.sender.aktuell.v1`) and „Post“'s „Übersicht“ (`slider.sender.post.v1`, one arrangement
+for every mailbox, in Sender and in Cloud – „Anpassen“ only while it shows) are `Triage`'s kits:
+„Für dich“ (field + sentence) or „Auftrag“ (the field alone, its rival), „Heute und diese Woche“, „Ungelesen“ (the groups, one widget – they
+come and go); one `useTriageState` per page in a context. Kits are made on first draw, not at
+module load: Sender reaches Cloud's board through `@/features/cloud`, which imports Sender – a
+top-level `SHARED_DEFAULTS` spread was a TDZ crash of the whole app. Before the look comes only the
+board's first of its widgets (`lead`) shows the skeleton or „Erneut versuchen“, whichever it is.
+The panel, the corner's cover and the lifted card go to `document.body` (`createPortal`): in
+„Post“ the board stands in the mail list, whose fade (`roll-away-list`, a mask) cut anything fixed
+in it away – the panel was invisible. Arranging, Sender's scrollers get 20 px room at the side (the
+„–“ stands 16 px out); a folder or search ends the arranging, pull-to-refresh is off meanwhile.
 
 ## Writer – text documents (`packages/odt`, `services/documents.ts`, `features/writer/`)
 
@@ -1472,7 +1621,8 @@ the narrower page beside the panel, cards went and came back and their pictures 
 - Open: a picture is never moved between „alone“ and „in a line“ by hand, and a paragraph
   parted down to one picture reads as one standing alone after a reload; the website
   still calls Writer „coming soon“ (`apps/site/src/lib/apps.ts` `LIVE`).
-- A document has a board „Material“ as a presentation has (migration 0128): the five board tables
+- A document has material as a presentation has (migration 0128; its board page in Writer is gone
+  since 2026-11-26, the API stays): the five board tables
   carry `deck_id` or `document_id` (a `cloud_nodes` id, cascade), exactly one set (check
   `num_nonnulls`). One owner type for all of it – `BoardOwner` in `services/board-owner.ts`
   (`ownedBy`, `ownerColumns`, `ownerOf`), rights through `requireBoardAccess` alone: a deck's as
@@ -1504,6 +1654,109 @@ the narrower page beside the panel, cards went and came back and their pictures 
   colours are never rewritten, marks/cursors/guides lie outside the filter. Markdown surfaces use
   the theme's tokens (the formats' inline inks `#37352f`/`#787774` are overruled with
   `!important`), the forced choice resets those tokens on `.writer-stack`. Print undoes both.
+
+## Pages – Markdown files as Notion pages (`features/pages/`, `features/cloud/{PagePage,AreaHomePage,PagesPage}.tsx`, `components/PlaceHome.tsx`)
+
+- A `.md` opens in Cloud at `/dateien/seite/:id` (`appFor` → `'page'`); `/t/:id` of a `.md`
+  redirects there. The server model stays Writer's (one paragraph block per line, with ids):
+  `PageSync` sends `stepsBetween` of the lines 600 ms after typing, so only changed lines are
+  written – `16-pages.spec.ts` checks every line before the edit stays byte-equal.
+- No DB pointer, no list: every place lands on its Startseite, the file `Startseite.md` where its
+  pages lie (`PlaceHome.tsx`) – an area's at its top (`AreaHome`, `/bereich/:id`, its files at
+  `/bereich/:id/dateien`), the workspace's in its own area, one's own in the folder `Notizen` of
+  „Meine Dateien“. „Seiten“ (`/dateien/seiten`, `/dateien/notizen` redirects) is those
+  Startseiten under `ScopeTabs` (Meine, Workspace, areas – no „Alle“). Not written yet, it shows
+  the template's blocks live (`HOME_TEMPLATE`, `OWN_TEMPLATE`); „Bearbeiten“ makes it
+  (`onlyNew`, a 409 reads the list anew). Subpages are flat: „/Seite“ makes a page beside the one
+  being written and links it – the tree is links, not folders. The `{{unterseiten}}` block never
+  lists a `Startseite`. The folder kept its name – renaming people's folders would be a migration.
+- The slash menu puts the block named exactly as typed first, then those whose name begins so –
+  „/Seite“ + Enter took the live list „Seiten“ before.
+- New pages: `POST /workspaces/:id/cloud/files?name=…&keepBoth=1[&path=Notizen]` with the
+  Markdown as raw body – `apiRequest` JSON-stringifies non-FormData bodies, hence a plain `fetch`
+  in `cloud/lib/pages.ts`. Invalidate `cloudKeys.all` after (`useCreatePage`): without it the
+  own Startseite stayed unfound (the cached top list had no `Notizen` folder yet).
+- Lexical's RichText registers `KEY_ESCAPE_COMMAND` at `COMMAND_PRIORITY_EDITOR` (it blurs) and
+  wins over an own handler of the same priority registered later: „Fertig“ on Esc is `LOW`, the
+  slash menu (`commandPriority`) `NORMAL`, so an open menu closes first.
+- `LexicalTypeaheadMenuPlugin` sets its match inside `startTransition`: an Enter typed right after
+  the query selects with the match of a keystroke before, and `$splitNodeContainingQuery` splits
+  off the wrong range (nothing lost, „/über“ left „/üb“). `SlashMenu`'s `$removeQuery` looks back
+  for the last „/“ instead of trusting the split.
+- e2e: the first run after adding Lexical modules failed with 504 „Outdated Optimize Dep“ (Vite
+  found them late) – the rerun passed. In headless Chrome on macOS `End` does not move the caret
+  in a contenteditable; `Meta+ArrowRight` does.
+- Diagrams: a ```` ```mermaid ```` block whose first line (after `%%` and front matter) is
+  `flowchart`/`graph` is drawn by our own code (`lib/diagram/{parse,layout,edit}.ts` +
+  `DiagramView.tsx`, dagre for the layout, SVG in our tokens) – no Mermaid library: it injects
+  `<style>` and inline styles, which the CSP `style-src 'self'` refuses. Every other Mermaid
+  (sequence, gantt …) stays a code block. The block is a `RawBlockNode` kind `'diagram'` with the
+  whole fence as text, written back byte for byte – only drawn now: picked in Bearbeiten, „In
+  Diagramm umwandeln“ makes a diagram file of it (`lib/diagram/convert.ts`) and puts its line in
+  its place. `DIAGRAM_NOTE` (`services/diagram-prompt.ts`) is said only to the document AI (no
+  file tools); the chat, agents and MCP get `DIAGRAM_FILE_NOTE` (draw a diagram file, show it by
+  its line). Check new Mermaid syntax with `parseDiagram` before naming it in `DIAGRAM_NOTE`.
+- A diagram on a page: a paragraph that is only `[[file:<uuid>|<Name>.diagram]]` becomes a
+  `DiagramEmbedNode` (`DIAGRAM_EMBED_TRANSFORMER`) and exports the same line, so the file stays
+  byte-equal and elsewhere it is a plain link. The codec reads line by line, so it is the diagram
+  right under a text line or as the file's last line too (`codec.test.ts`). Drawn with
+  `DiagramPreview` from `@/features/diagrams` (features import each other only via `index.ts` –
+  eslint error otherwise). „/Diagramm“ creates the file beside the page (`host.createDiagram`),
+  inserts the line under the menu's line and opens the editor; closing it goes back
+  (`navigate(-1)`).
+- Picked blocks (table, diagram, live block): Lexical keeps the NodeSelection through the next
+  `selectionchange` and wipes the caret a quick press put into the text (seen with Playwright's
+  `click()`, no pause between down and up; a quick tap may do the same) – one clicked twice.
+  `useBlockPick` lets go of the pick on a `pointerdown`
+  outside the block (`$setSelection(null)`, discrete), so a plain `click()` works now.
+- Agent bar (`AgentBar.tsx`, `PageAgent.tsx`): in Bearbeiten, fixed at the bottom, centred on the
+  page column – measured in a `useEffect`, not a layout effect: the column's ref is set after
+  its children's, so a page opened in Bearbeiten (`?neu`) measured null and showed no bar. A
+  typed ask is Writer's ✨: a document comment at the caret (`$anchorOf`, `look.ts`: line id +
+  offset from `PageCodec.linesOf`) + `createDocumentAiProposal`; files and a recorded video go
+  on as comment attachments (the AI reads them). Refused (no AI, 409): the comment is deleted
+  again. Pages show no comments, so each ask stays only on the file. Speaking: Writer's voice
+  session generalised – `DocumentVoiceProvider` takes a `look` (`sample`, `show`);
+  `WriterVoiceProvider` passes the engine's, `PageAgent` the page's (`linesInView`, `lineAt`,
+  `showLine`). Lexical: `$getNearestNodeFromDOMNode` needs `editor.read`, not
+  `getEditorState().read` (throws „Unable to find an active editor“). Speech checked with
+  Chromium's `--use-file-for-fake-audio-capture=<wav>` (a `say -o` file at 48 kHz).
+- Drawing by hand („/Zeichnung“, `lib/ink.ts`, `components/InkBlock.tsx`): a fenced block
+  ```` ```ink <height> ````, one stroke a line `<pen|marker> <text|accent> <width> x y x y …`
+  (whole numbers in a 1000-wide frame), kept byte-exact as `RawBlockNode(…, 'ink')` like a
+  table – a stroke drawn is one line more before the fence, a stroke wiped one line less, so
+  `PageSync` sends only those. Over 1500 points a stroke goes on in a line of its own (the
+  20 000-char line cap). Drawn only in Bearbeiten (the block's own toolbar: Stift, Marker,
+  Radierer, colours), mouse and pen; touch scrolls (`touch-action: pan-y`), a stylus `touchstart`
+  is prevented so iPad Safari does not scroll while writing; the pen's eraser button (buttons &
+  32) wipes. Near its foot it grows by 240; the grip sets its height. Read, it is as tall as its
+  ink and gone when empty. The AI never sees the strokes (`inkStrokeLines` in shared,
+  `documentForPrompt` drops them; the note tells it to keep the fences), nor does the search
+  (`searchText`). Checked with the mouse in Chromium; a real Apple Pencil not yet.
+
+## Diagrams – drawn files (`features/diagrams/`, `services/diagrams.ts`, `packages/shared/src/diagram.ts`)
+
+- A diagram is a Cloud file `<Name>.diagram` (JSON, `format: 'slider-diagram'`, `readDiagram`/
+  `writeDiagram`), opened at `/diagramm/:id`. Saves `PUT /diagrams/:id` with `baseVersionId`;
+  what someone saved since is merged (`mergeDiagrams`); one person drawing on for a while is one
+  version, an AI's change always one of its own. `POST /diagrams` takes an optional `diagram` as
+  its first version (a converted Mermaid block, `create_diagram`).
+- React Flow 13 (`@xyflow/react`): change callbacks get a `Changeset` – `.toArray()` before
+  iterating; `zIndexMode="manual"` keeps frames under their boxes. `DiagramPreview` (pages,
+  anywhere still) reuses the editor's `.dg-box`/`ShapeOutline` markup and React Flow's path
+  functions (`getSmoothStepPath` …) without a `ReactFlow` instance – the same look, nothing live.
+- `useDiagram`: `staleTime 0`, `refetchOnMount 'always'`; the editor writes each save into the
+  query and starts only on data fetched after it opened – opened again in the app (no reload) it
+  showed the old drawing before; a page's preview shows what was just drawn.
+- AI: the editor's „Mit KI ändern“ (`POST /diagrams/:id/ask`) returns changes the editor applies
+  as one undo step. `create_diagram`, `read_diagram`, `edit_diagram` live in `mcp-cloud.ts`
+  (MCP), listed in `MORE_FROM_APPS` (Cloud and Home chat) and `FROM_APPS` (agents: on the desk
+  via `documentOnDesk`, which finds a new one by „(diagram id …)“ in the reply), cards in
+  `TOOL_CARDS`. `changeDiagram` saves no version when nothing changed; what could not be done is
+  said back („Not done: …“) so the model can fix it. `DIAGRAM_GUIDE`/`DIAGRAM_CHANGES_JSON`
+  (`diagram-ai.ts`) are the one description of the changes for every AI.
+- e2e: leaving the editor logs `ERR_NETWORK_IO_SUSPENDED` (the last save as the page goes) –
+  allowed in `16-pages.spec.ts`. The AI panel's note goes with the panel; assert the new box.
 
 ## Reader – PDFs (`services/pdfs.ts`, `pdf-bake.ts`, `pdf-ai.ts`, `features/reader/`)
 
@@ -1584,8 +1837,7 @@ the narrower page beside the panel, cards went and came back and their pictures 
   No escaping: typed `**x**` stays Markdown (and turns bold at once by `MarkdownShortcutPlugin`).
   `Composer` `rich` (default; off in `MailThreadView`): keys it takes go in `onKeyDownCapture`
   (stopped before Lexical), the page-key `stopPropagation` in bubble; Enter in a list is Lexical's
-  (new point), ⇧↵ a new paragraph. The bar over a selection is `lib/rich-format.tsx`, shared with
-  `RichSticker`. Previews (`markupPlain`): quote, search hits, planned, drafts, „Aktuell“, browser
+  (new point), ⇧↵ a new paragraph. The bar over a selection is `lib/rich-format.tsx`. Previews (`markupPlain`): quote, search hits, planned, drafts, „Aktuell“, browser
   notifications – server pushes still show the marks. Italic is written `*…*` inside a word or on
   an @-name (`_` there is read as snake_case / hides the mention – `MENTION_NOT_AFTER` has `_`),
   else `_…_` – also `*…*` on a word with `_` in it; beside a piece carrying marks of its own `_`
@@ -1826,7 +2078,11 @@ the narrower page beside the panel, cards went and came back and their pictures 
   `trash` – so old rows, old sync state and Gmail's localized paths stay valid), an own folder by
   its path; names German, own ones „Eltern / Kind“ (`mailFolderList`, shared). A mail keeps every
   folder it lies in (`mail_messages.folders`; `folder` = where it came first) – a Sent copy of a
-  mail sent from here is the same Message-ID (unique per mailbox), so it only adds `sent`. Only
+  mail sent from here is the same Message-ID (unique per mailbox), so it only adds `sent`.
+  SMTP alone keeps no copy at most servers (a university's, one's own domain's): after sending,
+  `keepSentCopy` (`mail/servers.ts`) APPENDs it read, with its Bcc, to the `\Sent` folder unless
+  one of its Message-ID lies there; skipped for Gmail/Microsoft hosts, which keep one themselves
+  (`KEEPS_SENT`). Not awaited, its failing never fails the send. Only
   what arrives in inbox/spam is unread, AI-read and posted to a colleague's chat (`ARRIVES`); what
   is first seen elsewhere comes in quietly. Thread list `?account=&folder=`: inbox = not spam and a
   mail arrived in inbox/spam or was written here; spam = `thread.spam`; others = not spam and a mail
@@ -1858,9 +2114,11 @@ the narrower page beside the panel, cards went and came back and their pictures 
   trash, `mailSearches` rate limit. Both in the mailbox's turn (`working`, `turnFor` waits 20 s),
   through `ingestMail` only – never `afterMail`: no AI, no push, nothing told as arrived. A first
   read again (`htmlRead`) keeps the lower mark (`keepOldest`). Deleted rows have no tombstone, so
-  only what lies below `oldest` is ever fetched – a mail deleted here stays deleted, except a server
-  search's hit: it lies below `oldest` (search does not move it), so deleted it comes back with the
-  next „Ältere laden“ or the same search (needs a kept list of found UIDs or a tombstone). Older
+  only what lies below `oldest` is ever fetched – a mail deleted here stays deleted; a server
+  search's hit lies below `oldest` (search does not move it), so `deleteMailThread` keeps the
+  deleted UIDs per folder in `sync[folder].gone` (newest 2000, in the mailbox's turn, carried by
+  `keepOldest`, dropped with a new UIDVALIDITY) and `fetchOlder` skips them. Deleting is here only
+  (the dialog says so): on the server the mail stays where it was. Older
   mails go through `ingestMail(…, older = true)`: a colleague's stays mail, never a chat message. A
   refused UID SEARCH (imapflow `false`) throws – `failed`, never `oldest: 1`. Web: the list
   asks `?limit=` 200 more as its end comes near (key under the folder's, the rows stay meanwhile),
@@ -2152,8 +2410,7 @@ the narrower page beside the panel, cards went and came back and their pictures 
   `AttachmentChips`, `SentAttachments` – paste (`onPaste`) and the paper clip in every field.
 - AI input: `attachmentBlocks` (pictures as image blocks, documents as `<datei>` text) plus
   `ATTACHED_FILES_ARE_DATA` in the system prompt.
-- Not attachments, on purpose: slide text, board notes (a file pasted in a note becomes board
-  material), the creation prompt (paste/clip put files into the deck's material, which the AI
+- Not attachments, on purpose: slide text, the creation prompt (paste/clip put files into the deck's material, which the AI
   reads). Deck comments take pictures only.
 - Kept on the thing (the change carries the whole kept list + new ids, the server claims new
   ones and deletes gone ones): to-dos and calendar events (Slider calendars only – a mail
@@ -2212,6 +2469,25 @@ the narrower page beside the panel, cards went and came back and their pictures 
   with „[Bild bei m:ss]“. The sound is not kept. Deleting the file deletes the digest
   (`attachmentBlobs`). No digest (old video, browser without `VideoDecoder`, failed): the old
   „Inhalt nicht lesbar“. Checked end to end with a real agent on Chrome's fake camera.
+- Documents on a Sender message (PDF, office files by `cloudFileType`) show their pages over
+  their chip – Cloud's preview, one component (`ui/PageStrip.tsx`; Cloud's `PagePreview` and
+  `DocumentPages` in `AttachmentParts.tsx` only say where the pages come from). Only where
+  `SentAttachments` gets `pages` (Sender's `MessageList`); comments, to-dos and events keep chips.
+  An upload: `GET /attachments/:id/pages` (`{ pages, ratio }`, 404 = none → chip alone),
+  `/thumbnail`, `/pages/:n` (`services/attachment-pages.ts`): PDF as is, office via Cloud's
+  `toPdf` (LibreOffice, deck fonts), one drawing per file at a time; everything under
+  `<key>.pages/` (info, small first page, drawn PDF, page JPEGs), deleted as a prefix by
+  `attachmentBlobs`; failed is remembered (`pages: 0`). A Cloud file pointed to uses Cloud's own
+  `/cloud/nodes/:id/pages`. Sized by the pages: ≤ 400 px tall, ≤ 512 px wide. `MessageList`
+  keeps a list that stood at its end there while previews and cards load (`ResizeObserver`).
+  Checked in a scratch e2e with real LibreOffice (PDF, DOCX, PPTX; dark, light, phone).
+- Link cards (`services/link-previews.ts`, `LinkCard.tsx`): the first https address in a message
+  (by `linkify`, as the words show it), not this instance's own host. `GET
+  /workspaces/:ws/link-preview?url=` (204 = none) and `/link-preview/image`: the server reads the
+  page's head through `safeFetch` (≤ 512 KB, HTML only, 10 s for page + picture, 200 lookups/h per
+  person), `og:`/`twitter:` tags, else `<title>`; the picture redrawn as JPEG ≤ 640 px (no SVG).
+  Kept globally under `link-previews/<sha256>` (7 days found, 1 none, swept after 30 by the
+  retention job). Tests fake the web via `deps.linkPreviews`. In the privacy template (Sender).
 
 ## To-dos – „Aufgaben“ in the UI (`services/todos.ts`, `routes/todos.ts`, `features/cloud/components/todos/`)
 
@@ -2266,7 +2542,10 @@ the narrower page beside the panel, cards went and came back and their pictures 
   hash of what it read, never stored), the calendars, „Nachfragen“ pinned at the foot
   (`slider.calendar.agents`). Folded from the head's last button (`slider.calendar.aside`); below
   lg it lies over the days, not remembered. An event opens in the side panel (`?termin=<id>`, `neu` with
-  `neu-tag`/`neu-um`) – one panel with `?aufgabe=`/`?datei=`. Mail accounts' calendars:
+  `neu-tag`/`neu-um`, `tag` with `am`: a day's entries) – one panel with `?aufgabe=`/`?datei=`.
+  Month and time grid as Apple's: a click shows the day beside, a double click makes a new event
+  where the *first* click was (`useDayClicks`) – the panel coming in shifts the days (`mr-14`)
+  under the second click. Mail accounts' calendars:
   `services/calendar/remote.ts` (CalDAV through `fetchHop`, Google, Graph). Their list
   is kept as calendars of kind `mail` (`calendar/mail-calendars.ts`, `remote_id` sealed: a CalDAV
   URL holds the address), compared every 15 min (a first look waits ≤ 5 s); events are never
@@ -2309,7 +2588,12 @@ the narrower page beside the panel, cards went and came back and their pictures 
   `canManage`. The side list (`CalendarList`) offers its „…“ on right click too: „Umbenennen“ in
   place, „Farbe …“ (`AreaColorPicker` in a dialog, as a folder's) for private sub-calendars and
   mail calendars only – an area's sub-calendars stay renamable but uncoloured in the UI (the API
-  and the AI's `update_calendar` still colour them). Scratch look at a mail calendar: stop the
+  and the AI's `update_calendar` still colour them). The list and the panel's `CalendarPicker`
+  stand all calendars side by side, none indented (2026-11-26, the user: „unter calender ergibt
+  keinen sinn“): `parent_id` stays as the data's (where it belongs, who sees it), a new one comes
+  from the area's own row („Neuer Kalender in …“) or „Meine Kalender“'s „+“ (under one's own),
+  and each box hides only its own calendar (`toEntries`), no longer those made in it. Scratch
+  look at a mail calendar: stop the
   scratch API, insert a `mail_accounts` row (`calendar_only`, an unreachable CalDAV host) and
   `calendars` rows with plain text through PGlite (`apps/api/node_modules/@electric-sql/pglite`
   – unsealed text opens as it is); the failing compare leaves them.
@@ -2330,15 +2614,26 @@ the narrower page beside the panel, cards went and came back and their pictures 
   (`arrived`). `navigate()` in `CalendarPage` slides to the page beside
   (carrying the asked day in `sliding`, else the month's 1st would win), jumps further away, and
   zooms between views. Zoom (`zoom.ts`, `ZOOM_CHAIN` tag→woche→monat→jahr, agenda not in it):
-  Ctrl+wheel (Chrome/Firefox/Electron trackpad pinch), Safari's `gesture*`, two fingers; one step
-  per gesture. It is a clone overlay + WAAPI, no View Transitions: before the switch the pane is
+  Ctrl+wheel (Chrome/Firefox/Electron trackpad pinch), Safari's `gesture*`, two fingers (all
+  held, below; a mouse's Ctrl+notch plays a step); one step per gesture. It is a clone overlay + WAAPI, no View Transitions: before the switch the pane is
   cloned (scroll of `[data-scroller]` copied) and `[data-morph]` boxes measured
   (`n:<iso>` day numbers, `e:<entry key>@<iso>` entries); after the new view's layout effect,
   `[data-seg]` parts (with `data-day`/`data-week`/`data-month`) move apart or together around the
-  spot pointed at and matched morphs fly. Never a crossfade of two pages: in, a hole
+  spot pointed at and matched morphs fly. Never a crossfade of two whole pages: in, a hole
   (`clip-path: polygon(evenodd …)`) grows in the clone from the spot while the new pane grows out
-  of it scaled; out, the clone shrinks into the spot (evenly, as far as it still covers it) and is
-  cut to it (`inset(… round)`), fading late. Flyers: the new over the old (in 10–40 %, old out
+  of it scaled – from a page without a frame (the year) fading in under a copy of the spot that
+  grows with it and fades out by 35 % (the glass appearing at once over a small month was a jump);
+  from a month's row or a week's day the glass stays and only what is in the new frame fades in
+  (10–60 % of the way; a week's lines were there in the row at once – user: „Linien … instant
+  da“), the old parts fading out 30–90 % (no blur: 49 month cells as filter layers; the strip's
+  `scroll-snap` is off meanwhile – `pinStrip` – it snaps to the scaled pane's box, a month growing
+  from the year's right column scrolled it ~330 px, the months beside in sight); out, the new
+  frame's content fades in by 50 % while the clone shrinks into the spot (evenly, as far as it still covers it) and is
+  cut to it (`inset(… round)`), fading late. The title (`h2`, a `data-word` span per word) goes the
+  same way: a word in both titles moves to its new place („2026“ into „Oktober 2026“, „Nov.“ week →
+  day), new ones fade in 15–60 %, old ones fade out by 40 % as copies over the page (fixed layer),
+  both blurred 4 px (two or three spans, not 49 cells); let go short, it is set back to its start.
+  Flyers: the new over the old (in 10–40 %, old out
   25–40 %), text styles copied (a clone in the overlay loses inherited font size), scaled where
   the box keeps its shape, else width/height. Motion is a spring (`linear()` curve, `EASE`
   fallback). `finishZoom` runs in `CalendarPage`'s layout effect, after child layout effects but
@@ -2349,7 +2644,29 @@ the narrower page beside the panel, cards went and came back and their pictures 
   day's hours keep their scroll across panes and zooms (`hours` in `CalendarViews.tsx`, synced
   by `data-hours`). Untested on a real trackpad and Safari's gesture events (scripted: wheel
   steps, `synthesizeScrollGesture`, CDP touch); slowed screenshots via
-  `Animation.setPlaybackRate`.
+  `Animation.setPlaybackRate`. Frames (`data-frame`, the month's and week's `glass`): the clone's
+  `clip-path` makes it a backdrop root, so its glass loses its blur and (dark: 30 % opaque) the new
+  page showed through it, frame and head flying (user: „Rahmen springt … flackerhaft“) – the
+  clone's frames get canvas + the glass tint, no `backdrop-filter` (pixel-equal at rest). The
+  frame's own moves (pane grow, clone shrink/cut, hole) use `SETTLE` (critically damped), parts and
+  flyers keep the spring; the pane grows by its frame, not its padded box. Following a pinch with
+  nowhere further scales the frame's children, never the frame. Held (2026-11-25, „präzise
+  steuern“, touch, trackpad and Safari alike – one `hold` in `useZoomGestures`): past 3 % the zoom
+  starts paused (`ZoomDrive`), every animation `linear` so one `currentTime` is one place on the
+  way (seeking spring time left the frame at 95 % and the fades at 60 % with the fingers at 100 %,
+  the rest played unheld – „sprunghaft“). The way is geometric: the spot opens by R (row→week ~6,
+  small month→month ~2), the fingers' log stretch for all of it is ln R clamped 0.45–0.9 (`whole`,
+  1:1 where a hand can) and `way = (R^q−1)/(R−1)`, so the size ratio follows the fingers' ratio.
+  Let go (≥ 40 % or a flick) a critically damped rAF spring takes `way` on from the fingers' speed
+  to 1 (`finish`) or 0 (`back`, `drive.back` restores the URL's view and day under the whole
+  clone; closed form from elapsed time – Euler at 28.75/s diverged on frames over ~29 ms); paused
+  animations never resolve `finished`, so a held zoom ends only there. The wheel has no end: a
+  trackpad still 200 ms has let go; 100 wheel units = stretch 1, so the old 40-unit step still
+  commits; |delta| ≥ 50 or line mode is a mouse notch (played step).
+  Zoomed, the touched page leaves the DOM and its `touchmove`/`touchend` no longer
+  bubble to the frame: listeners go on each touch's target. A two-finger move that is not
+  cancelable (one finger already scrolled the strip) is a swipe, never a pinch; iOS's `gesture*`
+  are ignored while fingers are down. Reduced motion: the view flips at 25 %, as the wheel's step.
 - An account's uses come and go apart (Anmeldung, Post, Kalender): one `mail_accounts` row per
   address per workspace, `calendar_only` = no mailbox, `with_calendars` (migration 0164) = its
   calendars stand in the calendar; the login is `user_identities`, matched only by provider +
@@ -2403,9 +2720,13 @@ the narrower page beside the panel, cards went and came back and their pictures 
   No attendees: a call with a person (their direct conversation) on one's private calendar is
   seen and announced to its maker alone; the other person learns of it only in the conversation.
   UI: `CalendarPicker` (the panel's calendar, as the to-do's place `Picker`, area marks, mailbox
-  provider marks), `MeetingField` (none | „Externer Link“ typed in place | „Anruf in Slider“
-  with a filter over areas' channels, groups, direct ones, people – a person gets their direct
-  conversation opened), „Neues Meeting“ beside „Neuer Termin“ and in „Neu“ (`neu-meeting`): an
+  provider marks), `MeetingField` (none | a call in Sender with a filter over areas' channels,
+  groups, direct ones, people – a person gets their direct conversation opened; only the
+  workspace's own: since 2026-11-26 – the user: „wenn ich so ein Meeting anlege, dann will ich halt
+  nur Inner Workspace-Sachen“ – no „Externer Link“ in it: a Zoom/Meet/Teams… link typed or pasted
+  as the place („Ort oder Link“) is taken out of it on leaving the field (`meetingLinkIn`, a host
+  list) and becomes the meeting, shown by its host, its link changed in place; not over a call;
+  a mailbox's calendar shows no meeting line until it has a link), „Neues Meeting“ beside „Neuer Termin“ and in „Neu“ (`neu-meeting`): an
   area's calendar (the last one if an area's, else the workspace's), its area's call preset and
   following the calendar while untouched. Header: `MeetingNotice` left of `DateButton` (Cloud,
   Sender), the first timed event with a meeting from `users.meeting_notice_minutes` (default 5,
@@ -2478,7 +2799,7 @@ the narrower page beside the panel, cards went and came back and their pictures 
   `lastDrawing` (pen/arrow/marker still picked), else one's latest bare drawing since the page
   opened (named with its slide when that is not the one in front): an arrow's tip via
   `hitTestShapes` or the shape within 8 % of it (never what its length crosses), else shapes a
-  box/circle/drawing covers ≥ 50 %, else the one under its centre – and the open thread;
+  box/circle/drawing covers ≥ 50 %, else the one under its centre – and the open thread (whose, what it marks, never its words);
   `Composer` adds the text being written. Cloud (`CloudPage`): path, items,
   picked ones. Writer (`voice/WriterHere.tsx`): the document, the heading above the caret, the
   words picked. Reader (`viewer/Viewer.tsx`): the PDF, page n of m, the words picked, what a
@@ -2527,8 +2848,8 @@ the narrower page beside the panel, cards went and came back and their pictures 
   it they stand back and the panel shows the call, never a card squeezed and cut off.
 - The call stays in the AI's side panel, also while it is closed (the user's call, 2026-11-25: no
   call floating over the slides while working full screen): where a page has such a panel
-  (`usePanelForCalls` – `CloudChat`, `WorkspaceChat`, `HomeChat`, a presentation's `AiChatPanel`
-  where the AI's avatar shows, the material page while shown) the corner's dock does not show;
+  (`usePanelForCalls` – `CloudChat`, `WorkspaceChat`, `HomeChat`, a presentation's
+  `DeckAiChat` where the AI's avatar shows) the corner's dock does not show;
   ✨ turns into a green phone (`AiButton calling`, `useCallInBackground`) and its audio plays from
   `CallProvider` meanwhile (the dock or card played it before – nothing shown was silence). The
   panel's card has „Schweben lassen“ (`pictureInPicture`), the dock „In die Seitenleiste“
@@ -3034,7 +3355,7 @@ SLIDER_LIBREOFFICE_ANSWER=later`, kill the service (back after 15 s), quit (serv
   dereferenced (`cp -RL`) and copied in by `scripts/after-pack.cjs`. Output
   `desktop/dist/mac-arm64/Slider.app`, unsigned, arm64 (`bun run app`/`dmg` pass
   `-c.mac.identity=null`; the config itself is set up for signing).
-- Release (ci.yml job `desktop`, only in the public `Root-Bert/slider` on a `v*` tag, after its
+- Release (ci.yml job `desktop`, only in the public `Root-Bert/office` on a `v*` tag, after its
   `release` job): `macos-14` builds the Mac (Apple Silicon only – no Intel build),
   `ubuntu-24.04` / `ubuntu-24.04-arm` Linux x64 / arm64 – never cross-build, `@napi-rs/canvas`
   and the staged bun are per platform. Artifact names are stable, so
@@ -3100,7 +3421,7 @@ SLIDER_LIBREOFFICE_ANSWER=later`, kill the service (back after 15 s), quit (serv
 - Tab bar, top right: the deck in front's „Präsentieren“, „Referentenansicht“, „Exportieren“ and ✕
   „Präsentation/Vorlage schließen“ (the deck pill drops them when `sliderDesktop.deckBar`
   exists; ✕ navigates in the page as the pill's did, so the tab closes and home follows). The page reports its offer
-  (`DesktopBar.tsx` → `tabs:deckBar`, `null` while presenting / on the material page); a click
+  (`DesktopBar.tsx` → `tabs:deckBar`, `null` while presenting); a click
   runs in the page as `slider:desktop-bar` via `executeJavaScript(…, true)` – an IPC message
   carries no user gesture, and full screen and the presenter's window need one. A tab's HTML full
   screen (`enter-html-full-screen`) gives its view the whole window and hides the bar – a

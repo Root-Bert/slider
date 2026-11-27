@@ -17,7 +17,7 @@ export type FontSource = 'all' | 'slider' | 'workspace';
 
 const SOURCE_OPTIONS = [
   { value: 'all', label: 'Alle Schriften' },
-  { value: 'slider', label: 'Slider-Schriften' },
+  { value: 'slider', label: 'Office-Schriften' },
   { value: 'workspace', label: 'Workspace-Schriften' },
 ] satisfies { value: FontSource; label: string }[];
 

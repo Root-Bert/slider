@@ -13,10 +13,8 @@ import {
   type RefObject,
 } from 'react';
 import { accentColor } from '@/lib/accent';
-import { MaterialTile } from '../board/MaterialTile';
 import { SwapImage } from '../stage/SwapImage';
-import { Avatar, cn, ContextMenu, Icon, type MenuAction } from '@/ui';
-import { useLivePeople } from '../live/lib/live-people';
+import { cn, ContextMenu, Icon, type MenuAction } from '@/ui';
 import { afterCommit, rafThrottle } from '@/lib/dom';
 import { wheelPixels } from '@/lib/wheel';
 import { smoothScroll } from '@/lib/motion';
@@ -33,7 +31,6 @@ import {
   MINIMAP_PAD,
   minimapAsTrack,
   movedOrder,
-  BOARD_THUMB_W,
   scrollLeftForBracket,
   THUMB_GAP,
   THUMB_H,
@@ -77,7 +74,7 @@ interface MinimapProps {
  * moves with the split handle, right under the track.
  */
 export function Minimap({ layout, scrollerRef, narrow }: MinimapProps) {
-  const { slides: deckSlides, gapThreads, threads, deck } = useViewerData();
+  const { slides: deckSlides, gapThreads, threads } = useViewerData();
   const editing = useEditing();
   // The order of a dropped slide, until the slides come back from the server in it.
   const [pendingOrder, setPendingOrder] = useState<readonly string[] | null>(null);
@@ -114,14 +111,12 @@ export function Minimap({ layout, scrollerRef, narrow }: MinimapProps) {
 
   const rowH = THUMB_H + 2 * MINIMAP_PAD;
   const { aspectRatios } = useFrameAspects();
-  // The „Material“ tile before the thumbnails: it opens the material page (a template has none).
-  const lead = deck.template ? 0 : BOARD_THUMB_W + THUMB_GAP;
   const mini = useMemo(
     () =>
       availableW > 0
-        ? layoutMinimap(aspectRatios, availableW - 2 * MINIMAP_PAD - deletedRoom, lead)
+        ? layoutMinimap(aspectRatios, availableW - 2 * MINIMAP_PAD - deletedRoom)
         : null,
-    [aspectRatios, availableW, deletedRoom, lead],
+    [aspectRatios, availableW, deletedRoom],
   );
   const miniTrack = useMemo(() => mini && minimapAsTrack(mini), [mini]);
 
@@ -456,7 +451,7 @@ export function Minimap({ layout, scrollerRef, narrow }: MinimapProps) {
     slideDrag && mini && dragFrom !== -1 ? movedOrder(slides, dragFrom, slideDrag.insertion) : null;
   const previewX = new Map<string, number>();
   if (preview && mini) {
-    let x = lead;
+    let x = 0;
     for (const slide of preview) {
       previewX.set(slide.id, x);
       x += (mini.slides[slides.indexOf(slide)]?.w ?? 0) + THUMB_GAP;
@@ -495,26 +490,6 @@ export function Minimap({ layout, scrollerRef, narrow }: MinimapProps) {
             className="pointer-events-auto relative"
             style={{ width: mini.contentW + 2 * MINIMAP_PAD + deletedRoom, height: rowH }}
           >
-            {lead > 0 && (
-              <li
-                className="absolute"
-                style={{
-                  left: MINIMAP_PAD,
-                  top: (rowH - mini.h) / 2,
-                  width: BOARD_THUMB_W,
-                  height: mini.h,
-                }}
-              >
-                <MaterialTile
-                  onOpen={() => {
-                    if (clickGuard.consume()) return;
-                    dispatch({ type: 'materialSet', open: true });
-                  }}
-                >
-                  <MaterialPeople />
-                </MaterialTile>
-              </li>
-            )}
             {slides.map((slide, index) => {
               const box = mini.slides[index];
               if (!box) return null;
@@ -813,29 +788,3 @@ const Thumbnail = memo(function Thumbnail({
     </li>
   );
 });
-
-/** Who else is on the material page right now: their avatars on its tile, the first three. */
-function MaterialPeople() {
-  const { viewer } = useViewerData();
-  const people = useLivePeople().filter(
-    (person) => person.onMaterial && person.author.id !== viewer.author.id,
-  );
-  if (people.length === 0) return null;
-  return (
-    <span
-      className="absolute right-1 bottom-1 flex"
-      aria-label={`Im Material: ${people.map((person) => person.author.name).join(', ')}`}
-      title={`Im Material: ${people.map((person) => person.author.name).join(', ')}`}
-    >
-      {people.slice(0, 3).map((person, index) => (
-        <Avatar
-          key={person.author.id}
-          author={person.author}
-          size={16}
-          nativeTitle={false}
-          className={cn(index > 0 && '-ml-1.5', 'rounded-full ring-1 ring-canvas')}
-        />
-      ))}
-    </span>
-  );
-}

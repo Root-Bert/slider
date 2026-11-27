@@ -668,6 +668,31 @@ export type WriterStep = z.infer<typeof writerStepSchema>;
 export const WRITER_MARKDOWN_EXTENSIONS = ['md', 'markdown'] as const;
 export const WRITER_MARKDOWN_MIME = 'text/markdown';
 export const isWriterMarkdown = (name: string): boolean => /\.(md|markdown)$/i.test(name);
+
+/**
+ * A page's drawings by hand (```ink, one stroke a line of coordinates – `features/pages/lib/ink.ts`):
+ * the lines of its strokes, by index. Nothing to read or search – a page of handwriting is
+ * thousands of numbers – so the AI and the search leave them out; the fences stay.
+ */
+export function inkStrokeLines(lines: readonly string[]): Set<number> {
+  const strokes = new Set<number>();
+  let fence: string | null = null;
+  // Every fence is followed: a ```ink line inside another code block is that block's text.
+  let ink = false;
+  lines.forEach((line, index) => {
+    if (fence === null) {
+      const open = /^\s{0,3}(`{3,}|~{3,})(.*)$/.exec(line);
+      if (!open) return;
+      fence = open[1]!;
+      ink = /^\s*ink(?:\s+\d+)?\s*$/i.test(open[2]!);
+      return;
+    }
+    const trimmed = line.trim();
+    if (trimmed.startsWith(fence) && /^[`~]+$/.test(trimmed)) fence = null;
+    else if (ink) strokes.add(index);
+  });
+  return strokes;
+}
 /** Every file Writer opens as it is. */
 export const WRITER_OPENS: readonly string[] = [WRITER_EXTENSION, ...WRITER_MARKDOWN_EXTENSIONS];
 

@@ -383,7 +383,6 @@ export function PasskeysSection({ onNotify }: { onNotify: ShowToast }) {
 
   const add = () =>
     register.mutate(undefined, {
-      onSuccess: (passkey) => onNotify(`„${passkey.name}“ hinzugefügt`),
       onError: (error) => {
         if (!isPasskeyCancel(error)) onNotify(passkeyErrorMessage(error), 'danger');
       },
@@ -482,39 +481,19 @@ export function PasskeysSection({ onNotify }: { onNotify: ShowToast }) {
           Passkey hinzufügen
         </Button>
       )}
-      {renaming && (
-        <RenameDialog passkey={renaming} onClose={() => setRenaming(null)} onNotify={onNotify} />
-      )}
-      {removing && (
-        <RemoveDialog passkey={removing} onClose={() => setRemoving(null)} onNotify={onNotify} />
-      )}
+      {renaming && <RenameDialog passkey={renaming} onClose={() => setRenaming(null)} />}
+      {removing && <RemoveDialog passkey={removing} onClose={() => setRemoving(null)} />}
     </Subsection>
   );
 }
 
-function RenameDialog({
-  passkey,
-  onClose,
-  onNotify,
-}: {
-  passkey: Passkey;
-  onClose: () => void;
-  onNotify: ShowToast;
-}) {
+function RenameDialog({ passkey, onClose }: { passkey: Passkey; onClose: () => void }) {
   const [name, setName] = useState(passkey.name);
   const rename = useRenamePasskey();
   const parsed = passkeyNameSchema.safeParse(name);
   const save = () => {
     if (!parsed.success) return;
-    rename.mutate(
-      { id: passkey.id, name: parsed.data },
-      {
-        onSuccess: () => {
-          onNotify('Name gespeichert');
-          onClose();
-        },
-      },
-    );
+    rename.mutate({ id: passkey.id, name: parsed.data }, { onSuccess: onClose });
   };
   return (
     <ConfirmDialog
@@ -549,15 +528,7 @@ function RenameDialog({
   );
 }
 
-function RemoveDialog({
-  passkey,
-  onClose,
-  onNotify,
-}: {
-  passkey: Passkey;
-  onClose: () => void;
-  onNotify: ShowToast;
-}) {
+function RemoveDialog({ passkey, onClose }: { passkey: Passkey; onClose: () => void }) {
   const remove = useDeletePasskey();
   return (
     <ConfirmDialog
@@ -568,14 +539,7 @@ function RemoveDialog({
       pending={remove.isPending}
       // In the dialog: a toast would sit behind its backdrop.
       error={remove.error?.message}
-      onConfirm={() =>
-        remove.mutate(passkey.id, {
-          onSuccess: () => {
-            onNotify('Passkey entfernt');
-            onClose();
-          },
-        })
-      }
+      onConfirm={() => remove.mutate(passkey.id, { onSuccess: onClose })}
     />
   );
 }

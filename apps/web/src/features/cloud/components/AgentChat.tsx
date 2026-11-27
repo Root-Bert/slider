@@ -6,6 +6,7 @@ import type {
   CloudAgentChat,
   CloudAgentDetail,
   CloudAgentMessage,
+  CloudAgentStep,
   SenderMessage,
 } from '@slider/shared';
 import {
@@ -19,6 +20,7 @@ import {
   useStopCloudAgent,
 } from '@/lib/api';
 import { draftKeys } from '@/lib/drafts';
+import { pluralize } from '@/lib/format';
 import { routes } from '@/lib/routes';
 import { FileDropHint, useFileDrop, useHandedToChat } from '@/features/attachments';
 import { AnswerBody } from '@/features/viewer';
@@ -399,6 +401,49 @@ export function AgentChat({
   );
 }
 
+/**
+ * What the agent did with its tools for an answer, as its activity named it while it worked:
+ * folded into a quiet line, opened in place. The model is told the same the next time.
+ */
+function AgentSteps({ steps }: { steps: CloudAgentStep[] }) {
+  const [open, setOpen] = useState(false);
+  const failed = steps.filter((step) => step.failed).length;
+  return (
+    <div className="mt-1 flex flex-col gap-1 pl-1">
+      <button
+        type="button"
+        aria-expanded={open}
+        onClick={() => setOpen(!open)}
+        className="flex w-fit items-center gap-1 rounded-control text-caption text-fg-subtle hover:text-fg-muted"
+      >
+        <Icon name={open ? 'expandLess' : 'expandMore'} size={16} />
+        {pluralize(steps.length, 'Schritt', 'Schritte')}
+        {failed > 0 && ` | ${failed} nicht möglich`}
+      </button>
+      {open && (
+        <ol className="flex flex-col gap-0.5 pl-5">
+          {steps.map((step, index) => (
+            <li
+              // The same step may come twice: its place tells them apart.
+              key={index}
+              className="flex items-center gap-1.5 text-caption text-fg-muted"
+            >
+              <Icon
+                name={step.failed ? 'close' : 'check'}
+                size={14}
+                className={step.failed ? 'text-fg-subtle' : 'text-fg-muted'}
+              />
+              <span className={step.failed ? 'text-fg-subtle line-through' : undefined}>
+                {step.label}
+              </span>
+            </li>
+          ))}
+        </ol>
+      )}
+    </div>
+  );
+}
+
 /** Under an agent's answer: what it asks to confirm; under the last, the choices it offers. */
 function AgentExtras({
   message,
@@ -422,6 +467,7 @@ function AgentExtras({
   if (!message || searching) return null;
   return (
     <>
+      {message.steps && message.steps.length > 0 && <AgentSteps steps={message.steps} />}
       {message.asks && message.asks.length > 0 && (
         <AgentAsks
           workspaceId={workspaceId}

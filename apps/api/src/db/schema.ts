@@ -2178,6 +2178,8 @@ export const cloudAgents = pgTable(
     watchedAt: timestamptz('watched_at'),
     /** Its owner paused what it does by itself: the repeated order and the watches stay. */
     paused: boolean('paused').notNull().default(false),
+    /** „Anweisungen“: how it is to work, set by its owner – in its prompt each run. */
+    instructions: encryptedText('cloud_agents', 'instructions').notNull().default(''),
     createdAt: createdAt(),
     /** Its latest message: the list sorts by it. */
     updatedAt: timestamptz('updated_at').notNull().defaultNow(),
@@ -2189,6 +2191,53 @@ export const cloudAgents = pgTable(
   ],
 );
 export type CloudAgentRow = typeof cloudAgents.$inferSelect;
+
+/**
+ * An agent's chat as the model last read it (`services/agent-transcripts.ts`): its turns with the
+ * tools it called – so the next run goes on from there instead of from the words alone – and how
+ * full that made the model's context (`context_tokens` of `context_window`, on `model`).
+ * `through_seq`: the chat's messages up to there are in it; a message changed or deleted before
+ * that drops it (the next run starts from the words again).
+ */
+export const agentTranscripts = pgTable('agent_transcripts', {
+  chatId: text('chat_id')
+    .primaryKey()
+    .references((): AnyPgColumn => senderChannels.id, { onDelete: 'cascade' }),
+  agentId: text('agent_id')
+    .notNull()
+    .references(() => cloudAgents.id, { onDelete: 'cascade' }),
+  /** Versioned JSON (`AgentTranscript`), sealed. `null`: only the meter is kept. */
+  turns: encryptedJson<unknown>('agent_transcripts', 'turns'),
+  throughSeq: integer('through_seq').notNull().default(0),
+  contextTokens: integer('context_tokens').notNull().default(0),
+  /** The model's window; `null`: not known (another provider that does not say). */
+  contextWindow: integer('context_window'),
+  model: text('model'),
+  updatedAt: timestamptz('updated_at').notNull().defaultNow(),
+});
+export type AgentTranscriptRow = typeof agentTranscripts.$inferSelect;
+
+/**
+ * An agent's memory („Gedächtnis“): notes it keeps for itself across its chats and runs, as files
+ * under `/memories` (Claude's memory tool). Seen by who sees the agent, changed by who may write to
+ * it – a shared agent's memory is everyone's it is shared with. Path and words sealed.
+ */
+export const agentMemories = pgTable(
+  'agent_memories',
+  {
+    id: text('id').primaryKey(),
+    agentId: text('agent_id')
+      .notNull()
+      .references(() => cloudAgents.id, { onDelete: 'cascade' }),
+    path: encryptedText('agent_memories', 'path').notNull(),
+    content: encryptedText('agent_memories', 'content').notNull(),
+    /** Who wrote it last – a person by hand, or whose run the agent wrote it in. */
+    updatedBy: text('updated_by').references(() => users.id, { onDelete: 'set null' }),
+    updatedAt: timestamptz('updated_at').notNull().defaultNow(),
+  },
+  (t) => [index('agent_memories_agent_idx').on(t.agentId)],
+);
+export type AgentMemoryRow = typeof agentMemories.$inferSelect;
 
 /**
  * What an agent wants done that cannot be undone or reaches out (delete, send, a public link):
@@ -3439,6 +3488,22 @@ export const calendarEvents = pgTable(
     /** All-day: the days' midnights in UTC (the end exclusive), so ranges compare alike. */
     startsAt: timestamptz('starts_at').notNull(),
     endsAt: timestamptz('ends_at').notNull(),
+    /**
+     * A series (migration 0194): its RRULE (`services/calendar/recurrence.ts`, only what the
+     * panel offers), walked from the first one in `timeZone`'s wall time – a weekly 9:00 stays
+     * 9:00 across the DST switch. Starts left out („nur dieser“: changed ones are events of
+     * their own) as their instants, or their days for an all-day series.
+     */
+    recurrence: text('recurrence'),
+    timeZone: text('time_zone'),
+    exdates: jsonb('exdates').$type<string[]>().notNull().default([]),
+    /** Where the last one ends – `null` for one without end; ranges are asked by it. */
+    repeatsUntil: timestamptz('repeats_until'),
+    /**
+     * Split off a series (migration 0196): one of it changed alone, or its following ones as a
+     * series of their own – the first series' id, so deleting all of it takes them along.
+     */
+    seriesRoot: text('series_root'),
     createdBy: text('created_by').references(() => users.id, { onDelete: 'set null' }),
     createdAt: createdAt(),
     updatedAt: timestamptz('updated_at').notNull().defaultNow(),
@@ -3446,6 +3511,29 @@ export const calendarEvents = pgTable(
   (t) => [
     index('calendar_events_calendar_idx').on(t.calendarId, t.startsAt),
     index('calendar_events_range_idx').on(t.workspaceId, t.startsAt, t.endsAt),
+    // A series' family, asked by its first series (`deleteFamily`; migration 0197).
+    index('calendar_events_series_root_idx').on(t.seriesRoot),
   ],
 );
 export type CalendarEventRow = typeof calendarEvents.$inferSelect;
+
+/**
+ * A person's calendars of a workspace as a feed to subscribe to (migration 0195): Apple's or
+ * Google's calendar fetches it by the secret in its link (`services/calendar/feed.ts`). The link
+ * stays to be copied again (`token`, sealed); a new one ends the old.
+ */
+export const calendarFeeds = pgTable(
+  'calendar_feeds',
+  {
+    workspaceId: text('workspace_id')
+      .notNull()
+      .references(() => workspaces.id, { onDelete: 'cascade' }),
+    userId: text('user_id')
+      .notNull()
+      .references(() => users.id, { onDelete: 'cascade' }),
+    tokenHash: text('token_hash').notNull().unique(),
+    token: encryptedText('calendar_feeds', 'token').notNull(),
+    createdAt: createdAt(),
+  },
+  (t) => [primaryKey({ columns: [t.workspaceId, t.userId] })],
+);

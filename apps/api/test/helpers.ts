@@ -398,6 +398,8 @@ export async function createTestContext(
     mailCalendars: options.mailCalendars,
     // Firms' logos beside mails: never the real DNS or web (a test swaps the fakes in place).
     senderLogos: { fetch, lookup: options.lookup ?? publicLookup, resolveTxt: async () => [] },
+    // Links' cards in messages: never the real web either.
+    linkPreviews: { fetch, lookup: options.lookup ?? publicLookup },
     ssoNetwork: {
       fetch,
       lookup: options.lookup ?? publicLookup,

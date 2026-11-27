@@ -283,7 +283,7 @@ export async function authorizeRedirect(
 ): Promise<{ to: string } | { problem: string }> {
   const client = await findClient(deps, query.client_id ?? '');
   if (!client)
-    return { problem: 'Diese App ist Slider nicht bekannt. Starte die Verbindung in der App neu.' };
+    return { problem: 'Diese App ist Office nicht bekannt. Starte die Verbindung in der App neu.' };
   const redirectUri = query.redirect_uri ?? client.redirectUris[0] ?? '';
   if (!redirectAllowed(client, redirectUri))
     return {
@@ -291,7 +291,7 @@ export async function authorizeRedirect(
         'Die App will nach dem Anmelden an eine Adresse zurück, die sie nicht angemeldet hat.',
     };
   const refused = (detail: string) => ({
-    problem: `Die App fragt nicht so, wie Slider es braucht (${detail}). Starte die Verbindung in der App neu.`,
+    problem: `Die App fragt nicht so, wie Office es braucht (${detail}). Starte die Verbindung in der App neu.`,
   });
   if (query.response_type !== 'code') return refused('only response_type=code');
   if (!query.code_challenge || query.code_challenge_method !== 'S256')
@@ -317,7 +317,7 @@ export async function describeAppRequest(
 ): Promise<AppRequest> {
   const request = decodeRequest(deps, value);
   const client = await findClient(deps, request.clientId);
-  if (!client) throw notFound('Diese App ist Slider nicht (mehr) bekannt.');
+  if (!client) throw notFound('Diese App ist Office nicht (mehr) bekannt.');
   return {
     clientName: client.name,
     redirectHost: hostOf(request.redirectUri),

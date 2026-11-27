@@ -133,14 +133,8 @@ export function toEntries(
   hidden: ReadonlySet<string>,
 ): Entry[] {
   const byId = new Map(calendars.map((each) => [each.id, each]));
-  /** Hidden: it, or one it stands under. */
-  const isHidden = (id: string | null): boolean => {
-    for (let depth = 0, at = id; at && depth < 8; depth++) {
-      if (hidden.has(at)) return true;
-      at = byId.get(at)?.parentId ?? null;
-    }
-    return false;
-  };
+  /** Hidden by its own box (the list stands them side by side: one's own does not hide those made in it). */
+  const isHidden = (id: string | null): boolean => id !== null && hidden.has(id);
   const entries: Entry[] = [];
   for (const event of events) {
     const calendar = byId.get(event.calendarId);

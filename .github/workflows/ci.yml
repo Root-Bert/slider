@@ -7,7 +7,7 @@ name: CI
 #   built and smoke-tested. It runs by hand (Actions → CI → Run workflow) and is called by
 #   publish.yml before anything is published or deployed – a release whose checks fail goes
 #   nowhere.
-# - Light, in the public repository Root-Bert/slider, on every release tag publish.yml pushes there:
+# - Light, in the public repository Root-Bert/office, on every release tag publish.yml pushes there:
 #   the published tree is complete and builds – lint, typecheck, build, the container image (amd64
 #   and arm64) and the secret scan. Only when these pass does its last job turn the tag into a
 #   GitHub release.
@@ -42,7 +42,7 @@ concurrency:
 jobs:
   verify:
     name: Lint, typecheck, build
-    if: github.event_name != 'push' || github.repository == 'Root-Bert/slider'
+    if: github.event_name != 'push' || github.repository == 'Root-Bert/office'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v5
@@ -66,7 +66,7 @@ jobs:
   # own LibreOffice, ran out of time.
   test:
     name: Tests (${{ matrix.name }})
-    if: github.repository != 'Root-Bert/slider' && github.event_name != 'push'
+    if: github.repository != 'Root-Bert/office' && github.event_name != 'push'
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
@@ -104,7 +104,7 @@ jobs:
 
   e2e:
     name: End-to-end (Playwright)
-    if: github.repository != 'Root-Bert/slider' && github.event_name != 'push'
+    if: github.repository != 'Root-Bert/office' && github.event_name != 'push'
     runs-on: ubuntu-latest
     timeout-minutes: 30
     steps:
@@ -152,7 +152,7 @@ jobs:
   # Business behavior is covered by the PGlite suite above instead of repeated here.
   postgres:
     name: Postgres driver and migrations
-    if: github.repository != 'Root-Bert/slider' && github.event_name != 'push'
+    if: github.repository != 'Root-Bert/office' && github.event_name != 'push'
     runs-on: ubuntu-latest
     services:
       postgres:
@@ -188,13 +188,13 @@ jobs:
   # minutes are free, or on a manual run. Each architecture has its own build cache scope.
   image-smoke:
     name: Container image ${{ matrix.arch }} (build + smoke test)
-    if: github.event_name != 'push' || github.repository == 'Root-Bert/slider'
+    if: github.event_name != 'push' || github.repository == 'Root-Bert/office'
     runs-on: ubuntu-latest
     timeout-minutes: 90
     strategy:
       fail-fast: false
       matrix:
-        arch: ${{ fromJSON((github.repository == 'Root-Bert/slider' || github.event_name == 'workflow_dispatch') && '["amd64", "arm64"]' || '["amd64"]') }}
+        arch: ${{ fromJSON((github.repository == 'Root-Bert/office' || github.event_name == 'workflow_dispatch') && '["amd64", "arm64"]' || '["amd64"]') }}
     env:
       SMOKE_PLATFORM: linux/${{ matrix.arch }}
       SMOKE_WAIT: ${{ matrix.arch == 'arm64' && 600 || 90 }}
@@ -222,7 +222,7 @@ jobs:
   # parsed and provisioned by the caddy:2 image Compose runs – with and without Cloudflare.
   caddy:
     name: Caddyfiles (caddy adapt)
-    if: github.repository != 'Root-Bert/slider' && github.event_name != 'push'
+    if: github.repository != 'Root-Bert/office' && github.event_name != 'push'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v5
@@ -232,7 +232,7 @@ jobs:
 
   secrets:
     name: Secret scan
-    if: github.event_name != 'push' || github.repository == 'Root-Bert/slider'
+    if: github.event_name != 'push' || github.repository == 'Root-Bert/office'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v5
@@ -249,7 +249,7 @@ jobs:
   release:
     name: Create the GitHub release
     needs: [verify, image-smoke, secrets]
-    if: github.repository == 'Root-Bert/slider' && github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')
+    if: github.repository == 'Root-Bert/office' && github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -279,7 +279,7 @@ jobs:
   desktop:
     name: Desktop app ${{ matrix.os }} ${{ matrix.arch }}
     needs: release
-    if: github.repository == 'Root-Bert/slider' && github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')
+    if: github.repository == 'Root-Bert/office' && github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')
     runs-on: ${{ matrix.runner }}
     timeout-minutes: 90
     permissions:
@@ -388,7 +388,7 @@ jobs:
   cloud-desktop:
     name: Cloud app ${{ matrix.os }} ${{ matrix.arch }}
     needs: release
-    if: github.repository == 'Root-Bert/slider' && github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')
+    if: github.repository == 'Root-Bert/office' && github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')
     runs-on: ${{ matrix.runner }}
     timeout-minutes: 60
     permissions:
@@ -453,7 +453,7 @@ jobs:
   writer-desktop:
     name: Writer app ${{ matrix.os }} ${{ matrix.arch }}
     needs: release
-    if: github.repository == 'Root-Bert/slider' && github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')
+    if: github.repository == 'Root-Bert/office' && github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')
     runs-on: ${{ matrix.runner }}
     timeout-minutes: 60
     permissions:
@@ -526,7 +526,7 @@ jobs:
   sender-desktop:
     name: Sender app ${{ matrix.os }} ${{ matrix.arch }}
     needs: release
-    if: github.repository == 'Root-Bert/slider' && github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')
+    if: github.repository == 'Root-Bert/office' && github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')
     runs-on: ${{ matrix.runner }}
     timeout-minutes: 60
     permissions:

@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
+import { useNavigate } from 'react-router';
 import type { Deck } from '@slider/shared';
 import {
   useDeckStatus,
@@ -13,6 +14,7 @@ import { desktopBridge, revealLabel, savableAsFile } from '@/lib/desktop-bridge'
 import { saveDeckAsFile, webFilesSupported } from '@/lib/web-files';
 import { ContextMenu, Menu, type IconButtonVariant, type MenuAction, type ShowToast } from '@/ui';
 import { formatFileSize } from '@/lib/format';
+import { routes } from '@/lib/routes';
 import { useShowRun } from '@/features/viewer';
 import { usePinnedDecks } from '../hooks/usePinnedDecks';
 import { usePanelPresence } from '../hooks/usePanelPresence';
@@ -96,7 +98,7 @@ function useRerender(deck: Deck, onNotify: ShowToast) {
 }
 
 /**
- * The ⋯ menu of a deck card/row – pin for every deck; rename, move, restrict access, re-render,
+ * The ⋯ menu of a deck card/row – pin and „Material“ for every deck; rename, move, restrict access, re-render,
  * archive/restore, delete for decks the viewer manages. The same actions open at `contextAt` for a right click.
  */
 export function DeckActions({
@@ -122,6 +124,7 @@ export function DeckActions({
   const runPanel = usePanelPresence(showingRun && run !== null, Boolean(panelSlot?.element));
   const update = useUpdateDeck(deck.id);
   const rerender = useRerender(deck, onNotify);
+  const navigate = useNavigate();
   const pins = usePinnedDecks(deck.workspaceId);
   const pinned = pins.isPinned(deck.id);
   const archived = deck.archivedAt !== null;
@@ -235,6 +238,17 @@ export function DeckActions({
         },
       ]
     : [];
+  // What was collected for it: its „Material“ in the open presentation, beside the slides.
+  const materialAction: MenuAction[] =
+    deck.import.status === 'ready'
+      ? [
+          {
+            label: 'Material',
+            icon: 'folderOpen',
+            onSelect: () => void navigate(routes.deckMaterial(deck.id)),
+          },
+        ]
+      : [];
   // Reviewers and members on other people's decks can only pin them (BER-129).
   const manageActions: MenuAction[] = [
     { label: 'Umbenennen', icon: 'edit', onSelect: onRename },
@@ -256,8 +270,15 @@ export function DeckActions({
     { label: 'Löschen', icon: 'delete', tone: 'danger', onSelect: () => setDeleting(true) },
   ];
   const actions = deck.permissions.canManage
-    ? [...pinActions, ...keepAction, ...fileActions, ...manageActions]
-    : [...pinActions, ...keepAction, ...fileActions, ...rerenderAction, ...runAction];
+    ? [...pinActions, ...materialAction, ...keepAction, ...fileActions, ...manageActions]
+    : [
+        ...pinActions,
+        ...materialAction,
+        ...keepAction,
+        ...fileActions,
+        ...rerenderAction,
+        ...runAction,
+      ];
 
   return (
     <>

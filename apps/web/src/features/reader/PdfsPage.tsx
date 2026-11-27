@@ -8,6 +8,7 @@ import { isTextTarget } from '@/lib/dom';
 import { withCount } from '@/lib/format';
 import { isOnControl } from '@/lib/marquee-select';
 import { routes } from '@/lib/routes';
+import { useViewChoice } from '@/lib/view-choice';
 import { usePageCommands } from '@/features/commands';
 import { useAccount } from '@/features/auth';
 import { useDeckContextMenu, useStoredChoice } from '@/features/reviews';
@@ -105,7 +106,7 @@ export function Component() {
   };
   const [query, setQuery] = useState('');
   const [sort, setSort] = useStoredChoice('reader.pdfs.sort', PDF_SORTS, 'updated');
-  const [view, setView] = useStoredChoice('reader.pdfs.view', VIEWS, 'grid');
+  const [view, setView] = useViewChoice('reader.pdfs.view', VIEWS, 'grid');
 
   const list = usePdfs(workspace.id);
   const trash = usePdfs(workspace.id, 'trash');

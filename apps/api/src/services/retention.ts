@@ -14,6 +14,7 @@ import { sweepDowngrades } from './downgrade';
 import { sweepMailUploads } from './mail';
 import { sweepAttachments } from './attachments';
 import { sweepMailInsights } from './mail-insights';
+import { sweepLinkPreviews } from './link-previews';
 import { sweepMailLogos } from './mail-logos';
 import { sweepOldEditImages } from './old-edit-images';
 import { DAY_MS, INVITE_KEEP_DAYS } from './retention-rules';
@@ -98,6 +99,7 @@ export async function enforceRetention(deps: AppDeps): Promise<void> {
     sweepMailUploads,
     sweepAttachments,
     sweepMailLogos,
+    sweepLinkPreviews,
     // Not a deletion deadline, but the same hourly rhythm: paid workspaces without payment.
     sweepDowngrades,
   ] as const;

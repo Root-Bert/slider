@@ -7,7 +7,7 @@ import {
   type IntegrationKind,
 } from '@slider/shared';
 import { useInheritedModels, useSetInheritedModel, useUpdateIntegrationKey } from '@/lib/api';
-import { Badge, Button, ErrorText, Select, Spinner, type ShowToast } from '@/ui';
+import { Badge, Button, ErrorText, Select, Spinner } from '@/ui';
 import { AI_MODEL_ROLES } from '../lib/ai-models';
 import { AppModels } from './AppModels';
 import { ModelLine } from './ModelLine';
@@ -30,7 +30,6 @@ export function InstanceRow({
   activeKeyId,
   choosable,
   pickModel,
-  onNotify,
 }: {
   workspaceId: string;
   kind: IntegrationKind;
@@ -40,7 +39,6 @@ export function InstanceRow({
   /** Whether there is anything to choose between – else no „Aktiv“ to tell apart. */
   choosable: boolean;
   pickModel: boolean;
-  onNotify: ShowToast;
 }) {
   const update = useUpdateIntegrationKey(workspaceId);
   const setModel = useSetInheritedModel(workspaceId);
@@ -93,12 +91,7 @@ export function InstanceRow({
             variant="soft"
             className="ml-auto"
             loading={update.isPending}
-            onClick={() =>
-              update.mutate(
-                { keyId: activeKeyId, active: false },
-                { onSuccess: () => onNotify('Der Key der Instanz ist jetzt aktiv') },
-              )
-            }
+            onClick={() => update.mutate({ keyId: activeKeyId, active: false })}
           >
             Aktiv setzen
           </Button>
@@ -119,17 +112,7 @@ export function InstanceRow({
                   value={inherited.model === inherited.defaultModel ? '' : inherited.model}
                   disabled={setModel.isPending}
                   options={options}
-                  onChange={(model) =>
-                    setModel.mutate(
-                      { kind, model: model || null },
-                      {
-                        onSuccess: () =>
-                          onNotify(
-                            `Der Key der Instanz nutzt hier jetzt ${model || inherited.defaultModel}`,
-                          ),
-                      },
-                    )
-                  }
+                  onChange={(model) => setModel.mutate({ kind, model: model || null })}
                 />
                 {models.isFetching && !models.data && (
                   <Spinner size="sm" label="Modelle werden geladen" />
@@ -155,17 +138,7 @@ export function InstanceRow({
                 }
                 current={createModel === createStandard ? null : createModel}
                 disabled={setModel.isPending}
-                onPick={(model) =>
-                  setModel.mutate(
-                    { kind, createModel: model },
-                    {
-                      onSuccess: () =>
-                        onNotify(
-                          `${AI_MODEL_ROLES.create.label} nutzt hier jetzt ${nameOf(model ?? createStandard)}`,
-                        ),
-                    },
-                  )
-                }
+                onPick={(model) => setModel.mutate({ kind, createModel: model })}
               />
             ) : (
               <span className="text-fg">{createModel}</span>
@@ -189,17 +162,7 @@ export function InstanceRow({
                 }
                 current={quickModel === quickStandard ? null : quickModel}
                 disabled={setModel.isPending}
-                onPick={(model) =>
-                  setModel.mutate(
-                    { kind, quickModel: model },
-                    {
-                      onSuccess: () =>
-                        onNotify(
-                          `${AI_MODEL_ROLES.quick.label} nutzen hier jetzt ${nameOf(model ?? quickStandard)}`,
-                        ),
-                    },
-                  )
-                }
+                onPick={(model) => setModel.mutate({ kind, quickModel: model })}
               />
             ) : (
               <span className="text-fg">{quickModel}</span>

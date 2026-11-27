@@ -25,7 +25,7 @@ describe('columnSpans', () => {
     expect(columnSpans(layout, (i) => (i === 2 ? 100 : 0), none)[2]).toEqual({ x: 456, w: 200 });
     expect(columnSpans(layout, (i) => (i === 2 ? 360 : 0), none)[2]).toEqual({ x: 376, w: 360 });
 
-    // The track starts with slide 1 – the material is a page of its own beside the presentation.
+    // The track starts with slide 1 – the material is never in it.
     const track = layoutTrack([16 / 9, 4 / 3], 90);
     expect(track.slides[0]!.x).toBe(16);
     expect(track.slides[1]!.x).toBe(16 + 160 + gapWidth(90));

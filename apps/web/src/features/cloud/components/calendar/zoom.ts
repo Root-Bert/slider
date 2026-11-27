@@ -9,6 +9,8 @@ import type { CalendarView } from './entries';
  *
  * What the views mark for it:
  * - `data-pane="0"` the page in sight (`CalendarStrip`),
+ * - `data-frame` its frame (glass), where it has one: it stays put as a pinch follows the fingers,
+ *   and the old page's copy of it is not seen through,
  * - `data-seg` the parts that move apart (a month's days and weeks' numbers, a week's columns and
  *   their heads, a year's months),
  * - `data-day`, `data-week`, `data-month` what a part shows (where the finer view lies),
@@ -28,27 +30,32 @@ export const zoomLevel = (view: CalendarView): number | undefined =>
 const DURATION = 320;
 const EASE = 'cubic-bezier(0.2, 0, 0, 1)';
 
-/**
- * What moves, moves as a spring does: quick away, a hair past its place, settled – damped so it
- * overshoots by about 1 %. As `linear()` points; where the browser has no `linear()`, `EASE`.
- */
-const SPRING = (() => {
-  const damping = 0.82;
-  const decay = 7; // e^-7: settled within a thousandth by the end
-  const omega = decay / damping;
-  const ringing = omega * Math.sqrt(1 - damping * damping);
-  const points = Array.from({ length: 41 }, (_, index) => {
-    const t = index / 40;
-    const x =
-      1 -
-      Math.exp(-decay * t) * (Math.cos(ringing * t) + (decay / ringing) * Math.sin(ringing * t));
-    return index === 40 ? 1 : Math.round(x * 10000) / 10000;
-  });
+/** A curve as `linear()` points; where the browser has no `linear()`, `EASE`. */
+const curveOf = (at: (t: number) => number) => {
+  const points = Array.from({ length: 41 }, (_, index) =>
+    index === 40 ? 1 : Math.round(at(index / 40) * 10000) / 10000,
+  );
   const curve = `linear(${points.join(', ')})`;
   return typeof CSS !== 'undefined' && CSS.supports('animation-timing-function', curve)
     ? curve
     : EASE;
-})();
+};
+
+/**
+ * What moves, moves as a spring does: quick away, a hair past its place, settled – damped so it
+ * overshoots by about 1 %.
+ */
+const DECAY = 7; // e^-7: settled within a thousandth by the end
+const RINGING = (DECAY / 0.82) * Math.sqrt(1 - 0.82 * 0.82);
+const springAt = (t: number) =>
+  1 - Math.exp(-DECAY * t) * (Math.cos(RINGING * t) + (DECAY / RINGING) * Math.sin(RINGING * t));
+const SPRING = curveOf(springAt);
+/**
+ * The frame – the new page growing out of its spot, the old one cut down into it, the hole – comes
+ * as quickly but never past its place: a frame a hair too big and back read as a jump.
+ */
+const SETTLE_RATE = 9.2;
+const SETTLE = curveOf((t) => 1 - (1 + SETTLE_RATE * t) * Math.exp(-SETTLE_RATE * t));
 
 interface Box {
   x: number;
@@ -122,19 +129,65 @@ function spotBox(root: HTMLElement, selector: string, frame: DOMRect): Box | nul
   return boxIn(frame, new DOMRect(left, top, right - left, bottom - top));
 }
 
-/** The page's place as laid out (a pinch's scaling left out): where it sits in the strip. */
-function laidOut(pane: HTMLElement) {
-  const strip = pane.parentElement!;
-  const rect = strip.getBoundingClientRect();
+/** A thing's place as laid out (a pinch's scaling left out). */
+function laidOut(el: HTMLElement) {
+  const parent = el.offsetParent as HTMLElement | null;
+  if (!parent) return { left: 0, top: 0 };
+  const rect = parent.getBoundingClientRect();
   return {
-    left: rect.left + pane.offsetLeft - strip.scrollLeft,
-    top: rect.top + pane.offsetTop - strip.scrollTop,
+    left: rect.left + parent.clientLeft + el.offsetLeft - parent.scrollLeft,
+    top: rect.top + parent.clientTop + el.offsetTop - parent.scrollTop,
+  };
+}
+
+/**
+ * What a pinch scales as it follows the fingers: what is in the page's frame (`data-frame`, the
+ * frame stays where it is), the page itself where it has none (the year).
+ */
+const followed = (pane: HTMLElement) => {
+  const frame = pane.querySelector<HTMLElement>('[data-frame]');
+  return frame ? [...(frame.children as HTMLCollectionOf<HTMLElement>)] : [pane];
+};
+
+/**
+ * The strip held where it is while its page is scaled: it snaps to its pages by their boxes as
+ * scaled – a month growing out of the year's right-hand column scrolled the strip by as much, the
+ * months beside it in sight. Undone, it snaps again (to the page as laid out).
+ */
+function pinStrip(pane: HTMLElement) {
+  const strip = pane.closest<HTMLElement>('[data-strip]');
+  if (!strip) return () => {};
+  strip.style.scrollSnapType = 'none';
+  return () => {
+    strip.style.scrollSnapType = '';
   };
 }
 
 /** A transform about the page's corner: scaling by `scale` about a point of it stays put there. */
 const scaledAbout = (scale: number, x: number, y: number) =>
   `translate(${x * (1 - scale)}px, ${y * (1 - scale)}px) scale(${scale})`;
+
+/**
+ * A zoom the fingers hold (a touch screen's or a trackpad's pinch): it goes as far as they have
+ * come and, let go (`released`), on to its end or back to where it began. The gesture writes how
+ * far they have stretched past the hold (`stretch`, a logarithm of their distance) and reads how
+ * much stretch is the whole way (`whole`, set once the zoom knows how far its spot opens); the zoom
+ * takes it up once the new view is laid out (`to`), the page undoes going back (`back`, given what
+ * clears the old page's copy once the old view is there again).
+ */
+export interface ZoomDrive {
+  stretch: number;
+  whole?: number;
+  /** `speed`: of the whole way a second, as the fingers left it. */
+  released: { commit: boolean; speed: number } | null;
+  to?: { seek: () => void; release: (commit: boolean, speed: number) => void };
+  back?: (done: () => void) => void;
+}
+
+/** The fingers' stretch for the whole way, without a spot to measure (and at least, at most). */
+export const WHOLE = 0.5;
+const WHOLE_LEAST = 0.45;
+const WHOLE_MOST = 0.9;
 
 export interface ZoomStart {
   frame: HTMLElement;
@@ -143,9 +196,15 @@ export interface ZoomStart {
   morphs: Map<string, Morph>;
   spot: ReturnType<typeof spotOf>;
   spotBox: Box | null;
+  drive?: ZoomDrive;
+  /** The page's title (`data-word` spans) as it was: its words, where, how they look. */
+  title?: { el: HTMLElement; words: { text: string; rect: DOMRect }[]; look: TextLook };
 }
 
 let running: (() => void) | null = null;
+
+/** A zoom on its way ends now, nothing undone (the page goes away). */
+export const stopZoom = () => running?.();
 
 const motionOk = () =>
   typeof Element.prototype.animate === 'function' &&
@@ -162,6 +221,8 @@ export function startZoom({
   from,
   to,
   day,
+  drive,
+  title,
 }: {
   frame: HTMLElement;
   overlay: HTMLElement;
@@ -169,6 +230,8 @@ export function startZoom({
   from: CalendarView;
   to: CalendarView;
   day: Date;
+  drive?: ZoomDrive;
+  title?: HTMLElement | null;
 }): ZoomStart | null {
   running?.();
   if (!motionOk()) return null;
@@ -176,6 +239,16 @@ export function startZoom({
   const spot = spotOf(from, to, day);
   const morphs = morphsIn(pane, frameRect);
   const box = spot?.zoomIn ? spotBox(pane, spot.selector, frameRect) : null;
+  const titleThen = title
+    ? {
+        el: title,
+        words: [...title.querySelectorAll<HTMLElement>('[data-word]')].map((el) => ({
+          text: el.textContent ?? '',
+          rect: el.getBoundingClientRect(),
+        })),
+        look: textLook(title, true),
+      }
+    : undefined;
   const place = laidOut(pane);
   const clone = pane.cloneNode(true) as HTMLElement;
   clone.removeAttribute('data-pane');
@@ -189,6 +262,15 @@ export function startZoom({
     height: `${pane.offsetHeight}px`,
     margin: '0',
   });
+  // Its frame as it looks, but not seen through: a frame is glass, and the copy's cut (`clip-path`)
+  // turns its blur off – the new page under it showed through, its frame flying there, and the
+  // dots behind. Blurred, the dots are the canvas; the glass's tint over that.
+  for (const el of clone.querySelectorAll<HTMLElement>('[data-frame]'))
+    Object.assign(el.style, {
+      backgroundColor: 'var(--color-canvas)',
+      backgroundImage: 'linear-gradient(var(--color-glass), var(--color-glass))',
+      backdropFilter: 'none',
+    });
   overlay.append(clone);
   const scrolled = pane.querySelectorAll<HTMLElement>('[data-scroller]');
   clone.querySelectorAll<HTMLElement>('[data-scroller]').forEach((el, index) => {
@@ -205,7 +287,7 @@ export function startZoom({
     if (el) inCopy.set(key, { el, box: morph.box });
   }
   running = () => overlay.replaceChildren();
-  return { frame, overlay, clone, morphs: inCopy, spot, spotBox: box };
+  return { frame, overlay, clone, morphs: inCopy, spot, spotBox: box, drive, title: titleThen };
 }
 
 /** Once the new view is laid out (before it is painted): everything moves to where it is now. */
@@ -218,10 +300,20 @@ export function finishZoom(start: ZoomStart, pane: HTMLElement) {
   const area = spot ? (spot.zoomIn ? start.spotBox : spot2) : null;
   const animations: Animation[] = [];
   const hidden: HTMLElement[] = [];
-  const run = (el: Element, frames: Keyframe[], options: KeyframeAnimationOptions = {}) =>
-    animations.push(
-      el.animate(frames, { duration: DURATION, easing: EASE, fill: 'both', ...options }),
-    );
+  // Held by the fingers, everything goes on one even clock (where they are is where it is, the
+  // end of their way the end of its); played, each with its own curve.
+  const driven = Boolean(start.drive);
+  const run = (el: Element, frames: Keyframe[], options: KeyframeAnimationOptions = {}) => {
+    const animation = el.animate(frames, {
+      duration: DURATION,
+      easing: EASE,
+      fill: 'both',
+      ...options,
+      ...(driven && { easing: 'linear' }),
+    });
+    animations.push(animation);
+    return animation;
+  };
   /** Points of `from` to where they are once `from` fills `to` (no scaling: they move apart). */
   const mapping = (from: Box, to: Box) => (x: number, y: number) => ({
     x: to.x + (x - from.x) * (to.w / from.w),
@@ -253,10 +345,20 @@ export function finishZoom(start: ZoomStart, pane: HTMLElement) {
   const left = clone.offsetLeft;
   const top = clone.offsetTop;
   const page = boxIn(frameRect, pane.getBoundingClientRect());
+  // What of it is seen: its frame (the page's margin around it is empty).
+  const pageFrame = pane.querySelector('[data-frame]');
+  const seen = pageFrame ? boxIn(frameRect, pageFrame.getBoundingClientRect()) : page;
   const moved = area ? (spot?.zoomIn ? clone : pane) : null;
+  const unpin = pinStrip(pane);
+  // A part may still be scaled as a pinch left it (`followed`): it moves from there.
   const moves = moved
     ? [...moved.querySelectorAll<HTMLElement>('[data-seg]')].map(
-        (seg) => [seg, shift(seg, mapping(area!, whole))] as const,
+        (seg) =>
+          [
+            seg,
+            seg.style.transform || 'none',
+            `${shift(seg, mapping(area!, whole))} ${seg.style.transform}`,
+          ] as const,
       )
     : [];
   const look = (el: HTMLElement) => {
@@ -269,34 +371,62 @@ export function finishZoom(start: ZoomStart, pane: HTMLElement) {
     if (!after || (area && !overlaps(spot?.zoomIn ? before.box : after.box, area))) return [];
     return [{ before, after, beforeLook: look(before.el), afterLook: look(after.el) }];
   });
+  const titleNow = start.title
+    ? [...start.title.el.querySelectorAll<HTMLElement>('[data-word]')].map((el) => ({
+        el,
+        text: el.textContent ?? '',
+        rect: el.getBoundingClientRect(),
+      }))
+    : [];
 
+  let opening: { box: ReturnType<typeof local>; gx: number; gy: number; grow: number } | null =
+    null;
   if (area && spot?.zoomIn) {
     // In: the old page's parts move apart from the spot, and the spot opens – a hole in the copy,
-    // growing with them to the whole, the new page in it. Neither is ever half seen through.
-    for (const [seg, to] of moves)
-      run(seg, [{ transform: 'none' }, { transform: to }], { easing: SPRING });
+    // growing with them to the whole, the new page in it (coming in under the spot where the old
+    // page has no frame, below).
+    for (const [seg, from, to] of moves)
+      run(seg, [{ transform: from }, { transform: to }], { easing: SPRING });
     const hole = (b: ReturnType<typeof local>) =>
       `polygon(evenodd, -1px -1px, ${w + 1}px -1px, ${w + 1}px ${h + 1}px, -1px ${h + 1}px, -1px -1px, ${b.left}px ${b.top}px, ${b.right}px ${b.top}px, ${b.right}px ${b.bottom}px, ${b.left}px ${b.bottom}px, ${b.left}px ${b.top}px)`;
     const opened = local({ x: -2, y: -2, w: whole.w + 4, h: whole.h + 4 });
-    run(clone, [{ clipPath: hole(local(area)) }, { clipPath: hole(opened) }], { easing: SPRING });
+    run(clone, [{ clipPath: hole(local(area)) }, { clipPath: hole(opened) }], { easing: SETTLE });
     // The new page grows out of the spot as one piece, as small as it still fills it (a month
     // from the year's small one: its size; a week from a month's row: as it is, moving there).
-    const grow = Math.min(1, Math.max(area.w / page.w, area.h / page.h));
-    const gx = area.x + area.w / 2 - page.x - (grow * page.w) / 2;
-    const gy = area.y + area.h / 2 - page.y - (grow * page.h) / 2;
+    // Its frame fills the spot (measured with the empty margin, it fell short of the hole's edges).
+    const grow = Math.min(1, Math.max(area.w / seen.w, area.h / seen.h));
+    const gx = area.x + area.w / 2 - page.x - grow * (seen.x + seen.w / 2 - page.x);
+    const gy = area.y + area.h / 2 - page.y - grow * (seen.y + seen.h / 2 - page.y);
     run(
       pane,
       [
         { transformOrigin: '0 0', transform: `translate(${gx}px, ${gy}px) scale(${grow})` },
         { transformOrigin: '0 0', transform: 'none' },
       ],
-      { easing: SPRING },
+      { easing: SETTLE },
     );
+    // Out of a page without a frame (the year): it comes in under what the spot showed – the
+    // frame's glass there at once, over a small month's bare numbers, read as a jump. Out of a
+    // frame (a month's row, a week's day) the spot is glass already: it is there at once.
+    if (!clone.querySelector('[data-frame]')) {
+      run(pane, [{ opacity: 0 }, { opacity: 1, offset: 0.3 }, { opacity: 1 }], {
+        easing: 'linear',
+      });
+      opening = { box: local(area), gx, gy, grow };
+    } else {
+      // Out of a frame the glass stays; what is in it – the new view's lines, hours, columns,
+      // grounds – comes in as it opens (not there at once, a week's lines in a month's row before
+      // the zoom is under way), the old view's parts going as they move away.
+      for (const part of followed(pane)) run(part, ARRIVING, { easing: 'linear' });
+      for (const [seg] of moves) run(seg, LEAVING, { easing: 'linear' });
+    }
   } else if (area) {
     // Out: the new page is there at once, its parts coming together on the spot; the old one,
     // over it, is cut down to the spot as they come (not squashed) and fades into it at the end.
-    for (const [seg, from] of moves)
+    for (const [seg, , from] of moves)
       run(seg, [{ transform: from }, { transform: 'none' }], { easing: SPRING });
+    // What the new view shows comes in as it comes together (not there at once around the old).
+    for (const part of followed(pane)) run(part, ARRIVING_OUT, { easing: 'linear' });
     // Shrunk evenly just as far as it still covers the spot (a week into a month's row: not at
     // all, a month into the year's small one: to its size), the rest cut away.
     const scale = Math.min(1, Math.max(area.w / whole.w, area.h / whole.h));
@@ -322,7 +452,7 @@ export function finishZoom(start: ZoomStart, pane: HTMLElement) {
           clipPath: `inset(${cut.top}px ${cut.right}px ${cut.bottom}px ${cut.left}px round ${10 / scale}px)`,
         },
       ],
-      { easing: SPRING },
+      { easing: SETTLE },
     );
     // Gone before it is small: what it showed is not read in the spot over what is there now.
     run(
@@ -412,20 +542,214 @@ export function finishZoom(start: ZoomStart, pane: HTMLElement) {
     fly(after.el, afterLook, before.box, after.box, true);
     before.el.style.visibility = 'hidden';
     after.el.style.visibility = 'hidden';
-    hidden.push(after.el);
+    hidden.push(before.el, after.el);
+  }
+  // In: what the spot showed stays over the new page as it begins, growing with it (the copy of
+  // the old page put where the new one is, as the new one moves), and gives way to it.
+  if (opening) {
+    const { box, gx, gy, grow } = opening;
+    const inner = clone.cloneNode(true) as HTMLElement;
+    inner.style.clipPath = `inset(${box.top}px ${w - box.right}px ${h - box.bottom}px ${box.left}px)`;
+    overlay.append(inner);
+    const scrolled = clone.querySelectorAll<HTMLElement>('[data-scroller]');
+    inner.querySelectorAll<HTMLElement>('[data-scroller]').forEach((el, index) => {
+      el.scrollTop = scrolled[index]?.scrollTop ?? 0;
+      el.scrollLeft = scrolled[index]?.scrollLeft ?? 0;
+    });
+    run(
+      inner,
+      [
+        { transformOrigin: '0 0', transform: 'translate(0px, 0px) scale(1)' },
+        {
+          transformOrigin: '0 0',
+          transform: `translate(${-gx / grow}px, ${-gy / grow}px) scale(${1 / grow})`,
+        },
+      ],
+      { easing: SETTLE },
+    );
+    run(inner, [{ opacity: 1 }, { opacity: 0, offset: 0.35 }, { opacity: 0 }], {
+      easing: 'linear',
+    });
+  }
+  // The title, word by word, on the same way: a word both have moves to its place („2026“ into
+  // „Oktober 2026“, „Nov.“ from the week into the day), the others fade, a little blurred.
+  const titled = new Set<Animation>();
+  let leavingWords: HTMLElement | null = null;
+  if (start.title) {
+    const left = [...start.title.words];
+    for (const word of titleNow) {
+      const at = left.findIndex((old) => old.text === word.text);
+      if (at === -1) {
+        titled.add(run(word.el, WORD_IN, { easing: 'linear' }));
+        continue;
+      }
+      const [old] = left.splice(at, 1);
+      const dx = old!.rect.left - word.rect.left;
+      const dy = old!.rect.top - word.rect.top;
+      if (Math.abs(dx) + Math.abs(dy) < 0.5) continue;
+      titled.add(
+        run(word.el, [{ transform: `translate(${dx}px, ${dy}px)` }, { transform: 'none' }], {
+          easing: SPRING,
+        }),
+      );
+    }
+    if (left.length) {
+      // Out of the page's way (the title is not in the zoom's overlay): over everything, unheard.
+      leavingWords = document.createElement('div');
+      leavingWords.setAttribute('aria-hidden', 'true');
+      Object.assign(leavingWords.style, {
+        position: 'fixed',
+        inset: '0',
+        pointerEvents: 'none',
+        zIndex: '50',
+      });
+      for (const old of left) {
+        const el = document.createElement('span');
+        el.textContent = old.text;
+        for (const [name, value] of start.title.look) el.style.setProperty(name, value);
+        Object.assign(el.style, {
+          position: 'absolute',
+          left: `${old.rect.left}px`,
+          top: `${old.rect.top}px`,
+          height: `${old.rect.height}px`,
+          whiteSpace: 'nowrap',
+        });
+        leavingWords.append(el);
+        titled.add(run(el, WORD_OUT, { easing: 'linear' }));
+      }
+      document.body.append(leavingWords);
+    }
   }
 
   let done = false;
+  let goingBack = false;
+  let tick = 0;
   const finish = () => {
     if (done) return;
     done = true;
+    window.cancelAnimationFrame(tick);
     for (const animation of animations) animation.cancel();
     for (const el of hidden) el.style.visibility = '';
+    pane.style.visibility = '';
+    unpin();
+    leavingWords?.remove();
     overlay.replaceChildren();
     if (running === finish) running = null;
   };
+  // Let go short of the way: back at its start, the old page's copy whole again over everything
+  // until the old view is there again (`drive.back`), the new one under it unseen.
+  const back = () => {
+    if (done) return;
+    // The title back at its start (it looks as the old one) until the old view is there again.
+    for (const animation of animations) {
+      if (!titled.has(animation)) animation.cancel();
+      else animation.currentTime = 0;
+    }
+    for (const el of hidden) el.style.visibility = '';
+    overlay.replaceChildren(clone);
+    pane.style.visibility = 'hidden';
+    window.setTimeout(finish, 1000); // the old view never came: nothing stays over the page
+    if (start.drive?.back) start.drive.back(finish);
+    else finish();
+  };
   running = finish;
-  void Promise.all(animations.map((animation) => animation.finished)).then(finish, finish);
+  // Played, it ends with its animations; held, where the fingers' spring arrives (below).
+  if (!driven)
+    void Promise.all(animations.map((animation) => animation.finished)).then(finish, finish);
+
+  const drive = start.drive;
+  if (!drive) return;
+  // Held by the fingers. How far the spot opens (a month's row into the week: some 6 times, a
+  // year's small month into the month: twice) is how far they stretch for the whole way – one to
+  // one where a hand can, at most `WHOLE_MOST` – and what opens grows by as much as they spread:
+  // twice as far apart, twice as big, all the way (`way`: of the zoom's even clock).
+  const opens = area ? Math.max(whole.w / area.w, whole.h / area.h) : 1;
+  const sized = spot?.zoomIn ? opens : 1 / opens;
+  const even = Math.abs(Math.log(sized)) < 0.01;
+  drive.whole = Math.min(WHOLE_MOST, Math.max(WHOLE_LEAST, Math.log(opens)));
+  const wayAt = (part: number) => (even ? part : (sized ** part - 1) / (sized - 1));
+  const lengths = animations.map((animation) =>
+    Number(animation.effect?.getComputedTiming().duration ?? DURATION),
+  );
+  for (const animation of animations) animation.pause();
+  let way = 0;
+  const show = () =>
+    animations.forEach((animation, index) => {
+      animation.currentTime = Math.min(way * DURATION, lengths[index]!);
+    });
+  const seek = () => {
+    if (done || goingBack || tick) return;
+    way = wayAt(Math.max(0, Math.min(1, drive.stretch / drive.whole!)));
+    show();
+  };
+  // Let go: on to its end or back to its start as a spring does that never overshoots, going on as
+  // fast as the fingers went (no jump into the zoom's own pace).
+  const release = (commit: boolean, speed: number) => {
+    if (done || goingBack || tick) return;
+    if (!commit) goingBack = true;
+    const target = commit ? 1 : 0;
+    const part = Math.max(0, Math.min(1, drive.stretch / drive.whole!));
+    const velocity = speed * (even ? 1 : (sized ** part * Math.log(sized)) / (sized - 1));
+    const rate = SETTLE_RATE / (DURATION / 1000);
+    // Where it is at each moment (not stepped frame by frame: a slow frame would throw it about).
+    const away = way - target;
+    const begun = performance.now();
+    const step = (now: number) => {
+      if (done) return;
+      const t = (now - begun) / 1000;
+      way = target + (away + (velocity + rate * away) * t) * Math.exp(-rate * t);
+      const there = (commit ? way >= 1 - 1e-3 : way <= 1e-3) || t > 1.5;
+      if (there) way = target;
+      show();
+      if (there) return commit ? finish() : back();
+      tick = window.requestAnimationFrame(step);
+    };
+    tick = window.requestAnimationFrame(step);
+  };
+  drive.to = { seek, release };
+  seek();
+  if (drive.released) release(drive.released.commit, drive.released.speed);
+}
+
+/**
+ * A view's lines and grounds coming in, by the zoom's way: zoomed in, from a tenth until most of
+ * the way (held, the fingers' first stretch opens slowly – barely seen yet); out, by half.
+ * The parts leaving go once they are mostly out of sight.
+ */
+const ARRIVING: Keyframe[] = [
+  { opacity: 0 },
+  { opacity: 0, offset: 0.1 },
+  { opacity: 1, offset: 0.6 },
+  { opacity: 1 },
+];
+const ARRIVING_OUT: Keyframe[] = [{ opacity: 0 }, { opacity: 1, offset: 0.5 }, { opacity: 1 }];
+const LEAVING: Keyframe[] = [
+  { opacity: 1 },
+  { opacity: 1, offset: 0.3 },
+  { opacity: 0, offset: 0.9 },
+  { opacity: 0 },
+];
+
+/** A title's word coming in (after the old ones begin to go) and going, a little blurred. */
+const WORD_IN: Keyframe[] = [
+  { opacity: 0, filter: 'blur(4px)' },
+  { opacity: 0, filter: 'blur(4px)', offset: 0.15 },
+  { opacity: 1, filter: 'blur(0px)', offset: 0.6 },
+  { opacity: 1, filter: 'blur(0px)' },
+];
+const WORD_OUT: Keyframe[] = [
+  { opacity: 1, filter: 'blur(0px)' },
+  { opacity: 0, filter: 'blur(4px)', offset: 0.4 },
+  { opacity: 0, filter: 'blur(4px)' },
+];
+
+type TextLook = (readonly [string, string])[];
+/** How a thing's text looks, to be carried onto a copy (out of its place: its font too). */
+function textLook(el: HTMLElement, font = false): TextLook {
+  const style = getComputedStyle(el);
+  return [...TEXT, ...(font ? ['font-family'] : [])].map(
+    (name) => [name, style.getPropertyValue(name)] as const,
+  );
 }
 
 /** What a thing's text takes from around it, carried onto its flying copy. */
@@ -439,122 +763,253 @@ const TEXT = [
   'white-space',
 ] as const;
 
-/** A pinch this far (a wheel's units) changes the view; short of it, the page follows a little. */
+/** Ctrl and a mouse's wheel: this far (its units) changes the view in one played step; short of it, the page follows a little. */
 const STEP = 40;
 const FOLLOW = 0.04;
+/**
+ * Two fingers – on a touch screen, on a trackpad – hold the zoom: moved apart or together past
+ * `HOLD` (of their distance, as a logarithm: 3 %) it begins and goes as far as they have come, the
+ * whole way as far as the zoom says (`ZoomDrive.whole`). Let go past `COMMIT` of it, or flicked on
+ * (`FLICK` of the way a second), it goes on to its end, else back.
+ */
+const HOLD = 0.03;
+const COMMIT = 0.4;
+const FLICK = 1.5;
+/** Nothing moves (reduced motion): the view changes at once, so only as far as a wheel's step. */
+const STILL = 0.25;
+/**
+ * A trackpad's pinch comes as the wheel (Ctrl): its units for a stretch of 1 – so that `STEP`, a
+ * pinch's units for the view's change before it was held, still takes it on.
+ */
+const WHEEL_STRETCH = 100;
+/** The wheel has no end: a trackpad's fingers still this long have let go. */
+const QUIET_MS = 200;
+/** A wheel's turn this big at once is a mouse's notch, not fingers: a played step. */
+const NOTCH = 50;
 
 /**
  * Pinching on the calendar: a trackpad (Chrome, Edge, Firefox, the desktop app: the wheel with
  * Ctrl; Safari: its gesture events), two fingers on a touch screen, Ctrl and the mouse's wheel.
- * The page follows the fingers a little; past `STEP` `onZoom` is asked (1 in, -1 out, where) –
- * false where there is no further (the page springs back). One step per pinch.
+ * Fingers hold the zoom as it goes (`ZoomDrive`, given to `onZoom`: 1 in, -1 out, where – false
+ * where there is no further, and what is in the page's frame gives a little, springing back).
+ * A mouse's notches: what is in the frame follows a little, past `STEP` the zoom is played.
+ * One step per pinch.
  */
 export function useZoomGestures(
   frameRef: RefObject<HTMLElement | null>,
-  onZoom: (direction: 1 | -1, x: number, y: number) => boolean,
+  onZoom: (direction: 1 | -1, x: number, y: number, drive?: ZoomDrive) => boolean,
 ) {
   const zoom = useEffectEvent(onZoom);
   useEffect(() => {
     const frame = frameRef.current;
     if (!frame) return;
-    let sum = 0;
-    let done = false;
-    let timer = 0;
-    let lastScale = 1;
-    let distance = 0;
+    let scaled: HTMLElement[] = [];
+    let unpin: (() => void) | null = null;
     const page = () => frame.querySelector<HTMLElement>('[data-pane="0"]');
-    const follow = (x: number, y: number) => {
+    const scaleTo = (scale: number, x: number, y: number) => {
       const el = page();
       if (!el || !motionOk()) return;
-      const place = laidOut(el);
-      const scale = 1 + Math.max(-1, Math.min(1, sum / STEP)) * FOLLOW;
-      el.style.transition = 'none';
-      el.style.transformOrigin = '0 0';
-      el.style.transform = scaledAbout(scale, x - place.left, y - place.top);
+      const parts = followed(el);
+      const places = parts.map(laidOut); // all read before any is written
+      if (parts[0] === el) unpin ??= pinStrip(el);
+      parts.forEach((part, index) => {
+        part.style.transition = 'none';
+        part.style.transformOrigin = '0 0';
+        part.style.transform = scaledAbout(scale, x - places[index]!.left, y - places[index]!.top);
+      });
+      scaled = parts;
     };
     const springBack = () => {
-      const el = page();
-      if (!el?.style.transform) return;
-      el.style.transition = `transform 180ms ${EASE}`;
-      el.style.transform = '';
+      for (const part of scaled) {
+        if (!part.style.transform) continue;
+        part.style.transition = `transform 180ms ${EASE}`;
+        part.style.transform = '';
+      }
+      scaled = [];
+      const pinned = unpin;
+      unpin = null;
+      if (pinned) window.setTimeout(pinned, 200);
     };
-    const end = () => {
-      if (!done) springBack();
-      sum = 0;
-      done = false;
+
+    // Fingers holding the zoom, whichever way they come.
+    let hold: {
+      direction: 0 | 1 | -1;
+      drive: ZoomDrive | null;
+      time: number;
+      speed: number;
+    } | null = null;
+    const holdMove = (stretch: number, x: number, y: number, time: number) => {
+      const held = hold;
+      if (!held) return;
+      if (!held.direction) {
+        if (Math.abs(stretch) < (motionOk() ? HOLD : STILL)) return;
+        held.direction = stretch > 0 ? 1 : -1;
+        const drive: ZoomDrive = { stretch: 0, released: null };
+        if (zoom(held.direction, x, y, drive)) held.drive = drive;
+      }
+      // No further that way: what is in the frame gives a little, springing back once let go.
+      if (!held.drive) return scaleTo(1 + Math.tanh(stretch / WHOLE) * FOLLOW, x, y);
+      const whole = held.drive.whole ?? WHOLE;
+      const past = Math.max(0, stretch * held.direction - HOLD);
+      const seconds = (time - held.time) / 1000;
+      if (seconds > 0)
+        held.speed =
+          held.speed / 2 +
+          (Math.min(1, past / whole) - Math.min(1, held.drive.stretch / whole)) / seconds / 2;
+      held.time = time;
+      held.drive.stretch = past;
+      held.drive.to?.seek();
     };
-    const push = (delta: number, x: number, y: number) => {
-      if (done) return;
-      sum += delta;
-      if (Math.abs(sum) < STEP) return follow(x, y);
-      done = true;
-      if (!zoom(sum > 0 ? 1 : -1, x, y)) springBack();
+    /** `time`: when the fingers last moved; held still a moment before, no flick. */
+    const holdEnd = (canCommit: boolean, time: number, lastMoved = hold?.time ?? time) => {
+      const held = hold;
+      hold = null;
+      if (!held) return;
+      if (!held.drive) return springBack();
+      const speed = time - lastMoved > 100 ? 0 : held.speed;
+      const part = Math.min(1, held.drive.stretch / (held.drive.whole ?? WHOLE));
+      const commit = canCommit && (speed > FLICK || (speed > -FLICK && part >= COMMIT));
+      held.drive.released = { commit, speed };
+      held.drive.to?.release(commit, speed);
     };
+    const holdStart = (time: number) => {
+      hold = { direction: 0, drive: null, time, speed: 0 };
+    };
+
+    // The wheel with Ctrl: a trackpad's fingers (held), or a mouse's notches (a played step).
+    let wheel: 'held' | 'step' | null = null;
+    let sum = 0;
+    let stepped = false;
+    let timer = 0;
     const onWheel = (event: WheelEvent) => {
       if (!event.ctrlKey) return;
       event.preventDefault();
       window.clearTimeout(timer);
-      timer = window.setTimeout(end, 220);
-      push(-event.deltaY * (event.deltaMode === 1 ? 20 : 1), event.clientX, event.clientY);
+      const delta = -event.deltaY * (event.deltaMode === 1 ? 20 : 1);
+      if (!wheel) {
+        wheel = event.deltaMode !== 0 || Math.abs(delta) >= NOTCH ? 'step' : 'held';
+        sum = 0;
+        stepped = false;
+        if (wheel === 'held') holdStart(event.timeStamp);
+      }
+      sum += delta;
+      if (wheel === 'held') {
+        const moved = event.timeStamp;
+        timer = window.setTimeout(() => {
+          wheel = null;
+          holdEnd(true, moved, moved);
+        }, QUIET_MS);
+        holdMove(sum / WHEEL_STRETCH, event.clientX, event.clientY, event.timeStamp);
+        return;
+      }
+      timer = window.setTimeout(() => {
+        if (!stepped) springBack();
+        wheel = null;
+      }, 220);
+      if (stepped) return;
+      if (Math.abs(sum) < STEP)
+        return scaleTo(
+          1 + Math.max(-1, Math.min(1, sum / STEP)) * FOLLOW,
+          event.clientX,
+          event.clientY,
+        );
+      stepped = true;
+      if (!zoom(sum > 0 ? 1 : -1, event.clientX, event.clientY)) springBack();
     };
+
+    // Safari's trackpad pinch (iOS sends its gestures beside the touches: those are theirs).
+    let touching = false;
     type Gesture = UIEvent & { scale: number; clientX: number; clientY: number };
     const onGestureStart = (event: Event) => {
       event.preventDefault();
-      lastScale = 1;
-      sum = 0;
-      done = false;
+      if (!touching) holdStart(event.timeStamp);
     };
     const onGestureChange = (event: Event) => {
-      const gesture = event as Gesture;
       event.preventDefault();
-      push((gesture.scale - lastScale) * STEP * 4, gesture.clientX, gesture.clientY);
-      lastScale = gesture.scale;
+      if (touching) return;
+      const gesture = event as Gesture;
+      holdMove(Math.log(gesture.scale), gesture.clientX, gesture.clientY, event.timeStamp);
     };
+    const onGestureEnd = (event: Event) => {
+      if (!touching) holdEnd(true, event.timeStamp);
+    };
+
+    // Two fingers on a touch screen.
     const apart = (touches: TouchList) =>
       Math.hypot(
         touches[0]!.clientX - touches[1]!.clientX,
         touches[0]!.clientY - touches[1]!.clientY,
       );
-    const onTouchStart = (event: TouchEvent) => {
-      if (event.touches.length !== 2) return;
-      distance = apart(event.touches);
-      sum = 0;
-      done = false;
+    /** The fingers' distance as the second came down. */
+    let base = 0;
+    // Moves and lifts are heard on what the fingers came down on: zoomed, the page they touched is
+    // gone from the document, and what is sent to it no longer reaches the frame.
+    const watched = new Set<EventTarget>();
+    let last: Event | null = null;
+    const once = (event: Event) => {
+      if (event === last) return false;
+      last = event;
+      return true;
     };
-    const onTouchMove = (event: TouchEvent) => {
-      if (event.touches.length !== 2 || !distance) return;
-      event.preventDefault();
-      const now = apart(event.touches);
-      push(
-        ((now - distance) / distance) * STEP * 4,
+    const unwatch = () => {
+      for (const target of watched) {
+        target.removeEventListener('touchmove', onTouchMove as EventListener);
+        target.removeEventListener('touchend', onTouchEnd as EventListener);
+        target.removeEventListener('touchcancel', onTouchEnd as EventListener);
+      }
+      watched.clear();
+    };
+    const onTouchStart = (event: TouchEvent) => {
+      touching = true;
+      for (const touch of event.touches) {
+        if (watched.has(touch.target)) continue;
+        watched.add(touch.target);
+        touch.target.addEventListener('touchmove', onTouchMove as EventListener, {
+          passive: false,
+        });
+        touch.target.addEventListener('touchend', onTouchEnd as EventListener);
+        touch.target.addEventListener('touchcancel', onTouchEnd as EventListener);
+      }
+      if (event.touches.length !== 2 || hold) return;
+      base = apart(event.touches);
+      holdStart(event.timeStamp);
+    };
+    function onTouchMove(event: TouchEvent) {
+      if (!once(event) || !hold || event.touches.length !== 2) return;
+      // The browser already scrolls (one finger swiped before the other came): a swipe, not a
+      // pinch – never both at once. A zoom under way goes on with the fingers all the same.
+      if (event.cancelable) event.preventDefault();
+      else if (!hold.direction) {
+        hold = null;
+        return;
+      }
+      holdMove(
+        Math.log(apart(event.touches) / base),
         (event.touches[0]!.clientX + event.touches[1]!.clientX) / 2,
         (event.touches[0]!.clientY + event.touches[1]!.clientY) / 2,
+        event.timeStamp,
       );
-      distance = now;
-    };
-    const onTouchEnd = (event: TouchEvent) => {
-      if (!distance || event.touches.length >= 2) return;
-      distance = 0;
-      end();
-    };
+    }
+    function onTouchEnd(event: TouchEvent) {
+      if (!once(event)) return;
+      touching = event.touches.length > 0;
+      if (!touching) unwatch();
+      if (event.touches.length >= 2) return;
+      holdEnd(event.type === 'touchend', event.timeStamp);
+    }
     frame.addEventListener('wheel', onWheel, { passive: false });
     frame.addEventListener('gesturestart', onGestureStart);
     frame.addEventListener('gesturechange', onGestureChange);
-    frame.addEventListener('gestureend', end);
+    frame.addEventListener('gestureend', onGestureEnd);
     frame.addEventListener('touchstart', onTouchStart, { passive: true });
-    frame.addEventListener('touchmove', onTouchMove, { passive: false });
-    frame.addEventListener('touchend', onTouchEnd);
-    frame.addEventListener('touchcancel', onTouchEnd);
     return () => {
       window.clearTimeout(timer);
       frame.removeEventListener('wheel', onWheel);
       frame.removeEventListener('gesturestart', onGestureStart);
       frame.removeEventListener('gesturechange', onGestureChange);
-      frame.removeEventListener('gestureend', end);
+      frame.removeEventListener('gestureend', onGestureEnd);
       frame.removeEventListener('touchstart', onTouchStart);
-      frame.removeEventListener('touchmove', onTouchMove);
-      frame.removeEventListener('touchend', onTouchEnd);
-      frame.removeEventListener('touchcancel', onTouchEnd);
+      unwatch();
     };
   }, [frameRef]);
 }

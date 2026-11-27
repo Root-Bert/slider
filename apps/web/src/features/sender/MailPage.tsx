@@ -1,9 +1,11 @@
+import { useState } from 'react';
 import { Outlet } from 'react-router';
-import { ButtonLink, cn } from '@/ui';
+import { Button, ButtonLink, cn } from '@/ui';
 import {
   MailBody,
   MailboxTabs,
   MailToolbar,
+  showsOverview,
   UnreadFilter,
 } from './components/mail/MailView';
 import { useMailView } from './hooks/useMailView';
@@ -19,6 +21,18 @@ import { PAGE_HEADER, PAGE_TITLE } from './lib/title';
 export function Component() {
   const ui = useSender();
   const view = useMailView();
+  // The overview's widgets arranged, as on Cloud's „Zuletzt“.
+  const [editing, setEditing] = useState(false);
+  // Gone to a folder, a search or another mailbox, the arranging ends – it does not come back with
+  // „Übersicht“ (another mailbox's board is drawn anew, measured as the page is, not arranged).
+  const mailbox = view.all ? 'alle' : (view.account?.id ?? null);
+  const [arrangedIn, setArrangedIn] = useState(mailbox);
+  if (arrangedIn !== mailbox) {
+    setArrangedIn(mailbox);
+    if (editing) setEditing(false);
+  }
+  if (editing && !showsOverview(view)) setEditing(false);
+  const arranging = editing && showsOverview(view);
   if (view.threadId && !view.wide) return <Outlet />;
   return (
     <section aria-label="Post" className="flex min-h-0 flex-1 flex-col gap-3">
@@ -29,6 +43,11 @@ export function Component() {
         </h1>
         {/* „Ungelesen“ beside „Postfächer“: on or off, for every mailbox. */}
         <div className="ml-auto flex shrink-0 items-center gap-2">
+          {showsOverview(view) && !arranging && (
+            <Button variant="ghost" icon="dashboard" size="sm" onClick={() => setEditing(true)}>
+              <span className="max-sm:sr-only">Anpassen</span>
+            </Button>
+          )}
           <UnreadFilter view={view} />
           <ButtonLink to={ui.mailAccountsPath} variant="ghost" icon="settings" size="sm">
             <span className="max-sm:sr-only">Postfächer</span>
@@ -37,9 +56,11 @@ export function Component() {
       </header>
       {/* Toolbar and list 20px apart as Cloud's page (`gap-5`): the list reaches up into that
           room (`MailBody`), its rows fade right under the toolbar, as a chat's messages do. */}
-      <div className={cn('flex min-h-0 flex-1 flex-col gap-5', !view.account && 'pt-2')}>
-        {view.account && <MailToolbar view={view} />}
-        <MailBody view={view} />
+      <div
+        className={cn('flex min-h-0 flex-1 flex-col gap-5', !view.account && !view.all && 'pt-2')}
+      >
+        {(view.account || view.all) && <MailToolbar view={view} />}
+        <MailBody view={view} editing={arranging} onEdit={setEditing} />
       </div>
     </section>
   );

@@ -1,0 +1,681 @@
+/*
+ * A page as Notion draws one, at full width: as wide as the page area (the margins of Cloud's
+ * file list), the text 16 px on 1.5, headings that breathe above, blocks a few pixels apart. Lesen
+ * and Bearbeiten are the same picture – only the caret, the slash menu and the format bar tell
+ * them apart (and a picked block's ring). Colours are the theme's tokens.
+ */
+
+.page-frame {
+  position: relative;
+  color: var(--color-fg);
+  font-size: 16px;
+  line-height: 1.5;
+  overflow-wrap: anywhere;
+}
+
+.page-body {
+  outline: none;
+  min-height: 3em;
+  caret-color: var(--color-fg);
+  padding-bottom: 30vh;
+}
+.page-frame:not([data-editing]) .page-body {
+  padding-bottom: 48px;
+}
+
+.page-placeholder {
+  position: absolute;
+  top: 0;
+  left: 0;
+  pointer-events: none;
+  user-select: none;
+  color: var(--color-fg-faint);
+}
+
+/* ── Text ──────────────────────────────────────────────────────────────── */
+
+.page-p {
+  margin: 1px 0;
+  padding: 3px 0;
+  min-height: 1.5em;
+}
+.page-h1,
+.page-h2,
+.page-h3,
+.page-h4 {
+  font-weight: 600;
+  margin: 0;
+  padding: 3px 0;
+}
+.page-h1 {
+  font-size: 30px;
+  line-height: 1.25;
+  margin-top: 32px;
+}
+.page-h2 {
+  font-size: 24px;
+  line-height: 1.3;
+  margin-top: 24px;
+}
+.page-h3 {
+  font-size: 20px;
+  line-height: 1.3;
+  margin-top: 16px;
+}
+.page-h4 {
+  font-size: 16px;
+  margin-top: 12px;
+}
+.page-body > :first-child {
+  margin-top: 0;
+}
+
+.page-bold {
+  font-weight: 600;
+}
+.page-italic {
+  font-style: italic;
+}
+.page-underline {
+  text-decoration: underline;
+}
+.page-strike {
+  text-decoration: line-through;
+}
+.page-underline.page-strike {
+  text-decoration: underline line-through;
+}
+.page-inline-code {
+  font-family: var(--font-mono, ui-monospace, monospace);
+  font-size: 0.85em;
+  padding: 0.15em 0.35em;
+  border-radius: 4px;
+  background: var(--color-surface-2);
+}
+.page-anchor {
+  color: inherit;
+  text-decoration: underline;
+  text-decoration-color: var(--color-fg-faint);
+  text-underline-offset: 3px;
+}
+.page-anchor:hover {
+  text-decoration-color: var(--color-fg);
+}
+
+/* ── Blocks ────────────────────────────────────────────────────────────── */
+
+.page-quote {
+  margin: 4px 0;
+  padding: 3px 0 3px 14px;
+  border-left: 3px solid currentColor;
+}
+
+.page-ul,
+.page-ol {
+  margin: 2px 0;
+  padding-left: 1.6em;
+}
+.page-ul {
+  list-style: disc;
+}
+.page-ol {
+  list-style: decimal;
+}
+.page-li {
+  padding: 2px 0;
+}
+.page-li-nested {
+  list-style: none;
+}
+.page-li-nested > .page-ul,
+.page-li-nested > .page-ol {
+  margin: 0;
+}
+
+/* A check list: a box before each line, ticked ones struck and faint. */
+.page-checklist {
+  list-style: none;
+  padding-left: 0;
+}
+.page-li-check {
+  position: relative;
+  padding-left: 1.75em;
+  list-style: none;
+  outline: none;
+}
+.page-li-check::before {
+  content: '';
+  position: absolute;
+  left: 0.1em;
+  top: 0.4em;
+  width: 1em;
+  height: 1em;
+  border-radius: 3px;
+  box-shadow: inset 0 0 0 1.5px var(--color-fg-subtle);
+  cursor: pointer;
+}
+.page-frame:not([data-editing]) .page-li-check::before {
+  cursor: default;
+}
+.page-li-checked {
+  color: var(--color-fg-subtle);
+  text-decoration: line-through;
+}
+.page-li-checked::before {
+  background: var(--color-fg);
+  box-shadow: none;
+}
+.page-li-checked::after {
+  content: '';
+  position: absolute;
+  left: 0.42em;
+  top: 0.52em;
+  width: 0.32em;
+  height: 0.58em;
+  border: solid var(--color-surface-raised);
+  border-width: 0 2px 2px 0;
+  transform: rotate(45deg);
+}
+
+.page-code {
+  display: block;
+  margin: 6px 0;
+  padding: 16px 20px;
+  border-radius: 6px;
+  background: var(--color-surface-2);
+  font-family: var(--font-mono, ui-monospace, monospace);
+  font-size: 14px;
+  line-height: 1.5;
+  white-space: pre;
+  overflow-x: auto;
+  tab-size: 2;
+}
+
+.page-rule {
+  margin: 12px 0;
+  padding: 6px 0;
+  border: none;
+  cursor: default;
+}
+.page-rule::after {
+  content: '';
+  display: block;
+  height: 1px;
+  background: var(--color-hairline-strong);
+}
+
+/* A callout (`> [!NOTE]`): a box tinted by its tone. */
+.page-callout {
+  margin: 6px 0;
+  padding: 14px 16px 14px 44px;
+  border-radius: 6px;
+  background: var(--color-surface-1);
+  position: relative;
+}
+.page-callout::before {
+  content: '';
+  position: absolute;
+  left: 16px;
+  top: 17px;
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  box-shadow: inset 0 0 0 2px currentColor;
+  opacity: 0.6;
+}
+.page-callout--tip::before {
+  box-shadow: inset 0 0 0 2px var(--color-success);
+  opacity: 1;
+}
+.page-callout--important::before {
+  box-shadow: inset 0 0 0 2px var(--color-accent-violet);
+  opacity: 1;
+}
+.page-callout--warning::before {
+  box-shadow: inset 0 0 0 2px var(--color-warning);
+  opacity: 1;
+}
+.page-callout--caution::before {
+  box-shadow: inset 0 0 0 2px var(--color-danger);
+  opacity: 1;
+}
+
+/* ── What is not text ──────────────────────────────────────────────────── */
+
+.page-block {
+  margin: 6px 0;
+}
+.page-picked {
+  border-radius: 4px;
+  box-shadow: 0 0 0 2px var(--color-focus, var(--color-fg-subtle));
+}
+
+.page-raw-text {
+  margin: 0;
+  padding: 12px 16px;
+  border-radius: 6px;
+  background: var(--color-surface-1);
+  color: var(--color-fg-muted);
+  font-family: var(--font-mono, ui-monospace, monospace);
+  font-size: 13px;
+  white-space: pre-wrap;
+}
+.page-raw-field {
+  width: 100%;
+  padding: 12px 16px;
+  border-radius: 6px;
+  background: var(--color-surface-2);
+  color: var(--color-fg);
+  font-family: var(--font-mono, ui-monospace, monospace);
+  font-size: 13px;
+  outline: none;
+  resize: none;
+}
+.page-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 14px;
+}
+.page-table :is(th, td) {
+  padding: 6px 10px;
+  border: 1px solid var(--color-hairline-strong);
+  text-align: left;
+  vertical-align: top;
+}
+.page-table th {
+  font-weight: 600;
+  background: var(--color-surface-1);
+}
+
+/* A file, folder, area or presentation named in the text: its icon and name. */
+.page-link-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 0 4px;
+  margin: 0 1px;
+  border-radius: 4px;
+  color: inherit;
+  text-decoration: underline;
+  text-decoration-color: var(--color-fg-faint);
+  text-underline-offset: 3px;
+  vertical-align: baseline;
+}
+.page-link-chip:hover {
+  background: var(--color-hover);
+}
+.page-link-chip svg {
+  flex: none;
+  color: var(--color-fg-subtle);
+}
+/* On a line of its own it is a page under this one: a row, as Notion lists sub-pages. */
+.page-p:has(> .page-link:only-child) .page-link-chip {
+  display: flex;
+  width: 100%;
+  gap: 8px;
+  padding: 3px 4px;
+  margin: 0 -4px;
+  font-weight: 500;
+  text-decoration: none;
+}
+.page-p:has(> .page-link:only-child) .page-link-chip span {
+  text-decoration: underline;
+  text-decoration-color: var(--color-fg-faint);
+  text-underline-offset: 3px;
+}
+
+.page-live {
+  margin: 6px 0;
+}
+
+.page-slash-menu {
+  width: 260px;
+  max-height: 340px;
+  overflow-y: auto;
+  margin-top: 24px;
+}
+
+/* What a live block lists: rows as Cloud's lists, quiet. */
+.page-live-rows {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.page-live-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-height: 32px;
+  padding: 4px 6px;
+  margin: 0 -6px;
+  border-radius: 6px;
+  color: inherit;
+  font-size: 14px;
+}
+.page-live-row:hover {
+  background: var(--color-hover);
+}
+.page-live-row > svg {
+  flex: none;
+  color: var(--color-fg-subtle);
+}
+.page-live-label {
+  min-width: 0;
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.page-live-meta {
+  flex: none;
+  color: var(--color-fg-subtle);
+  font-size: 13px;
+}
+.page-live-empty {
+  margin: 0;
+  padding: 4px 0;
+  color: var(--color-fg-subtle);
+  font-size: 14px;
+}
+.page-live-more {
+  display: inline-block;
+  margin-top: 4px;
+  color: var(--color-fg-subtle);
+  font-size: 13px;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+.page-live-more:hover {
+  color: var(--color-fg);
+}
+.page-live-people {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+  gap: 8px 16px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.page-live-person {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+  font-size: 14px;
+}
+
+/* ── Diagrams from Cloud (`DiagramEmbed`) ──────────────────────────────── */
+
+.page-diagram-embed {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin: 6px 0;
+  padding: 16px 16px 10px;
+  border-radius: 8px;
+  border: 1px solid var(--color-hairline);
+  background: var(--color-canvas);
+  color: inherit;
+  text-decoration: none;
+  cursor: default;
+}
+a.page-diagram-embed {
+  cursor: pointer;
+}
+a.page-diagram-embed:hover {
+  border-color: var(--color-hairline-strong);
+}
+.page-diagram-embed-wait {
+  height: 160px;
+}
+.page-diagram-embed-note {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  min-height: 96px;
+  margin: 0;
+  color: var(--color-fg-muted);
+  font-size: 14px;
+}
+.page-diagram-embed-foot {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+.page-diagram-embed-caption {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  color: var(--color-fg-muted);
+  font-size: 13px;
+}
+.page-diagram-embed-open {
+  padding: 2px 8px;
+  border-radius: 6px;
+  color: var(--color-fg-muted);
+  font-size: 13px;
+  text-decoration: none;
+  opacity: 0;
+  transition: opacity 120ms;
+}
+.page-diagram-embed:hover .page-diagram-embed-open,
+.page-diagram-embed.page-picked .page-diagram-embed-open,
+.page-diagram-embed-open:focus-visible {
+  opacity: 1;
+}
+.page-diagram-embed-open:hover {
+  background: var(--color-hover);
+  color: var(--color-fg);
+}
+
+/* ── Diagrams (```mermaid, flowchart) ──────────────────────────────────── */
+
+/* The drawing at its natural size, scaled down to the column – never below three quarters
+   (`MIN_SCALE`): wider than that, it scrolls sideways in its block. */
+.page-diagram {
+  position: relative;
+  min-width: 0;
+  max-width: 100%;
+  margin: 6px 0;
+  padding: 16px;
+  border-radius: 8px;
+  background: var(--color-surface-1);
+}
+.page-diagram-scroll {
+  overflow-x: auto;
+}
+.page-diagram-svg {
+  display: block;
+  margin-inline: auto;
+  max-width: 100%;
+  height: auto;
+  overflow: visible;
+  font-family: inherit;
+}
+.page-diagram-title {
+  margin: 0 0 12px;
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--color-fg-muted);
+}
+
+.page-diagram-group rect {
+  fill: var(--color-surface-1);
+  stroke: var(--color-hairline-strong);
+  stroke-width: 1;
+}
+.page-diagram-group-name rect {
+  fill: color-mix(in oklab, var(--color-fg) 9%, var(--color-canvas));
+  stroke: var(--color-hairline-strong);
+  stroke-width: 1;
+}
+.page-diagram-group-text {
+  fill: var(--color-fg-muted);
+  font-size: 12.5px;
+  font-weight: 600;
+  dominant-baseline: central;
+}
+
+.page-diagram-edge {
+  fill: none;
+  stroke: var(--color-fg-subtle);
+  stroke-width: 1.5;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+.page-diagram-edge[data-stroke='thick'] {
+  stroke-width: 3;
+  stroke: var(--color-fg-muted);
+}
+.page-diagram-edge[data-stroke='dotted'] {
+  stroke-dasharray: 2 5;
+}
+.page-diagram-head {
+  fill: var(--color-fg-subtle);
+  stroke: none;
+}
+.page-diagram-head-cross {
+  fill: none;
+  stroke: var(--color-fg-subtle);
+  stroke-width: 1.6;
+}
+.page-diagram-edge-label rect {
+  fill: color-mix(in oklab, var(--color-fg) 4%, var(--color-canvas));
+}
+.page-diagram-edge-text {
+  fill: var(--color-fg-muted);
+  font-size: 12.5px;
+  text-anchor: middle;
+  dominant-baseline: central;
+}
+
+.page-diagram-node-ground {
+  fill: var(--color-canvas);
+}
+.page-diagram-node-shape {
+  fill: var(--color-surface-2);
+  stroke: var(--color-handle);
+  stroke-width: 1;
+}
+.page-diagram-node-detail {
+  fill: none;
+  stroke: var(--color-handle);
+  stroke-width: 1;
+}
+.page-diagram-node-text {
+  fill: var(--color-fg);
+  font-size: 14px;
+  font-weight: 500;
+  text-anchor: middle;
+  dominant-baseline: central;
+}
+.page-diagram-node[data-picked] .page-diagram-node-shape {
+  stroke: var(--color-focus);
+  stroke-width: 2;
+}
+
+/* What cannot be drawn: the text as written, and why. */
+.page-diagram-problem {
+  margin: 0 0 8px;
+  color: var(--color-fg-subtle);
+  font-size: 13px;
+}
+
+/* The drawing in its frame. */
+.page-diagram-canvas {
+  position: relative;
+  max-width: 100%;
+  margin-inline: auto;
+}
+.page-diagram-canvas .page-diagram-svg {
+  width: 100%;
+  max-width: none;
+}
+.page-diagram-edge-hit {
+  fill: none;
+  stroke: transparent;
+  stroke-width: 14;
+  pointer-events: stroke;
+}
+
+/* Under a picked diagram: „In Diagramm umwandeln“. */
+.page-diagram-bar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 12px;
+}
+.page-diagram-tool {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 32px;
+  padding: 0 10px;
+  border-radius: 6px;
+  color: var(--color-fg-muted);
+  font-size: 13px;
+  white-space: nowrap;
+}
+.page-diagram-tool:hover {
+  background: var(--color-hover);
+  color: var(--color-fg);
+}
+.page-diagram-problem {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+/* A drawing by hand (```ink, `InkBlock`): as wide as the page, its strokes scale with it. */
+.page-ink {
+  margin: 6px 0;
+}
+.page-ink-surface {
+  display: block;
+  width: 100%;
+  height: auto;
+  overflow: visible;
+}
+.page-ink-editing {
+  position: relative;
+  border-radius: 8px;
+  border: 1px solid var(--color-hairline);
+  background: var(--color-canvas);
+}
+.page-ink-editing .page-ink-surface {
+  /* A finger scrolls the page; the pen and the mouse draw. */
+  touch-action: pan-y pinch-zoom;
+  cursor: crosshair;
+}
+.page-ink-editing .page-ink-eraser {
+  cursor: cell;
+}
+.page-ink-bar {
+  position: sticky;
+  top: 8px;
+  z-index: 1;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px;
+}
+.page-ink-pick {
+  flex: 1;
+  align-self: stretch;
+  border-radius: 6px;
+}
+.page-ink-grip {
+  height: 14px;
+  margin-top: -2px;
+  border-radius: 0 0 8px 8px;
+  cursor: ns-resize;
+  touch-action: none;
+  background: linear-gradient(var(--color-hairline-strong), var(--color-hairline-strong)) center / 40px 3px no-repeat;
+  opacity: 0.6;
+}
+.page-ink-grip:hover {
+  opacity: 1;
+}

@@ -56,6 +56,6 @@ export function desktopGuard(
       return next();
     if (same(getCookie(c, DESKTOP_PAGE_COOKIE), token)) return next();
     if (same(c.req.header(DESKTOP_SECRET_HEADER), secret)) return next();
-    throw forbidden('Diese Anfrage kommt nicht von der Slider-App und wurde abgelehnt.');
+    throw forbidden('Diese Anfrage kommt nicht von einer Office-App und wurde abgelehnt.');
   });
 }

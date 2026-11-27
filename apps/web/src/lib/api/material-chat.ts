@@ -7,7 +7,7 @@ import type {
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { api } from '../api-client';
 import { boardKeys, boardPath, type BoardRef } from './board-owner';
-import { postEventStream } from './material-questions';
+import { postEventStream } from './event-stream';
 
 const chatsPath = (owner: BoardRef) => boardPath(owner, '/material-chats');
 

@@ -94,3 +94,27 @@ export async function videoDigestForm(file: Blob, signal?: AbortSignal): Promise
   if (speech) form.append('speech', speech, 'ton.wav');
   return form;
 }
+
+/**
+ * A voice message's length and sound, as the digest's form – a video's without the stills.
+ * `null` where this browser cannot read it.
+ */
+export async function audioDigestForm(file: Blob, signal?: AbortSignal): Promise<FormData | null> {
+  const { ALL_FORMATS, BlobSource, Input } = await import('mediabunny');
+  const input = new Input({ source: new BlobSource(file), formats: ALL_FORMATS });
+  const form = new FormData();
+  try {
+    form.append('duration', String(await input.computeDuration()));
+  } catch {
+    return null;
+  } finally {
+    input.dispose();
+  }
+  form.append('at', '[]');
+  const speech = await speechOf(file, signal, SPEECH_MAX_S).catch((error: unknown) => {
+    if (signal?.aborted) throw error;
+    return null;
+  });
+  if (speech) form.append('speech', speech, 'ton.wav');
+  return form;
+}

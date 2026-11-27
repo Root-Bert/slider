@@ -222,6 +222,9 @@ export async function showPresentation(
           },
         },
       ],
+      // The field the spec's best practices name for UI rendering; the resource above
+      // stays for hosts that hand on content only. The picture stays the image block above.
+      structuredContent: { a2ui: messages },
     };
   } catch (error) {
     return toolFailure(deps, SHOW_PRESENTATION.name, error);

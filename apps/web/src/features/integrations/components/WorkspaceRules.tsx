@@ -18,7 +18,6 @@ import {
   TextField,
   type ShowToast,
 } from '@/ui';
-import { ruleSummary } from '../lib/providers';
 import { AI_MODEL_ROLES } from '../lib/ai-models';
 import { RoleModelSelect } from './RoleModelSelect';
 
@@ -43,18 +42,10 @@ export function WorkspaceRules({
   const { kind, exceptions } = area;
   // The instance's active key – its models are what a workspace apart may be set to.
   const activeKey = area.keys.find((key) => key.active);
-  const save = (
-    workspaceId: string | null,
-    rule: IntegrationRule | null,
-    done: string,
-    models?: Models,
-  ) =>
+  const save = (workspaceId: string | null, rule: IntegrationRule | null, models?: Models) =>
     policy.mutate(
       { kind, workspaceId, rule, ...models },
-      {
-        onSuccess: () => onNotify(done),
-        onError: (error) => onNotify(error.message, 'danger'),
-      },
+      { onError: (error) => onNotify(error.message, 'danger') },
     );
   // Someone relies on the instance's key – but it has none active.
   const missing =
@@ -73,7 +64,7 @@ export function WorkspaceRules({
           kind={kind}
           rule={area.rule}
           disabled={policy.isPending}
-          onChange={(rule) => save(null, rule, `Alle Workspaces: ${ruleSummary(kind, rule)}`)}
+          onChange={(rule) => save(null, rule)}
           model={activeKey && area.rule.inherit === 'all' && <KeyModel apiKey={activeKey} />}
         />
       </Entry>
@@ -97,18 +88,14 @@ export function WorkspaceRules({
           <Entry
             key={exception.workspaceId}
             name={exception.name}
-            onReset={() =>
-              save(exception.workspaceId, null, `${exception.name} folgt wieder „Alle Workspaces“`)
-            }
+            onReset={() => save(exception.workspaceId, null)}
             disabled={policy.isPending}
           >
             <RuleGrid
               kind={kind}
               rule={exception.rule}
               disabled={policy.isPending}
-              onChange={(rule) =>
-                save(exception.workspaceId, rule, `${exception.name}: ${ruleSummary(kind, rule)}`)
-              }
+              onChange={(rule) => save(exception.workspaceId, rule)}
               model={
                 activeKey && (
                   <ModelPick
@@ -119,20 +106,7 @@ export function WorkspaceRules({
                     quickModel={exception.quickModel}
                     free={exception.rule.inherit === 'key'}
                     disabled={policy.isPending}
-                    onChange={(models, label) =>
-                      save(
-                        exception.workspaceId,
-                        exception.rule,
-                        models.createModel !== undefined
-                          ? `${exception.name}: ${AI_MODEL_ROLES.create.label} nutzt jetzt ${label}`
-                          : models.quickModel !== undefined
-                            ? `${exception.name}: ${AI_MODEL_ROLES.quick.label} nutzen jetzt ${label}`
-                            : exception.rule.inherit === 'key'
-                              ? `${exception.name} startet jetzt mit ${label}`
-                              : `${exception.name} nutzt jetzt ${label}`,
-                        models,
-                      )
-                    }
+                    onChange={(models) => save(exception.workspaceId, exception.rule, models)}
                   />
                 )
               }
@@ -145,11 +119,7 @@ export function WorkspaceRules({
             onPick={(workspace) => {
               setAdding(false);
               // Starts as the rule for all; its rows change it.
-              save(
-                workspace.id,
-                area.rule,
-                `${workspace.name} lässt sich jetzt abweichend einstellen`,
-              );
+              save(workspace.id, area.rule);
             }}
             onCancel={() => setAdding(false)}
           />
@@ -342,7 +312,7 @@ function ModelPick({
   quickModel: string | null;
   free: boolean;
   disabled: boolean;
-  onChange: (models: Models, label: string) => void;
+  onChange: (models: Models) => void;
 }) {
   const models = useIntegrationModels(null, key.id, true);
   const offered = models.data?.models ?? [];
@@ -376,7 +346,7 @@ function ModelPick({
       value={model ?? ''}
       disabled={disabled}
       options={options}
-      onChange={(value) => onChange({ model: value || null }, nameOf(value || key.model))}
+      onChange={(value) => onChange({ model: value || null })}
     />
   );
   return (
@@ -397,7 +367,7 @@ function ModelPick({
             standardLabel={key.createModel ? `${nameOf(key.createModel)} (wie alle)` : 'Wie oben'}
             current={createModel}
             disabled={disabled}
-            onPick={(value) => onChange({ createModel: value }, nameOf(value ?? createStandard))}
+            onPick={(value) => onChange({ createModel: value })}
           />
         </span>
       )}
@@ -419,7 +389,7 @@ function ModelPick({
             }
             current={quickModel}
             disabled={disabled}
-            onPick={(value) => onChange({ quickModel: value }, nameOf(value ?? quickStandard))}
+            onPick={(value) => onChange({ quickModel: value })}
           />
         </span>
       )}

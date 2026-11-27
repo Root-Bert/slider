@@ -116,7 +116,10 @@ export function SegmentedControl<T extends string>({
       onKeyDown={onKeyDown}
       className={cn(
         'flex items-center',
-        track === 'soft' ? cn(!fill && 'w-fit', trackClasses[size], trackTone[tone]) : 'gap-1',
+        // Too narrow for its choices (a phone), the soft track takes a second line.
+        track === 'soft'
+          ? cn(!fill && 'w-fit', 'max-w-full flex-wrap', trackClasses[size], trackTone[tone])
+          : 'gap-1',
         fill && 'w-full',
         className,
       )}

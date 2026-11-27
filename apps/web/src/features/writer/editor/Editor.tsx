@@ -24,19 +24,19 @@ import {
 } from '@slider/shared';
 import {
   gridTracks,
+  MaterialPanel,
   MentionPeopleContext,
   statusSegments,
-  useMaterialUrlSync,
   type MentionPeople,
 } from '@/features/viewer';
 import { loadWorkPreferences, type StatusFilter } from '@/lib/preferences/work-preferences';
 import { accentAlpha, selectionStyle } from '@/lib/accent';
 import { DOCUMENT_ACCEPT, isImportable } from '../lib/documents';
 import {
-  boardKeys,
   documentFilePath,
   documentLiveUrl,
   documentPictureUrl,
+  boardKeys,
   cloudKeys,
   fetchDocument,
   sendDocumentEdit,
@@ -51,7 +51,7 @@ import { isModKey } from '@/lib/keyboard';
 import { readString, writeString } from '@/lib/storage';
 import { wheelFactor } from '@/lib/wheel';
 import { isApplePlatform } from '@/lib/platform';
-import { routes } from '@/lib/routes';
+import { MATERIAL_PARAM, routes } from '@/lib/routes';
 import {
   AvatarStack,
   Button,
@@ -98,7 +98,6 @@ import {
   type MarkdownView,
 } from '../lib/markdown';
 import { partsOf, threadsOf, useDocumentComments } from './comments';
-import { DocumentMaterial } from './DocumentMaterial';
 import { WriterEngine, type WriterSync } from './engine';
 import { FindBar } from './FindBar';
 import { FormatBar } from './FormatBar';
@@ -115,8 +114,8 @@ import './writer.css';
 type LiveEvent =
   | { type: 'step'; step: WriterStep }
   | { type: 'comments' }
-  | { type: 'board' }
   | { type: 'restored' }
+  | { type: 'board' }
   | { type: 'cursor'; author: Author; sel: WriterPresence['sel'] }
   | { type: 'people'; people: Author[] };
 
@@ -169,8 +168,23 @@ export function Editor({
   onMarkdownView?: (view: MarkdownView) => Promise<void>;
 }) {
   const navigate = useNavigate();
-  const [params] = useSearchParams();
+  const [params, setParams] = useSearchParams();
   const linked = params.get('kommentar');
+  // „Material“ (⌘K, or `?material` from the document's ⋯ menu in the lists): beside the text.
+  const [materialOpen, setMaterialOpen] = useState(() => params.has(MATERIAL_PARAM));
+  const materialAsked = params.has(MATERIAL_PARAM);
+  useEffect(() => {
+    // Open from the start (`useState` above); the address forgets it, a reload does not reopen it.
+    if (!materialAsked) return;
+    setParams(
+      (current) => {
+        const next = new URLSearchParams(current);
+        next.delete(MATERIAL_PARAM);
+        return next;
+      },
+      { replace: true },
+    );
+  }, [materialAsked, setParams]);
   const queryClient = useQueryClient();
   const [toast, notify] = useToast();
   const title = opened.document.title;
@@ -308,10 +322,6 @@ export function Editor({
     }
   };
   const [finding, setFinding] = useState(false);
-  // „Material“: the board's page beside the document (`?material`), one of its side panels open.
-  const [materialOpen, setMaterialOpen] = useState(() => params.has('material'));
-  const [boardPanelOpen, setBoardPanelOpen] = useState(false);
-  useMaterialUrlSync(materialOpen);
   const [query, setQuery] = useState('');
   const [hitAt, setHitAt] = useState(0);
   const [placed, setPlaced] = useState<{ left: Placed[]; right: Placed[]; marks: Mark[] }>({
@@ -554,27 +564,22 @@ export function Editor({
       const step = codec ? codec.remote(event.step) : event.step;
       if (step) engine.applyRemote(step);
     } else if (event.type === 'comments') comments.refresh();
-    else if (event.type === 'board') refreshBoard();
     else if (event.type === 'restored') {
       void engine.restored();
       comments.refresh();
       void queryClient.invalidateQueries({ queryKey: cloudKeys.node(workspaceId, id) });
-    } else if (event.type === 'cursor') remote.onCursor(event.author, event.sel);
+    } else if (event.type === 'board')
+      // Its material changed (an AI app added, someone deleted): „Material“ reads it anew.
+      void queryClient.invalidateQueries({ queryKey: boardKeys.board({ kind: 'document', id }) });
+    else if (event.type === 'cursor') remote.onCursor(event.author, event.sel);
     else if (event.type === 'people') {
       setPeople(event.people.filter((each) => each.id !== me.id));
       remote.keep(event.people);
     }
   });
-  // The material changed (someone's note, a file read, an answer written): asked for anew.
-  const refreshBoard = useEffectEvent(() => {
-    const owner = { kind: 'document', id } as const;
-    void queryClient.invalidateQueries({ queryKey: boardKeys.board(owner) });
-    void queryClient.invalidateQueries({ queryKey: boardKeys.questions(owner) });
-  });
   const onBack = useEffectEvent(() => {
     void engine.resync();
     comments.refresh();
-    refreshBoard();
   });
   useEffect(() => {
     let source: EventSource | null = null;
@@ -592,8 +597,6 @@ export function Editor({
       stream.addEventListener('document', (message) => {
         onLive(JSON.parse((message as MessageEvent<string>).data) as LiveEvent);
       });
-      // The board's changes, whatever they carry: its name is all that is read.
-      stream.addEventListener('board', () => refreshBoard());
       stream.addEventListener('error', () => {
         down = true;
         // The browser tries again by itself unless the server answered with an error.
@@ -784,12 +787,6 @@ export function Editor({
     engine.flush();
     void navigate(routes.documents(workspaceId));
   };
-  const showMaterial = (open: boolean) => {
-    setMaterialOpen(open);
-    setBoardPanelOpen(false);
-    // Back in the text where it was left (the document was asleep meanwhile).
-    if (!open && state.mode === 'edit') requestAnimationFrame(() => engine.focus());
-  };
   const onKey = useEffectEvent((event: KeyboardEvent) => {
     if (
       event.defaultPrevented ||
@@ -797,17 +794,6 @@ export function Editor({
     )
       return;
     const key = event.key.toLowerCase();
-    // The material page: its board has its own keys, the document's are asleep.
-    if (materialOpen) {
-      if (key === 'escape' && boardPanelOpen) {
-        event.preventDefault();
-        setBoardPanelOpen(false);
-      } else if (key === 'm' && !isModKey(event) && !event.altKey && !isTextTarget(event.target)) {
-        event.preventDefault();
-        showMaterial(false);
-      }
-      return;
-    }
     if (isModKey(event) && event.shiftKey && !event.altKey && key === 'e') {
       // „Exportieren“ – the app's menu bar has the same key.
       event.preventDefault();
@@ -853,10 +839,7 @@ export function Editor({
       return;
     }
     if (isModKey(event) || event.altKey || isTextTarget(event.target)) return;
-    if (key === 'm') {
-      event.preventDefault();
-      showMaterial(true);
-    } else if (key === 'r') engine.setMode('review');
+    if (key === 'r') engine.setMode('review');
     else if (key === 'k') toggleComments();
     else if (key === 'c' && permissions.canComment && !draft) {
       // As on a slide: a comment at the words picked, or at the paragraph of the caret.
@@ -883,13 +866,15 @@ export function Editor({
 
   const inApp = inWriterDesktopBar();
   useWriterDesktopBar({ export: true, exportOpen: false });
-  // ⌘K: what the document's pill offers – printing, the file, ✕ (in the app its tab bar's).
+  // ⌘K: what the document's pill offers – printing, the file, ✕ (in the app its tab bar's) – and
+  // its „Material“.
   usePageCommands({
     group: 'Dokument',
     workspaceId,
     actions: [
       { label: 'Drucken', icon: 'print', onSelect: () => window.print() },
       { label: 'Exportieren', icon: 'iosShare', onSelect: download },
+      { label: 'Material', icon: 'folderOpen', onSelect: () => setMaterialOpen(true) },
       { label: 'Dokument schließen', icon: 'close', onSelect: close },
     ],
   });
@@ -953,16 +938,10 @@ export function Editor({
   return (
     <WriterContext value={session}>
       <MentionPeopleContext value={mentionPeople}>
-        {/* The document: moves out to the right while its material page is shown (its floating tools
-          with it – fixed inside a moved box), asleep meanwhile. */}
         <div
           data-writer-root
           data-pages={pages}
-          inert={materialOpen}
-          className={cn(
-            'writer-editor fixed inset-0 flex text-fg transition-[translate] duration-300 ease-sheet',
-            materialOpen && 'translate-x-full',
-          )}
+          className="writer-editor fixed inset-0 flex text-fg"
           style={selectionStyle(me.color)}
         >
           <style>{`@media print { @page { size: ${state.page.width}pt ${state.page.height}pt; margin: 0 } }`}</style>
@@ -975,7 +954,7 @@ export function Editor({
             {layers ? (
               <LayersPanel page={current} rows={layerRows} picked={layerPicked} />
             ) : (
-              <PageStrip stage={stage} onMaterial={() => showMaterial(true)} />
+              <PageStrip stage={stage} />
             )}
           </aside>
 
@@ -1215,6 +1194,15 @@ export function Editor({
           </WriterVoiceProvider>
           <WriterHere />
           <FormatBar onComment={startComment} onPictures={(files) => void addPictures(files)} />
+          {materialOpen && (
+            <MaterialPanel
+              owner={{ kind: 'document', id }}
+              canComment={permissions.canComment}
+              canManage={permissions.canManage}
+              onClose={() => setMaterialOpen(false)}
+              onRefused={(message) => notify(message, 'danger')}
+            />
+          )}
           {finding && (
             <FindBar
               query={query}
@@ -1242,15 +1230,7 @@ export function Editor({
             />
           </div>
         </div>
-        {/* „Material“: the board's page, left of the document. */}
         <div className="print:hidden">
-          <DocumentMaterial
-            open={materialOpen}
-            onOpen={showMaterial}
-            panelOpen={boardPanelOpen}
-            onPanelOpen={setBoardPanelOpen}
-          />
-          {/* On either page. */}
           <Toast toast={toast} />
         </div>
         <CommentSelectionBar

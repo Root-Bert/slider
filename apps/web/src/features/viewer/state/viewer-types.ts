@@ -176,19 +176,10 @@ export interface ViewerState {
    * the thread, the deleted slides, the layers, a background or the layout grid would be.
    */
   sharePanelOpen: boolean;
-  /** The AI's chat as a side panel over the slides (a click on its avatar); the material page has its own. */
+  /** „Material“: what was collected for the deck – its files, notes and links – in the side panel. */
+  materialPanelOpen: boolean;
+  /** The AI's chat as a side panel over the slides (a click on its avatar). */
   aiChatOpen: boolean;
-  /**
-   * The material page is shown: the deck's board, the whole screen beside the presentation (the
-   * presentation slid out to the right). The paperclip left of the slide overview opens it, M
-   * toggles it; `?material` in the address keeps it.
-   */
-  materialOpen: boolean;
-  /**
-   * Something picked on the board: its file, link or note in the material page's side panel
-   * (`MaterialBoard` keeps what is picked).
-   */
-  boardPanelOpen: boolean;
   /** The direction of the grid being set (its fields in use): only it shows meanwhile. */
   layoutGridAxis: 'columns' | 'rows' | null;
   /** Slides hidden in PowerPoint: out of sight by default, H or the toolbar shows them. */
@@ -279,9 +270,8 @@ export type ViewerAction =
   | { type: 'layoutGridToggled' }
   | { type: 'layoutGridPanelSet'; open: boolean }
   | { type: 'sharePanelSet'; open: boolean }
+  | { type: 'materialPanelSet'; open: boolean }
   | { type: 'aiChatSet'; open: boolean }
-  | { type: 'boardPanelSet'; open: boolean }
-  | { type: 'materialSet'; open: boolean }
   | { type: 'layoutGridAxisSet'; axis: 'columns' | 'rows' | null }
   | { type: 'showHiddenSlidesToggled' }
   | { type: 'showMinimapToggled' }

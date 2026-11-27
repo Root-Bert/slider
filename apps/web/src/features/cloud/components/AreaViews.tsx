@@ -15,17 +15,23 @@ export function AreaViews({
   current,
 }: {
   area: CloudArea;
-  current: 'files' | 'agents' | 'chat' | 'todos' | 'areas';
+  current: 'home' | 'files' | 'agents' | 'chat' | 'todos' | 'areas';
 }) {
   return (
     <ViewTitles
       current={current}
       views={[
         {
-          key: 'files',
+          key: 'home',
           label: area.name,
           to: routes.cloudArea(area.workspaceId, area.id),
           name: VIEW_NAMES.first,
+        },
+        {
+          key: 'files',
+          label: 'Dateien',
+          to: routes.cloudAreaFiles(area.workspaceId, area.id),
+          name: VIEW_NAMES.files,
         },
         {
           key: 'chat',

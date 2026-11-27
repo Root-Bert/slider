@@ -18,7 +18,10 @@ export function NotifyOffer() {
       className="glass flex h-9 shrink-0 items-center gap-1.5 rounded-control pr-1 pl-2.5 max-md:hidden"
     >
       <Icon name="notifications" size={16} className="text-fg-muted" />
-      <span className="text-sm font-medium whitespace-nowrap text-fg">Nichts verpassen</span>
+      {/* An iPad upright has no room for the words: the bell says it, `title` the rest. */}
+      <span className="text-sm font-medium whitespace-nowrap text-fg max-lg:hidden">
+        Nichts verpassen
+      </span>
       <Button size="xs" variant="primary" className="ml-1" onClick={() => void askToNotify()}>
         Einschalten
       </Button>

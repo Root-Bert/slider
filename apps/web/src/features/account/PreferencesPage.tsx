@@ -5,7 +5,12 @@ import { MailPreferences, NotifyPreferences } from '@/features/sender';
 import { loadedVersion, useNewerVersion } from '@/lib/app-version';
 import { Button, Icon, Section, useToast, type IconName } from '@/ui';
 import { CallVoiceSection } from './components/CallVoiceSection';
-import { AppsSection, ColorPicker, WorkSection } from './components/PreferenceSections';
+import {
+  AppsSection,
+  ColorPicker,
+  ViewDefaultChoice,
+  WorkSection,
+} from './components/PreferenceSections';
 
 /** The page's sections, in order, for the nav at the side. */
 const NAV = [
@@ -45,7 +50,12 @@ export function Component() {
       toast={toast}
     >
       <Section id="darstellung" title="Darstellung" description="Gilt überall, in jeder App.">
-        <ColorPicker color={user.color} onNotify={showToast} />
+        <div className="flex flex-col divide-y divide-hairline">
+          <div className="pb-3">
+            <ColorPicker color={user.color} onNotify={showToast} />
+          </div>
+          <ViewDefaultChoice />
+        </div>
       </Section>
       <CallVoiceSection onNotify={showToast} />
       <NotifyPreferences />

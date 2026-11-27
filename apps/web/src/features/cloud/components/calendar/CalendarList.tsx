@@ -18,6 +18,7 @@ import { useCloud } from '../../hooks/useCloud';
 import { AreaColorPicker } from '../AreaColorPicker';
 import { useCalendarAccounts, type CalendarAccount } from './CalendarAccounts';
 import { colorOf, TODOS } from './entries';
+import { WORKSPACE_SOURCE } from './sources';
 
 const hiddenKey = (workspaceId: string) => `slider.calendar.hidden:${workspaceId}`;
 
@@ -48,7 +49,10 @@ interface Node {
   children: Node[];
 }
 
-/** Areas' calendars as their areas stand (an area in an area under it), sub-calendars under theirs. */
+/**
+ * Areas' calendars as their areas stand (an area in an area after it), the ones made in an area or
+ * in one's own after theirs – all side by side in the list, none indented.
+ */
 function tree(
   calendars: readonly Calendar[],
   areaOrder: (areaId: string) => number,
@@ -88,8 +92,9 @@ function tree(
 
 /**
  * The calendars one sees, beside the calendar as Apple's: the workspace's areas, one's private
- * ones, each account's under its name, the to-dos – each shown or hidden with its box. A
- * sub-calendar is made where it goes (its parent's „+“), typed in place. A calendar's „…“ or a
+ * ones, each account's under its name, the to-dos – each shown or hidden with its box, one under
+ * the other (none under another: the user, 2026-11-26). A new one is typed in place: an area's by
+ * the area's „+“, one's own by „Meine Kalender“'s, an account's by the account's. A calendar's „…“ or a
  * right click on it renames it in place, colours it (not an area's: the area's colour; not one's
  * private one: one's own) and deletes it. The accounts themselves – connected, signed in anew,
  * renamed, deleted – are on „Konten“.
@@ -97,10 +102,13 @@ function tree(
 export function CalendarList({
   calendars,
   hidden,
+  source = null,
   onToggle,
 }: {
   calendars: readonly Calendar[];
   hidden: ReadonlySet<string>;
+  /** The page's source (`sources.ts`): its groups alone – the workspace's with the to-dos. */
+  source?: string | null;
   onToggle: (id: string) => void;
 }) {
   const ui = useCloud();
@@ -122,33 +130,86 @@ export function CalendarList({
     areaParent,
   );
   const accounts = useCalendarAccounts(ui.workspace.id, calendars) ?? [];
+  const ofWorkspace = !source || source === WORKSPACE_SOURCE;
   return (
     <nav aria-label="Kalender" className="flex flex-col gap-4">
-      <Group title={ui.workspace.name}>
-        {shared.map((node) => (
-          <Row key={node.calendar.id} node={node} hidden={hidden} onToggle={onToggle} />
-        ))}
-      </Group>
-      <Group title="Meine Kalender">
-        {mine.map((node) => (
-          <Row key={node.calendar.id} node={node} hidden={hidden} onToggle={onToggle} />
-        ))}
-      </Group>
+      {ofWorkspace && (
+        <>
+          <Group title={ui.workspace.name}>
+            {shared.map((node) => (
+              <Row key={node.calendar.id} node={node} hidden={hidden} onToggle={onToggle} />
+            ))}
+          </Group>
+          <MineGroup nodes={mine} hidden={hidden} onToggle={onToggle} />
+        </>
+      )}
       {accounts
-        .filter((account) => account.calendars.length > 0)
+        .filter((account) => account.calendars.length > 0 && (!source || source === account.id))
         .map((account) => (
           <AccountGroup key={account.id} account={account} hidden={hidden} onToggle={onToggle} />
         ))}
-      <Group title="Weiteres">
-        <Check
-          label="Aufgaben"
-          color="var(--color-fg-subtle)"
-          checked={!hidden.has(TODOS)}
-          onChange={() => onToggle(TODOS)}
-          lead={<Icon name="checklist" size="xs" className="text-fg-subtle" />}
-        />
-      </Group>
+      {ofWorkspace && (
+        <Group title="Weiteres">
+          <Check
+            label="Aufgaben"
+            color="var(--color-fg-subtle)"
+            checked={!hidden.has(TODOS)}
+            onChange={() => onToggle(TODOS)}
+            lead={<Icon name="checklist" size="xs" className="text-fg-subtle" />}
+          />
+        </Group>
+      )}
     </nav>
+  );
+}
+
+/** One's own calendars: a new one made in one's own (`parentId` its first, which every user has). */
+function MineGroup({
+  nodes,
+  hidden,
+  onToggle,
+}: {
+  nodes: Node[];
+  hidden: ReadonlySet<string>;
+  onToggle: (id: string) => void;
+}) {
+  const ui = useCloud();
+  const create = useCreateCalendar(ui.workspace.id);
+  const [adding, setAdding] = useState(false);
+  const own = nodes.find((node) => !node.calendar.parentId)?.calendar;
+  return (
+    <Group
+      title="Meine Kalender"
+      action={
+        own?.canEdit && (
+          <IconButton
+            icon="add"
+            label="Neuer Kalender in Meine Kalender"
+            size="xs"
+            onClick={() => setAdding(true)}
+          />
+        )
+      }
+    >
+      {nodes.map((node) => (
+        <Row key={node.calendar.id} node={node} hidden={hidden} onToggle={onToggle} />
+      ))}
+      {adding && own && (
+        <NameField
+          initial=""
+          label="Neuer Kalender"
+          onDone={(name) => {
+            setAdding(false);
+            if (name) {
+              create.mutate(
+                { parentId: own.id, name },
+                { onError: (error: Error) => ui.notify(error.message, 'danger') },
+              );
+            }
+          }}
+        />
+      )}
+    </Group>
   );
 }
 
@@ -211,7 +272,6 @@ function AccountGroup({
       ))}
       {adding && (
         <NameField
-          depth={0}
           initial=""
           label="Neuer Kalender"
           onDone={(name) => {
@@ -267,7 +327,6 @@ function Check({
   color,
   checked,
   onChange,
-  depth = 0,
   lead,
   trailing,
   onContextMenu,
@@ -276,7 +335,6 @@ function Check({
   color: string;
   checked: boolean;
   onChange: () => void;
-  depth?: number;
   lead?: ReactNode;
   trailing?: ReactNode;
   /** A right click: the row's „…“ at the pointer. */
@@ -284,8 +342,7 @@ function Check({
 }) {
   return (
     <li
-      className="group flex h-8 min-w-0 items-center rounded-control hover:bg-hover"
-      style={{ paddingLeft: 8 + depth * 16 }}
+      className="group flex h-8 min-w-0 items-center rounded-control pl-2 hover:bg-hover"
       onContextMenu={onContextMenu}
     >
       <button
@@ -318,12 +375,10 @@ function Row({
   node,
   hidden,
   onToggle,
-  depth = 0,
 }: {
   node: Node;
   hidden: ReadonlySet<string>;
   onToggle: (id: string) => void;
-  depth?: number;
 }) {
   const ui = useCloud();
   const create = useCreateCalendar(ui.workspace.id);
@@ -337,7 +392,8 @@ function Row({
   /** Deleted – or, someone else's at a mailbox's provider, only taken off one's list there. */
   const [deleting, setDeleting] = useState<'delete' | 'remove' | null>(null);
   const fail = (error: Error) => ui.notify(error.message, 'danger');
-  const canAdd = calendar.canEdit && calendar.kind !== 'mail' && depth < 3;
+  // A new one in an area: by the area's own calendar (one's own: „Meine Kalender“'s „+“).
+  const canAdd = calendar.canEdit && calendar.kind === 'area' && !calendar.parentId;
   const actions: MenuAction[] = [];
   if (calendar.canManage) {
     actions.push({
@@ -374,7 +430,6 @@ function Row({
     <>
       {renaming ? (
         <NameField
-          depth={depth}
           initial={calendar.name}
           label="Name des Kalenders"
           onDone={(name) => {
@@ -390,7 +445,6 @@ function Row({
           color={colorOf(calendar.color)}
           checked={!hidden.has(calendar.id)}
           onChange={() => onToggle(calendar.id)}
-          depth={depth}
           onContextMenu={
             actions.length > 0
               ? (event) => {
@@ -406,7 +460,7 @@ function Row({
                 {canAdd && (
                   <IconButton
                     icon="add"
-                    label={`Unterkalender in ${calendar.name}`}
+                    label={`Neuer Kalender in ${calendar.name}`}
                     size="xs"
                     onClick={() => setAdding(true)}
                   />
@@ -420,19 +474,12 @@ function Row({
         />
       )}
       {node.children.map((child) => (
-        <Row
-          key={child.calendar.id}
-          node={child}
-          hidden={hidden}
-          onToggle={onToggle}
-          depth={depth + 1}
-        />
+        <Row key={child.calendar.id} node={child} hidden={hidden} onToggle={onToggle} />
       ))}
       {adding && (
         <NameField
-          depth={depth + 1}
           initial=""
-          label="Neuer Unterkalender"
+          label="Neuer Kalender"
           onDone={(name) => {
             setAdding(false);
             if (name) create.mutate({ parentId: calendar.id, name }, { onError: fail });
@@ -524,19 +571,17 @@ function CalendarColorDialog({
 
 /** A name typed where the calendar will stand: Enter keeps it, Esc or leaving empty drops it. */
 function NameField({
-  depth,
   initial,
   label,
   onDone,
 }: {
-  depth: number;
   initial: string;
   label: string;
   onDone: (name: string) => void;
 }) {
   const [name, setName] = useState(initial);
   return (
-    <li className="flex h-8 items-center" style={{ paddingLeft: 8 + depth * 16 }}>
+    <li className="flex h-8 items-center pl-2">
       <input
         autoFocus
         value={name}

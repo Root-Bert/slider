@@ -116,6 +116,16 @@ export function mailFolderList(kept: readonly MailFolder[]): MailFolder[] {
   return [...roles, ...own.map(({ key, name }) => ({ key, name, role: null }))];
 }
 
+/**
+ * Every mailbox at once – Post's „Alle“ (`?postfach=alle`), its „Übersicht“ (`mailbox` of the
+ * triage: mail alone, no chats). Never an account's id; the mail list's API leaves `account` out.
+ */
+export const ALL_MAILBOXES = 'alle';
+
+/** „Alle“'s folders: the special ones any of the mailboxes has – one's own stay in their mailbox. */
+export const allMailboxFolders = (accounts: readonly Pick<MailAccount, 'folders'>[]) =>
+  mailFolderList(accounts.flatMap((account) => account.folders.filter((one) => one.role)));
+
 /** A mailbox's own name, at most this long – trimmed; empty: back to its default. */
 export const MAX_MAILBOX_LABEL = 60;
 export const mailboxLabelSchema = z

@@ -7,8 +7,9 @@ import { presentActions } from './lib/presentation';
 
 /**
  * ⌘K: what the deck pill offers – „Präsentieren“, „Referentenansicht“ (its right-click menu) and,
- * for whoever can edit, „Exportieren“ – lent to the command panel while the presentation is
- * shown (not presenting, not on the material page), as the desktop app's tab bar gets them.
+ * for whoever can edit, „Exportieren“ – and „Material“ (what was collected for the deck), lent to
+ * the command panel while the presentation is shown (not presenting), as the desktop app's tab bar
+ * gets them.
  */
 export function DeckCommands({
   active,
@@ -24,6 +25,11 @@ export function DeckCommands({
   const dispatch = useViewerDispatch();
   const actions: MenuAction[] = [
     ...presentActions(onPresent, onPresenterView),
+    {
+      label: 'Material',
+      icon: 'folderOpen',
+      onSelect: () => dispatch({ type: 'materialPanelSet', open: true }),
+    },
     ...(share
       ? [
           {

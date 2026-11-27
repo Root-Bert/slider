@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { Todo } from '@slider/shared';
-import { heldUpBy, spanOf, startingTooEarly } from './timeline';
+import { chevronsAlong, heldUpBy, linkRoute, spanOf, startingTooEarly } from './timeline';
 
 type T = Pick<Todo, 'id' | 'status' | 'blockedBy' | 'startOn' | 'dueOn'>;
 const todo = (
@@ -33,5 +33,32 @@ describe('timeline', () => {
     expect([...startingTooEarly(list, moved).keys()].sort()).toEqual(['b', 'c']);
     const done = list.map((one) => (one.id === 'a' ? { ...one, status: 'done' as const } : one));
     expect([...startingTooEarly(done, moved).keys()]).toEqual(['c']);
+    // Its line: out of the blocker's end, down, in from the left; right after it, in from above
+    // where the stub stands; starting before its end, round between the two lines.
+    const route = (left: number, right: number, y = 90) =>
+      linkRoute({ y: 18, left: 0, right: 100 }, { y, left, right }, 36, 12).map(
+        ({ x, y }) => `${x},${y}`,
+      );
+    expect(route(140, 200)).toEqual(['100,18', '110,18', '110,90', '140,90']);
+    expect(route(104, 128)).toEqual(['100,18', '110,18', '110,78']);
+    expect(route(104, 128, -54)).toEqual(['100,18', '110,18', '110,-42']);
+    expect(route(40, 200)).toEqual(['100,18', '110,18', '110,36', '30,36', '30,90', '40,90']);
+    // Its chevrons the way it runs, clear of corners and ends, counted from each run's start;
+    // too short for any, one in the middle of its longest run.
+    const marks = (points: { x: number; y: number }[]) =>
+      chevronsAlong(points, 8, 20, 5).map(({ x, y, angle }) => `${x},${y},${angle}`);
+    const bend = [
+      { x: 0, y: 0 },
+      { x: 0, y: 60 },
+      { x: 70, y: 60 },
+    ];
+    expect(marks(bend)).toEqual(['0,5,90', '0,25,90', '0,45,90', '13,60,0', '33,60,0', '53,60,0']);
+    expect(
+      marks([
+        { x: 0, y: 0 },
+        { x: 0, y: 6 },
+        { x: 4, y: 6 },
+      ]),
+    ).toEqual(['0,3,90']);
   });
 });

@@ -2,6 +2,11 @@ import { eq } from 'drizzle-orm';
 import { z } from 'zod';
 import {
   ACCENT_COLORS,
+  applyDiagramChanges,
+  DIAGRAM_DIRECTIONS,
+  describeDiagram,
+  emptyDiagram,
+  readDiagramChanges,
   cloudAgentInputSchema,
   MAX_SENDER_MESSAGE,
   senderPostSchema,
@@ -16,6 +21,8 @@ import {
   MAX_MILESTONE_NAME,
   MAX_PROJECT_NAME,
   MAX_TODO_DESCRIPTION,
+  MAX_ATTACHMENTS,
+  MAX_BLOCKED_BY,
   MAX_TODO_TITLE,
   searchFold,
   TODO_STATUSES,
@@ -25,6 +32,7 @@ import {
   type CloudArea,
   type CloudNode,
   WRITER_KINDS,
+  isWriterMarkdown,
 } from '@slider/shared';
 import { senderChannels } from '../db/schema';
 import type { AppDeps } from '../deps';
@@ -37,7 +45,7 @@ import {
   listCloudAgents,
   messageCloudAgent,
 } from './cloud-agents';
-import { MAIL_INPUTS, MAIL_TOOLS, type MailToolName } from './mail-agent';
+import { MAIL_INPUTS, MAIL_TOOLS, UNSUBSCRIBE_ON_CARD, type MailToolName } from './mail-agent';
 import { runMailTool } from './mail-agent-run';
 import { listMessages, postMessage, senderHome } from './sender';
 import { scheduleForTool } from './sender-scheduled';
@@ -71,6 +79,8 @@ import {
   milestoneNamed,
   projectNamed,
   positionBefore,
+  blockersByRef,
+  waitingOn,
   todoByRef,
   todoLine,
   updateTodo,
@@ -106,7 +116,11 @@ import {
   type CalendarToolName,
 } from './calendar/agent-tool-defs';
 import { runCalendarTool } from './calendar/agent-tools';
+import { DIAGRAM_CHANGES_JSON, DIAGRAM_GUIDE } from './diagram-ai';
+import { DIAGRAM_FILE_NOTE, diagramLine } from './diagram-prompt';
+import { changeDiagram, createDiagram, loadDiagram } from './diagrams';
 import { ToolChatError } from './tool-chat';
+import { spokenOnMessages, withSpokenWords } from './video-digest';
 import { atLeast } from './workspaces/roles';
 
 /*
@@ -181,7 +195,7 @@ const CLOUD_MCP_TOOLS: McpTool[] = [
   {
     name: 'write_file',
     title: TITLES.write_file!,
-    description: `Files (Cloud): writes a new text file (${writable}) with \`content\` as its whole text into a folder (folder), to the top of an area (area) or to the top of the person's own files (own: true) – say exactly one of the three. A name taken there gets a number. Returns its id and link.`,
+    description: `Files (Cloud): writes a new text file (${writable}) with \`content\` as its whole text into a folder (folder), to the top of an area (area) or to the top of the person's own files (own: true) – say exactly one of the three. A name taken there gets a number. Returns its id and link. A Markdown file (.md) opens in Cloud as a page – headings, lists, check lists, tables and diagrams. ${DIAGRAM_FILE_NOTE}`,
     inputSchema: {
       type: 'object',
       properties: {
@@ -217,6 +231,10 @@ const peopleProperty = {
 const DOCUMENT_CHARS = 100_000;
 /** A new document's text: as many paragraphs as one step writes. */
 const MAX_TEXT_CHARS = 60_000;
+/** Changes to a diagram in one call: a whole diagram of its size drawn at once. */
+const MAX_DIAGRAM_CHANGES = 400;
+const diagramChanges = z.array(z.unknown()).max(MAX_DIAGRAM_CHANGES);
+const diagramDirection = z.enum(DIAGRAM_DIRECTIONS).optional();
 
 const todoTitle = z.string().trim().min(1).max(MAX_TODO_TITLE);
 const todoInput = {
@@ -320,6 +338,19 @@ const INPUTS = {
     ...placeInput,
   }),
   edit_document: z.object({ document: id, changes: z.array(changeSchema).min(1).max(MAX_CHANGES) }),
+  read_diagram: z.object({ diagram: id }),
+  create_diagram: z.object({
+    title: z.string().trim().min(1).max(200),
+    changes: diagramChanges.optional(),
+    direction: diagramDirection,
+    ...placeInput,
+  }),
+  edit_diagram: z.object({
+    diagram: id,
+    changes: diagramChanges.min(1),
+    tidy: z.boolean().optional(),
+    direction: diagramDirection,
+  }),
   list_todos: z.object({ area: id.optional(), open_only: z.boolean().optional() }),
   read_todo: z.object({ todo: id }),
   create_todo: z.object({ title: todoTitle, area: id.optional(), ...todoInput }),
@@ -329,6 +360,7 @@ const INPUTS = {
     area: id.nullable().optional(),
     ...todoInput,
     before: id.nullable().optional(),
+    blocked_by: z.array(id).max(MAX_BLOCKED_BY).optional(),
   }),
 };
 type MoreName = keyof typeof INPUTS;
@@ -542,7 +574,7 @@ const MORE_TOOLS: McpTool[] = [
   tool(
     'edit_document',
     'Change a text document',
-    'Writer: changes a document’s text, all changes in one call, written at once as a version of its own – people who have it open see it, the version before stays (file_details, restore_version). Paragraphs are named by their id (read_document, read it first): "replace" gives one a new text, "insert" puts a new paragraph after the one named (or before it, `before: true`), "delete" removes one. Everything not named stays. A paragraph marked locked cannot be changed.',
+    `Writer: changes a document’s text, all changes in one call, written at once as a version of its own – people who have it open see it, the version before stays (file_details, restore_version). Paragraphs are named by their id (read_document, read it first): "replace" gives one a new text, "insert" puts a new paragraph after the one named (or before it, \`before: true\`), "delete" removes one. Everything not named stays. A paragraph marked locked cannot be changed. In a Markdown file (.md) a paragraph is one line as written. ${DIAGRAM_FILE_NOTE}`,
     {
       document: { type: 'string', description: 'The document’s id.' },
       changes: {
@@ -567,9 +599,41 @@ const MORE_TOOLS: McpTool[] = [
     ['document', 'changes'],
   ),
   tool(
+    'read_diagram',
+    'Read a diagram',
+    'Files (Cloud): a diagram (a .diagram file) as it stands – its boxes with their ids, texts, shapes, colours and frames, and its arrows (from → to, with their words) – and the line that shows it on a page. The ids are what edit_diagram names.',
+    { diagram: { type: 'string', description: 'The diagram’s file id.' } },
+    ['diagram'],
+    read,
+  ),
+  tool(
+    'create_diagram',
+    'Create a diagram',
+    `Files (Cloud): makes a new diagram – boxes and arrows on a canvas (a flow, dependencies, a structure, an org chart) that people open and change by hand – and returns its id, link and the line that shows it on a page. \`changes\`: what it is drawn with, laid out at once (\`direction\` TB top-down, the default, or LR left-right). It lies in the person's own files („Meine Dateien“) unless a place is said: folder, area or own: true – for a page, the page's own folder or area. ${DIAGRAM_GUIDE}`,
+    {
+      title: { type: 'string', maxLength: 200 },
+      changes: { ...DIAGRAM_CHANGES_JSON, maxItems: MAX_DIAGRAM_CHANGES },
+      direction: { type: 'string', enum: [...DIAGRAM_DIRECTIONS] },
+      ...placeProperties,
+    },
+    ['title'],
+  ),
+  tool(
+    'edit_diagram',
+    'Change a diagram',
+    `Files (Cloud): changes a diagram, all changes in one call, written at once as a version of its own – who has it open sees it, the version before stays (file_details, restore_version). Read it first (read_diagram): boxes are named by their ids; everything not named stays where people put it. ${DIAGRAM_GUIDE}`,
+    {
+      diagram: { type: 'string', description: 'The diagram’s file id.' },
+      changes: { ...DIAGRAM_CHANGES_JSON, minItems: 1, maxItems: MAX_DIAGRAM_CHANGES },
+      tidy: { type: 'boolean', description: 'Lay the whole diagram out anew afterwards.' },
+      direction: { type: 'string', enum: [...DIAGRAM_DIRECTIONS] },
+    },
+    ['diagram', 'changes'],
+  ),
+  tool(
     'list_todos',
     'List to-dos',
-    'To-dos: the person’s own (only they see them) and each area’s they see – an area’s list is its project plan. With area: that area’s only. Each with id, number, status, priority, who does it, due date and place, what is under way first.',
+    'To-dos: the person’s own (only they see them) and each area’s they see – an area’s list is its project plan. With area: that area’s only. Each with id, number, status, priority, who does it, start and due date, place, project and milestone – in the order they stand in, what is under way first.',
     {
       area: { type: 'string', description: 'An area id: only its to-dos.' },
       open_only: { type: 'boolean', description: 'true: without done and canceled ones.' },
@@ -610,6 +674,12 @@ const MORE_TOOLS: McpTool[] = [
         description:
           'Its place on the timeline: before this to-do (id or number) of the milestone and place it ends up in; null: last there. list_todos lists them in that order. Put into another milestone or place without it: last.',
       },
+      blocked_by: {
+        type: 'array',
+        items: { type: 'string' },
+        description:
+          'What it waits on („Wartet auf“): to-dos (id or number) of its own place and project, the whole list as it should stand – [] waits on nothing. Itself or a loop is refused.',
+      },
     },
     ['todo'],
   ),
@@ -624,7 +694,9 @@ const PERSON_INPUTS = {
   read_conversation: z.object({ conversation: id }),
   post_message: z.object({
     conversation: id,
-    text: senderPostSchema.shape.text,
+    text: senderPostSchema.shape.text.default(''),
+    files: z.array(id).max(MAX_ATTACHMENTS).optional(),
+    reply_to: id.optional(),
     send_at: z.iso.datetime({ offset: true }).optional(),
   }),
   list_agents: z.object({}),
@@ -723,17 +795,27 @@ const PERSON_TOOLS: McpTool[] = [
   personTool(
     'post_message',
     'Write in a conversation',
-    `Writes a message (at most ${MAX_SENDER_MESSAGE} characters, plain text, „@first name“ names someone) into a Sender conversation under the person's name – everyone there reads it at once. Only when the person asks for exactly this message.`,
+    `Writes a message (at most ${MAX_SENDER_MESSAGE} characters, Markdown as Sender shows it – **bold**, lists, links –, „@first name“ names someone) into a Sender conversation under the person's name – everyone there reads it at once. Only when the person asks for exactly this message.`,
     {
       conversation: { type: 'string' },
-      text: { type: 'string' },
+      text: { type: 'string', description: 'Its words – may be empty when files go.' },
+      files: {
+        type: 'array',
+        items: { type: 'string' },
+        description: `Cloud files to send along (file ids from list_folder or search_files, at most ${MAX_ATTACHMENTS}) – pointed to, not copied: who may not open one there does not see it.`,
+      },
+      reply_to: {
+        type: 'string',
+        description:
+          'A message of this conversation (its id from read_conversation) answered – quoted above it, as „Antworten“ does.',
+      },
       send_at: {
         type: 'string',
         description:
           'Optional: when it goes instead of now – an ISO date-time with its offset (2026-12-01T09:00:00+01:00), later than now and at most a year ahead. Until then only the person sees it, above their field (they can send it at once or delete it); then it is posted as if sent that moment.',
       },
     },
-    ['conversation', 'text'],
+    ['conversation'],
   ),
   personTool(
     'list_agents',
@@ -764,7 +846,10 @@ const PERSON_TOOLS: McpTool[] = [
   ),
   ...MAIL_TOOLS.map((each) =>
     asAppTool(
-      each,
+      // No card in an app: its client asks before a destructive tool.
+      each.name === 'unsubscribe_mail'
+        ? { ...each, description: each.description!.replace(UNSUBSCRIBE_ON_CARD, '') }
+        : each,
       MAIL_TITLES[each.name as MailToolName],
       MAIL_READING.has(each.name)
         ? read
@@ -923,8 +1008,8 @@ async function runTodoTool(
   const { deps, userId } = call;
   const workspaceId = await call.workspaceId();
   const ctx = await cloudContext(deps.db, workspaceId, userId);
-  const line = (todo: Parameters<typeof todoLine>[0]) =>
-    todoLine(todo, (areaId) => ctx.areas.get(areaId)?.row.name);
+  const line = (todo: Parameters<typeof todoLine>[0], around?: Parameters<typeof todoLine>[2]) =>
+    todoLine(todo, (areaId) => ctx.areas.get(areaId)?.row.name, around);
   const who = async (assignee: string | null | undefined) =>
     assignee ? (await personNamed(call, workspaceId, assignee)).id : assignee;
   switch (name) {
@@ -936,14 +1021,19 @@ async function runTodoTool(
           .filter((todo) => !input.open_only || isOpenTodo(todo.status))
           // As on the timeline: each milestone's lines in their order.
           .sort((a, b) => a.position - b.position || a.number - b.number)
-          .map(line)
+          .map((todo) => line(todo, list))
           .join('\n') || 'No to-dos.'
       );
     }
     case 'read_todo': {
       const todo = await todoByRef(deps, userId, workspaceId, INPUTS.read_todo.parse(raw).todo);
+      const around = await listTodos(deps, userId, workspaceId, {
+        areaId: todo.areaId ?? undefined,
+      });
+      const waiting = waitingOn(todo, around);
       return [
-        line(todo),
+        line(todo, around),
+        waiting ? `\nWaiting on it: ${waiting}` : '',
         todo.description ? `\n${todo.description}` : '',
         todo.source?.url ? `\nFrom a mail; where it is done: ${todo.source.url}` : '',
         `\n${deps.config.webOrigin}/w/${workspaceId}/dateien/${todo.areaId ? `bereich/${todo.areaId}/aufgaben` : 'aufgaben'}`,
@@ -1017,14 +1107,21 @@ async function runTodoTool(
           milestoneId: input.milestone
             ? await milestoneNamed(deps, userId, workspaceId, areaId, input.milestone, projectId)
             : input.milestone,
+          blockedBy: input.blocked_by
+            ? await blockersByRef(deps, userId, workspaceId, input.blocked_by)
+            : undefined,
         },
         {},
       );
-      if (input.before === undefined) return `Changed: ${line(changed)}`;
+      // What it waits on by number: the to-dos of its place.
+      const around = input.blocked_by?.length
+        ? await listTodos(deps, userId, workspaceId, { areaId: changed.areaId ?? undefined })
+        : undefined;
+      if (input.before === undefined) return `Changed: ${line(changed, around)}`;
       const placed = await updateTodo(deps, userId, todo.id, {
         position: await positionBefore(deps, userId, changed, input.before),
       });
-      return `Changed: ${line(placed)}`;
+      return `Changed: ${line(placed, around)}`;
     }
   }
 }
@@ -1303,7 +1400,11 @@ async function runMore(call: Call, name: MoreName, raw: unknown): Promise<string
       const { document } = INPUTS.read_document.parse(raw);
       within(call, (await documentOf(deps, userId, document)).workspaceId, document);
       const opened = await openDocument(deps, userId, document);
-      const whole = documentForPrompt(opened.content.blocks);
+      // A Markdown page as the document AI reads it: its drawings' strokes left out.
+      const whole = documentForPrompt(
+        opened.content.blocks,
+        isWriterMarkdown(opened.document.fileName),
+      );
       return [
         `„${opened.document.title}“ (document id ${opened.document.id}) in ${opened.document.place}${opened.document.permissions.canEdit ? '' : ', read only'}: ${documentLink(deps, document)}`,
         whole.length > DOCUMENT_CHARS
@@ -1365,8 +1466,74 @@ async function runMore(call: Call, name: MoreName, raw: unknown): Promise<string
         ? 'Nothing to change.'
         : `Written into „${document.title}“: ${documentLink(deps, input.document)}`;
     }
+    case 'read_diagram': {
+      const { diagram } = INPUTS.read_diagram.parse(raw);
+      const loaded = await loadDiagram(deps, userId, diagram);
+      within(call, loaded.node.workspaceId, diagram);
+      return [
+        `„${diagramTitle(loaded.node.name)}“ (diagram id ${loaded.node.id})${loaded.access === 'view' ? ', read only' : ''}: ${diagramLink(deps, loaded.node.id)}`,
+        `On a page: ${diagramLine(loaded.node.id, loaded.node.name)}`,
+        loaded.diagram.nodes.length > 0 ? describeDiagram(loaded.diagram) : 'It is empty.',
+      ].join('\n\n');
+    }
+    case 'create_diagram': {
+      const input = INPUTS.create_diagram.parse(raw);
+      const workspaceId = await call.workspaceId();
+      const placed = input.folder ?? input.area ?? input.own;
+      const into = placed === undefined ? null : target(input);
+      if (input.folder) {
+        const { node } = await nodeOf(call, input.folder, 'edit');
+        if (node.workspaceId !== workspaceId || node.kind !== 'folder')
+          throw new ToolChatError(`No folder with id ${input.folder}.`);
+      }
+      // Drawn before it is made: what it starts with is its first version, not a second one.
+      const read = readDiagramChanges(input.changes ?? []);
+      const drawn = applyDiagramChanges(emptyDiagram(), read.changes, {
+        tidy: true,
+        direction: input.direction,
+      });
+      const made = await createDiagram(
+        deps,
+        userId,
+        { workspaceId, title: input.title, ...(into ?? {}) },
+        drawn.diagram,
+      );
+      return [
+        `Created „${made.title}“ (diagram id ${made.id}) with ${drawn.diagram.nodes.length} boxes and ${drawn.diagram.edges.length} arrows: ${diagramLink(deps, made.id)}`,
+        `On a page it is shown by this line, alone on a line of its own: ${diagramLine(made.id, made.fileName)}`,
+        ...notDone([...read.problems, ...drawn.problems]),
+        into
+          ? 'It lies where it was to go.'
+          : "It lies in the person's own files („Meine Dateien“).",
+      ].join('\n');
+    }
+    case 'edit_diagram': {
+      const input = INPUTS.edit_diagram.parse(raw);
+      // Only one the call may reach: the change itself does not look at the workspace.
+      const loaded = await loadDiagram(deps, userId, input.diagram, 'edit');
+      within(call, loaded.node.workspaceId, input.diagram);
+      const changed = await changeDiagram(deps, call.live, userId, input.diagram, {
+        changes: input.changes,
+        ...(input.tidy !== undefined && { tidy: input.tidy }),
+        ...(input.direction && { direction: input.direction }),
+      });
+      const title = diagramTitle(changed.file.name);
+      return [
+        changed.changed
+          ? `Changed „${title}“ – ${changed.diagram.nodes.length} boxes and ${changed.diagram.edges.length} arrows now: ${diagramLink(deps, input.diagram)}`
+          : `Nothing changed in „${title}“.`,
+        ...notDone(changed.problems),
+      ].join('\n');
+    }
   }
 }
+
+const diagramTitle = (name: string) => name.replace(/\.diagram$/i, '');
+const diagramLink = (deps: AppDeps, diagramId: string) =>
+  `${deps.config.webOrigin}/diagramm/${diagramId}`;
+/** What of a diagram's changes could not be done – said, so the AI can do it right. */
+const notDone = (problems: string[]) =>
+  problems.length > 0 ? [`Not done: ${problems.slice(0, 20).join('; ')}.`] : [];
 
 async function writeFile(
   deps: AppDeps,
@@ -1403,9 +1570,12 @@ async function writeFile(
   return `Wrote „${node.name}“ (file id ${node.id}): ${deps.config.webOrigin}/w/${workspaceId}/dateien?datei=${node.id}`;
 }
 
-/** What a conversation's message reads as for an app: when, who, what. */
-const messageLine = (each: SenderMessage) =>
-  `${each.createdAt} ${each.agent ? `${each.agent.title} (agent)` : (each.author?.name ?? 'someone gone')}: ${each.text}`;
+/**
+ * What a conversation's message reads as for an app: when, who, what – its files named, a voice
+ * message or video with what was said in it (`spokenWords`).
+ */
+const messageLine = (each: SenderMessage, spoken: ReadonlyMap<string, string>) =>
+  `[${each.id}] ${each.createdAt} ${each.agent ? `${each.agent.title} (agent)` : (each.author?.name ?? 'someone gone')}: ${each.replyTo ? `(answering [${each.replyTo.id}]) ` : ''}${withSpokenWords(each.text, each.attachments ?? [], spoken)}`;
 
 /**
  * Runs one of the person's own tools: Sender, mail, agents, settings – as the person, within the
@@ -1457,11 +1627,10 @@ async function runPerson(
       const input = PERSON_INPUTS.read_conversation.parse(raw);
       await conversationIn(input.conversation);
       const page = await listMessages(deps, userId, input.conversation);
+      const shown = page.messages.filter((each) => !each.deleted);
+      const spoken = await spokenOnMessages(deps, shown);
       return (
-        page.messages
-          .filter((each) => !each.deleted)
-          .map(messageLine)
-          .join('\n') || 'Nothing written there yet.'
+        shown.map((each) => messageLine(each, spoken)).join('\n') || 'Nothing written there yet.'
       );
     }
     case 'post_message': {
@@ -1470,11 +1639,21 @@ async function runPerson(
       if (input.send_at) {
         return scheduleForTool(deps, userId, input.conversation, {
           text: input.text,
+          attachments: input.files,
+          replyTo: input.reply_to,
           sendAt: input.send_at,
         });
       }
-      await postMessage(deps, userId, input.conversation, input.text, viewer);
-      return 'Posted.';
+      const posted = await postMessage(
+        deps,
+        userId,
+        input.conversation,
+        input.text,
+        viewer,
+        input.files,
+        input.reply_to,
+      );
+      return `Posted (${posted.id}).`;
     }
     case 'list_agents': {
       const agents = await listCloudAgents(deps, userId, await workspaceOf());
@@ -1551,8 +1730,11 @@ export async function runAppTool(
   caller: McpCaller,
   name: string,
   args: Record<string, unknown> = {},
-  /** Who has a document open hears a change through this (`routes/documents.ts`). */
-  live: DocumentLive = new DocumentLive(),
+  /**
+   * Who has a document or a diagram open hears a change through this (`routes/documents.ts`) –
+   * the app's own one, the Cloud chat's and the agents' the app-wide one.
+   */
+  live: DocumentLive = deps.documentLive ?? new DocumentLive(),
 ): Promise<McpToolResult> {
   if (
     !CLOUD_NAMES.has(name) &&

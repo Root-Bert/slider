@@ -97,7 +97,7 @@ function formatter(zone: string): Intl.DateTimeFormat {
   return found;
 }
 
-function knownZone(zone: string): boolean {
+export function knownZone(zone: string): boolean {
   try {
     formatter(zone);
     return true;
@@ -148,6 +148,10 @@ export function zonedToUtc(wall: number, zone: string): number {
   const second = offsetAt(instant, zone);
   return second === first ? instant : wall - second;
 }
+
+/** The wall-clock time (counted as if UTC) `zone` shows at `instant`. */
+export const wallOf = (instant: number, zone: string) =>
+  zone === 'UTC' ? instant : instant + offsetAt(instant, zone);
 
 const instantOf = (time: IcsTime): number =>
   zonedToUtc(time.wall, time.date ? FALLBACK_ZONE : time.zone);
@@ -447,6 +451,35 @@ function* ruleStarts(start: IcsTime, rule: Rule, notBeforeDay: number): Generato
       if (count !== undefined && made >= count) return;
     }
   }
+}
+
+/**
+ * The workspace's own series (`recurrence.ts`): the starts an RRULE makes from `start` that begin
+ * before `to` and end after `from` – instants walked in `zone`'s wall time; an all-day series'
+ * days as their UTC midnights. The first counts even where the rule would not hit it.
+ */
+export function seriesStarts(
+  rrule: string,
+  start: number,
+  allDay: boolean,
+  zone: string,
+  lengthMs: number,
+  from: number,
+  to: number,
+): number[] {
+  const time: IcsTime = allDay
+    ? { wall: start, zone: FALLBACK_ZONE, date: true }
+    : { wall: start + offsetAt(start, zone), zone, date: false };
+  const rule = parseRule(rrule, time);
+  const found: number[] = [];
+  const walls = rule ? ruleStarts(time, rule, dayOf(from - lengthMs) - 1) : [time.wall];
+  for (const wall of walls) {
+    const at = allDay ? dayOf(wall) * DAY : zonedToUtc(wall, zone);
+    if (at >= to) break;
+    if (at + lengthMs > from) found.push(at);
+    if (found.length >= MAX_OCCURRENCES) break;
+  }
+  return found;
 }
 
 // ---------------------------------------------------------------------------------------------

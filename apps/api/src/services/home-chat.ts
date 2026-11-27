@@ -18,6 +18,8 @@ import {
   runFromApps,
 } from './cloud-chat';
 import { MCP_TOOLS, runMcpTool } from './mcp';
+import { MEMORY_TOOL, memoryLabel } from './agent-memory';
+import { ownWays, runOwnMemory, waysPrompt } from './own-agent';
 import { answerToolChat, ToolChatError } from './tool-chat';
 import { listWorkspaces } from './workspaces';
 
@@ -85,7 +87,7 @@ What you can do, with the tools:
 - Show them: show_in_list filters the list the person looks at.
 - Keep order: update_presentation renames and archives (list_workspaces names the templates); set_access says who may open one. Where a presentation lies – its folder or area – the person says in Cloud („Speicherort“).
 ${MORE_PROMPT}
-- Make a new one: create_presentation (with a template of the workspace when one fits), put what the person told you on its board with add_note, then build_presentation with a description of what it is about, for whom and what it should achieve. Building takes a few minutes in the background – say so and give the link; do not wait for it.
+- Make a new one: create_presentation (with a template of the workspace when one fits), put what the person told you into its material with add_note, then build_presentation with a description of what it is about, for whom and what it should achieve. Building takes a few minutes in the background – say so and give the link; do not wait for it.
 
 How to work:
 - A request to do something („benenn um“, „verschieb“, „erstell“) is done at once – no asking back for permission, unless it is unclear which presentation or what is meant. A question is answered without changing anything.
@@ -202,6 +204,9 @@ export async function answerHomeChat(
   // check their rights.
   const more = await moreFromApps();
   const reading = new Map(more.map((each) => [each.tool.name, each.reading]));
+  // The person's own agent's „Anweisungen“ and memory: their AI works the same way here.
+  const userId = chat.viewer.author.id;
+  const ways = await ownWays(deps, chat.workspaceId, userId);
   await answerToolChat(
     deps,
     {
@@ -214,9 +219,10 @@ export async function answerHomeChat(
       attachments: chat.attachments,
       workspaceId: chat.workspaceId,
       filesOwner: chat.viewer.author.id,
-      system: () => system(chat.workspaceName, todayForPrompt(deps.clock.now())),
-      tools: [...TOOLS, ...more.map((each) => each.tool)],
+      system: () => system(chat.workspaceName, todayForPrompt(deps.clock.now())) + waysPrompt(ways),
+      tools: [...TOOLS, ...more.map((each) => each.tool), ...(ways ? [MEMORY_TOOL] : [])],
       run: async (name, input) => {
+        if (ways && name === 'memory') return runOwnMemory(deps, ways.agentId, userId, input);
         if (MORE_NAMES.has(name))
           return runFromApps(deps, chat, name, input, reading.get(name) === true);
         if (name === 'show_in_list') {
@@ -239,7 +245,7 @@ export async function answerHomeChat(
           ...(ran.isError ? { isError: true } : {}),
         };
       },
-      label: doingLabel,
+      label: (name, input) => (name === 'memory' ? memoryLabel(input) : doingLabel(name, input)),
       release: () => void running.delete(chat.controller),
     },
     emit,

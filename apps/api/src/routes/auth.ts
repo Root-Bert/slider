@@ -950,6 +950,10 @@ export function authRoutes(deps: AppDeps, gate: InstanceGate) {
         if (signIn.ok) {
           // A browser the account never signed in on through a Nextcloud: the grant may have been
           // forwarded from someone else's window – the account's mailbox confirms this one.
+          // „Nur Firmen-Login“ would refuse the confirmed session anyway: no mail for nothing.
+          if (await companyLoginRequired(deps, signIn.user.email)) {
+            return done(loginErrorPath('sso_required', flow.returnTo));
+          }
           const unsent = await mailNextcloudSignup(
             c,
             identity,

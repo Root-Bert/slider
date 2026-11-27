@@ -861,7 +861,8 @@ export function NewMailboxButton() {
   const ui = useSender();
   return (
     <ButtonLink to={ui.newMailboxPath} variant="secondary" icon="add">
-      Neues Postfach
+      {/* On a phone the plus alone, as „Neue Mail“ – the page's title keeps its room. */}
+      <span className="max-sm:sr-only">Neues Postfach</span>
     </ButtonLink>
   );
 }

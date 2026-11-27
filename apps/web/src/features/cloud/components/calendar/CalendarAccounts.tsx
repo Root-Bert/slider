@@ -22,6 +22,7 @@ import {
   useRenameCalendarConnection,
   useRenameMailAccount,
 } from '@/lib/api';
+import { desktopBridge } from '@/lib/desktop-bridge';
 import { useOnPageRestore } from '@/lib/page-restore';
 import { routes } from '@/lib/routes';
 import {
@@ -42,6 +43,7 @@ import {
   type MenuAction,
 } from '@/ui';
 import { useCloud } from '../../hooks/useCloud';
+import { CalendarFeed } from './CalendarFeed';
 
 /**
  * An account whose calendars stand in the calendar: a mailbox of Post, or calendars connected
@@ -528,6 +530,8 @@ export function CalendarAccounts() {
           </p>
         </>
       )}
+      {/* The desktop app's server is this computer's: no calendar app elsewhere reaches it. */}
+      {!desktopBridge() && <CalendarFeed />}
       {menu && (
         <ContextMenu
           label={`Aktionen für ${menu.account.name}`}

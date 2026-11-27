@@ -6,6 +6,8 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { and, asc, eq, inArray, isNotNull, ne, sql } from 'drizzle-orm';
 import JSZip from 'jszip';
 import {
+  applyDiagramChanges,
+  emptyDiagram,
   CHAT_FILES_FOLDER,
   CLOUD_TRASH_DAYS,
   CLOUD_TUS_PATH,
@@ -18,6 +20,7 @@ import {
   cloudNodeDetailSchema,
   cloudOverviewSchema,
   cloudPublicSchema,
+  writerDocumentSchema,
   type CloudArea,
   type CloudBatchResult,
   type CloudFocus,
@@ -32,6 +35,11 @@ import {
   type CloudNodeDetail,
   type CloudShare,
   type CloudUploadResult,
+  type Diagram,
+  type DiagramAnswer,
+  type DiagramFile,
+  type DiagramOpened,
+  type DiagramSaved,
   type SenderChannel,
   type SenderHome,
   type SenderMessagePage,
@@ -70,7 +78,8 @@ import { standAlone } from '../src/services/cloud/files';
 import { placeOlderDecks } from '../src/services/deck-places';
 import { sweepCloud } from '../src/services/cloud';
 import { nextRun } from '../src/services/cloud-agent-repeat';
-import { askText, mustAsk } from '../src/services/cloud-agent-asks';
+import { askText, mustAsk, NEEDS_OK } from '../src/services/cloud-agent-asks';
+import { TOOL_CARDS, toolsWhere } from '../src/services/agent-catalog';
 import { runs } from '../src/services/cloud-agent-runs';
 import { messageCloudAgent, runDueCloudAgents, summaryOf } from '../src/services/cloud-agents';
 import { focusContext } from '../src/services/cloud-focus';
@@ -91,12 +100,20 @@ const DAY_MS = 24 * 60 * 60 * 1000;
 const GB = 1024 ** 3;
 
 /** The model's answers, in order – a function sees what it was sent (the tools' results). */
-type Sent = { messages: { role: string; content: unknown }[] };
+type Sent = {
+  messages: { role: string; content: unknown }[];
+  system?: unknown;
+  tools?: { name: string }[];
+};
 let answers: ((body: Sent) => Record<string, unknown> | Promise<Record<string, unknown>>)[] = [];
 const fakeAnthropic = () =>
   ({
     models: {
-      retrieve: async (model: string) => ({ id: model, max_tokens: 64_000 }),
+      retrieve: async (model: string) => ({
+        id: model,
+        max_tokens: 64_000,
+        max_input_tokens: 1_000_000,
+      }),
       list: async function* () {
         await Promise.resolve();
         yield { id: 'claude-sonnet-5-5', display_name: 'Claude Sonnet 5.5' };
@@ -492,6 +509,98 @@ describe('Cloud – the workspace’s files', () => {
       ]),
     );
     expect(activity.some((event) => event.kind === 'uploaded' && event.more > 0)).toBe(true);
+
+    // A diagram: a file of its own kind, drawn on and saved whole – drawing on a while is one
+    // version, two drawing at once both keep what they drew.
+    const madeDiagram = await post('/diagrams', {
+      workspaceId: ctx.workspaceId,
+      title: 'Ablauf',
+    });
+    expect(madeDiagram.status).toBe(201);
+    const drawing = (await madeDiagram.json()) as DiagramFile;
+    expect(drawing).toMatchObject({ fileName: 'Ablauf.diagram', title: 'Ablauf', canEdit: true });
+    const diagramNode = async () => (await list()).nodes.find((node) => node.id === drawing.id)!;
+    expect(await diagramNode()).toMatchObject({ fileType: 'diagram', versionCount: 1 });
+    // Its bytes are no page of ours: loaded, never shown.
+    expect((await content(drawing.id)).headers.get('Content-Disposition')).toMatch(/^attachment/);
+    expect((await ctx.request(`/api/diagrams/${first.node.id}`)).status).toBe(404);
+    const save = async (diagram: Diagram, baseVersionId: string | null, clientId = 'tab') => {
+      const res = await ctx.request(`/api/diagrams/${drawing.id}`, {
+        method: 'PUT',
+        json: { diagram, baseVersionId, clientId },
+      });
+      expect(res.status).toBe(200);
+      return (await res.json()) as DiagramSaved;
+    };
+    const one = applyDiagramChanges(emptyDiagram(), [
+      { type: 'add_box', id: 'ask', text: 'Anfrage' },
+    ]).diagram;
+    const two = applyDiagramChanges(one, [
+      { type: 'add_box', id: 'offer', text: 'Angebot' },
+      { type: 'connect', from: 'ask', to: 'offer' },
+    ]).diagram;
+    const firstSave = await save(one, drawing.versionId);
+    const drawnOn = await save(two, firstSave.versionId);
+    expect(drawnOn.joined).toBe(false);
+    expect(await diagramNode()).toMatchObject({ versionCount: 2 });
+    const openedDiagram = (await (
+      await ctx.request(`/api/diagrams/${drawing.id}`)
+    ).json()) as DiagramOpened;
+    expect(openedDiagram.diagram.nodes.map((node) => node.id)).toEqual(['ask', 'offer']);
+    expect(openedDiagram.file.versionId).toBe(drawnOn.versionId);
+    // Made with what it starts with (a diagram turned into a file): that is its first version.
+    const madeWith = (await (
+      await post('/diagrams', { workspaceId: ctx.workspaceId, title: 'Kopie', diagram: two })
+    ).json()) as DiagramFile;
+    const openedWith = (await (
+      await ctx.request(`/api/diagrams/${madeWith.id}`)
+    ).json()) as DiagramOpened;
+    expect(openedWith.diagram.edges).toHaveLength(1);
+    // Later, two at once on the same version: one adds a box, the other renames one.
+    ctx.clock.advance(11 * 60_000);
+    const added = applyDiagramChanges(two, [{ type: 'add_box', id: 'bill', text: 'Rechnung' }]);
+    await save(added.diagram, drawnOn.versionId, 'left');
+    const renamedBox = applyDiagramChanges(two, [
+      { type: 'change_box', id: 'ask', text: 'Anfrage per Mail' },
+    ]);
+    const joinedSave = await save(renamedBox.diagram, drawnOn.versionId, 'right');
+    expect(joinedSave.joined).toBe(true);
+    expect(joinedSave.diagram.nodes.map((node) => [node.id, node.text])).toEqual([
+      ['ask', 'Anfrage per Mail'],
+      ['offer', 'Angebot'],
+      ['bill', 'Rechnung'],
+    ]);
+    // „Was soll sich ändern?“: the AI's changes come back for the editor to apply as one step.
+    await post(`/workspaces/${ctx.workspaceId}/integrations/keys`, {
+      kind: 'ai',
+      provider: 'anthropic',
+      apiKey: 'sk-ant-api03-cloud-test-key-0000000000',
+    });
+    answers = [
+      () => ({
+        stop_reason: 'tool_use',
+        content: [
+          call('change_diagram', {
+            changes: [
+              { type: 'add_box', id: 'paid', text: 'Bezahlt?', shape: 'rhombus' },
+              { type: 'connect', from: 'bill', to: 'paid' },
+              { type: 'add_box', text: 'ohne id' },
+            ],
+            tidy: false,
+            note: 'Prüfung ergänzt.',
+          }),
+        ],
+      }),
+    ];
+    const asked = await ctx.request(`/api/diagrams/${drawing.id}/ask`, {
+      method: 'POST',
+      json: { prompt: 'Prüfe, ob bezahlt ist', diagram: joinedSave.diagram },
+    });
+    expect(asked.status).toBe(200);
+    const answer = (await asked.json()) as DiagramAnswer;
+    expect(answer).toMatchObject({ tidy: false, note: 'Prüfung ergänzt.' });
+    // The change without an id is left out; the rest stands.
+    expect(answer.changes.map((change) => change.type)).toEqual(['add_box', 'connect']);
   });
 
   it('opens an area to its people by their role, keeps one’s own files one’s own, and shares add to that', async () => {
@@ -611,6 +720,25 @@ describe('Cloud – the workspace’s files', () => {
     expect(elsewhere[0]).toMatch(/^Made: .*Rechnung Müller prüfen – own/);
     expect(elsewhere[1]).not.toMatch(/^ERROR/);
     expect(elsewhere[2]).toContain('Rechnung Müller prüfen');
+    // Its last turn may only answer: its tools still named (the talk has calls in it), none
+    // to call, and told so before it.
+    let lastTurn: { tools?: unknown[]; tool_choice?: unknown } = {};
+    let toldLast = '';
+    answers = [
+      ...Array.from({ length: 39 }, () => () => ({
+        stop_reason: 'tool_use',
+        content: [call('list_todos', {})],
+      })),
+      (body) => {
+        lastTurn = body as typeof lastTurn;
+        toldLast = JSON.stringify(body.messages.at(-1)?.content);
+        return { stop_reason: 'end_turn', content: [{ type: 'text', text: 'So weit.' }] };
+      },
+    ];
+    expect((await chat('Such ewig', {}, anna.cookie)).text).toContain('So weit.');
+    expect(lastTurn.tools?.length).toBeGreaterThan(0);
+    expect(lastTurn.tool_choice).toEqual({ type: 'none' });
+    expect(toldLast).toContain('That was your last step');
     // A viewer's chat sees the area and changes nothing; someone's own files stay out of reach.
     answers = [
       () => ({
@@ -691,17 +819,34 @@ describe('Cloud – the workspace’s files', () => {
     ).toEqual([undefined, undefined, undefined, 'slider', undefined]);
     // The AI on Slider's start runs the same way, with Slider's own tools held to the workspace:
     // it lists, and tells the page what its list should show.
+    // Her own agent's „Anweisungen“ and memory go with her AI into the apps.
+    const annaOwn = (await (
+      await ctx.request(`/api/workspaces/${ctx.workspaceId}/cloud/agents/own`, {
+        method: 'POST',
+        cookie: anna.cookie,
+      })
+    ).json()) as CloudAgentDetail;
+    await ctx.request(`/api/cloud/agents/${annaOwn.id}/instructions`, {
+      method: 'PUT',
+      json: { instructions: 'Kurz bitte.' },
+      cookie: anna.cookie,
+    });
+    let homeSystem = '';
     answers = [
-      () => ({
-        stop_reason: 'tool_use',
-        content: [
-          call('list_presentations', {}),
-          call('show_in_list', { query: 'Pitch' }),
-          call('list_folder', {}),
-          // The person's to-dos as in Cloud's panel.
-          call('list_todos', {}),
-        ],
-      }),
+      (body) => {
+        homeSystem = JSON.stringify(body.system);
+        return {
+          stop_reason: 'tool_use',
+          content: [
+            call('list_presentations', {}),
+            call('show_in_list', { query: 'Pitch' }),
+            call('list_folder', {}),
+            // The person's to-dos as in Cloud's panel.
+            call('list_todos', {}),
+            call('memory', { command: 'create', path: '/memories/start.md', file_text: 'Pitch' }),
+          ],
+        };
+      },
       (body) => {
         seen = results(body);
         return { stop_reason: 'end_turn', content: [{ type: 'text', text: 'Gefunden.' }] };
@@ -720,6 +865,43 @@ describe('Cloud – the workspace’s files', () => {
     expect(seen[1]).toBe('The list shows what matches „Pitch“.');
     expect(seen[2]).toBe('ERROR No tool "list_folder".');
     expect(seen[3]).toContain('Rechnung Müller prüfen');
+    expect(seen[4]).toBe('File created successfully at: /memories/start.md');
+    expect(homeSystem).toContain('<instructions>\\nKurz bitte.\\n</instructions>');
+    const ownNow = (await (
+      await ctx.request(`/api/cloud/agents/${annaOwn.id}`, { cookie: anna.cookie })
+    ).json()) as CloudAgentDetail;
+    expect(ownNow.memories.map((each) => each.path)).toEqual(['/memories/start.md']);
+    // Shared while her chat runs, its memory is no longer hers alone: refused from then on.
+    answers = [
+      async () => {
+        await ctx.request(`/api/cloud/agents/${annaOwn.id}`, {
+          method: 'PATCH',
+          json: { shared: true },
+          cookie: anna.cookie,
+        });
+        return {
+          stop_reason: 'tool_use',
+          content: [call('memory', { command: 'create', path: '/memories/x.md', file_text: 'X' })],
+        };
+      },
+      (body) => {
+        seen = results(body);
+        return { stop_reason: 'end_turn', content: [{ type: 'text', text: 'Gut.' }] };
+      },
+    ];
+    await (
+      await ctx.request(`/api/workspaces/${ctx.workspaceId}/chat`, {
+        method: 'POST',
+        json: { text: 'Merk dir X' },
+        cookie: anna.cookie,
+      })
+    ).text();
+    expect(seen).toEqual([
+      expect.stringMatching(/^ERROR Not now: the person’s own agent was shared/),
+    ]);
+    // (A new minute for the orders that follow: the AI's limit per minute.)
+    ctx.clock.advance(60_000);
+    await ctx.request(`/api/cloud/agents/${annaOwn.id}`, { method: 'DELETE', cookie: anna.cookie });
     expect(
       (
         await ctx.request(`/api/workspaces/${crypto.randomUUID()}/chat`, {
@@ -1316,7 +1498,13 @@ describe('Cloud – the workspace’s files', () => {
       200,
       [{ type: 'text', text: 'Danke' }],
       [{ type: 'text', text: 'Auch für mich' }],
-      [{ type: 'text', text: 'Kurz.\n\nGern.' }],
+      // What it did with its tools beside its answer: it goes on from there.
+      [
+        {
+          type: 'text',
+          text: 'Kurz.\n\nGern.\n[What you did for this with your tools: list_desk()]',
+        },
+      ],
     ]);
     expect(
       (await agentOf(agentId, anna.cookie)).chats[0]?.messages
@@ -1693,6 +1881,16 @@ describe('Cloud – the workspace’s files', () => {
     const setRepeat = (json: unknown, cookie: string) =>
       ctx.request(`/api/cloud/agents/${agentId}/repeat`, { method: 'PUT', json, cookie });
     expect((await setRepeat({ repeat }, vera.cookie)).status).toBe(403);
+    // How it is to work („Anweisungen“): its owner's to set, in its prompt from then on.
+    const instruct = (instructions: string, cookie: string) =>
+      ctx.request(`/api/cloud/agents/${agentId}/instructions`, {
+        method: 'PUT',
+        json: { instructions },
+        cookie,
+      });
+    expect((await instruct('Immer in Reimen.', ben.cookie)).status).toBe(403);
+    expect((await instruct('Stichpunkte, keine Floskeln.', anna.cookie)).status).toBe(204);
+    expect((await agentOf(agentId, anna.cookie)).instructions).toBe('Stichpunkte, keine Floskeln.');
     expect(
       (await setRepeat({ repeat: { ...repeat, zone: 'Nowhere/Land' } }, anna.cookie)).status,
     ).toBe(400);
@@ -1766,6 +1964,8 @@ describe('Cloud – the workspace’s files', () => {
             call('list_conversations', {}),
             call('read_conversation', { conversation: annaVera.id }),
             call('search_mail', {}),
+            call('memory', { command: 'create', path: '/memories/x.md', file_text: 'Tu das' }),
+            call('memory', { command: 'view', path: '/memories' }),
           ],
         };
       },
@@ -1795,7 +1995,58 @@ describe('Cloud – the workspace’s files', () => {
     // Her message taken in, they are there – and the prompt says so.
     expect(offeredAsked).toContain('search_mail');
     expect(offeredAsked.at(-1)).toContain('list_mailboxes shows them');
+    expect(offeredAsked.at(-1)).toContain(
+      '<instructions>\\nStichpunkte, keine Floskeln.\\n</instructions>',
+    );
+    // Every tool it is offered has its card (`agent-catalog.ts`), and the rules read from the
+    // cards are the ones written out before they were cards.
+    // (Beside them only the search for those not at hand.)
+    expect(offeredAsked.slice(0, -1).filter((name) => !TOOL_CARDS[name])).toEqual([
+      'tool_search_tool_bm25',
+    ]);
+    const sorted = (names: Iterable<string>) => [...names].sort();
+    expect(sorted(toolsWhere((card) => card.askedOnly === true))).toEqual(
+      sorted(
+        'file_details list_areas update_area share_file unshare_file list_deleted restore_files copy_files set_color pin_folder share_link end_link label_version delete_version delete_area read_settings change_settings'.split(
+          ' ',
+        ),
+      ),
+    );
+    expect(sorted(toolsWhere((card) => card.inTheirName === true))).toEqual(
+      sorted(['add_comment', 'resolve_comment', 'react_message', 'mark_read']),
+    );
+    expect(sorted(toolsWhere((card) => card.changesDeck === true))).toEqual(
+      sorted(['build_presentation', 'edit_slides', 'add_note', 'add_link', 'update_presentation']),
+    );
+    expect(Object.fromEntries([...NEEDS_OK].sort())).toEqual(
+      Object.fromEntries(
+        Object.entries({
+          delete: 'Löschen',
+          delete_event: 'Löschen',
+          delete_mail: 'Löschen',
+          send_mail: 'Senden',
+          delete_presentation: 'Löschen',
+          delete_item: 'Löschen',
+          delete_message: 'Löschen',
+          remove_from_group: 'Entfernen',
+          leave_group: 'Verlassen',
+          unsubscribe_mail: 'Abbestellen',
+          delete_todo: 'Löschen',
+          delete_milestone: 'Löschen',
+          delete_calendar: 'Löschen',
+          share_link: 'Freigeben',
+          delete_version: 'Löschen',
+          delete_area: 'Löschen',
+          add_to_group: 'Hinzufügen',
+          share_file: 'Freigeben',
+          copy_files: 'Kopieren',
+        }).sort(),
+      ),
+    );
     expect(byItself[2]).toMatch(/^ERROR Not here: a person's mailboxes .* not in a run it started/);
+    // Its memory, by itself: looked into, never written.
+    expect(byItself[3]).toMatch(/^ERROR Not now: your memory is written only on a person's own/);
+    expect(byItself[4]).toMatch(/^Here're the files .* in \/memories/);
     expect(askedMeanwhile[0]).not.toMatch(/^ERROR/);
     const ran = await agentOf(agentId, anna.cookie);
     expect(
@@ -1805,45 +2056,415 @@ describe('Cloud – the workspace’s files', () => {
       ['user', 'Was schrieb Vera?', 'Anna'],
       ['assistant', 'Bericht steht.', undefined],
     ]);
+    // How full its context was at its last turn, of the model's window: the meter on its page.
+    expect(ran.chats[0]?.context).toMatchObject({
+      tokens: 10,
+      window: 1_000_000,
+      model: 'claude-sonnet-5-5',
+    });
     expect(new Date(ran.repeat?.nextRunAt ?? 0).getTime() - firstRun).toBe(DAY_MS);
+    // What it did with its tools: under its answer, as its activity named it.
+    expect(ran.chats[0]?.messages.at(-1)?.steps).toEqual([
+      { label: 'Liest die Nachrichten', app: 'sender', failed: false },
+      { label: 'Liest die Nachrichten', app: 'sender', failed: true },
+      { label: 'Sucht in den Mails', app: 'mail', failed: true },
+      { label: 'Merkt sich etwas', app: 'agent', failed: true },
+      { label: 'Sieht in sein Gedächtnis', app: 'agent', failed: false },
+      { label: 'Liest die Nachrichten', app: 'sender', failed: false },
+    ]);
+    let toldBefore = '';
+    // Writer: a document of Anna's it changes, one it writes itself.
+    const protocol = writerDocumentSchema.parse(
+      await (
+        await ctx.request('/api/documents', {
+          method: 'POST',
+          json: { workspaceId: ctx.workspaceId, title: 'Protokoll' },
+          cookie: anna.cookie,
+        })
+      ).json(),
+    );
+    let notiz = '';
+    let wrote: string[] = [];
+    let drew: string[] = [];
+    const paragraph = (read = '') => /<p id="([^"]+)"/.exec(read)?.[1] ?? '';
+    let toolsSent: { name: string; type?: string; defer_loading?: boolean }[] = [];
     answers = [
-      () => ({
-        stop_reason: 'tool_use',
-        content: [call('read_conversation', { conversation: annaVera.id })],
-      }),
+      (body) => {
+        toldBefore = JSON.stringify(body.messages);
+        toolsSent = body.tools ?? [];
+        return {
+          stop_reason: 'tool_use',
+          content: [
+            call('read_conversation', { conversation: annaVera.id }),
+            call('memory', {
+              command: 'create',
+              path: '/memories/team.md',
+              file_text: 'Anna mag Stichpunkte.',
+            }),
+            call('memory', { command: 'view', path: '/memories/../etc' }),
+            call('memory', { command: 'view', path: '/memories/team.md' }),
+          ],
+        };
+      },
       (body) => {
         byItself = results(body);
+        return {
+          stop_reason: 'tool_use',
+          content: [
+            call('create_document', { title: 'Notiz', text: 'Erste Zeile' }),
+            call('read_document', { document: protocol.id }),
+            call('create_diagram', {
+              title: 'Ablauf',
+              changes: [
+                { type: 'add_box', id: 'ask', text: 'Anfrage' },
+                { type: 'add_box', id: 'offer', text: 'Angebot', shape: 'pill' },
+                { type: 'connect', from: 'ask', to: 'offer', label: 'passt' },
+                { type: 'connect', from: 'ask', to: 'ghost' },
+              ],
+            }),
+          ],
+        };
+      },
+      (body) => {
+        const [made, read, drawn] = results(body);
+        notiz = /\(document id ([^)\s]+)\)/.exec(made ?? '')?.[1] ?? '';
+        const diagram = /\(diagram id ([^)\s]+)\)/.exec(drawn ?? '')?.[1] ?? '';
+        drew = [drawn ?? ''];
+        return {
+          stop_reason: 'tool_use',
+          content: [
+            call('read_document', { document: notiz }),
+            call('edit_document', {
+              document: protocol.id,
+              changes: [{ action: 'replace', id: paragraph(read), text: 'Vom Agenten' }],
+            }),
+            call('edit_diagram', {
+              diagram,
+              changes: [{ type: 'change_box', id: 'ask', text: 'Kundenanfrage' }],
+            }),
+            call('edit_diagram', {
+              diagram,
+              changes: [{ type: 'delete_box', id: 'nobody' }],
+            }),
+            call('read_diagram', { diagram }),
+          ],
+        };
+      },
+      (body) => {
+        const [read, , ...diagramSaid] = results(body);
+        drew = [...drew, ...diagramSaid];
+        return {
+          stop_reason: 'tool_use',
+          content: [
+            call('edit_document', {
+              document: notiz,
+              changes: [{ action: 'replace', id: paragraph(read), text: 'Zweite Zeile' }],
+            }),
+          ],
+        };
+      },
+      (body) => {
+        wrote = results(body);
         return { stop_reason: 'end_turn', content: [{ type: 'text', text: 'Gelesen.' }] };
       },
     ];
     await post(messagesUrl, { text: 'Was schrieb Vera?' }, anna.cookie);
     await ctx.deps.background?.idle();
+    // … and told beside it the next time: ids and refusals, nothing of what it read, nor what it
+    // looked for in her mail.
+    expect(toldBefore).toContain(
+      `[What you did for this with your tools: list_conversations(); read_conversation(conversation: \\"${annaVera.id}\\") → refused: Not here`,
+    );
+    expect(toldBefore).toContain('; search_mail(); memory(command: \\"create\\"');
+    expect(toldBefore).toContain(
+      `→ refused: Not now: your memory is written only on a person's own message`,
+    );
+    expect(toldBefore).toContain(
+      `memory(command: \\"view\\", path: \\"/memories\\"); read_conversation(conversation: \\"${annaVera.id}\\")]`,
+    );
+    await ctx.deps.background?.idle();
     expect(byItself[0]).not.toMatch(/^ERROR/);
-    // Others' words to post (a call's notes, `confined`): nothing but posting where they belong.
+    // Its own and the files' tools at hand; the other apps' found by tool search when needed.
+    const toolNamed = (name: string) => toolsSent.find((tool) => tool.name === name);
+    expect(toolNamed('tool_search_tool_bm25')?.type).toBe('tool_search_tool_bm25_20251119');
+    expect([toolNamed('list_folder')?.defer_loading, toolNamed('memory')?.defer_loading]).toEqual([
+      undefined,
+      undefined,
+    ]);
+    expect([
+      toolNamed('create_todo')?.defer_loading,
+      toolNamed('read_conversation')?.defer_loading,
+      toolNamed('create_diagram')?.defer_loading,
+    ]).toEqual([true, true, true]);
+    // Writer documents like files: what it wrote or changed is on its desk, taken back from there –
+    // a new one into the trash, a changed one to its version from before.
+    expect(wrote).toEqual([expect.stringMatching(/^Written into „Notiz“/)]);
+    // Diagrams the same: drawn at once with what could be drawn (what could not is said), the
+    // line that shows it on a page given; a change that changes nothing makes no version.
+    const drawnId = /\(diagram id ([^)\s]+)\)/.exec(drew[0] ?? '')?.[1];
+    expect(drew).toEqual([
+      expect.stringMatching(/^Created „Ablauf“ .* with 2 boxes and 1 arrows/),
+      expect.stringMatching(/^Changed „Ablauf“ – 2 boxes and 1 arrows now/),
+      expect.stringMatching(/^Nothing changed in „Ablauf“\.\nNot done: /),
+      expect.stringContaining('Kundenanfrage'),
+    ]);
+    expect(drew[0]).toContain(`[[file:${drawnId}|Ablauf.diagram]]`);
+    expect(drew[0]).toMatch(/Not done: .*ghost/);
+    const writerDesk = (await agentOf(agentId, anna.cookie)).files.filter((each) =>
+      /\.(odt|diagram)$/.test(each.name),
+    );
+    expect(writerDesk.map((each) => [each.name, each.kind, each.undoable]).sort()).toEqual([
+      ['Ablauf.diagram', 'new', true],
+      ['Notiz.odt', 'new', true],
+      ['Protokoll.odt', 'change', true],
+    ]);
+    for (const each of writerDesk)
+      expect(
+        (
+          await ctx.request(`/api/cloud/agents/${agentId}/files/${each.id}`, {
+            method: 'PATCH',
+            json: { aside: true },
+            cookie: anna.cookie,
+          })
+        ).status,
+      ).toBe(200);
+    // On her message it keeps what helps next time – everyone who works with it sees and changes
+    // that on its page; outside /memories nothing.
+    expect(byItself.slice(1)).toEqual([
+      'File created successfully at: /memories/team.md',
+      expect.stringMatching(/^ERROR Error: The path \/memories\/\.\.\/etc is not allowed/),
+      "Here's the content of /memories/team.md with line numbers:\n     1\tAnna mag Stichpunkte.",
+    ]);
+    expect((await agentOf(agentId, anna.cookie)).memories).toMatchObject([
+      { path: '/memories/team.md', content: 'Anna mag Stichpunkte.', updatedBy: 'Anna' },
+    ]);
+    const remember = (json: unknown, cookie: string) =>
+      ctx.request(`/api/cloud/agents/${agentId}/memories`, { method: 'PUT', json, cookie });
+    expect(
+      (await remember({ path: '/memories/team.md', content: 'Kurz.' }, vera.cookie)).status,
+    ).toBe(404);
+    // Kept to her while the agent is hers alone; shared, it is everyone's who works with it.
+    expect(
+      (await remember({ path: '/memories/team.md', content: 'Ben war hier.' }, ben.cookie)).status,
+    ).toBe(404);
+    // What was typed wrong is said as such.
+    const wrongPath = await remember({ path: '/etc/x', content: 'x' }, anna.cookie);
+    expect([
+      wrongPath.status,
+      ((await wrongPath.json()) as { error: { message: string } }).error.message,
+    ]).toEqual([
+      400,
+      'Eine Datei des Gedächtnisses liegt unter /memories, etwa /memories/notizen.md.',
+    ]);
+    // Shared, it starts empty – what it kept for her alone does not go to the others; not while it
+    // works for her (that run would go on keeping her things in it).
+    let sharedMidRun = 0;
+    answers = [
+      async () => {
+        sharedMidRun = (await shareAgent(true, anna.cookie)).status;
+        return { stop_reason: 'end_turn', content: [{ type: 'text', text: 'Gleich.' }] };
+      },
+    ];
+    await post(messagesUrl, { text: 'Kurz warten.' }, anna.cookie);
+    await ctx.deps.background?.idle();
+    expect(sharedMidRun).toBe(409);
+    expect((await agentOf(agentId, anna.cookie)).memoryFiles).toBe(1);
+    expect((await shareAgent(true, anna.cookie)).status).toBe(204);
+    expect((await agentOf(agentId, anna.cookie)).memories).toEqual([]);
+    expect(
+      (await remember({ path: '/memories/team.md', content: 'Anna: Stichpunkte.' }, ben.cookie))
+        .status,
+    ).toBe(204);
+    expect((await agentOf(agentId, anna.cookie)).memories).toMatchObject([
+      { content: 'Anna: Stichpunkte.', updatedBy: 'Ben' },
+    ]);
+    expect(
+      (await remember({ path: '/memories/anna.md', content: 'Meins.' }, anna.cookie)).status,
+    ).toBe(204);
+    // Hers alone again: what others kept goes with them, hers stays.
+    expect((await shareAgent(false, anna.cookie)).status).toBe(204);
+    expect((await agentOf(agentId, anna.cookie)).memories.map((each) => each.path)).toEqual([
+      '/memories/anna.md',
+    ]);
+    expect((await remember({ path: '/memories/anna.md', content: '' }, anna.cookie)).status).toBe(
+      204,
+    );
+    // Helpers: a question handed over is looked into with what only reads – a write refused –,
+    // several at once; the agent gets their answers, and no agent of theirs is made.
+    let helperSaw: string[] = [];
     answers = [
       () => ({
         stop_reason: 'tool_use',
+        content: [call('ask_helper', { task: 'Was liegt in meinen Dateien?' })],
+      }),
+      () => ({
+        stop_reason: 'tool_use',
         content: [
-          call('read_conversation', { conversation: annaVera.id }),
-          call('post_message', { conversation: annaVera.id, text: 'Psst' }),
-          call('post_message', { conversation: channelId, text: 'Notizen stehen.' }),
+          call('write_file', { name: 'x.md', content: 'x', own: true }),
+          call('list_folder', {}),
         ],
       }),
+      (body) => {
+        helperSaw = results(body);
+        return { stop_reason: 'end_turn', content: [{ type: 'text', text: 'Eins' }] };
+      },
+      (body) => {
+        byItself = results(body);
+        return {
+          stop_reason: 'tool_use',
+          content: [call('ask_helper', { task: 'A' }), call('ask_helper', { task: 'B' })],
+        };
+      },
+      () => ({ stop_reason: 'end_turn', content: [{ type: 'text', text: 'Zwei' }] }),
+      () => ({ stop_reason: 'end_turn', content: [{ type: 'text', text: 'Drei' }] }),
+      (body) => {
+        byItself = [...byItself, ...results(body)];
+        // More at once than it may: the rest refused, nothing run for them.
+        return {
+          stop_reason: 'tool_use',
+          content: ['C', 'D', 'E', 'F', 'G'].map((task) => call('ask_helper', { task })),
+        };
+      },
+      ...['Vier', 'Fünf', 'Sechs', 'Sieben'].map((text) => () => ({
+        stop_reason: 'end_turn',
+        content: [{ type: 'text', text }],
+      })),
+      (body) => {
+        byItself = [...byItself, ...results(body)];
+        return { stop_reason: 'end_turn', content: [{ type: 'text', text: 'Nachgesehen.' }] };
+      },
+    ];
+    const listAgents = async (cookie: string) =>
+      (await (
+        await ctx.request(`/api/workspaces/${ctx.workspaceId}/cloud/agents`, { cookie })
+      ).json()) as CloudAgentSummary[];
+    const agentsBefore = (await listAgents(anna.cookie)).length;
+    await post(messagesUrl, { text: 'Sieh nach' }, anna.cookie);
+    await ctx.deps.background?.idle();
+    expect(helperSaw[0]).toMatch(/^ERROR No tool "write_file" for you: you only read/);
+    expect(helperSaw[1]).not.toMatch(/^ERROR/);
+    expect([byItself[0], ...byItself.slice(1, 3).sort()]).toEqual(['Eins', 'Drei', 'Zwei']);
+    expect(byItself.slice(3, 7).sort()).toEqual(['Fünf', 'Sechs', 'Sieben', 'Vier']);
+    expect(byItself[7]).toMatch(/^ERROR Not done: at most 4 ask_helper calls in one step/);
+    expect((await listAgents(anna.cookie)).length).toBe(agentsBefore);
+    expect(
+      (await agentOf(agentId, anna.cookie)).chats[0]?.messages
+        .at(-1)
+        ?.steps?.map((each) => each.label),
+    ).toEqual(Array.from({ length: 7 }, () => 'Lässt nachsehen'));
+    // Grown long, its earlier part is summed up instead of cut off – once, kept for the next runs.
+    for (let i = 0; i < 44; i += 1)
+      await keepAgentMessage(ctx.deps.db, { id: agentId, agentId }, ctx.deps.clock.now(), {
+        userId: i % 2 ? null : anna.user.id,
+        byAgent: i % 2 === 1,
+        text: `Runde ${i}`,
+      });
+    const summedUp: string[] = [];
+    let toldLong: string[] = [];
+    answers = [
+      (body) => {
+        summedUp.push(JSON.stringify(body.messages));
+        return { stop_reason: 'end_turn', content: [{ type: 'text', text: 'Bisher: Runden.' }] };
+      },
+      (body) => {
+        toldLong = body.messages.map((each) => JSON.stringify(each));
+        return { stop_reason: 'end_turn', content: [{ type: 'text', text: 'Weiter.' }] };
+      },
+      (body) => {
+        toldLong = body.messages.map((each) => JSON.stringify(each));
+        return { stop_reason: 'end_turn', content: [{ type: 'text', text: 'Noch weiter.' }] };
+      },
+    ];
+    await post(messagesUrl, { text: 'Und jetzt?' }, anna.cookie);
+    await ctx.deps.background?.idle();
+    // Each message with who wrote it, the writer too: the summary is read by whoever writes next.
+    expect(summedUp[0]).toMatch(/USER: \[Anna[^\]]*\] Runde 0/);
+    expect(summedUp[0]).not.toContain('Runde 43');
+    expect(toldLong[0]).toContain('[The earlier part of this chat, summed up:\\nBisher: Runden.]');
+    expect(toldLong[0]).toContain('Runde 24');
+    expect(toldLong.at(-1)).toContain('Und jetzt?');
+    await post(messagesUrl, { text: 'Und dann?' }, anna.cookie);
+    await ctx.deps.background?.idle();
+    expect(summedUp).toHaveLength(1);
+    expect(toldLong[0]).toContain('Bisher: Runden.');
+    expect(toldLong.join()).toContain('Weiter.');
+    // Someone else writing reads the same summary – it is not made anew for each writer.
+    expect((await shareAgent(true, anna.cookie)).status).toBe(204);
+    answers = [() => ({ stop_reason: 'end_turn', content: [{ type: 'text', text: 'Für Ben.' }] })];
+    await post(messagesUrl, { text: 'Und Ben?' }, ben.cookie);
+    await ctx.deps.background?.idle();
+    expect((await agentOf(agentId, anna.cookie)).chats[0]?.messages.at(-1)?.text).toBe('Für Ben.');
+    expect((await shareAgent(false, anna.cookie)).status).toBe(204);
+    // Others' words to post (a call's notes, `confined`): nothing but posting where they belong –
+    // taken in while it works on her message, they take no tool away (the talk has its calls),
+    // they refuse them.
+    // An app's words taken in with them: the prompt says from then on what the run allows.
+    const offeredNow = (body: Sent) => (body.tools ?? []).map((tool) => tool.name);
+    let offeredBefore: string[] = [];
+    let offeredAfter: string[] = [];
+    let promptBefore = '';
+    let promptAfter = '';
+    const asAnnaOwner = {
+      kind: 'owner',
+      author: { type: 'owner', id: anna.user.id, name: 'Anna', color: 'blue' },
+    } as const;
+    answers = [
+      async (body) => {
+        offeredBefore = offeredNow(body);
+        promptBefore = JSON.stringify(body.system);
+        await messageCloudAgent(
+          ctx.deps,
+          asAnnaOwner,
+          agentId,
+          'Vom To-do: Bericht',
+          undefined,
+          undefined,
+          undefined,
+          undefined,
+          undefined,
+          undefined,
+          true,
+        );
+        await messageCloudAgent(
+          ctx.deps,
+          {
+            kind: 'owner',
+            author: { type: 'owner', id: anna.user.id, name: 'Anna', color: 'blue' },
+          },
+          agentId,
+          'Notizen: Anruf',
+          undefined,
+          undefined,
+          channelId,
+        );
+        return { stop_reason: 'tool_use', content: [call('list_conversations', {})] };
+      },
+      (body) => {
+        offeredAfter = offeredNow(body);
+        promptAfter = JSON.stringify(body.system);
+        return {
+          stop_reason: 'tool_use',
+          content: [
+            call('read_conversation', { conversation: annaVera.id }),
+            call('post_message', { conversation: annaVera.id, text: 'Psst' }),
+            call('post_message', { conversation: channelId, text: 'Notizen stehen.' }),
+            call('ask_helper', { task: 'Lies alles.' }),
+          ],
+        };
+      },
       (body) => {
         byItself = results(body);
         return { stop_reason: 'end_turn', content: [{ type: 'text', text: 'Gepostet.' }] };
       },
     ];
-    await messageCloudAgent(
-      ctx.deps,
-      { kind: 'owner', author: { type: 'owner', id: anna.user.id, name: 'Anna', color: 'blue' } },
-      agentId,
-      'Notizen: Anruf',
-      undefined,
-      undefined,
-      channelId,
-    );
+    await post(messagesUrl, { text: 'Schau in die Gespräche.' }, anna.cookie);
     await ctx.deps.background?.idle();
+    expect(offeredBefore).toContain('list_conversations');
+    expect(offeredAfter).toEqual(offeredBefore);
+    expect(promptBefore).toContain('list_mailboxes shows them');
+    expect(promptAfter).not.toContain('list_mailboxes shows them');
+    // A helper is held to it as well – refused before it starts.
+    expect(byItself[3]).toMatch(/^ERROR Not now: this message only asks you to post/);
     expect(byItself.slice(0, 2)).toEqual([
       expect.stringMatching(/^ERROR Not now: this message only asks you to post/),
       expect.stringMatching(/^ERROR Not now: this message only asks you to post/),

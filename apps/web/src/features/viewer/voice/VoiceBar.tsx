@@ -103,6 +103,8 @@ export interface VoiceBarHost {
   boxOpen?: boolean;
   /** Where the bar sits without a slot, instead of floating at the top. */
   className?: string;
+  /** The list of what was said opens above the bar (it stands at the bottom, a page's agent bar). */
+  listAbove?: boolean;
 }
 
 /**
@@ -288,7 +290,7 @@ export function VoiceBarView({
           tone="elevated"
           className={cn(
             'absolute inset-x-0 flex animate-fade-in flex-col p-1.5',
-            slot ? 'bottom-full mb-2' : 'top-full mt-2',
+            slot || host.listAbove ? 'bottom-full mb-2' : 'top-full mt-2',
           )}
         >
           <ul

@@ -1,7 +1,7 @@
 import { useNavigate } from 'react-router';
 import { NEW_MAIL, useSenderOrNull } from '@/features/sender';
 import { canCreateDecks } from '@/features/workspaces';
-import { useCreateDocument } from '@/lib/api';
+import { useCreateDiagram, useCreateDocument } from '@/lib/api';
 import { routes } from '@/lib/routes';
 import type { MenuAction } from '@/ui';
 import { useShownEvent } from '../components/calendar/EventPanel';
@@ -18,6 +18,7 @@ export function useCloudNewActions(): MenuAction[] {
   const sender = useSenderOrNull();
   const navigate = useNavigate();
   const createDocument = useCreateDocument(ui.workspace.id);
+  const createDiagram = useCreateDiagram(ui.workspace.id);
   const event = useShownEvent();
   const { workspace, place } = ui;
   const makes = canCreateDecks(workspace.role);
@@ -31,6 +32,14 @@ export function useCloudNewActions(): MenuAction[] {
         onError: (error) => ui.notify(error.message, 'danger'),
       },
     );
+  const newDiagram = () =>
+    createDiagram.mutate(
+      { parentId: place.parentId, areaId: place.areaId },
+      {
+        onSuccess: (diagram) => void navigate(routes.diagram(diagram.id)),
+        onError: (error) => ui.notify(error.message, 'danger'),
+      },
+    );
   const made: MenuAction[] = [
     ...(makes
       ? [
@@ -40,6 +49,7 @@ export function useCloudNewActions(): MenuAction[] {
             onSelect: () => void navigate(routes.newReview(workspace.id, place)),
           },
           { label: 'Neues Dokument', icon: 'article', onSelect: newDocument },
+          { label: 'Neues Diagramm', icon: 'accountTree', onSelect: newDiagram },
         ]
       : []),
     ...(ui.home?.canCreateAreas

@@ -6,7 +6,6 @@ import {
   type KeyboardEvent,
   type RefObject,
 } from 'react';
-import { MaterialTile } from '@/features/viewer';
 import { Icon } from '@/ui';
 import { rafThrottle } from '@/lib/dom';
 import { pluralize } from '@/lib/format';
@@ -24,8 +23,6 @@ export const STRIP_INSET = 16;
 export const STRIP_COLUMN = THUMB_WIDTH + 2 * STRIP_INSET;
 /** Bracket edges far enough out that no sheet lies outside the window. */
 const DIM_ALL = 1e6;
-/** The „Material“ tile above the pages, as high as a presentation's small slides. */
-const MATERIAL_TILE_H = 48;
 /** The bracket stands this far out around the sheets it frames. */
 const BRACKET_OUTSET = 3;
 /** A pointer that moves this far after pressing drags the bracket instead of clicking. */
@@ -36,18 +33,9 @@ const REDRAW_AFTER_MS = 350;
 /**
  * The pages one under the other, small, as a presentation's minimap: each a copy of what stands
  * on it, and a bracket marks the part of the document in the window – clear inside, the sheets
- * outside dimmed (only they: the gaps stay clear); the whole document in the window shows none. Dragging the bracket scrolls the document, a click leads to the page. Before
- * the pages, as before a presentation's slides, the „Material“ tile – not a page: it stands above
- * the strip and stays while that scrolls.
+ * outside dimmed (only they: the gaps stay clear); the whole document in the window shows none. Dragging the bracket scrolls the document, a click leads to the page.
  */
-export function PageStrip({
-  stage,
-  onMaterial,
-}: {
-  stage: RefObject<HTMLElement | null>;
-  /** „Material (M)“: the document's material page opens. */
-  onMaterial: () => void;
-}) {
+export function PageStrip({ stage }: { stage: RefObject<HTMLElement | null> }) {
   const { engine } = useWriter();
   const state = useWriterState();
   const { metrics, pages, layout } = state;
@@ -184,19 +172,10 @@ export function PageStrip({
   return (
     <>
       <div
-        className="shrink-0"
-        style={{
-          width: THUMB_WIDTH,
-          height: MATERIAL_TILE_H,
-          marginTop: STRIP_INSET,
-          marginLeft: STRIP_INSET,
-        }}
-      >
-        <MaterialTile onOpen={onMaterial} />
-      </div>
-      <div
         ref={scroller}
         className="min-h-0 flex-1 overflow-y-auto [scrollbar-width:none]"
+        // The first sheet as far from the top as the column's inset at its side.
+        style={{ marginTop: STRIP_INSET - STRIP_PAD }}
         onPointerDown={(event) => {
           const mark = bracket.current;
           if (event.pointerType === 'touch' || event.button !== 0 || !mark || mark.hidden) return;

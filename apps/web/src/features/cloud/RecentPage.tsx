@@ -4,7 +4,7 @@ import { useCloudList } from '@/lib/api';
 import { Button } from '@/ui';
 import { CloudPage } from './components/CloudPage';
 import { HomeBoard } from './home/HomeBoard';
-import { RECENT } from './home/widgets';
+import { CLOUD_KIT, RECENT, useAvailable } from './home/widgets';
 import { useCloud } from './hooks/useCloud';
 
 /**
@@ -19,6 +19,7 @@ export function Component() {
   const listing = useCloudList(workspace.id, RECENT);
   const nodes = listing.data?.nodes ?? [];
   const [editing, setEditing] = useState(false);
+  const available = useAvailable();
 
   return (
     <CloudPage
@@ -42,7 +43,16 @@ export function Component() {
           {/* This page has no toolbar: the picked ones' actions stand over the widgets. The
               search is the side bar's. */}
           {selection.bar}
-          <HomeBoard selection={selection} editing={editing} onEdit={setEditing} />
+          <HomeBoard
+            kit={CLOUD_KIT}
+            userId={ui.userId}
+            workspaceId={workspace.id}
+            notify={ui.notify}
+            available={available}
+            selection={selection}
+            editing={editing}
+            onEdit={setEditing}
+          />
         </>
       )}
     </CloudPage>

@@ -53,7 +53,7 @@ export type OutboxStore<E extends QueuedEntry = OutboxEntry> = Store<E>;
 const STORE = 'edits';
 /** Comments made while the server was out of reach (`lib/api/comment-outbox.ts`). */
 export const COMMENT_STORE = 'comments';
-/** Changes to a deck's board (the material page) made while the server was out of reach (`lib/api/board.ts`). */
+/** Was the material page's offline queue; the page is gone, the store stays so old browsers' databases open as before. */
 export const BOARD_STORE = 'board';
 const TAB_LOCK = 'slider-tab:';
 

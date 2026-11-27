@@ -8,6 +8,8 @@ import {
   cloudAgentOrderSchema,
   cloudAgentRepeatInputSchema,
   cloudAgentShareSchema,
+  cloudAgentInstructionsSchema,
+  cloudAgentMemorySchema,
   cloudAgentTitleSchema,
 } from '@slider/shared';
 import { requireOwner } from '../auth/access';
@@ -28,6 +30,8 @@ import {
   readCloudAgentFile,
   repeatCloudAgent,
   setCloudAgentFileAside,
+  instructCloudAgent,
+  rememberCloudAgent,
   renameCloudAgent,
   shareCloudAgent,
   stopCloudAgent,
@@ -144,6 +148,29 @@ export function cloudAgentRoutes(deps: AppDeps) {
         requireOwner(c.var.viewer);
         const { title } = await readJson(c, cloudAgentTitleSchema);
         await renameCloudAgent(deps, c.var.viewer.author.id, c.req.param('agentId'), title);
+        return c.body(null, 204);
+      })
+      .put('/cloud/agents/:agentId/memories', viewer, async (c) => {
+        requireOwner(c.var.viewer);
+        const { path, content } = await readJson(c, cloudAgentMemorySchema);
+        await rememberCloudAgent(
+          deps,
+          c.var.viewer.author.id,
+          c.req.param('agentId'),
+          path,
+          content,
+        );
+        return c.body(null, 204);
+      })
+      .put('/cloud/agents/:agentId/instructions', viewer, async (c) => {
+        requireOwner(c.var.viewer);
+        const { instructions } = await readJson(c, cloudAgentInstructionsSchema);
+        await instructCloudAgent(
+          deps,
+          c.var.viewer.author.id,
+          c.req.param('agentId'),
+          instructions,
+        );
         return c.body(null, 204);
       })
       .put('/cloud/agents/:agentId/repeat', viewer, async (c) => {

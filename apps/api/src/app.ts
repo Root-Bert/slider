@@ -59,6 +59,7 @@ import { integrationsRoutes } from './routes/integrations';
 import { workspacesRoutes } from './routes/workspaces';
 import { foldersRoutes } from './routes/folders';
 import { cloudRoutes } from './routes/cloud';
+import { diagramsRoutes } from './routes/diagrams';
 import { documentsRoutes } from './routes/documents';
 import { pdfsRoutes } from './routes/pdfs';
 import { cloudAgentRoutes } from './routes/cloud-agents';
@@ -188,6 +189,7 @@ export function createApp(appDeps: AppDeps) {
     .route('/', foldersRoutes(deps))
     .route('/', cloudTusRoutes(deps))
     .route('/', documentsRoutes(deps, documentLive))
+    .route('/', diagramsRoutes(deps, documentLive))
     .route('/', pdfsRoutes(deps))
     .route('/', cloudRoutes(deps))
     .route('/', cloudChatRoutes(deps))

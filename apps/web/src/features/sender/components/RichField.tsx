@@ -174,7 +174,7 @@ export function RichField({
     event.target instanceof HTMLElement && event.target.isContentEditable;
   return (
     <LexicalComposer initialConfig={config}>
-      <div className={cn('relative min-w-0', className)}>
+      <div className={cn('touch-field relative min-w-0', className)}>
         {barOpen && (
           <div className="-mx-1.5 mb-1.5 border-b border-hairline pb-1.5">
             <RichFormatToolbar chat bare />

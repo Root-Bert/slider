@@ -169,7 +169,10 @@ export function PaletteDialog({
       onClick={(event) => {
         if (event.target === event.currentTarget) onClose();
       }}
-      className="glass-elevated m-0 mx-auto mt-[min(120px,14vh)] w-[min(660px,calc(100vw-32px))] rounded-panel p-0 text-left text-fg backdrop:bg-scrim backdrop:backdrop-blur-sm open:animate-pop-in"
+      // The side panel's glass (`glass-floating`: tint, blur, hairline, float shadow), its blur on
+      // the dialog itself – on a `::before` the pop-in's opacity would cut it off while it runs.
+      // The page stays visible behind it: a light dim, no blur.
+      className="glass-panel m-0 mx-auto mt-[min(120px,14vh)] w-[min(660px,calc(100vw-32px))] rounded-panel p-0 text-left text-fg shadow-[inset_0_0_0_1px_var(--color-hairline),var(--shadow-float)] backdrop:bg-well-dark open:animate-pop-in"
     >
       {children}
     </dialog>

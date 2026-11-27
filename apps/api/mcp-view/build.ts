@@ -49,6 +49,24 @@ if (!built.success) {
 }
 const js = (await built.outputs[0]!.text()).replace(/<\/script/gi, '<\\/script');
 const css = await Bun.file(join(here, 'view.css')).text();
+// A classic script before the module: it sees errors while the module's imports load (A2UI
+// throwing there would otherwise leave a blank frame) and tells the host the new height. The
+// line it removes first stays where no script runs at all (a host's CSP without inline scripts).
+const ERRORS = `(function () {
+  document.getElementById('silent').remove();
+  function say(text) {
+    var line = document.createElement('p');
+    line.style.cssText = 'margin:0;padding:8px 0;font-size:13px;color:#888';
+    line.textContent = text;
+    document.getElementById('root').append(line);
+    var height = Math.ceil(document.documentElement.getBoundingClientRect().height);
+    parent.postMessage({ jsonrpc: '2.0', method: 'ui/notifications/size-changed', params: { height: height } }, '*');
+  }
+  addEventListener('error', function (e) { say('Fehler: ' + e.message); });
+  addEventListener('unhandledrejection', function (e) {
+    say('Fehler: ' + ((e.reason && e.reason.message) || String(e.reason)));
+  });
+})();`;
 const html = `<!doctype html>
 <html lang="de">
 <head>
@@ -57,7 +75,8 @@ const html = `<!doctype html>
 <style>${css}</style>
 </head>
 <body>
-<div id="root"></div>
+<div id="root"><p id="silent" style="margin:0;padding:8px 0;font-size:13px;color:#888">In diesem Rahmen laufen keine Skripte.</p></div>
+<script>${ERRORS}</script>
 <script type="module">${js}</script>
 </body>
 </html>

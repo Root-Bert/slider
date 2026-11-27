@@ -3,12 +3,9 @@ import { useLivePeople } from './lib/live-people';
 
 /**
  * Who has this slide active right now: small avatars in the slide's top-right corner (BER-104).
- * Someone on the material page shows there, not on their last slide.
  */
 export function LiveSlidePresence({ slideId, small }: { slideId: string; small: boolean }) {
-  const here = useLivePeople().filter(
-    (person) => person.activeSlideId === slideId && !person.onMaterial,
-  );
+  const here = useLivePeople().filter((person) => person.activeSlideId === slideId);
   if (here.length === 0) return null;
   return (
     <div

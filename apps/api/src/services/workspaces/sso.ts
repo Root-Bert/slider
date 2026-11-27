@@ -1,5 +1,5 @@
 import { randomBytes } from 'node:crypto';
-import { and, eq, isNotNull, isNull, like } from 'drizzle-orm';
+import { and, eq, gt, isNotNull, isNull, like } from 'drizzle-orm';
 import {
   domainJoinAllowed,
   emailDomain,
@@ -209,8 +209,10 @@ export async function verifyWorkspaceSso(
 
 /**
  * `PUT /workspaces/:id/sso/required` (admins): „Nur Firmen-Login“. On only while the login is
- * active, and an admin at the domain must have signed in through it once – else they would shut
- * themselves out with a provider that never worked.
+ * active, and an admin at the domain must have signed in through it since it was last set up or
+ * proven (`updatedAt`; a company login's identity `createdAt` is its last use, `signInWithIdentity`)
+ * – else they would shut themselves out with a provider that never worked. Off always: an admin
+ * with an open session is the way out when the provider breaks at its end.
  */
 export async function setWorkspaceSsoRequired(
   deps: SsoDeps,
@@ -238,6 +240,8 @@ export async function setWorkspaceSsoRequired(
             eq(userIdentities.userId, userId),
             eq(userIdentities.provider, 'sso'),
             like(userIdentities.subject, `${workspaceId}:%`),
+            // Not one from an earlier provider (the subject names no issuer) or secret.
+            gt(userIdentities.createdAt, sso.updatedAt),
           ),
         )
         .limit(1);
@@ -250,7 +254,8 @@ export async function setWorkspaceSsoRequired(
   }
   await deps.db
     .update(workspaceSso)
-    .set({ required, updatedAt: deps.clock.now() })
+    // Not `updatedAt`: it marks the provider's last change, which a sign-in must come after.
+    .set({ required })
     .where(eq(workspaceSso.workspaceId, workspaceId));
   return getWorkspaceSso(deps, userId, workspaceId);
 }

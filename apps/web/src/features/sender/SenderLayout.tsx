@@ -82,7 +82,8 @@ function Layout() {
     return () => window.removeEventListener('keydown', leave);
   }, [open]);
   return (
-    <div className="relative flex min-h-0 flex-1 items-start">
+    // The side bar stands on the plain canvas, the dots behind the conversation only.
+    <div className="relative flex min-h-0 flex-1 items-start bg-canvas">
       {ui && <Unread workspaceId={ui.workspace.id} count={unreadOf(ui.home)} />}
       {ui &&
         (narrow ? (
@@ -116,7 +117,7 @@ function Layout() {
         ))}
       {/* The AI's panel stands beside the page, not over it – as in Cloud (`CloudLayout`); a page's
           own column (`data-page-aside`, the mail's) is lain over instead. */}
-      <div className="flex h-[calc(100dvh-88px)] min-w-0 flex-1 flex-col px-4 pt-4 pb-4 md:[body:has([data-cloud-panel]):not(:has([data-page-aside]))_&]:mr-[400px] lg:pr-6 lg:pl-9">
+      <div className="dot-grid flex h-[calc(100dvh-88px)] min-w-0 flex-1 flex-col px-4 [--dot-fade-l:120px] pt-4 pb-4 md:[body:has([data-cloud-panel]):not(:has([data-page-aside]))_&]:mr-[400px] lg:pr-6 lg:pl-9">
         <SenderMenuContext.Provider
           value={
             narrow

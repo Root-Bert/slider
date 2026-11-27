@@ -91,7 +91,7 @@
     "publish": {
       "provider": "github",
       "owner": "Root-Bert",
-      "repo": "slider"
+      "repo": "office"
     },
     "electronFuses": {
       "runAsNode": false,

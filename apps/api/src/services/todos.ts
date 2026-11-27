@@ -702,12 +702,40 @@ export async function positionBefore(
   return prev ? (prev.position + next.position) / 2 : next.position - 1;
 }
 
-/** A to-do in one line, for an agent or an app to read. */
-export function todoLine(todo: Todo, areaName: (areaId: string) => string | undefined) {
+/** A to-do as named in another's line: its number where it is among `around`, else its id. */
+const numberIn = (id: string, around: readonly Todo[]) => {
+  const one = around.find((each) => each.id === id);
+  return one ? `#${one.number}` : id;
+};
+
+/** Who waits on a to-do („Wartet auf“ the other way round), for `read_todo`: „#7, #9“ or ''. */
+export const waitingOn = (todo: Todo, around: readonly Todo[]) =>
+  around
+    .filter((each) => each.blockedBy.includes(todo.id))
+    .map((each) => `#${each.number}`)
+    .join(', ');
+
+/** The to-dos named (ids or numbers) as what one waits on – each found as `todoByRef` finds it. */
+export const blockersByRef = (
+  deps: AppDeps,
+  userId: string,
+  workspaceId: string,
+  refs: readonly string[],
+) => Promise.all(refs.map(async (ref) => (await todoByRef(deps, userId, workspaceId, ref)).id));
+
+/**
+ * A to-do in one line, for an agent or an app to read – what it waits on by number where it is
+ * among `around` (the list read), else by id.
+ */
+export function todoLine(
+  todo: Todo,
+  areaName: (areaId: string) => string | undefined,
+  around: readonly Todo[] = [],
+) {
   const place = todo.areaId
     ? `area „${areaName(todo.areaId) ?? 'Bereich'}“ (${todo.areaId}), project „${todo.project?.name ?? DEFAULT_PROJECT_NAME}“`
     : `own${todo.project ? `, project „${todo.project.name}“` : ''}`;
-  return `${todo.id} #${todo.number} [${todo.status}${todo.priority ? `, priority ${todo.priority}` : ''}] ${todo.title} – ${place}${todo.assignee ? `, ${todo.assignee.name} (${todo.assignee.id})` : ''}${todo.assigneeAgent ? `, agent ${todo.assigneeAgent.title}` : ''}${todo.startOn ? `, starts ${todo.startOn}` : ''}${todo.dueOn ? `, due ${todo.dueOn}` : ''}${todo.milestone ? `, milestone „${todo.milestone.name}“${todo.milestone.dueOn ? ` (${todo.milestone.dueOn})` : ''}` : ''}`;
+  return `${todo.id} #${todo.number} [${todo.status}${todo.priority ? `, priority ${todo.priority}` : ''}] ${todo.title} – ${place}${todo.assignee ? `, ${todo.assignee.name} (${todo.assignee.id})` : ''}${todo.assigneeAgent ? `, agent ${todo.assigneeAgent.title}` : ''}${todo.startOn ? `, starts ${todo.startOn}` : ''}${todo.dueOn ? `, due ${todo.dueOn}` : ''}${todo.milestone ? `, milestone „${todo.milestone.name}“${todo.milestone.dueOn ? ` (${todo.milestone.dueOn})` : ''}` : ''}${todo.blockedBy.length ? `, waits on ${todo.blockedBy.map((id) => numberIn(id, around)).join(', ')}` : ''}`;
 }
 
 /*

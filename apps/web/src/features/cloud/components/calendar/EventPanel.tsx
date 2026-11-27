@@ -4,6 +4,8 @@ import type {
   CalendarEvent,
   CalendarEventChange,
   EventMeeting,
+  EventRepeat,
+  EventScope,
 } from '@slider/shared';
 import {
   useEffect,
@@ -16,9 +18,11 @@ import {
 import { useSearchParams } from 'react-router';
 import {
   useCalendarEvents,
+  useCalendarPage,
   useCalendars,
   useCreateEvent,
   useDeleteEvent,
+  useTodos,
   useUpdateEvent,
 } from '@/lib/api';
 import { isTextTarget } from '@/lib/dom';
@@ -47,14 +51,18 @@ import {
   useAttachments,
 } from '@/features/attachments';
 import { useCloud } from '../../hooks/useCloud';
-import { Picker } from '../todos/TodoList';
+import { Picker, useShownTodo } from '../todos/TodoList';
+import { AgendaRow } from './AgendaRow';
+import { useHiddenCalendars } from './CalendarList';
 import { CalendarPicker } from './CalendarPicker';
 import { at, clock, iso, midnight, plus } from './days';
-import { colorOf } from './entries';
+import { byDay, colorOf, toEntries, viewRange } from './entries';
 import { isWorkspaceOwn } from '../../lib/areas';
 import { lastCalendarKey, plainEventCalendar } from '../../lib/event-calendar';
-import { MeetingField, useCallPlaces } from './MeetingField';
+import { hiddenIn, sourceOf, useCalendarSource } from './sources';
+import { MeetingField, meetingLinkIn, useCallPlaces } from './MeetingField';
 import { MonthGrid } from './MonthGrid';
+import { RepeatField, ScopeDialog } from './RepeatField';
 
 /** A new event's start, from where it was asked for: a day, and on a time grid its minute. */
 export interface NewEvent {
@@ -67,13 +75,16 @@ export interface NewEvent {
 const NEW = 'neu';
 const NEW_DAY = 'neu-tag';
 const NEW_AT = 'neu-um';
+/** A day clicked in the calendar: `?termin=tag&am=2026-11-27` – what is in it. */
+const DAY = 'tag';
+const DAY_AT = 'am';
 const NEW_MEETING = 'neu-meeting';
 
 /** The event beside the page (`?termin=`): one panel at a time – a to-do's or file's makes way. */
 export function useShownEvent() {
   const [params, setParams] = useSearchParams();
   const id = params.get(CLOUD_EVENT_PARAM);
-  const set = (next: string | null, draft?: NewEvent) =>
+  const set = (next: string | null, draft?: NewEvent, day?: string) =>
     setParams(
       (current) => {
         const after = new URLSearchParams(current);
@@ -82,6 +93,8 @@ export function useShownEvent() {
         after.delete(NEW_DAY);
         after.delete(NEW_AT);
         after.delete(NEW_MEETING);
+        after.delete(DAY_AT);
+        if (day) after.set(DAY_AT, day);
         if (draft) {
           after.set(NEW_DAY, draft.day);
           if (draft.minutes !== undefined) after.set(NEW_AT, String(draft.minutes));
@@ -94,8 +107,11 @@ export function useShownEvent() {
       },
       { replace: true },
     );
+  const day = params.get(DAY_AT);
   return {
     id,
+    /** The day shown beside, its entries listed. */
+    day: id === DAY && day && /^\d{4}-\d{2}-\d{2}$/.test(day) ? day : null,
     draft:
       id === NEW
         ? {
@@ -106,6 +122,7 @@ export function useShownEvent() {
         : null,
     toggle: (eventId: string) => set(id === eventId ? null : eventId),
     create: (draft: NewEvent) => set(NEW, draft),
+    showDay: (next: string) => set(DAY, undefined, next),
     close: () => set(null),
   };
 }
@@ -123,7 +140,11 @@ interface Fields {
   endDay: string;
   endTime: string;
   meeting: EventMeeting | null;
+  repeat: EventRepeat | null;
 }
+
+/** The zone a series is walked in: the person's (its 9:00 stays 9:00 across DST). */
+const ownZone = () => Intl.DateTimeFormat().resolvedOptions().timeZone;
 
 function fieldsOf(event: CalendarEvent): Fields {
   const start = event.allDay ? at(event.start) : new Date(event.start);
@@ -139,6 +160,7 @@ function fieldsOf(event: CalendarEvent): Fields {
     endDay: iso(end),
     endTime: event.allDay ? '10:00' : clock(end),
     meeting: event.meeting ?? null,
+    repeat: event.repeat ?? null,
   };
 }
 
@@ -194,9 +216,15 @@ export function EventPanel() {
     return () => window.removeEventListener('keydown', onKeyDown);
   }, []);
   if (!shown.id || !calendars.data) return null;
+  if (shown.id === DAY && !shown.day) return null;
   return (
-    <SidePanel aria-label={shown.draft ? 'Neuer Termin' : 'Termin'} data-cloud-panel>
-      {shown.draft ? (
+    <SidePanel
+      aria-label={shown.day ? 'Tag' : shown.draft ? 'Neuer Termin' : 'Termin'}
+      data-cloud-panel
+    >
+      {shown.day ? (
+        <DayAgenda day={shown.day} calendars={calendars.data} onClose={shown.close} />
+      ) : shown.draft ? (
         <NewEventForm
           key={`${shown.draft.day}:${shown.draft.minutes ?? ''}:${shown.draft.meeting ? 'm' : ''}`}
           draft={shown.draft}
@@ -216,6 +244,80 @@ export function EventPanel() {
   );
 }
 
+const fullDay = new Intl.DateTimeFormat('de-DE', {
+  weekday: 'long',
+  day: 'numeric',
+  month: 'long',
+  year: 'numeric',
+});
+
+/**
+ * A day clicked in the calendar, as Apple's: what is in it, each a click away; „Neuer Termin“ on
+ * it (a double click on the day makes one at once).
+ */
+function DayAgenda({
+  day,
+  calendars,
+  onClose,
+}: {
+  day: string;
+  calendars: Calendar[];
+  onClose: () => void;
+}) {
+  const ui = useCloud();
+  const workspaceId = ui.workspace.id;
+  const shown = useShownEvent();
+  const shownTodo = useShownTodo();
+  const todos = useTodos(workspaceId);
+  const { hidden } = useHiddenCalendars(workspaceId);
+  const source = useCalendarSource(calendars);
+  const range = viewRange('tag', at(day));
+  const events = useCalendarPage(workspaceId, range.from, range.to);
+  const entries =
+    byDay(
+      toEntries(
+        events.data ?? [],
+        calendars,
+        todos.data ?? [],
+        hiddenIn(hidden, calendars, source),
+      ),
+    ).get(day) ?? [];
+  return (
+    <Shell title={fullDay.format(at(day))} closeLabel="Tag schließen (Esc)" onClose={onClose}>
+      {calendars.some((each) => each.canEdit) && (
+        <Button
+          variant="secondary"
+          size="sm"
+          icon="add"
+          className="self-start"
+          onClick={() => shown.create({ day })}
+        >
+          Neuer Termin
+        </Button>
+      )}
+      {entries.length > 0 ? (
+        <ul className="-mx-3 flex flex-col">
+          {entries.map((entry) => (
+            <li key={entry.key}>
+              <AgendaRow
+                entry={entry}
+                day={day}
+                pressed={false}
+                compact
+                onClick={() =>
+                  entry.event ? shown.toggle(entry.event.id) : shownTodo.toggle(entry.todo!.id)
+                }
+              />
+            </li>
+          ))}
+        </ul>
+      ) : (
+        events.data && <p className="text-sm text-fg-muted">An diesem Tag steht nichts an.</p>
+      )}
+    </Shell>
+  );
+}
+
 /** The event from whichever range holds it – the page's – or, opened by link, asked for alone. */
 function ShownEvent({
   id,
@@ -232,6 +334,9 @@ function ShownEvent({
   const ui = useCloud();
   const found = useEventById(ui.workspace.id, id);
   const update = useUpdateEvent(ui.workspace.id);
+  // Which of a series it changes, asked once while the panel stays open (a new series split
+  // off from it – „following“ – is changed as a whole after).
+  const [remembered, setRemembered] = useState<{ series: string; scope: EventScope } | null>(null);
   useEffect(() => {
     if (found === null) onClose();
     // eslint-disable-next-line react-hooks/exhaustive-deps -- once it is gone
@@ -243,11 +348,18 @@ function ShownEvent({
       event={found}
       calendars={calendars}
       onClose={onClose}
+      scope={remembered && remembered.series === found.seriesId ? remembered.scope : null}
       onChange={(change, files) =>
         update.mutate(
           { id: found.id, change, ...(files && { files }) },
           {
             onSuccess: (event) => {
+              if (change.scope && change.scope !== 'one' && event.seriesId) {
+                setRemembered({
+                  series: event.seriesId,
+                  scope: change.scope === 'following' ? 'all' : change.scope,
+                });
+              }
               if (event.id !== found.id) onMoved(event.id);
             },
             onError: (error) => ui.notify(error.message, 'danger'),
@@ -283,6 +395,7 @@ function NewEventForm({
 }) {
   const ui = useCloud();
   const create = useCreateEvent(ui.workspace.id);
+  const source = useCalendarSource(calendars);
   const editable = calendars.filter((each) => each.canEdit);
   const last = readString(lastCalendarKey(ui.workspace.id));
   // A meeting goes to an area's calendar (its call is the area's): the last one picked if it is
@@ -295,7 +408,13 @@ function NewEventForm({
           areaCalendars.find((each) => each.areaId === ui.home?.areas.find(isWorkspaceOwn)?.id) ??
           areaCalendars[0]
         )?.id
-      : undefined) ?? plainEventCalendar(calendars, ui.workspace.id);
+      : undefined) ??
+    // In one source atop the page (`?quelle=`), one of its calendars: it stays in sight.
+    (plainEventCalendar(
+      source ? calendars.filter((each) => sourceOf(each) === source) : calendars,
+      ui.workspace.id,
+    ) ||
+      plainEventCalendar(calendars, ui.workspace.id));
   const startMinutes =
     draft.minutes ?? (draft.meeting ? Math.min(23, new Date().getHours() + 1) * 60 : 9 * 60);
   const [fields, setFields] = useState<Fields>({
@@ -309,6 +428,7 @@ function NewEventForm({
     endDay: startMinutes + 60 >= 24 * 60 ? iso(plus(at(draft.day), 1)) : draft.day,
     endTime: hhmm(startMinutes + 60),
     meeting: null,
+    repeat: null,
   });
   // „Neues Meeting“: the call in its calendar's area, once Sender's conversations are in – and
   // along with the calendar while it is still the one set by itself.
@@ -360,6 +480,7 @@ function NewEventForm({
         notes: fields.notes,
         ...(fields.meeting && { meeting: fields.meeting }),
         ...(attach.enabled && attach.ids.length > 0 && { attachments: attach.ids }),
+        ...(fields.repeat && !mailCalendar && { repeat: fields.repeat, timeZone: ownZone() }),
         ...when,
       },
       {
@@ -406,17 +527,29 @@ function NewEventForm({
 function EventForm({
   event,
   calendars,
+  scope,
   onClose,
-  onChange,
+  onChange: send,
 }: {
   event: CalendarEvent;
   calendars: Calendar[];
+  /** One of a series: which of it a change means, once asked. */
+  scope: EventScope | null;
   onClose: () => void;
   onChange: (change: CalendarEventChange, files?: Attachment[]) => void;
 }) {
   const ui = useCloud();
   const remove = useDeleteEvent(ui.workspace.id);
   const [deleting, setDeleting] = useState(false);
+  // One of a series changed: which of it, asked before it is sent (files are the series').
+  const [asking, setAsking] = useState<CalendarEventChange | null>(null);
+  const onChange = (change: CalendarEventChange, files?: Attachment[]) => {
+    if (!event.seriesId) return send(change, files);
+    if (scope && !(scope === 'one' && change.repeat !== undefined)) {
+      return send({ ...change, scope });
+    }
+    setAsking(change);
+  };
   const [fields, setFields] = useState(() => fieldsOf(event));
   // Changed elsewhere (live, in another tab): the fields follow.
   const [seen, setSeen] = useState(event);
@@ -433,8 +566,15 @@ function EventForm({
     workspaceId: event.canEdit && !calendar?.mailAccountId ? ui.workspace.id : null,
     onError: (message) => ui.notify(message, 'danger'),
   });
+  // Files are the series' – never asked which of it.
   const setFiles = (files: Attachment[]) =>
-    onChange({ attachments: files.map((one) => one.id) }, files);
+    send(
+      {
+        attachments: files.map((one) => one.id),
+        ...(event.seriesId && { scope: 'all' as const }),
+      },
+      files,
+    );
   const upCount = attach.busy ? 0 : attach.ready.length;
   useEffect(() => {
     if (upCount === 0) return;
@@ -455,6 +595,10 @@ function EventForm({
     if (next.notes !== event.notes) change.notes = next.notes;
     if (JSON.stringify(next.meeting) !== JSON.stringify(before.meeting)) {
       change.meeting = next.meeting;
+    }
+    if (JSON.stringify(next.repeat) !== JSON.stringify(before.repeat)) {
+      change.repeat = next.repeat;
+      if (next.repeat) change.timeZone = ownZone();
     }
     const when = timing(next);
     const was = timing(before);
@@ -530,7 +674,38 @@ function EventForm({
           Angelegt von {event.createdBy.id === ui.userId ? 'dir' : event.createdBy.name}
         </p>
       )}
-      {deleting && (
+      {asking && (
+        <ScopeDialog
+          title={event.title}
+          deleting={false}
+          wholeOnly={asking.repeat !== undefined}
+          onClose={() => {
+            setAsking(null);
+            setFields(fieldsOf(event));
+          }}
+          onPick={(picked) => {
+            setAsking(null);
+            send({ ...asking, scope: picked });
+          }}
+        />
+      )}
+      {deleting && event.seriesId && (
+        <ScopeDialog
+          title={event.title}
+          deleting
+          wholeOnly={false}
+          onClose={() => setDeleting(false)}
+          onPick={(picked) => {
+            setDeleting(false);
+            onClose();
+            remove.mutateAsync({ event, scope: picked }).then(
+              () => ui.notify(`„${event.title}“ gelöscht`),
+              (error: Error) => ui.notify(error.message, 'danger'),
+            );
+          }}
+        />
+      )}
+      {deleting && !event.seriesId && (
         <ConfirmDialog
           onClose={() => setDeleting(false)}
           title={`„${event.title}“ löschen?`}
@@ -540,7 +715,7 @@ function EventForm({
           onConfirm={() => {
             setDeleting(false);
             onClose();
-            remove.mutateAsync(event.id).then(
+            remove.mutateAsync({ event }).then(
               () => ui.notify(`„${event.title}“ gelöscht`),
               (error: Error) => ui.notify(error.message, 'danger'),
             );
@@ -555,12 +730,14 @@ function Shell({
   title,
   color,
   menu,
+  closeLabel = 'Termin schließen (Esc)',
   onClose,
   children,
 }: {
   title: string;
   color?: string;
   menu?: ReactNode;
+  closeLabel?: string;
   onClose: () => void;
   children: ReactNode;
 }) {
@@ -576,7 +753,7 @@ function Shell({
         )}
         <span className="min-w-0 flex-1 truncate text-sm text-fg-muted">{title}</span>
         {menu}
-        <IconButton icon="close" label="Termin schließen (Esc)" size="sm" onClick={onClose} />
+        <IconButton icon="close" label={closeLabel} size="sm" onClick={onClose} />
       </header>
       <div
         className="flex min-h-0 flex-1 flex-col gap-4 overflow-y-auto p-5"
@@ -698,6 +875,16 @@ function Fields({
           onTime={(endTime) => set({ endTime })}
         />
       </div>
+      {/* A mailbox's calendar repeats at its provider: not set here. */}
+      {!calendars.find((each) => each.id === fields.calendarId)?.mailAccountId &&
+        (canEdit || fields.repeat) && (
+          <RepeatField
+            repeat={fields.repeat}
+            firstDay={fields.startDay}
+            disabled={!canEdit}
+            onChange={(repeat) => set({ repeat })}
+          />
+        )}
       <div className="flex min-w-0 items-center gap-2 text-sm">
         <Icon name="calendar" size="sm" className="shrink-0 text-fg-subtle" />
         <CalendarPicker
@@ -721,10 +908,18 @@ function Fields({
           onChange={(event) =>
             onFields({ ...fields, location: event.target.value.replace(/\n/g, ' ') })
           }
-          onBlur={() => onKeep(fields)}
+          onBlur={() => {
+            // A meeting's link typed or pasted as the place becomes the meeting (not over a call).
+            const found = fields.meeting?.kind === 'call' ? null : meetingLinkIn(fields.location);
+            onKeep(
+              found
+                ? { ...fields, location: found.rest, meeting: { kind: 'link', url: found.url } }
+                : fields,
+            );
+          }}
           maxLength={500}
           maxHeight={120}
-          placeholder={canEdit ? 'Ort hinzufügen' : 'Kein Ort'}
+          placeholder={canEdit ? 'Ort oder Link hinzufügen' : 'Kein Ort'}
           aria-label="Ort"
           className="flex-1 resize-none bg-transparent text-sm text-fg outline-none placeholder:text-fg-faint"
         />

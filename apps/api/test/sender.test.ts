@@ -6,11 +6,13 @@ import {
   randomBytes,
 } from 'node:crypto';
 import { createServer, type AddressInfo } from 'node:net';
+import { createCanvas } from '@napi-rs/canvas';
 import { ImapFlow } from 'imapflow';
 import { createTransport } from 'nodemailer';
 import type Anthropic from '@anthropic-ai/sdk';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type {
+  LinkPreview,
   Attachment,
   SenderFile,
   Calendar,
@@ -39,6 +41,7 @@ import type {
   MailThreadSummary,
 } from '@slider/shared';
 import {
+  ALL_MAILBOXES,
   MAX_DRAFT_TEXT,
   agentsTagged,
   callableHere,
@@ -96,6 +99,7 @@ import { besideMail, runMailTool } from '../src/services/mail-agent-run';
 import { triageContext } from '../src/services/sender-triage';
 import { askPin, askText } from '../src/services/cloud-agent-asks';
 import {
+  appendSent,
   foldersToRead,
   MAX_RAW_BYTES,
   MailCheckError,
@@ -147,6 +151,7 @@ import {
   type TestClock,
   type TestContext,
 } from './helpers';
+import { makePdf } from './pdf';
 
 let ctx: TestContext;
 /** The mailboxes' servers: what `inbox` holds comes on the next read, what is sent is kept. */
@@ -868,6 +873,46 @@ describe('Sender – the workspace’s messages', () => {
       served.headers.get('content-type'),
       served.headers.get('content-disposition')?.split(';')[0],
     ]).toEqual(['application/octet-stream', 'attachment']);
+    expect((await send('GET', `/attachments/${html.id}/pages`)).status).toBe(404);
+    // A document shows as its pages (the preview Cloud shows): how many and the first one's
+    // shape, the first one small, each sharp – for whom may load the file; drawn ones go with it.
+    const pdfForm = new FormData();
+    pdfForm.append(
+      'file',
+      new File(
+        [makePdf(3, { width: 595, height: 842 }) as Uint8Array<ArrayBuffer>],
+        'Angebot.pdf',
+        {
+          type: 'application/pdf',
+        },
+      ),
+    );
+    const sentPdf = await ok<Attachment>(
+      ctx.request(`/api/workspaces/${ctx.workspaceId}/attachments`, {
+        method: 'POST',
+        body: pdfForm,
+      }),
+      201,
+    );
+    const pdfPages = await ok<{ pages: number; ratio: number }>(
+      send('GET', `/attachments/${sentPdf.id}/pages`),
+    );
+    expect([pdfPages.pages, Math.round(pdfPages.ratio * 100)]).toEqual([3, 71]);
+    const sharp = await send('GET', `/attachments/${sentPdf.id}/pages/2`);
+    expect([sharp.status, sharp.headers.get('content-type')]).toEqual([200, 'image/jpeg']);
+    expect((await send('GET', `/attachments/${sentPdf.id}/thumbnail`)).status).toBe(200);
+    expect((await send('GET', `/attachments/${sentPdf.id}/pages/4`)).status).toBe(404);
+    // Still waiting, it is its writer's alone.
+    expect(
+      (await send('GET', `/attachments/${sentPdf.id}/pages`, undefined, anna.cookie)).status,
+    ).toBe(404);
+    const [pdfRow] = await ctx.deps.db
+      .select()
+      .from(attachments)
+      .where(eq(attachments.id, sentPdf.id));
+    expect(await ctx.deps.storage.list(`${pdfRow!.key}.pages/`)).toHaveLength(3);
+    await ok(send('DELETE', `/attachments/${sentPdf.id}`), 204);
+    expect(await ctx.deps.storage.list(`${pdfRow!.key}.pages/`)).toEqual([]);
     // A video (a recording) plays in the message: inline, a byte range at a time; past what mail
     // carries it may still go up (up to 200 MB), anything else may not.
     const videoForm = new FormData();
@@ -1831,6 +1876,36 @@ describe('Sender – the workspace’s messages', () => {
     ]);
     await ctx.deps.db.execute(sql`delete from mail_threads where id = ${miaOld?.threadId}`);
     expect((await subjects()).slice(-2)).toEqual(['Rechnung März', 'Lieferschein']);
+    // A hit deleted here stays deleted: the same search on the server again skips its UID.
+    const [foundHit] = await ok<MailThreadSummary[]>(
+      send('GET', `/workspaces/${ctx.workspaceId}/mail/threads?q=rechnung`),
+    );
+    await ok(send('DELETE', `/mail/threads/${foundHit!.id}`), 204);
+    // Kept as gone after the answer (not awaited by it).
+    const goneKept = async () =>
+      (
+        await ctx.deps.db
+          .select({ sync: mailAccounts.sync })
+          .from(mailAccounts)
+          .where(eq(mailAccounts.id, account.id))
+      )[0];
+    await expect.poll(async () => (await goneKept())?.sync.inbox).toHaveProperty('gone', [300]);
+    const afterDelete = await goneKept();
+    await setSync({ ...afterDelete!.sync, inbox: { ...afterDelete!.sync.inbox!, oldest: 500 } });
+    await ok(send('POST', `/workspaces/${ctx.workspaceId}/mail/search?q=RECHNUNG`), 204);
+    expect([olderAsked.splice(0).length, await subjects('?q=rechnung')]).toEqual([1, []]);
+    // Its copy under a UID never seen (another folder, a label): skipped by its Message-ID.
+    Object.assign(
+      olderOnServer.find((one) => one.uid === 300)!,
+      { uid: 299 },
+    );
+    await ok(send('POST', `/workspaces/${ctx.workspaceId}/mail/search?q=RECHNUNG`), 204);
+    expect([olderAsked.splice(0).length, await subjects('?q=rechnung')]).toEqual([1, []]);
+    olderOnServer.splice(
+      olderOnServer.findIndex((one) => one.uid === 299),
+      1,
+    );
+    await setSync(afterDelete!.sync);
     // Scrolled down, the list asks for more of the newest – as many as asked for.
     expect((await subjects('?limit=1')).length).toBe(1);
     const [synced] = await ctx.deps.db
@@ -2119,6 +2194,35 @@ describe('Sender – the workspace’s messages', () => {
         [box_('INBOX'), box_('INBOX.Rechnungen')].map((one) => ({ ...one, delimiter: '.' })),
       ).map((one) => one.name),
     ).toEqual(['Posteingang', 'Rechnungen']);
+    // Sent from here: its copy goes into the server's „Gesendet“ (APPEND, read) – once, not when a
+    // mail of its Message-ID lies there already (the server keeps one itself), not without one.
+    const appended: unknown[][] = [];
+    let alreadyThere: number[] = [];
+    const sentServer = (folders: ReturnType<typeof box_>[]) =>
+      ({
+        list: async () => folders,
+        getMailboxLock: async (path: string, options: unknown) => {
+          expect([path, options]).toEqual(['INBOX/Gesendet', { readOnly: true }]);
+          return { release: () => {} };
+        },
+        search: async (query: unknown) => {
+          expect(query).toEqual({ header: { 'message-id': '<out-1@uni.de>' } });
+          return alreadyThere;
+        },
+        append: async (...args: unknown[]) => appended.push(args),
+      }) as unknown as Parameters<typeof appendSent>[0];
+    const withSent = [box_('INBOX'), box_('INBOX/Gesendet', [], '\\Sent')];
+    const copy = new Uint8Array([1, 2, 3]);
+    const sentAt = new Date('2026-11-26T10:00:00Z');
+    expect(await appendSent(sentServer(withSent), copy, sentAt, '<out-1@uni.de>')).toBe(true);
+    expect(appended).toEqual([['INBOX/Gesendet', copy, ['\\Seen'], sentAt]]);
+    alreadyThere = [7];
+    expect(await appendSent(sentServer(withSent), copy, sentAt, '<out-1@uni.de>')).toBe(false);
+    alreadyThere = [];
+    expect(await appendSent(sentServer([box_('INBOX')]), copy, sentAt, '<out-1@uni.de>')).toBe(
+      false,
+    );
+    expect(appended).toHaveLength(1);
     // The server's copy of what was sent from here comes once; an old mail first seen in one's own
     // folder lies there, quietly: not new, not in the inbox, no colleague's chat message.
     const inBox = (folder: string, one: ReturnType<typeof mail>) => ({ ...one, folder });
@@ -2155,6 +2259,14 @@ describe('Sender – the workspace’s messages', () => {
         ),
       );
     expect((await folderList('sent')).map((t) => t.subject)).toEqual(['Angebot Messestand']);
+    // Post's „Alle“: a special folder of every mailbox – no `account`.
+    expect(
+      (
+        await ok<MailThreadSummary[]>(
+          send('GET', `/workspaces/${ctx.workspaceId}/mail/threads?folder=sent`),
+        )
+      ).map((t) => t.subject),
+    ).toEqual(['Angebot Messestand']);
     // Both written the same minute: their order is not told.
     expect((await folderList('Kunden/Acme')).map((t) => [t.subject, t.unread]).sort()).toEqual([
       ['Alte Notiz', 0],
@@ -2824,6 +2936,79 @@ describe('Sender – the workspace’s messages', () => {
     expect(fetched.some((url) => url.includes('127.0.0.1') || url.includes('lan-firma'))).toBe(
       false,
     );
+    // A link's card under a message (`link-previews`): the page's own words and picture (drawn
+    // anew), kept by address; plain http, the server's own network and this instance never read.
+    const shot = createCanvas(1200, 630);
+    shot.getContext('2d').fillRect(0, 0, 1200, 630);
+    const shotPng = new Uint8Array(await shot.encode('png'));
+    const logoPng = new Uint8Array(await createCanvas(200, 200).encode('png'));
+    const linkFetched: string[] = [];
+    const htmlPage = (html: string) => () =>
+      new Response(html, { headers: { 'content-type': 'text/html; charset=utf-8' } });
+    const linkSites: Record<string, () => Response> = {
+      'https://news.example/artikel?id=7': htmlPage(
+        '<html><head><title>Ersatz</title><meta property="og:title" content="Gr&uuml;ne Energie &amp; mehr">' +
+          '<meta content="  Was   sich ändert. " property="og:description">' +
+          '<meta property="og:site_name" content="Beispiel News"><meta property="og:image" content="/bild.png">' +
+          '</head><body>',
+      ),
+      'https://news.example/bild.png': () =>
+        new Response(shotPng, { headers: { 'content-type': 'image/png' } }),
+      'https://nur-titel.example/': htmlPage('<title> Nur ein Titel </title>'),
+      'https://firma.example/': htmlPage(
+        '<title>Firma</title><meta name="twitter:image" content="https://firma.example/logo.png">',
+      ),
+      'https://firma.example/logo.png': () =>
+        new Response(logoPng, { headers: { 'content-type': 'image/png' } }),
+    };
+    Object.assign(ctx.deps.linkPreviews ?? {}, {
+      lookup: async (host: string) => [
+        { address: host.endsWith('lan-firma.de') ? '10.0.0.7' : '93.184.216.34' },
+      ],
+      fetch: async (input: string | URL) => {
+        const url = String(input);
+        linkFetched.push(url);
+        return linkSites[url]?.() ?? new Response('', { status: 404 });
+      },
+    });
+    const card = (url: string, kind = '') =>
+      send(
+        'GET',
+        `/workspaces/${ctx.workspaceId}/link-preview${kind}?url=${encodeURIComponent(url)}`,
+      );
+    expect(await ok<LinkPreview>(card('https://news.example/artikel?id=7'))).toEqual({
+      url: 'https://news.example/artikel?id=7',
+      title: 'Grüne Energie & mehr',
+      description: 'Was sich ändert.',
+      site: 'Beispiel News',
+      image: 'wide',
+    });
+    const linkShot = await card('https://news.example/artikel?id=7', '/image');
+    expect([linkShot.status, linkShot.headers.get('content-type')]).toEqual([200, 'image/jpeg']);
+    expect(await ok<LinkPreview>(card('https://nur-titel.example/'))).toMatchObject({
+      title: 'Nur ein Titel',
+      description: null,
+      site: 'nur-titel.example',
+      image: null,
+    });
+    // A square or small picture (a logo) stands beside the words, not stretched over them.
+    expect(await ok<LinkPreview>(card('https://firma.example/'))).toMatchObject({ image: 'small' });
+    expect((await card('https://nur-titel.example/', '/image')).status).toBe(404);
+    expect((await card('https://news.example/artikel?id=7')).status).toBe(200);
+    for (const refused of [
+      'http://news.example/',
+      'https://www.lan-firma.de/',
+      'https://x:y@a.de/',
+    ]) {
+      expect((await card(refused)).status).toBe(204);
+    }
+    expect(linkFetched).toEqual([
+      'https://news.example/artikel?id=7',
+      'https://news.example/bild.png',
+      'https://nur-titel.example/',
+      'https://firma.example/',
+      'https://firma.example/logo.png',
+    ]);
     // None found is kept a day, a logo seven.
     (ctx.deps.clock as TestClock).advance(2 * 86_400_000);
     await logo('lan-firma.de');
@@ -2921,6 +3106,12 @@ describe('Sender – the workspace’s messages', () => {
       onlyMailbox.groups.flatMap((group) => group.items.map((one) => one.item.kind)),
     ).not.toContain('channel');
     expect(groupOf(onlyMailbox, newsThread!)).toBe('newsletters');
+    // „Alle“'s „Übersicht“: every mailbox's mail, still no chats.
+    const allMail = await triage(`?mailbox=${ALL_MAILBOXES}`);
+    expect(
+      allMail.groups.flatMap((group) => group.items.map((one) => one.item.kind)),
+    ).not.toContain('channel');
+    expect(groupOf(allMail, newsThread!)).toBe('newsletters');
     sites['https://news.de/leave?u=1'] = () => new Response('ok');
     const leftList = await ok<MailUnsubscribed[]>(
       send('POST', `/workspaces/${ctx.workspaceId}/mail/unsubscribe`, { threadIds: [newsThread] }),

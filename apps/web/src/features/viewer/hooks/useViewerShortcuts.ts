@@ -22,7 +22,7 @@ export function useViewerShortcuts({
   onPresent: () => void;
   onPresenterView: () => void;
 }) {
-  const { deck, slides, slideIndex, canComment } = useViewerData();
+  const { slides, slideIndex, canComment } = useViewerData();
   const {
     activeSlideId,
     draft,
@@ -35,9 +35,8 @@ export function useViewerShortcuts({
     backgroundPanelPageId,
     layoutGridPanelOpen,
     sharePanelOpen,
+    materialPanelOpen,
     aiChatOpen,
-    boardPanelOpen,
-    materialOpen,
   } = useViewerState();
   const dispatch = useViewerDispatch();
   const goTo = useGoToSlide();
@@ -51,24 +50,6 @@ export function useViewerShortcuts({
     )
       return;
 
-    // The material page: its board has its own keys, the presentation's are asleep.
-    if (materialOpen) {
-      if (event.key === 'Escape' && boardPanelOpen) {
-        dispatch({ type: 'boardPanelSet', open: false });
-        event.preventDefault();
-        return;
-      }
-      if (isTypingTarget(event.target) || isModKey(event) || event.altKey) return;
-      if (event.key === 'm' || event.key === 'M') {
-        event.preventDefault();
-        dispatch({ type: 'materialSet', open: false });
-      } else if (event.key === 'f' || event.key === 'F') {
-        event.preventDefault();
-        onToggleFullscreen();
-      }
-      return;
-    }
-
     if (event.key === 'Escape') {
       // Typing in the composer: Esc still cancels the draft, that's what people expect.
       if (draft) dispatch({ type: 'draftCancelled' });
@@ -79,6 +60,7 @@ export function useViewerShortcuts({
       else if (backgroundPanelPageId) dispatch({ type: 'backgroundPanelSet', pageId: null });
       else if (layoutGridPanelOpen) dispatch({ type: 'layoutGridPanelSet', open: false });
       else if (sharePanelOpen) dispatch({ type: 'sharePanelSet', open: false });
+      else if (materialPanelOpen) dispatch({ type: 'materialPanelSet', open: false });
       else if (aiChatOpen) dispatch({ type: 'aiChatSet', open: false });
       else if (layersOpen) dispatch({ type: 'layersSet', open: false });
       else return;
@@ -171,12 +153,6 @@ export function useViewerShortcuts({
         // (⇧H). Hidden slides keep their button and the setting in /konto.
         if (event.shiftKey) dispatch({ type: 'layoutGridPanelSet', open: !layoutGridPanelOpen });
         else dispatch({ type: 'layoutGridToggled' });
-        break;
-      case 'm':
-      case 'M':
-        // A template has no material.
-        if (deck.template) return;
-        dispatch({ type: 'materialSet', open: true });
         break;
       case 'k':
       case 'K':

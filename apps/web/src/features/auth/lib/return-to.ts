@@ -50,7 +50,7 @@ const LOGIN_ERROR_COPY: Record<LoginError, { title: string; message: string }> =
   mail_unavailable: {
     title: 'Neues Konto gerade nicht möglich',
     message:
-      'Für ein neues Konto über Nextcloud bestätigst du deine Adresse per Mail, und diese Office-Instanz kann keine Mails senden. Melde dich anders an oder frag, wer Slider betreibt.',
+      'Für ein neues Konto über Nextcloud bestätigst du deine Adresse per Mail, und diese Office-Instanz kann keine Mails senden. Melde dich anders an oder frag, wer Office betreibt.',
   },
   rate_limited: {
     title: 'Zu viele Anmeldeversuche',

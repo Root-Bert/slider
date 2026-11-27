@@ -1,6 +1,11 @@
 import { createCanvas, loadImage } from '@napi-rs/canvas';
 import { and, eq } from 'drizzle-orm';
-import { CLOUD_INLINE_IMAGES, cloudExtension } from '@slider/shared';
+import {
+  CLOUD_INLINE_IMAGES,
+  cloudExtension,
+  inkStrokeLines,
+  isWriterMarkdown,
+} from '@slider/shared';
 import { runInBackground } from '../../background-work';
 import {
   cloudNodes,
@@ -99,9 +104,14 @@ function facesNamed(rows: FontRows, names: readonly string[]): string {
     .join(',');
 }
 
-async function toPdf(
+/**
+ * An office file drawn as a PDF by LibreOffice (presentations with the workspace's fonts);
+ * `null` when this server cannot draw its format. Also for files sent in Sender
+ * (`services/attachment-pages.ts`), which are no Cloud file.
+ */
+export async function toPdf(
   deps: CloudDeps,
-  node: CloudNodeRow,
+  node: Pick<CloudNodeRow, 'name' | 'workspaceId'>,
   bytes: Uint8Array,
   priority?: PoolPriority,
 ): Promise<{ pdf: Uint8Array; drawnWith?: DrawnWith } | null> {
@@ -269,6 +279,12 @@ export async function searchText(
     const bytes =
       version.sizeBytes <= MAX_PLAIN_BYTES ? await deps.storage.get(version.storageKey) : null;
     if (bytes) text = new TextDecoder().decode(bytes);
+    // A page's drawings are strokes, not words.
+    if (isWriterMarkdown(node.name)) {
+      const lines = text.split('\n');
+      const strokes = inkStrokeLines(lines);
+      if (strokes.size > 0) text = lines.filter((_, index) => !strokes.has(index)).join('\n');
+    }
   } else text = ((await pageTexts(deps, node, version)) ?? []).join('\n');
   text = text.replace(/\s+/g, ' ').trim().slice(0, MAX_KEPT_TEXT);
   await deps.storage.put(key, new TextEncoder().encode(text));

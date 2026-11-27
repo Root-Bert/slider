@@ -9,10 +9,11 @@ import type { SenderMessage } from './sender';
  * nothing needs to be on anyone's computer. Each agent is a place to work on one thing, kept, its
  * owner's alone until they share it with the workspace: then everyone in it sees who else is
  * there and writes along in its one chat, with one desk. It works with the rights of the person
- * who wrote, nothing more. What it does touches nothing: new files and folders, changed files,
- * what is to be moved, renamed or deleted, and the presentations it makes or changes (on a copy)
- * lie on the agent's own desk („Desktop“) until that person takes them over – the originals stay
- * as they are until then.
+ * who wrote, nothing more, in the files, documents and presentations themselves, at once: its desk
+ * („Schreibtisch“) lists what it did there, and each of it is taken back from there. In the other
+ * apps (to-dos, calendar, messages, mail) it acts as the person would; what cannot be undone or
+ * reaches out waits for their „Bestätigen“. It keeps a memory („Gedächtnis“, one per agent – a
+ * shared agent's its members see and change) and follows its „Anweisungen“.
  */
 
 /** Characters of one file an agent writes. */
@@ -68,6 +69,31 @@ export type CloudAgentShare = z.input<typeof cloudAgentShareSchema>;
 /** An agent's name: what its chat is about, as a heading. */
 export const CLOUD_AGENT_TITLE_MAX = 60;
 /** `PATCH /cloud/agents/:id/title`: its owner names it – the agent names it no more. */
+/** A file of an agent's memory („Gedächtnis“), on its page: everyone who works with it sees it. */
+export interface CloudAgentMemory {
+  /** Under `/memories`, e.g. `/memories/team.md`. */
+  path: string;
+  content: string;
+  /** Who changed it last (by hand, or whose run the agent wrote it in); `null`: gone. */
+  updatedBy: string | null;
+  updatedAt: string;
+}
+
+/** Characters of one file of an agent's memory. */
+export const MAX_CLOUD_AGENT_MEMORY_FILE = 20_000;
+
+/** A person changes a file of an agent's memory; an empty text deletes it. */
+export const cloudAgentMemorySchema = z.object({
+  path: z.string().trim().min(1).max(200),
+  content: z.string().max(MAX_CLOUD_AGENT_MEMORY_FILE),
+});
+
+/** The most an agent's „Anweisungen“ may say. */
+export const MAX_CLOUD_AGENT_INSTRUCTIONS = 8000;
+export const cloudAgentInstructionsSchema = z.object({
+  instructions: z.string().trim().max(MAX_CLOUD_AGENT_INSTRUCTIONS),
+});
+
 export const cloudAgentTitleSchema = z.object({
   title: z
     .string()
@@ -248,6 +274,18 @@ export interface CloudAgentMessage extends SenderMessage {
   error: string | null;
   /** What the agent asked to be confirmed while it wrote this answer: a card each under it. */
   asks?: CloudAgentAsk[];
+  /** What it did with its tools for this answer, in order – the model is told them too. */
+  steps?: CloudAgentStep[];
+}
+
+/** One thing an agent did with a tool for an answer, as its activity named it. */
+export interface CloudAgentStep {
+  /** „Liest eine Datei“. */
+  label: string;
+  /** The app the tool belongs to – its mark beside the label. */
+  app: string | null;
+  /** It was refused or failed. */
+  failed: boolean;
 }
 
 /**
@@ -294,6 +332,17 @@ export interface CloudAgentChat {
   doingIn?: 'slider' | null;
   /** Who else is writing a message here right now. */
   typing: Author[];
+  /** How full the model's context was at its last turn here; `null`: it has not worked here yet. */
+  context: CloudAgentContext | null;
+}
+
+/** How much the model read at an agent's last turn in a chat, of how much it can. */
+export interface CloudAgentContext {
+  tokens: number;
+  /** The model's window; `null`: the service does not say. */
+  window: number | null;
+  model: string | null;
+  at: string;
 }
 
 export interface CloudAgentSummary {
@@ -319,6 +368,8 @@ export interface CloudAgentSummary {
   interrupted: boolean;
   /** Things lying on its desk, not yet taken over. */
   openFiles: number;
+  /** Files in its memory („Gedächtnis“) – shared, it starts without them (asked first). */
+  memoryFiles: number;
   /** The first of them, as put there – what the agent made or changed, to see at a glance. */
   desk: Pick<CloudAgentFile, 'id' | 'name' | 'kind' | 'nodeId' | 'thumbnailUrl'>[];
   /** The order it takes up again by itself, and when; `null`: it works when written to. */
@@ -332,6 +383,10 @@ export interface CloudAgentSummary {
 }
 
 export interface CloudAgentDetail extends CloudAgentSummary {
+  /** How its owner wants it to work („Anweisungen“) – in its prompt each run. */
+  instructions: string;
+  /** What it keeps across its chats („Gedächtnis“) – one for everyone who works with it. */
+  memories: CloudAgentMemory[];
   /** Its chats, the first first. */
   chats: CloudAgentChat[];
   /** Who else has the agent open right now. */

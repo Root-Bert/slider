@@ -76,12 +76,14 @@ export interface ViewTitle {
 }
 /**
  * The names the labels morph under (`styles/index.css`): the first view's, the second's (an
- * area's „Chat“ takes the library's), an area's to-dos, the agents', and the workspace's areas.
+ * area's „Chat“ takes the library's), an area's files and to-dos, the agents', and the workspace's
+ * areas.
  */
 export const VIEW_NAMES = {
   first: VIEWS[0].name,
   second: VIEWS[1].name,
   agents: AGENTS_NAME,
+  files: 'workspace-view-files',
   todos: TODOS_NAME,
   areas: AREAS_NAME,
 } as const;

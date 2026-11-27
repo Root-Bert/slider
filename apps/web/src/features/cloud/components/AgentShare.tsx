@@ -1,6 +1,7 @@
 import { cloudAccessAtLeast, type CloudAgentSummary } from '@slider/shared';
+import { useState } from 'react';
 import { useShareCloudAgent } from '@/lib/api';
-import { Icon, Menu, type MenuAction } from '@/ui';
+import { ConfirmDialog, Icon, Menu, type MenuAction } from '@/ui';
 import { useCloud } from '../hooks/useCloud';
 import { areaTree, isWorkspaceOwn } from '../lib/areas';
 import { AreaDot } from './AreaDot';
@@ -8,11 +9,13 @@ import { AreaDot } from './AreaDot';
 /**
  * Who sees an agent: its owner alone („Nur ich“ – it stays where it stands), the workspace, or
  * an area's people – then it stands in that area. Its owner picks (`actions`, none for anyone
- * else); everyone else reads it.
+ * else); everyone else reads it. Shared, its memory starts empty: asked first where it has some
+ * (`dialog`, shown by who shows the actions).
  */
 export function useAgentShare(agent: CloudAgentSummary) {
   const ui = useCloud();
   const share = useShareCloudAgent(ui.workspace.id);
+  const [asking, setAsking] = useState<{ areaId: string | null; said: string } | null>(null);
   const areas = ui.home?.areas ?? [];
   const area = areas.find((each) => each.id === agent.areaId) ?? null;
   const whose = !agent.shared ? 'Nur ich' : agent.areaId ? (area?.name ?? 'Bereich') : 'Workspace';
@@ -22,10 +25,9 @@ export function useAgentShare(agent: CloudAgentSummary) {
     ) : (
       <Icon name={!agent.shared ? 'lock' : agent.areaId ? 'workspaces' : 'groups'} size={18} />
     );
-  if (!agent.mine) return { whose, mark, actions: [] as MenuAction[] };
+  if (!agent.mine) return { whose, mark, actions: [] as MenuAction[], dialog: null };
 
-  const pick = (shared: boolean, areaId: string | null, said: string) => {
-    if (shared === agent.shared && areaId === agent.areaId) return;
+  const go = (shared: boolean, areaId: string | null, said: string) =>
     share.mutate(
       { agentId: agent.id, shared, areaId },
       {
@@ -34,7 +36,23 @@ export function useAgentShare(agent: CloudAgentSummary) {
         onError: (error) => ui.notify(error.message, 'danger'),
       },
     );
+  const pick = (shared: boolean, areaId: string | null, said: string) => {
+    if (shared === agent.shared && areaId === agent.areaId) return;
+    if (shared && !agent.shared && agent.memoryFiles > 0) setAsking({ areaId, said });
+    else go(shared, areaId, said);
   };
+  const dialog = asking && (
+    <ConfirmDialog
+      onClose={() => setAsking(null)}
+      title="Agenten teilen?"
+      description="Sein Gedächtnis hat er nur für dich gefüllt. Damit nichts davon mitgeht, wird es gelöscht und beginnt leer."
+      confirmLabel="Teilen"
+      onConfirm={() => {
+        setAsking(null);
+        go(true, asking.areaId, asking.said);
+      }}
+    />
+  );
   const actions: MenuAction[] = [
     {
       label: 'Nur ich',
@@ -61,12 +79,12 @@ export function useAgentShare(agent: CloudAgentSummary) {
       onSelect: () => pick(true, each.id, `Alle im Bereich „${each.name}“ sehen den Agenten`),
     })),
   ];
-  return { whose, mark, actions };
+  return { whose, mark, actions, dialog };
 }
 
 /** Who sees the agent, on its page: a menu for its owner, words for everyone else. */
 export function AgentShare({ agent }: { agent: CloudAgentSummary }) {
-  const { whose, mark, actions } = useAgentShare(agent);
+  const { whose, mark, actions, dialog } = useAgentShare(agent);
   if (!agent.mine) {
     return (
       <span className="flex h-8 shrink-0 items-center gap-2 px-1 text-body text-fg-muted">
@@ -76,15 +94,18 @@ export function AgentShare({ agent }: { agent: CloudAgentSummary }) {
     );
   }
   return (
-    <Menu
-      label="Wer den Agenten sieht"
-      actions={actions}
-      triggerText={
-        <span className="flex items-center gap-2">
-          {mark}
-          <span className="max-w-40 truncate">{whose}</span>
-        </span>
-      }
-    />
+    <>
+      <Menu
+        label="Wer den Agenten sieht"
+        actions={actions}
+        triggerText={
+          <span className="flex items-center gap-2">
+            {mark}
+            <span className="max-w-40 truncate">{whose}</span>
+          </span>
+        }
+      />
+      {dialog}
+    </>
   );
 }

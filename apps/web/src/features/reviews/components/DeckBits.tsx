@@ -174,7 +174,7 @@ export function DeckPlaceLine({ deck, className }: { deck: Deck; className?: str
   const to = place.folderId
     ? routes.cloudFolder(deck.workspaceId, place.folderId)
     : place.areaId
-      ? routes.cloudArea(deck.workspaceId, place.areaId)
+      ? routes.cloudAreaFiles(deck.workspaceId, place.areaId)
       : routes.cloudOwn(deck.workspaceId);
   return (
     <Link

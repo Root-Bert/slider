@@ -5,7 +5,6 @@ import {
   type InheritedIntegration,
   type IntegrationKey,
   type IntegrationKind,
-  type IntegrationRule,
   type IntegrationProvider,
 } from '@slider/shared';
 import type { IconName } from '@/ui';
@@ -154,14 +153,3 @@ export const workspaceIntegrationsNav = (group: IntegrationGroup) => [
 /** „Anthropic | claude-sonnet-5-5“ – what applies from the instance (or the server). */
 export const describeInherited = (inherited: InheritedIntegration) =>
   [PROVIDER_LABELS[inherited.provider], inherited.model].filter(Boolean).join(' | ');
-
-/** „Key der Instanz, Modell frei, eigene Keys erlaubt“ – a rule in words, for toasts. */
-export const ruleSummary = (kind: IntegrationKind, rule: IntegrationRule) =>
-  [
-    rule.inherit === 'none'
-      ? 'ohne Key der Instanz'
-      : kind === 'photos' || rule.inherit === 'all'
-        ? 'Key der Instanz'
-        : 'Key der Instanz, Modell frei',
-    rule.ownKeys ? 'eigene Keys erlaubt' : 'keine eigenen Keys',
-  ].join(', ');

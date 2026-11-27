@@ -43,19 +43,6 @@ describe('viewerReducer', () => {
     const moved = run({ type: 'splitChanged', split: 0.3 });
     expect(viewerReducer(moved, { type: 'splitChanged', split: null }).split).toBeNull();
     expect(viewerReducer(moved, { type: 'splitChanged', split: 0.3 })).toBe(moved);
-
-    // The material page: beside the presentation, its board's panel apart from the deck's panels.
-    expect(initial.materialOpen).toBe(false);
-    expect(createInitialState({ activeSlideId: null, materialOpen: true }).materialOpen).toBe(true);
-    const thread = run({ type: 'threadFocused', threadId: 't1', openPanel: true });
-    const onMaterial = viewerReducer(thread, { type: 'materialSet', open: true });
-    const picked = viewerReducer(onMaterial, { type: 'boardPanelSet', open: true });
-    expect(picked.boardPanelOpen).toBe(true);
-    expect(thread.threadPanelOpen).toBe(true);
-    expect(picked.threadPanelOpen).toBe(true);
-    const back = viewerReducer(picked, { type: 'materialSet', open: false });
-    expect(back.materialOpen).toBe(false);
-    expect(back.boardPanelOpen).toBe(false);
   });
 
   it('keeps every slide’s own zoom and drops them all when the frame shape toggles', () => {
@@ -483,7 +470,7 @@ describe('viewerReducer', () => {
     expect(gone.draft).toMatchObject({ slideId: null, slideGone: true });
   });
 
-  it('shares the right side between the thread, deleted slides, layers, layout and background panels', () => {
+  it('shares the right side between the thread, deleted slides, layers, layout, background and material panels', () => {
     expect(viewerReducer(initial, { type: 'deletedPanelSet', open: false })).toBe(initial);
     let state = run(
       { type: 'threadFocused', threadId: 't1', openPanel: true },
@@ -569,5 +556,19 @@ describe('viewerReducer', () => {
     bg = viewerReducer(bg, { type: 'threadFocused', threadId: 't2', openPanel: true });
     expect(bg).toMatchObject({ backgroundPanelPageId: null, threadPanelOpen: true });
     expect(viewerReducer(initial, { type: 'backgroundPanelSet', pageId: null })).toBe(initial);
+
+    // „Material“ takes the side like the others, and gives it to the next one.
+    let material = run(
+      { type: 'threadFocused', threadId: 't1', openPanel: true },
+      { type: 'materialPanelSet', open: true },
+    );
+    expect(material).toMatchObject({ materialPanelOpen: true, threadPanelOpen: false });
+    material = viewerReducer(material, { type: 'sharePanelSet', open: true });
+    expect(material).toMatchObject({ materialPanelOpen: false, sharePanelOpen: true });
+    material = viewerReducer(material, { type: 'materialPanelSet', open: true });
+    expect(material).toMatchObject({ materialPanelOpen: true, sharePanelOpen: false });
+    material = viewerReducer(material, { type: 'aiChatSet', open: true });
+    expect(material).toMatchObject({ materialPanelOpen: false, aiChatOpen: true });
+    expect(viewerReducer(initial, { type: 'materialPanelSet', open: false })).toBe(initial);
   });
 });

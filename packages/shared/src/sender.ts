@@ -582,3 +582,30 @@ export interface SenderDraft {
   target: SenderDraftTarget;
   at: string;
 }
+
+/**
+ * A web address's card under a message (`services/link-previews.ts`): what the page says of
+ * itself (its `og:` tags, else its title), read by Slider's server. `image`: a picture of it is
+ * kept ({@link linkPreviewPaths}`.image`).
+ */
+export interface LinkPreview {
+  /** The address as written in the message. */
+  url: string;
+  title: string;
+  description: string | null;
+  /** The site's name, else its host. */
+  site: string;
+  /**
+   * The page's picture: `wide` a banner over the card (a page's usual 1200 × 630), `small` one
+   * beside its words (a logo, an avatar – square or small pictures blur stretched as a banner).
+   */
+  image: 'wide' | 'small' | null;
+}
+
+/** Where a link's card and its picture are asked for (under `API_PREFIX`). */
+export const linkPreviewPaths = {
+  of: (workspaceId: string, url: string) =>
+    `/workspaces/${workspaceId}/link-preview?url=${encodeURIComponent(url)}`,
+  image: (workspaceId: string, url: string) =>
+    `/workspaces/${workspaceId}/link-preview/image?url=${encodeURIComponent(url)}`,
+};

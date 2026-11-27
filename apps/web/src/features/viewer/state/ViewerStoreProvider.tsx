@@ -31,8 +31,6 @@ import {
 interface ViewerStoreProviderProps {
   data: ViewerData;
   initialSlideId: string | null;
-  /** Opens on the material page (`?material`, a new deck). */
-  initialMaterial?: boolean;
   children: ReactNode;
 }
 
@@ -43,7 +41,6 @@ interface ViewerStoreProviderProps {
 export function ViewerStoreProvider({
   data: all,
   initialSlideId,
-  initialMaterial = false,
   children,
 }: ViewerStoreProviderProps) {
   const [store] = useState(() => {
@@ -57,7 +54,6 @@ export function ViewerStoreProvider({
     const initial = initialSlideId && all.slideIndex.has(initialSlideId) ? initialSlideId : null;
     return createViewerStore(
       createInitialState({
-        materialOpen: initialMaterial && !all.deck.template,
         activeSlideId:
           initial ?? all.slides.find((slide) => !slide.hidden)?.id ?? all.slides[0]?.id ?? null,
         split: loadStoredSplit(),

@@ -30,6 +30,7 @@ import {
   WorkspaceViews,
 } from '@/features/workspaces';
 import { selectionStyle } from '@/lib/accent';
+import { useViewChoice } from '@/lib/view-choice';
 import {
   Button,
   cn,
@@ -81,7 +82,7 @@ export function Component() {
   const [query, setQuery] = useState('');
   const [tab, setTab] = useState<ReviewTab>('all');
   const [sort, setSort] = useStoredChoice('slider.reviews.sort', DECK_SORTS, 'opened');
-  const [view, setView] = useStoredChoice('slider.reviews.view', DECK_VIEWS, 'grid');
+  const [view, setView] = useViewChoice('slider.reviews.view', DECK_VIEWS, 'grid');
 
   // Every presentation one may see, from wherever it lies: folders are Cloud's, not this
   // page's (`services/deck-places` in the API).

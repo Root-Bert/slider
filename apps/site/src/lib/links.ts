@@ -6,7 +6,7 @@ export const CLOUD_URL = `${APP_URL}/cloud`;
 export const READER_URL = `${APP_URL}/reader`;
 /** Sender in the hosted app: on to the conversations of the workspace last open. */
 export const SENDER_URL = `${APP_URL}/sender`;
-export const REPO_URL = 'https://github.com/Root-Bert/slider';
+export const REPO_URL = 'https://github.com/Root-Bert/office';
 export const CHANGELOG_URL = `${REPO_URL}/releases`;
 /** The personal page of the person behind it all. */
 export const BERTRO_URL = '/me/';

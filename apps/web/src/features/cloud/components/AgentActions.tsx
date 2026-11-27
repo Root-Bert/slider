@@ -213,6 +213,7 @@ export function AgentActions({
           onClose={() => setDeleting(false)}
         />
       )}
+      {share.dialog}
     </>
   );
 }

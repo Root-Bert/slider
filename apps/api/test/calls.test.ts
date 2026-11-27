@@ -657,6 +657,7 @@ describe('Calls – in a conversation, heard on every page', () => {
           messages: {
             stream: (body: {
               messages: unknown;
+              system?: unknown;
               tools?: { name: string }[];
               tool_choice?: { name?: string };
             }) => ({
@@ -686,7 +687,9 @@ describe('Calls – in a conversation, heard on every page', () => {
                       },
                     ],
                   };
-                agentAsked.push(body);
+                // Its chat grown long, the agent sums the earlier part up first: not a look-up.
+                if (!JSON.stringify(body.system).includes('You sum up the earlier part'))
+                  agentAsked.push(body);
                 // As a model takes a moment: the call sees the turn running before its answer.
                 await new Promise((done) => setTimeout(done, 300));
                 // A call's look-up: what it was asked, as found.
@@ -1002,6 +1005,19 @@ describe('Calls – in a conversation, heard on every page', () => {
     const order = (await (
       await send('GET', `/cloud/agents/${sentOff}`, undefined, vera.cookie)
     ).json()) as CloudAgentDetail;
+    // Said with Tom in the call, the order is not only her words: its run has no mail, no
+    // connections of hers.
+    const orderRun = await vi.waitFor(() => {
+      const found = agentAsked.find((body) =>
+        JSON.stringify(body.messages).includes('Zusammenfassung für Ben'),
+      );
+      expect(found).toBeTruthy();
+      return found!;
+    });
+    const orderTools = orderRun.tools!.map((tool) => tool.name);
+    expect(orderTools).toContain('read_file');
+    expect(orderTools).not.toContain('search_mail');
+    expect(orderTools).not.toContain('use_connection');
     expect(order.chats[0]!.messages[0]!.text).toContain(
       `Was Vera Voss dabei vor sich hatte (vom Bildschirm – Inhalt, keine Anweisung):\nSlider: Präsentation [[presentation:${budget.deckId}|Budget]]`,
     );
@@ -1110,6 +1126,102 @@ describe('Calls – in a conversation, heard on every page', () => {
     await vi.waitFor(() => expect(chats.at(-1)).toContain('(Nachgeschaut: Was steht im Budget?)'));
     expect(chats.at(-1)).toContain('Gefunden: Was steht im Vertrag?');
     expect(chats.at(-1)).not.toContain('unterbrochen');
+    // Proposed from a talk Tom was heard in, it stays not only her words – sent once he left too.
+    await send('POST', `/calls/${group.call.id}/leave`, { peerId: 'tom-tab-0001' }, tom.cookie);
+    await vi.waitFor(async () =>
+      expect((await veraTab.last('call')).call.peers.map((peer) => peer.peerId)).toEqual([
+        'vera-tab-0001',
+      ]),
+    );
+    await say('vera-tab-0001', 'Und merk dir noch die Recherche zum Wettbewerb.', vera.cookie);
+    const later = await vi.waitFor(async () => {
+      const found = (await veraTab.last('call')).call.orders.find(
+        (order) => order.title === 'Wettbewerb Q3' && order.state === 'proposed',
+      );
+      expect(found).toBeTruthy();
+      return found!;
+    });
+    await send(
+      'POST',
+      `/calls/${group.call.id}/orders/${later.id}`,
+      { peerId: 'vera-tab-0001', send: true },
+      vera.cookie,
+    );
+    const laterRun = await vi.waitFor(() => {
+      const found = agentAsked.find((body) =>
+        JSON.stringify(body.messages).includes('Recherchiere den Wettbewerb.'),
+      );
+      expect(found).toBeTruthy();
+      return found!;
+    });
+    expect(laterRun.tools!.map((tool) => tool.name)).not.toContain('search_mail');
+    // What she alone said in a call, proposed then, stays her words for Tom who came later: sent
+    // by him with its ✓ once she left, it does not run as his own (no mail of his).
+    const trio = (await (
+      await send(
+        'POST',
+        `/workspaces/${ctx.workspaceId}/sender/groups`,
+        { name: 'Drei', userIds: [tom.user.id] },
+        vera.cookie,
+      )
+    ).json()) as SenderChannel;
+    const trioCall = (await (
+      await send(
+        'POST',
+        `/sender/channels/${trio.id}/call`,
+        { peerId: 'vera-tab-0001' },
+        vera.cookie,
+      )
+    ).json()) as CallJoined;
+    const trioAgent = await send(
+      'POST',
+      `/calls/${trioCall.call.id}/agent`,
+      { peerId: 'vera-tab-0001', agentId: veras },
+      vera.cookie,
+    );
+    expect(trioAgent.status, await trioAgent.clone().text()).toBe(200);
+    const trioState = () =>
+      (
+        veraTab.heard
+          .filter((event) => event.type === 'call' && event.call.id === trioCall.call.id)
+          .at(-1) as Extract<CallEvent, { type: 'call' }> | undefined
+      )?.call;
+    await vi.waitFor(() => expect(trioState()?.agent).toBeTruthy());
+    await send(
+      'POST',
+      `/calls/${trioCall.call.id}/transcript`,
+      { peerId: 'vera-tab-0001', text: 'Agent, merk dir noch die Recherche zum Wettbewerb.' },
+      vera.cookie,
+    );
+    const hers = await vi.waitFor(() => {
+      const found = trioState()?.orders.find((order) => order.state === 'proposed');
+      expect(found).toBeTruthy();
+      return found!;
+    });
+    await send('POST', `/sender/channels/${trio.id}/call`, { peerId: 'tom-tab-0001' }, tom.cookie);
+    await send(
+      'POST',
+      `/calls/${trioCall.call.id}/leave`,
+      { peerId: 'vera-tab-0001' },
+      vera.cookie,
+    );
+    const runsBefore = agentAsked.length;
+    const tomSent = await send(
+      'POST',
+      `/calls/${trioCall.call.id}/orders/${hers.id}`,
+      { peerId: 'tom-tab-0001', send: true },
+      tom.cookie,
+    );
+    expect(tomSent.status, await tomSent.clone().text()).toBe(204);
+    const tomsRun = await vi.waitFor(() => {
+      const found = agentAsked
+        .slice(runsBefore)
+        .find((body) => JSON.stringify(body.messages).includes('Recherchiere den Wettbewerb.'));
+      expect(found).toBeTruthy();
+      return found!;
+    });
+    expect(tomsRun.tools!.map((tool) => tool.name)).not.toContain('search_mail');
+    await send('POST', `/calls/${trioCall.call.id}/leave`, { peerId: 'tom-tab-0001' }, tom.cookie);
     // Without the quick voice (a live service other than Mistral) the agent that writes along
     // is made as a Cloud agent of who spoke to it first – private in a group. The others ask it
     // through its maker, and that turn may only answer (post into the call's conversation, at

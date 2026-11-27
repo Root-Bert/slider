@@ -128,12 +128,21 @@ export function ForYou({ stamp }: { stamp: string | null }) {
     told.data,
     !!told.data && !told.isPlaceholderData && !plain.isPlaceholderData,
   );
+  // On top, the order field (the user 2026-11-25: „die leiste soll über der übersicht sein und
+  // basically die auftrag leiste sein“) – there while the overview still comes; not without the AI.
+  const ask = plain.data?.ai !== 'off' && told.data?.ai !== 'off' && <FocusAsk />;
+  // One root either way: the order field stays where it is (and keeps what is typed) as it comes.
   if (!focus) {
-    return plain.isError ? null : (
-      <div aria-hidden className="flex shrink-0 items-center gap-2.5 pt-3">
-        <div className="skeleton size-[18px] rounded-chip" />
-        <div className="skeleton h-4 w-1/3 rounded-mark" />
-      </div>
+    return (
+      <section aria-label="Für dich" className="flex shrink-0 flex-col gap-2 pt-3">
+        {ask && <div className="mb-1">{ask}</div>}
+        {!plain.isError && (
+          <div aria-hidden className="flex items-center gap-2.5">
+            <div className="skeleton size-[18px] rounded-chip" />
+            <div className="skeleton h-4 w-1/3 rounded-mark" />
+          </div>
+        )}
+      </section>
     );
   }
   const asking = told.isFetching && !told.data;
@@ -144,6 +153,7 @@ export function ForYou({ stamp }: { stamp: string | null }) {
 
   return (
     <section aria-label="Für dich" className="flex shrink-0 flex-col gap-2 pt-3">
+      {ask && <div className="mb-1">{ask}</div>}
       <div className="flex items-start gap-2.5">
         <span className="flex h-6 shrink-0 items-center text-fg-muted">
           <Icon name="autoAwesome" size={18} />
@@ -151,11 +161,6 @@ export function ForYou({ stamp }: { stamp: string | null }) {
         <p className="min-w-0 flex-1 text-base leading-6 font-medium text-fg">{headline}</p>
         {told.isFetching && <Spinner size={16} label="Die KI schaut, was ansteht" />}
       </div>
-      {focus.ai !== 'off' && told.data?.ai !== 'off' && (
-        <div className="pl-7">
-          <FocusAsk />
-        </div>
-      )}
       {!told.isFetching && focus.ai === 'failed' && (
         <p className="pl-7 text-body text-fg-muted">
           Die KI hat gerade nicht zusammengefasst.{' '}
@@ -208,7 +213,7 @@ export function ForYou({ stamp }: { stamp: string | null }) {
 const OVERVIEW = { of: 'cloud' } as const;
 
 /**
- * Under the headline, as under Sender's „Aktuell“: a reply, a question or an order to an agent of
+ * Over the headline, as over Sender's „Aktuell“: the order field – a reply, a question or an order to an agent of
  * one's own, its chat right there – the agent is told what „Für dich“ shows, by id.
  */
 function FocusAsk() {
@@ -223,7 +228,7 @@ function FocusAsk() {
       onAgent={setAgentId}
       order={order}
       overview={OVERVIEW}
-      placeholder="Frag dazu oder gib einen Auftrag …"
+      placeholder="Was soll erledigt werden?"
       agentPath={(id) => routes.cloudAgent(ui.workspace.id, id)}
       notify={ui.notify}
     />

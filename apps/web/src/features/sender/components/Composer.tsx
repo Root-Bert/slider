@@ -1,5 +1,6 @@
 import {
   useEffect,
+  useEffectEvent,
   useId,
   useLayoutEffect,
   useRef,
@@ -22,7 +23,7 @@ import {
   type Attachments,
 } from '@/features/attachments';
 import { AgentAvatar } from '@/features/cloud';
-import { canRecord, RecorderPanel } from '@/features/viewer';
+import { canRecord, RecorderPanel, VoiceMemoBar, type Recording } from '@/features/viewer';
 import { suggestVideoCuts } from '@/lib/api';
 import { isModEnter, isModKey } from '@/lib/keyboard';
 import { useTallField } from '@/lib/useTallField';
@@ -35,9 +36,9 @@ import {
   cn,
   ContextMenu,
   Divider,
+  FloatingPanel,
   Icon,
   IconButton,
-  PopoverPanel,
   Spinner,
   TextField,
   useFocusLoop,
@@ -50,13 +51,29 @@ import { RichField } from './LazyRichField';
 import type { RichFieldHandle } from './RichField';
 const SUGGESTIONS = 8;
 
-/** A recorded (and cut) video as the file put on the message: „Aufnahme 2026-11-24 21.05.mp4“. */
-function videoFile(blob: Blob): File {
-  const type = blob.type.split(';')[0]?.trim() || 'video/webm';
+/**
+ * The end of a recording's file name by its type – the server (Bun) takes a file's type from it,
+ * not from what the browser says: `.webm` would be a video.
+ */
+const RECORDING_ENDS: Record<string, string> = {
+  'video/mp4': 'mp4',
+  'audio/webm': 'weba',
+  'audio/mp4': 'm4a',
+  'audio/ogg': 'ogg',
+  'audio/mpeg': 'mp3',
+};
+
+/**
+ * A recording as the file put on the message: a (cut) video „Aufnahme 2026-11-24 21.05.mp4“, a
+ * voice message „Sprachnachricht 2026-11-24 21.05.weba“.
+ */
+function recordingFile(blob: Blob, kind: 'video' | 'audio'): File {
+  const type = blob.type.split(';')[0]?.trim() || `${kind}/webm`;
   const now = new Date();
   const pad = (value: number) => String(value).padStart(2, '0');
   const stamp = `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())} ${pad(now.getHours())}.${pad(now.getMinutes())}`;
-  return new File([blob], `Aufnahme ${stamp}.${type === 'video/mp4' ? 'mp4' : 'webm'}`, { type });
+  const noun = kind === 'audio' ? 'Sprachnachricht' : 'Aufnahme';
+  return new File([blob], `${noun} ${stamp}.${RECORDING_ENDS[type] ?? 'webm'}`, { type });
 }
 
 /** The `@…` being typed just before the caret, if any. */
@@ -215,6 +232,16 @@ export function Composer({
   const [picked, setPicked] = useState(0);
   // „Aa“: the format bar stands in the field.
   const [formatting, setFormatting] = useState(false);
+  // A voice message: the mic records right in the field (`VoiceMemoBar`, as a comment's reply) –
+  // the memo is the message. Sent, it goes up as a file, and the message goes once it is there.
+  const [voice, setVoice] = useState(false);
+  const [memo, setMemo] = useState<Recording | null>(null);
+  const [memoRunning, setMemoRunning] = useState(false);
+  const closeVoice = () => {
+    setVoice(false);
+    setMemo(null);
+    setMemoRunning(false);
+  };
   // Another conversation: its draft, and the caret in the field.
   const [shown, setShown] = useState(conversationId);
   // What the field shows that is kept: taken in, or taken by the server – typed on since, not yet.
@@ -224,6 +251,7 @@ export function Composer({
     setBody(draftIn(conversationId));
     setSaved(draftIn(conversationId));
     setMention(null);
+    closeVoice();
   }
   // Written on another device or tab, or by an agent (the list came down): in the field – unless
   // one typed on and that is not on the server yet (it would be gone).
@@ -252,14 +280,16 @@ export function Composer({
     if (prefill) focusField();
     // eslint-disable-next-line react-hooks/exhaustive-deps -- on another example only
   }, [prefill]);
-  useTypeInto(elementRef, typeInto);
+  // Not while a voice memo stands in the field's place: a key would type into the hidden words.
+  useTypeInto(elementRef, typeInto && !voice);
   // Written past one line: the buttons go below the words.
   // A video being recorded to send: the recorder floats over the field on its own, as wide as
   // it is – the field stays as it was. Only its ✕/discard or the camera button close it (a press
-  // beside it would lose a take).
+  // beside it would lose a take). Out of the page's boxes: a widget or side panel doesn't cut it.
   const [filming, setFilming] = useState(false);
   const [canFilm] = useState(canRecord);
   const filmRef = useRef<HTMLElement>(null);
+  const formRef = useRef<HTMLFormElement>(null);
   useFocusLoop(filmRef, filming);
   // Files on it too: they stand under the words, the buttons below them.
   const tall = useTallField(elementRef, body) || (attach?.items.length ?? 0) > 0 || !!attach?.error;
@@ -355,8 +385,20 @@ export function Composer({
   const files = attach?.ready ?? [];
   // Words or files – and nothing still on its way up.
   const sendable = (!!markupTrim(body) || files.length > 0) && !attach?.busy && !busy;
+  // The memo going up, sent (or planned) once it is: how many files were up before it.
+  const memoGoing = useRef<{ name: string; conversationId: string; at?: Date } | null>(null);
+  const canSend = voice ? !!memo && !memoRunning && !busy : sendable;
+  const sendMemo = (at?: Date) => {
+    if (!memo || !canSend || !attach) return;
+    const file = recordingFile(memo.blob, 'audio');
+    memoGoing.current = { name: file.name, conversationId, at };
+    attach.add([file]);
+    closeVoice();
+    focusField();
+  };
   const deliver = (go: (text: string, files: Attachment[]) => void | Promise<boolean>) => {
     const text = rich ? markupTrim(body) : body.trim();
+    if (voice) return sendMemo();
     if (!sendable) return;
     change('');
     setMention(null);
@@ -369,6 +411,32 @@ export function Composer({
     });
   };
   const send = () => deliver(onSend);
+  // Up (or refused – its error stands at the field): sent with what else is on it.
+  // Up: it goes alone – the words and other files stay in the field. Refused, its error stands
+  // there; another conversation picked meanwhile, it waits in its own field as a file.
+  const memoUp = useEffectEvent(() => {
+    const going = memoGoing.current;
+    if (!going || !attach || attach.busy) return;
+    memoGoing.current = null;
+    if (going.conversationId !== conversationId) return;
+    // The newest of that name: one recorded the same minute may still wait in the field.
+    const sent = attach.ready.findLast((one) => one.name === going.name);
+    if (!sent) return;
+    attach.take(sent.id);
+    const done = going.at && onSchedule ? onSchedule('', [sent], going.at) : onSend('', [sent]);
+    void done?.then((ok) => {
+      if (!ok) attach.restore([sent]);
+    });
+  });
+  useEffect(() => memoUp(), [attach?.busy, attach?.error]);
+  // „Senden“ on the bar while it records: the memo ends, and goes once it is there.
+  const sendWhenRecorded = useRef(false);
+  const memoDone = useEffectEvent(() => {
+    if (!sendWhenRecorded.current || !memo || memoRunning) return;
+    sendWhenRecorded.current = false;
+    send();
+  });
+  useEffect(() => memoDone(), [memo, memoRunning]);
   // „Später senden“: the menu on „Senden“, and the day and time typed in above the field.
   // Opened as a row's menu (`useRowMenu`): a right click, the menu key – and a long press, as
   // iOS fires no right click. With nothing to send nothing to plan: no menu, not the browser's.
@@ -383,6 +451,7 @@ export function Composer({
   const later = (at: Date) => {
     if (!onSchedule) return;
     setPicking(null);
+    if (voice) return sendMemo(at);
     deliver((text, sent) => onSchedule(text, sent, at));
     focusField();
   };
@@ -495,7 +564,7 @@ export function Composer({
             }
             // Enter on ✕ or „Planen“ is that button's own press, not a second plan.
             if (event.target instanceof HTMLButtonElement) return;
-            if (event.key === 'Enter' && pickedAt && pickedLate && sendable) {
+            if (event.key === 'Enter' && pickedAt && pickedLate && canSend) {
               event.preventDefault();
               later(pickedAt);
             }
@@ -522,7 +591,7 @@ export function Composer({
           />
           <Button
             size="sm"
-            disabled={!pickedLate || !sendable}
+            disabled={!pickedLate || !canSend}
             title={pickedAt && !pickedLate ? 'Dieser Zeitpunkt ist schon vorbei.' : undefined}
             onClick={() => pickedAt && later(pickedAt)}
           >
@@ -541,6 +610,7 @@ export function Composer({
         </div>
       )}
       <form
+        ref={formRef}
         aria-label={label}
         onSubmit={(event) => {
           event.preventDefault();
@@ -625,11 +695,13 @@ export function Composer({
           </ul>
         )}
         {filming && attach && (
-          <PopoverPanel
+          <FloatingPanel
             ref={filmRef}
+            anchor={formRef}
             as="section"
             aria-label="Video aufnehmen"
-            // Over the field – under it where the field stands at a page's top.
+            // Over the field – under it where the field stands at a page's top; turned where the
+            // other side has the room.
             side={variant === 'top' ? 'bottom' : 'top'}
             align="end"
             padding="lg"
@@ -644,7 +716,7 @@ export function Composer({
               editor={{
                 doneLabel: 'Anhängen',
                 onDone: (file) => {
-                  attach.add([videoFile(file)]);
+                  attach.add([recordingFile(file, 'video')]);
                   setFilming(false);
                   focusField();
                 },
@@ -653,78 +725,98 @@ export function Composer({
                   : undefined,
               }}
             />
-          </PopoverPanel>
+          </FloatingPanel>
         )}
         <div className={cn('flex min-w-0 flex-1 flex-col py-[5px]', tall && 'basis-full pr-2')}>
-          {rich ? (
-            <RichField
-              ref={richRef}
-              fieldRef={richElementRef}
-              label="Nachricht"
-              placeholder={placeholder}
-              value={body}
-              onChange={(text) => {
-                change(text);
-                if (text.trim()) onTyping?.();
+          {voice && (
+            <VoiceMemoBar
+              onChange={setMemo}
+              onRecordingChange={setMemoRunning}
+              onDiscard={() => {
+                closeVoice();
+                focusField();
               }}
-              onMention={(query) => {
-                setMention(query === null ? null : { start: -1, query });
-                setPicked(0);
+              onSend={() => send()}
+              onSendNow={{
+                run: () => {
+                  sendWhenRecorded.current = true;
+                },
+                ai: false,
               }}
-              combobox={{
-                expanded: open,
-                controls: open ? listId : undefined,
-                activeDescendant: open ? `${listId}-${picked}` : undefined,
-              }}
-              readOnly={assisting}
-              maxLength={maxLength}
-              maxHeight={maxHeight}
-              // A field at a page's top: the bar under it.
-              barSide={variant === 'top' ? 'bottom' : 'top'}
-              barOpen={formatting}
-              onKeyDownCapture={(event) => {
-                fieldKeys(event);
-                // Taken here: not the editor's too.
-                if (event.defaultPrevented) event.stopPropagation();
-              }}
-              onKeyDown={pageKeys}
-              onPasteCapture={paste}
-              onBlur={() => setMention(null)}
-              className={cn(variant === 'top' ? 'text-sm' : 'text-body', 'leading-4.5 text-fg')}
-            />
-          ) : (
-            <AutosizeTextarea
-              ref={fieldRef}
-              aria-label="Nachricht"
-              role="combobox"
-              aria-expanded={open}
-              aria-controls={open ? listId : undefined}
-              aria-activedescendant={open ? `${listId}-${picked}` : undefined}
-              aria-autocomplete="list"
-              placeholder={placeholder}
-              maxLength={maxLength}
-              maxHeight={maxHeight}
-              readOnly={assisting}
-              aria-busy={assisting || undefined}
-              value={body}
-              onChange={(event) => {
-                change(event.target.value);
-                if (event.target.value.trim()) onTyping?.();
-                look();
-              }}
-              onSelect={look}
-              onBlur={() => setMention(null)}
-              onPaste={paste}
-              onKeyDown={(event) => {
-                pageKeys(event);
-                fieldKeys(event);
-              }}
-              className={cn(
-                variant === 'top' ? 'text-sm' : 'text-body',
-                'leading-4.5 text-fg placeholder:text-fg-subtle',
-              )}
             />
           )}
+          {/* Kept, not shown, while the memo stands in its place: the words come back after. */}
+          <div className={voice ? 'hidden' : 'contents'}>
+            {rich ? (
+              <RichField
+                ref={richRef}
+                fieldRef={richElementRef}
+                label="Nachricht"
+                placeholder={placeholder}
+                value={body}
+                onChange={(text) => {
+                  change(text);
+                  if (text.trim()) onTyping?.();
+                }}
+                onMention={(query) => {
+                  setMention(query === null ? null : { start: -1, query });
+                  setPicked(0);
+                }}
+                combobox={{
+                  expanded: open,
+                  controls: open ? listId : undefined,
+                  activeDescendant: open ? `${listId}-${picked}` : undefined,
+                }}
+                readOnly={assisting}
+                maxLength={maxLength}
+                maxHeight={maxHeight}
+                // A field at a page's top: the bar under it.
+                barSide={variant === 'top' ? 'bottom' : 'top'}
+                barOpen={formatting}
+                onKeyDownCapture={(event) => {
+                  fieldKeys(event);
+                  // Taken here: not the editor's too.
+                  if (event.defaultPrevented) event.stopPropagation();
+                }}
+                onKeyDown={pageKeys}
+                onPasteCapture={paste}
+                onBlur={() => setMention(null)}
+                className={cn(variant === 'top' ? 'text-sm' : 'text-body', 'leading-4.5 text-fg')}
+              />
+            ) : (
+              <AutosizeTextarea
+                ref={fieldRef}
+                aria-label="Nachricht"
+                role="combobox"
+                aria-expanded={open}
+                aria-controls={open ? listId : undefined}
+                aria-activedescendant={open ? `${listId}-${picked}` : undefined}
+                aria-autocomplete="list"
+                placeholder={placeholder}
+                maxLength={maxLength}
+                maxHeight={maxHeight}
+                readOnly={assisting}
+                aria-busy={assisting || undefined}
+                value={body}
+                onChange={(event) => {
+                  change(event.target.value);
+                  if (event.target.value.trim()) onTyping?.();
+                  look();
+                }}
+                onSelect={look}
+                onBlur={() => setMention(null)}
+                onPaste={paste}
+                onKeyDown={(event) => {
+                  pageKeys(event);
+                  fieldKeys(event);
+                }}
+                className={cn(
+                  variant === 'top' ? 'text-sm' : 'text-body',
+                  'leading-4.5 text-fg placeholder:text-fg-subtle',
+                )}
+              />
+            )}
+          </div>
           {signature && body.trim() && (
             <p
               aria-label="Signatur"
@@ -735,8 +827,8 @@ export function Composer({
           )}
           {attach && <AttachmentChips files={attach} className="pt-2 pb-1" />}
         </div>
-        {attach && <AttachButton files={attach} />}
-        {attach?.enabled && canFilm && (
+        {attach && !voice && <AttachButton files={attach} />}
+        {attach?.enabled && canFilm && !voice && (
           <IconButton
             icon="videocam"
             label={filming ? 'Aufnahme schließen' : 'Video aufnehmen'}
@@ -749,7 +841,22 @@ export function Composer({
             onClick={() => setFilming((now) => !now)}
           />
         )}
-        {onFiles && (
+        {attach?.enabled && canFilm && !filming && (
+          <IconButton
+            icon="mic"
+            label={voice ? 'Sprachnachricht löschen' : 'Sprachnachricht aufnehmen'}
+            size="compact"
+            active={voice}
+            onPointerDown={(event) => event.preventDefault()}
+            onClick={() => {
+              if (voice) {
+                closeVoice();
+                focusField();
+              } else setVoice(true);
+            }}
+          />
+        )}
+        {onFiles && !voice && (
           <>
             <input
               ref={pickerRef}
@@ -773,6 +880,7 @@ export function Composer({
           </>
         )}
         {assist &&
+          !voice &&
           (assisting ? (
             <span className="flex size-7 shrink-0 items-center justify-center">
               <Spinner size={16} label="Die KI schreibt" />
@@ -786,7 +894,7 @@ export function Composer({
               onClick={() => void write()}
             />
           ))}
-        {rich && (
+        {rich && !voice && (
           <IconButton
             icon="textFormat"
             label="Formatieren"
@@ -801,7 +909,7 @@ export function Composer({
           />
         )}
         {/* Only where someone can be named (a mail's reply has no one). */}
-        {(agents.length > 0 || people.length > 0) && (
+        {(agents.length > 0 || people.length > 0) && !voice && (
           <IconButton
             icon="at"
             label="Jemanden erwähnen"
@@ -813,29 +921,32 @@ export function Composer({
         {working && onStop && (
           <IconButton icon="stop" label="Stoppen" size="compact" onClick={onStop} />
         )}
-        <span
-          className={onSchedule ? cn('flex', ROW_MENU_CLASS) : 'flex'}
-          {...(!onSchedule
-            ? {}
-            : sendable
-              ? laterMenu.props
-              : { onContextMenu: (event: MouseEvent) => event.preventDefault() })}
-        >
-          <IconButton
-            type="submit"
-            icon="arrowUpward"
-            label="Senden"
-            title={
-              (sendKey === 'mod-enter'
-                ? `Senden (${isApplePlatform() ? '⌘↵' : 'Strg+Enter'})`
-                : 'Senden (Enter)') +
-              (onSchedule ? '\nRechtsklick oder lange drücken: Später senden' : '')
-            }
-            size="compact"
-            iconTone={sendable ? 'success' : undefined}
-            disabled={!sendable}
-          />
-        </span>
+        {/* While the memo records, its bar has its own. */}
+        {!(voice && memoRunning) && (
+          <span
+            className={onSchedule ? cn('flex', ROW_MENU_CLASS) : 'flex'}
+            {...(!onSchedule
+              ? {}
+              : canSend
+                ? laterMenu.props
+                : { onContextMenu: (event: MouseEvent) => event.preventDefault() })}
+          >
+            <IconButton
+              type="submit"
+              icon="arrowUpward"
+              label="Senden"
+              title={
+                (sendKey === 'mod-enter'
+                  ? `Senden (${isApplePlatform() ? '⌘↵' : 'Strg+Enter'})`
+                  : 'Senden (Enter)') +
+                (onSchedule ? '\nRechtsklick oder lange drücken: Später senden' : '')
+              }
+              size="compact"
+              iconTone={canSend ? 'success' : undefined}
+              disabled={!canSend}
+            />
+          </span>
+        )}
         {laterMenu.at && (
           <ContextMenu
             label="Später senden"

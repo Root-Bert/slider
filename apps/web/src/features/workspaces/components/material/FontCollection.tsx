@@ -50,7 +50,7 @@ function useNearScreen() {
 }
 
 const SOURCE_LABELS: Record<FontFamily['source'], string> = {
-  slider: 'Slider',
+  slider: 'Office',
   workspace: 'Workspace',
 };
 

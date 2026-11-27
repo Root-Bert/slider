@@ -2,6 +2,7 @@ import { and, asc, count, eq, inArray, isNull, ne, notExists, or } from 'drizzle
 import type { Attachment, WorkspaceMember, WorkspaceRole } from '@slider/shared';
 import type { Executor } from '../../db/client';
 import {
+  calendarFeeds,
   cloudAreaMembers,
   cloudAgents,
   cloudAreas,
@@ -228,6 +229,10 @@ export async function removeMember(
         and(eq(workspaceMembers.workspaceId, workspaceId), eq(workspaceMembers.userId, targetId)),
       );
     await revokeInvitesBy(tx, workspaceId, targetId);
+    // Their calendar link ends – invited again, the old one does not open it.
+    await tx
+      .delete(calendarFeeds)
+      .where(and(eq(calendarFeeds.workspaceId, workspaceId), eq(calendarFeeds.userId, targetId)));
     // Cloud: out of the areas' lists and what was shared with them – back in the workspace
     // later, they see what everyone sees, not what they once did.
     await tx

@@ -137,10 +137,10 @@ export const mailViewOf = (params: URLSearchParams): MailView => ({
   folder: params.get('ordner') || OVERVIEW,
 });
 
-/** The address's query for a view – what is the default is left out. */
-export function mailViewSearch(view: MailView & { accountId: string }, first: boolean) {
+/** The address's query for a view – what is the default is left out (`isDefault`: its mailbox). */
+export function mailViewSearch(view: MailView & { accountId: string }, isDefault: boolean) {
   const params = new URLSearchParams();
-  if (!first) params.set('postfach', view.accountId);
+  if (!isDefault) params.set('postfach', view.accountId);
   if (view.folder !== OVERVIEW) params.set('ordner', view.folder);
   const query = params.toString();
   return query ? `?${query}` : '';

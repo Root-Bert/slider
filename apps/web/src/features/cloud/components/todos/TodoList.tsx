@@ -26,7 +26,7 @@ import {
   useState,
   type ReactNode,
 } from 'react';
-import { Link, useSearchParams } from 'react-router';
+import { Link, useLocation, useNavigate, useSearchParams } from 'react-router';
 import {
   AttachButton,
   AttachmentChips,
@@ -44,6 +44,7 @@ import {
   useMilestones,
   useProjects,
   useNewTodoAgent,
+  useOpenSenderDirect,
   useSendTodoAgent,
   useTodos,
   useUpdateProject,
@@ -57,7 +58,9 @@ import {
   CLOUD_TODO_PARAM,
   routes,
 } from '@/lib/routes';
+import { useViewChoice } from '@/lib/view-choice';
 import { useDeckContextMenu } from '@/features/reviews';
+import { useSenderOrNull } from '@/features/sender';
 import { canCreateDecks, ViewSearch } from '@/features/workspaces';
 import {
   AutosizeTextarea,
@@ -66,6 +69,7 @@ import {
   ConfirmDialog,
   Icon,
   IconButton,
+  iconButtonClasses,
   LoadingState,
   MenuDivider,
   MenuHeading,
@@ -82,7 +86,6 @@ import {
   usePopover,
 } from '@/ui';
 import { useCloud } from '../../hooks/useCloud';
-import { useStoredChoice } from '../../hooks/useStoredChoice';
 import {
   ALL_SCOPE,
   OWN_SCOPE,
@@ -115,7 +118,7 @@ export function TodoList({ area }: { area: CloudArea | null }) {
   const projects = useProjects(workspaceId, area?.id ?? null);
   const [projectParam, setProject] = useProjectParam();
   const shown = useShownTodo();
-  const [view, setView] = useStoredChoice('slider.cloud.todos-view', TODO_VIEWS, 'list');
+  const [view, setView] = useViewChoice('slider.cloud.todos-view', TODO_VIEWS, 'list');
   // The overview's open tab (the page's title); in an area all are the area's.
   const { tabs, current } = useTodoScope();
   const [assignedOnly] = useAssignedOnly();
@@ -742,7 +745,17 @@ function TodoRow({
           <PriorityPicker todo={todo} onChange={change} />
         </span>
         <SendAgentButton todo={todo} />
-        <WhoPicker todo={todo} onChange={change} />
+        {/* The agent and the person, each its own mark; no agent given: only on hover. */}
+        <span
+          className={cn(
+            'flex shrink-0',
+            !todo.assigneeAgent &&
+              'opacity-0 group-focus-within:opacity-100 group-hover:opacity-100 has-[[aria-expanded=true]]:opacity-100',
+          )}
+        >
+          <WhoPicker todo={todo} onChange={change} part="agent" />
+        </span>
+        <WhoPicker todo={todo} onChange={change} part="person" />
       </div>
     </li>
   );
@@ -783,7 +796,8 @@ function TodoCard({ todo, open, onToggle }: { todo: Todo; open: boolean; onToggl
         )}
         <PriorityPicker todo={todo} onChange={change} />
         <SendAgentButton todo={todo} />
-        <WhoPicker todo={todo} onChange={change} />
+        <WhoPicker todo={todo} onChange={change} part="agent" />
+        <WhoPicker todo={todo} onChange={change} part="person" />
       </div>
       <button
         type="button"
@@ -1049,7 +1063,8 @@ function SendAgentButton({ todo }: { todo: Todo }) {
 /**
  * The one doing it – a person, an agent given it, or both; the agent's face pulses while it
  * works. Picking an agent only gives it the to-do; „Losschicken“ starts it. `part`: only the
- * person or only the agent, named – the to-do's panel has a line for each.
+ * person or only the agent – a mark of its own in a row or tile, named in the to-do's panel
+ * (a line for each).
  */
 function WhoPicker({
   todo,
@@ -1084,6 +1099,8 @@ function WhoPicker({
   const agentLine = showAgent && (makes || sendable.length > 0);
   if (part === 'agent' && !agentLine && !todo.assigneeAgent) return null;
   const nobody = part === 'agent' ? 'Kein Agent' : 'Zuständig';
+  // In a row or tile only its mark; in the panel its name beside it.
+  const named = !!part && look !== 'plain';
   // Docked as a card: the agent's face larger, how it stands under its name.
   const card = look === 'card' && part === 'agent';
   const state = working
@@ -1096,12 +1113,8 @@ function WhoPicker({
   return (
     <Picker
       wide
-      fluid={!!part}
-      label={
-        label
-          ? `${part === 'agent' ? 'Agent' : 'Zuständig'}: ${label}`
-          : `${part === 'agent' ? 'Agent' : 'Zuständig'}: ${nobody.toLowerCase()}`
-      }
+      fluid={named}
+      label={`${part === 'agent' ? 'Agent' : 'Zuständig'}: ${label || (part === 'agent' ? 'kein Agent' : 'niemand')}`}
       disabled={!todo.canEdit}
       className={part && !label && !card ? 'text-fg-muted' : undefined}
       trigger={
@@ -1151,7 +1164,7 @@ function WhoPicker({
                 </span>
               )}
             </span>
-            {part && <span className="truncate">{label || nobody}</span>}
+            {named && <span className="truncate">{label || nobody}</span>}
           </>
         )
       }
@@ -1911,6 +1924,76 @@ function PlacePicker({ todo, onChange }: { todo: Todo; onChange: (change: TodoCh
 }
 
 /**
+ * In the panel's head beside ⋯: on to the to-dos' page and to the chat with whoever works on it
+ * – the agent given it, the person (not oneself). The panel stays open where one lands
+ * (`?aufgabe=` goes along); a way to where one already is is not offered.
+ */
+function TodoJumps({ todo }: { todo: Todo }) {
+  const ui = useCloud();
+  const navigate = useNavigate();
+  const { pathname } = useLocation();
+  const sender = useSenderOrNull();
+  const openDirect = useOpenSenderDirect(ui.workspace.id);
+  const go = (path: string) =>
+    void navigate({
+      pathname: path,
+      search: `?${CLOUD_TODO_PARAM}=${encodeURIComponent(todo.id)}`,
+    });
+  const todosPaths = [
+    routes.cloudTodos(ui.workspace.id),
+    todo.areaId ? routes.cloudAreaTodos(ui.workspace.id, todo.areaId) : null,
+  ];
+  const agent = todo.assigneeAgent;
+  const agentPath = agent ? routes.cloudAgent(ui.workspace.id, agent.id) : null;
+  const person = sender && todo.assignee && todo.assignee.id !== ui.userId ? todo.assignee : null;
+  const direct = person && sender?.home?.direct.find((each) => each.person?.id === person.id);
+  const directPath = direct && sender ? sender.pathOf(direct) : null;
+  const chatWithPerson = () => {
+    if (!person || !sender || openDirect.isPending) return;
+    if (directPath) return go(directPath);
+    openDirect.mutate(person.id, {
+      onSuccess: (channel) => go(sender.pathOf(channel)),
+      onError: (error) => ui.notify(error.message, 'danger'),
+    });
+  };
+  const face = iconButtonClasses({ size: 'sm' });
+  return (
+    <>
+      {!todosPaths.includes(pathname) && (
+        <IconButton
+          icon="checklist"
+          label="Zu den Aufgaben"
+          size="sm"
+          onClick={() => go(routes.cloudTodos(ui.workspace.id))}
+        />
+      )}
+      {agent && agentPath && !pathname.startsWith(agentPath) && (
+        <button
+          type="button"
+          className={face}
+          aria-label={`Chat mit ${agent.title}`}
+          title={`Chat mit ${agent.title}`}
+          onClick={() => go(agentPath)}
+        >
+          <AgentAvatar id={agent.id} size={20} />
+        </button>
+      )}
+      {person && pathname !== directPath && (
+        <button
+          type="button"
+          className={face}
+          aria-label={`Chat mit ${person.name}`}
+          title={`Chat mit ${person.name}`}
+          onClick={chatWithPerson}
+        >
+          <Avatar author={person} size={20} nativeTitle={false} />
+        </button>
+      )}
+    </>
+  );
+}
+
+/**
  * In the side panel: its title with how it stands (status, priority) and its words; who does it,
  * when and where as lines under them; the agent docked at its foot with „Losschicken“, who made
  * it last.
@@ -1970,6 +2053,7 @@ function TodoDetail({
     <>
       <header className="flex shrink-0 items-center gap-2 border-b border-hairline py-2.5 pr-2.5 pl-5">
         <span className="flex-1 text-sm text-fg-muted tabular-nums">#{todo.number}</span>
+        <TodoJumps todo={todo} />
         <TodoActions todo={todo} button />
         <IconButton icon="close" label="Aufgabe schließen (Esc)" size="sm" onClick={onClose} />
       </header>

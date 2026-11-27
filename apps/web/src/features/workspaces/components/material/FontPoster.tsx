@@ -13,7 +13,7 @@ import { faceLabel, posterLook, type FontFamily, type FontStyle } from '../../li
  */
 
 const SOURCE_LABELS: Record<FontFamily['source'], string> = {
-  slider: 'Slider',
+  slider: 'Office',
   workspace: 'Workspace',
 };
 

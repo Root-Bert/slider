@@ -393,6 +393,12 @@ export function CloudProvider({
         const reader = windowForApp('reader');
         if (reader) reader.go(to);
         else void navigate(to);
+      } else if (app === 'diagram') {
+        // A diagram: drawn on in Cloud, on a page of its own.
+        void navigate(routes.diagram(node.id));
+      } else if (app === 'page') {
+        // A page: read (and written) in Cloud itself.
+        void navigate(routes.cloudPage(workspace.id, node.id));
       } else if (app === 'writer') {
         // Writer's own: the document is this file, it opens where it is written.
         const to = routes.document(node.id);
@@ -443,8 +449,8 @@ export function CloudProvider({
         return 'Diese Präsentation kannst du in Slider nicht öffnen';
       const extension = cloudExtension(node.name);
       return extension
-        ? `Slider kann .${extension}-Dateien nicht öffnen`
-        : 'Slider kann diese Datei nicht öffnen';
+        ? `Office kann .${extension}-Dateien nicht öffnen`
+        : 'Office kann diese Datei nicht öffnen';
     },
     [workspace.role],
   );
@@ -491,12 +497,14 @@ export function CloudProvider({
                 ].map(([id, when]) => [id, ids.includes(id) ? at : when]),
               ),
           );
-          if (skipped && result.nodes.length === 0) return notify(skipped.reason, 'danger');
-          notify(
-            withSkipped(named(result.nodes, 'gelöscht', 'gelöscht'), result.skipped),
-            skipped ? 'danger' : 'neutral',
-            { label: 'Rückgängig', run: () => restore(result.nodes) },
-          );
+          // Seen leaving the list: no word about it („Gelöscht“ holds it) – only about what stayed.
+          if (skipped && result.nodes.length === 0) notify(skipped.reason, 'danger');
+          else if (skipped) {
+            notify(
+              withSkipped(named(result.nodes, 'gelöscht', 'gelöscht'), result.skipped),
+              'danger',
+            );
+          }
         },
         onError: (error) => {
           setGone((now) => without(now, ids));
@@ -504,7 +512,7 @@ export function CloudProvider({
         },
       });
     },
-    [failed, notify, restore, trashNodes],
+    [failed, notify, trashNodes],
   );
 
   const moveInto = useCallback(
@@ -1127,8 +1135,11 @@ export function CloudProvider({
               onSuccess: () => {
                 notify(`Bereich „${dialog.area.name}“ gelöscht`);
                 close();
-                // Only when it was the page: to the area above it, else to the start.
-                if (window.location.pathname === routes.cloudArea(workspace.id, dialog.area.id)) {
+                // Only when one was on it (its Startseite or a view of it): to the area above it,
+                // else to the start.
+                const at = routes.cloudArea(workspace.id, dialog.area.id);
+                const path = window.location.pathname;
+                if (path === at || path.startsWith(`${at}/`)) {
                   void navigate(
                     dialog.area.parentId
                       ? routes.cloudArea(workspace.id, dialog.area.parentId)

@@ -15,6 +15,7 @@ import type { AppDeps } from '../deps';
 import { isUniqueViolation } from '../http/errors';
 import { instanceClaimed, removeSetupToken, setupTokenMatches } from './instance-settings';
 import {
+  companyLoginRequired,
   effectiveState,
   findDomainWorkspace,
   findInviteByToken,
@@ -159,7 +160,9 @@ export async function signInWithIdentity(
     if (email) {
       await db
         .update(userIdentities)
-        .set({ email })
+        // A company login's `createdAt` is when it was last used: „Nur Firmen-Login“ goes on only
+        // after a sign-in through the provider as it is set up now (`setWorkspaceSsoRequired`).
+        .set({ email, ...(input.provider === 'sso' ? { createdAt: now } : {}) })
         .where(
           and(
             eq(userIdentities.provider, input.provider),
@@ -172,6 +175,11 @@ export async function signInWithIdentity(
   }
 
   if (!email) return { ok: false, error: 'no_email' };
+  // „Nur Firmen-Login“: refused before anything is written – no account, no domain join, no new
+  // login; `startSession` would refuse only the session, afterwards.
+  if (input.provider !== 'sso' && (await companyLoginRequired(deps, email))) {
+    return { ok: false, error: 'sso_required' };
+  }
   const attach = async (user: UserRow, executor: Executor = db) => {
     await executor.insert(userIdentities).values({
       provider: input.provider,

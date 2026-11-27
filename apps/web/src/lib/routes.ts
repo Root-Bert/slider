@@ -41,6 +41,8 @@ export const routes = {
   /** Deep links use the stable slide id, never the slide number (BER-95). */
   deck: (deckId: string, slideId?: string | null) =>
     slideId ? `/d/${deckId}?slide=${encodeURIComponent(slideId)}` : `/d/${deckId}`,
+  /** The deck with its „Material“ open (`MATERIAL_PARAM`). */
+  deckMaterial: (deckId: string) => `/d/${deckId}?${MATERIAL_PARAM}`,
   /** Workspace invitation link (BER-129). */
   join: (token: string) => `/join/${token}`,
   login: (returnTo?: string | null) => loginPath(returnTo),
@@ -86,8 +88,15 @@ export const routes = {
   cloudFiles: (workspaceId: string) => `/w/${workspaceId}/dateien/meine`,
   /** One's own files („Meine Dateien“): „Dateien“'s first tab. */
   cloudOwn: (workspaceId: string) => `/w/${workspaceId}/dateien/meine`,
-  /** An area's top. */
+  /** An area's top: its Startseite („Startseite.md“ in it), the files beside it. */
   cloudArea: (workspaceId: string, areaId: string) => `/w/${workspaceId}/dateien/bereich/${areaId}`,
+  /** An area's files: the view beside its Startseite. */
+  cloudAreaFiles: (workspaceId: string, areaId: string) =>
+    `/w/${workspaceId}/dateien/bereich/${areaId}/dateien`,
+  /** A page (a Markdown file), read and written in Cloud. */
+  cloudPage: (workspaceId: string, pageId: string) => `/w/${workspaceId}/dateien/seite/${pageId}`,
+  /** „Seiten“: one's own pages (in „Meine Dateien“' folder „Notizen“) and the areas'. */
+  cloudPages: (workspaceId: string) => `/w/${workspaceId}/dateien/seiten`,
   /** An area's agents: the view beside its files. */
   cloudAreaAgents: (workspaceId: string, areaId: string) =>
     `/w/${workspaceId}/dateien/bereich/${areaId}/agenten`,
@@ -180,6 +189,10 @@ export const routes = {
   /** One document, open; `?kommentar=` leads to a comment in it. */
   document: (documentId: string, commentId?: string | null) =>
     commentId ? `/t/${documentId}?kommentar=${encodeURIComponent(commentId)}` : `/t/${documentId}`,
+  /** One diagram, open – drawn on where it is. */
+  diagram: (diagramId: string) => `/diagramm/${diagramId}`,
+  /** The document with its „Material“ open (`MATERIAL_PARAM`). */
+  documentMaterial: (documentId: string) => `/t/${documentId}?${MATERIAL_PARAM}`,
   /** Reader – where the installed app starts: on to the PDFs of the workspace last open. */
   readerStart: () => '/reader',
   /** „PDFs“: the workspace's PDFs. */
@@ -191,6 +204,9 @@ export const routes = {
   /** What a link shows to someone outside. */
   cloudLink: (token: string) => `/s/${token}`,
 };
+
+/** `?material` on a deck's or document's address: its „Material“ opens with it. */
+export const MATERIAL_PARAM = 'material';
 
 /** `?datei=<id>` on any page of Cloud opens that file over it. */
 export const CLOUD_FILE_PARAM = 'datei';

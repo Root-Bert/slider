@@ -1,0 +1,450 @@
+/*
+ * The diagram editor (React Flow under our own look). Every colour comes from a box's tint:
+ * `--dg-tint` is an accent token (or a colour of one's own, set on the box), fill and line are
+ * mixed from it over the page – so light and dark follow by themselves.
+ */
+
+.dg-flow {
+  --dg-base: #161616;
+  --dg-ink: var(--color-fg);
+  --dg-line: rgb(255 255 255 / 0.55);
+  --dg-pick: var(--color-accent-blue);
+  --xy-background-color: var(--color-canvas);
+  --xy-background-pattern-dots-color-default: var(--color-dot);
+  --xy-selection-background-color: color-mix(in srgb, var(--color-accent-blue) 10%, transparent);
+  --xy-selection-border: 1px solid color-mix(in srgb, var(--color-accent-blue) 70%, transparent);
+  background: var(--color-canvas);
+}
+
+:root[data-theme='light'] .dg-flow {
+  --dg-base: #ffffff;
+  --dg-line: rgb(0 0 0 / 0.5);
+}
+
+/* Tints: as the accents, gray as the page's own ink. */
+.dg-box,
+.dg-arrow-group {
+  --dg-tint: var(--color-fg-subtle);
+}
+[data-tint='blue'] {
+  --dg-tint: var(--color-accent-blue);
+}
+[data-tint='cyan'] {
+  --dg-tint: var(--color-accent-cyan);
+}
+[data-tint='green'] {
+  --dg-tint: var(--color-accent-green);
+}
+[data-tint='yellow'] {
+  --dg-tint: var(--color-accent-yellow);
+}
+[data-tint='red'] {
+  --dg-tint: var(--color-accent-red);
+}
+[data-tint='violet'] {
+  --dg-tint: var(--color-accent-violet);
+}
+
+/* ── Boxes ─────────────────────────────────────────────────────────────────────────────────── */
+
+.dg-flow .react-flow__node {
+  /* Our own box draws the outline: React Flow's frame stays out of it. */
+  border: 0;
+  padding: 0;
+  background: none;
+  border-radius: 0;
+  box-shadow: none;
+}
+
+.dg-box {
+  position: relative;
+  width: 100%;
+  height: 100%;
+  color: var(--dg-ink);
+}
+
+.dg-outline {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+.dg-outline :is(rect, path, ellipse, polygon) {
+  fill: color-mix(in srgb, var(--dg-tint) 16%, var(--dg-base));
+  stroke: color-mix(in srgb, var(--dg-tint) 85%, var(--dg-ink));
+  stroke-width: 2;
+  vector-effect: non-scaling-stroke;
+}
+.dg-box[data-tint='gray'] .dg-outline :is(rect, path, ellipse, polygon),
+.dg-box:not([data-tint]) .dg-outline :is(rect, path, ellipse, polygon) {
+  fill: var(--dg-base);
+  stroke: var(--dg-line);
+}
+.dg-outline .dg-line {
+  fill: none !important;
+}
+/* A note is a sticker: full colour, no line. */
+.dg-outline .dg-note {
+  fill: color-mix(in srgb, var(--dg-tint) 55%, var(--dg-base)) !important;
+  stroke: none !important;
+}
+.dg-box[data-shape='note']:not([data-tint]) .dg-outline .dg-note {
+  fill: color-mix(in srgb, var(--color-accent-yellow) 55%, var(--dg-base)) !important;
+}
+.dg-box[data-shape='note'] {
+  filter: drop-shadow(0 2px 6px rgb(0 0 0 / 0.18));
+}
+
+.dg-text {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 8px 12px;
+  text-align: center;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  line-height: 1.35;
+  font-size: 14px;
+  pointer-events: none;
+  user-select: none;
+}
+.dg-box[data-size='s'] .dg-text {
+  font-size: 12px;
+}
+.dg-box[data-size='l'] .dg-text {
+  font-size: 18px;
+  font-weight: 600;
+}
+.dg-box[data-shape='rhombus'] .dg-text {
+  padding: 18% 22%;
+}
+.dg-box[data-shape='hexagon'] .dg-text,
+.dg-box[data-shape='parallelogram'] .dg-text {
+  padding: 8px 14%;
+}
+.dg-box[data-shape='cylinder'] .dg-text {
+  padding-top: 18px;
+}
+.dg-box[data-shape='document'] .dg-text {
+  padding-bottom: 16px;
+}
+.dg-box[data-shape='note'] .dg-text {
+  align-items: flex-start;
+  justify-content: flex-start;
+  text-align: left;
+  padding: 12px 14px;
+}
+.dg-box[data-shape='text'] .dg-text {
+  padding: 2px 4px;
+}
+
+/* What one types into, where the words stand. */
+.dg-text-edit {
+  pointer-events: auto;
+  user-select: text;
+}
+.dg-text-edit textarea {
+  width: 100%;
+  max-height: 100%;
+  resize: none;
+  border: 0;
+  outline: none;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  text-align: inherit;
+  line-height: inherit;
+  padding: 0;
+  overflow: hidden;
+  field-sizing: content;
+}
+.dg-placeholder {
+  color: var(--color-fg-faint);
+}
+
+/* ── Frames ────────────────────────────────────────────────────────────────────────────────── */
+
+.dg-frame {
+  position: absolute;
+  inset: 0;
+  border-radius: 14px;
+  background: color-mix(in srgb, var(--dg-tint) 7%, transparent);
+  border: 1.5px solid color-mix(in srgb, var(--dg-tint) 45%, transparent);
+}
+.dg-box[data-tint='gray'] .dg-frame,
+.dg-box:not([data-tint]) .dg-frame {
+  background: color-mix(in srgb, var(--color-fg) 4%, transparent);
+  border-color: var(--color-hairline-strong);
+}
+.dg-box[data-drop] .dg-frame {
+  border-color: var(--dg-pick);
+  background: color-mix(in srgb, var(--dg-pick) 8%, transparent);
+}
+.dg-frame-title {
+  position: absolute;
+  top: 10px;
+  left: 14px;
+  right: 14px;
+  font-size: 13px;
+  font-weight: 600;
+  line-height: 20px;
+  color: color-mix(in srgb, var(--dg-tint) 60%, var(--dg-ink));
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  user-select: none;
+}
+.dg-box:not([data-tint]) .dg-frame-title,
+.dg-box[data-tint='gray'] .dg-frame-title {
+  color: var(--color-fg-muted);
+}
+.dg-frame-title textarea {
+  width: 100%;
+  border: 0;
+  outline: none;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  resize: none;
+  padding: 0;
+  height: 20px;
+  overflow: hidden;
+}
+
+/* ── Picked, ports, resizing ───────────────────────────────────────────────────────────────── */
+
+.dg-box[data-picked]::after {
+  content: '';
+  position: absolute;
+  inset: -3px;
+  border: 1.5px solid var(--dg-pick);
+  border-radius: 4px;
+  pointer-events: none;
+}
+.dg-box[data-shape='frame'][data-picked]::after {
+  border-radius: 16px;
+}
+.dg-box[data-near]:not([data-picked])::after {
+  content: '';
+  position: absolute;
+  inset: -3px;
+  border: 1.5px solid color-mix(in srgb, var(--dg-pick) 55%, transparent);
+  border-radius: 4px;
+  pointer-events: none;
+}
+
+.dg-handle.react-flow__handle {
+  opacity: 0;
+  pointer-events: none;
+  width: 1px;
+  height: 1px;
+  min-width: 0;
+  min-height: 0;
+  border: 0;
+  top: 50%;
+  left: 50%;
+}
+
+.dg-port {
+  position: absolute;
+  z-index: 2;
+  width: 18px;
+  height: 18px;
+  margin: -9px 0 0 -9px;
+  border-radius: 999px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: white;
+  background: var(--dg-pick);
+  opacity: 0;
+  transform: scale(0.6);
+  transition:
+    opacity 120ms,
+    transform 120ms;
+  cursor: crosshair;
+}
+.dg-port svg {
+  width: 12px;
+  height: 12px;
+}
+.react-flow__node:hover .dg-port,
+.dg-box[data-single] .dg-port {
+  opacity: 0.9;
+  transform: scale(1);
+}
+.dg-port:hover {
+  opacity: 1 !important;
+  transform: scale(1.2) !important;
+}
+.dg-port[data-side='top'] {
+  left: 50%;
+  top: -22px;
+}
+.dg-port[data-side='bottom'] {
+  left: 50%;
+  top: calc(100% + 22px);
+}
+.dg-port[data-side='left'] {
+  left: -22px;
+  top: 50%;
+}
+.dg-port[data-side='right'] {
+  left: calc(100% + 22px);
+  top: 50%;
+}
+.dg-flow[data-busy] .dg-port {
+  display: none;
+}
+
+.dg-flow .react-flow__resize-control.handle {
+  width: 9px;
+  height: 9px;
+  border-radius: 2px;
+  background: var(--dg-base);
+  border: 1.5px solid var(--dg-pick);
+}
+.dg-flow .react-flow__resize-control.line {
+  border-color: transparent;
+}
+
+/* ── Arrows ────────────────────────────────────────────────────────────────────────────────── */
+
+.dg-arrow {
+  fill: none;
+  stroke: color-mix(in srgb, var(--dg-tint) 90%, var(--dg-ink));
+  stroke-width: 1.75;
+  stroke-linejoin: round;
+  stroke-linecap: round;
+}
+.dg-arrow-group:not([data-tint]) .dg-arrow,
+.dg-arrow-group[data-tint='gray'] .dg-arrow {
+  stroke: var(--dg-line);
+}
+.dg-arrow[data-line='dashed'] {
+  stroke-dasharray: 7 6;
+}
+.dg-arrow[data-line='dotted'] {
+  stroke-dasharray: 0.5 5;
+  stroke-width: 2.5;
+}
+.dg-arrow-head {
+  fill: color-mix(in srgb, var(--dg-tint) 90%, var(--dg-ink));
+}
+.dg-arrow-group:not([data-tint]) .dg-arrow-head,
+.dg-arrow-group[data-tint='gray'] .dg-arrow-head {
+  fill: var(--dg-line);
+}
+.dg-arrow-group[data-picked] .dg-arrow {
+  stroke: var(--dg-pick);
+}
+.dg-arrow-group[data-picked] .dg-arrow-head {
+  fill: var(--dg-pick);
+}
+.dg-guides .dg-arrow-preview,
+.dg-arrow-preview {
+  fill: none;
+  stroke: var(--dg-pick);
+  stroke-width: 1.75;
+  stroke-dasharray: 5 5;
+  vector-effect: non-scaling-stroke;
+}
+
+.dg-label {
+  position: absolute;
+  pointer-events: all;
+  padding: 1px 6px;
+  border-radius: 6px;
+  background: var(--color-canvas);
+  color: var(--color-fg-muted);
+  font-size: 12px;
+  line-height: 18px;
+  white-space: pre;
+  max-width: 240px;
+  text-align: center;
+}
+.dg-label[data-picked] {
+  color: var(--color-fg);
+  box-shadow: 0 0 0 1.5px var(--dg-pick);
+}
+.dg-label textarea {
+  border: 0;
+  outline: none;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  text-align: center;
+  resize: none;
+  padding: 0;
+  field-sizing: content;
+  min-width: 40px;
+}
+
+/* ── Guides, drawing ───────────────────────────────────────────────────────────────────────── */
+
+.dg-guides {
+  position: absolute;
+  overflow: visible;
+  pointer-events: none;
+}
+.dg-guides line {
+  stroke: var(--color-accent-red);
+  stroke-width: 1;
+  vector-effect: non-scaling-stroke;
+}
+
+.dg-draw {
+  position: absolute;
+  inset: 0;
+  z-index: 5;
+  cursor: crosshair;
+}
+.dg-draft {
+  position: absolute;
+  border: 1.5px dashed var(--dg-pick);
+  border-radius: 4px;
+  background: color-mix(in srgb, var(--dg-pick) 6%, transparent);
+  pointer-events: none;
+}
+
+.dg-flow .react-flow__edges,
+.dg-flow .react-flow__edgelabel-renderer {
+  /* Labels over the arrows, boxes over both (zIndex per element, `flow.ts`). */
+  overflow: visible;
+}
+.dg-flow .react-flow__selection {
+  border-radius: 4px;
+}
+.dg-flow[data-tool='hand'] .react-flow__pane {
+  cursor: grab;
+}
+
+.dg-icon :is(rect, path, ellipse, polygon) {
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.5;
+}
+
+/* ── Still (`DiagramPreview`): the same boxes and arrows, scaled into their place ─────────────── */
+
+.dg-static {
+  position: relative;
+  width: 100%;
+  overflow: hidden;
+  background: transparent;
+  pointer-events: none;
+}
+.dg-static-stage {
+  position: absolute;
+  top: 0;
+  transform-origin: 0 0;
+}
+.dg-static-node {
+  position: absolute;
+}
+.dg-static-arrows {
+  position: absolute;
+  inset: 0;
+  overflow: visible;
+}

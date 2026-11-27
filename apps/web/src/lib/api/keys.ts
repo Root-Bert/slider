@@ -15,11 +15,9 @@ export const queryKeys = {
   /** The folders of one workspace – outside `decks`, so deck invalidation leaves them alone. */
   slides: (deckId: string) => ['decks', deckId, 'slides'] as const,
   comments: (deckId: string) => ['decks', deckId, 'comments'] as const,
-  /** The deck's board (the material page): its files, notes and links. */
+  /** The deck's material: the files (and notes, links) the AI builds and answers from. */
   board: (deckId: string) => ['decks', deckId, 'board'] as const,
-  /** One's own questions about the deck's material („Fragen“ on the material page). */
-  materialQuestions: (deckId: string) => ['decks', deckId, 'material-questions'] as const,
-  /** One's own chats with the AI on the material page (✨). */
+  /** One's own chats with the AI over the deck (`DeckAiChat`). */
   materialChats: (deckId: string) => ['decks', deckId, 'material-chats'] as const,
   /** A deck built by the AI from the prompt on Folie 1: the prompt, the outline, the progress. */
   creation: (deckId: string) => ['decks', deckId, 'creation'] as const,

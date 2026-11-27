@@ -87,6 +87,8 @@ export const CLOUD_FILE_TYPES = [
   'document',
   'presentation',
   'spreadsheet',
+  /** Boxes and arrows drawn in Cloud (`diagram.ts`). */
+  'diagram',
   'pdf',
   'image',
   'video',
@@ -105,6 +107,7 @@ const extensions = (type: CloudFileType, list: string) => {
 extensions('document', 'doc docx docm dot dotx odt ott rtf pages');
 extensions('presentation', 'ppt pptx pptm pps ppsx pot potx odp otp key');
 extensions('spreadsheet', 'xls xlsx xlsm xlsb xlt xltx ods ots csv tsv numbers');
+extensions('diagram', 'diagram');
 extensions('pdf', 'pdf');
 extensions('image', 'png jpg jpeg gif webp avif svg heic heif tif tiff bmp ico psd ai');
 extensions('video', 'mp4 m4v mov webm mkv avi wmv mpg mpeg');

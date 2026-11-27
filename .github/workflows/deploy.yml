@@ -7,7 +7,7 @@ name: Deploy
 # The job copies the tagged checkout to /opt/slider on the server, writes deploy/.env from a
 # secret and runs deploy/deploy.sh there (build, restart, wait for the health check). Nothing has
 # to be set up on the server by hand. Runs only in the development repository
-# (Root-Bert/slider-dev), never in the public one or a fork.
+# (Root-Bert/eigen-office), never in the public one or a fork.
 #
 # Repository secrets: DEPLOY_HOST (server IP), DEPLOY_KNOWN_HOSTS (its SSH host key line),
 # DEPLOY_SSH_KEY (private key whose public half is in root's authorized_keys there, prefixed with
@@ -36,7 +36,7 @@ jobs:
   deploy:
     name: Deploy to the server
     if: >-
-      github.repository == 'Root-Bert/slider-dev' && (github.event_name == 'workflow_dispatch' ||
+      github.repository == 'Root-Bert/eigen-office' && (github.event_name == 'workflow_dispatch' ||
       (github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.event == 'release'))
     runs-on: ubuntu-latest
     timeout-minutes: 30

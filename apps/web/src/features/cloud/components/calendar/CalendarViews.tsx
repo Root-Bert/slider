@@ -1,5 +1,12 @@
 import { isOpenTodo } from '@slider/shared';
-import { useEffect, useLayoutEffect, useRef, useState, type CSSProperties } from 'react';
+import {
+  useEffect,
+  useLayoutEffect,
+  useRef,
+  useState,
+  type CSSProperties,
+  type MouseEvent,
+} from 'react';
 import { cn } from '@/ui';
 import { StatusMark } from '../todos/TodoMarks';
 import { useShownTodo } from '../todos/TodoList';
@@ -16,7 +23,8 @@ import {
   WEEKDAYS,
   weekNumber,
 } from './days';
-import { byDay, entryDays, type CalendarView, type Entry } from './entries';
+import { AgendaRow } from './AgendaRow';
+import { byDay, type CalendarView, type Entry } from './entries';
 import { useShownEvent, type NewEvent } from './EventPanel';
 
 /** What every view is given: its days, what lies in them, and where a click goes. */
@@ -24,10 +32,36 @@ export interface ViewProps {
   anchor: Date;
   days: Date[];
   entries: Entry[];
+  /** The day one chose (its number, a pinch on it, the side's small month), framed; else `null`. */
+  picked: string | null;
   /** Another view of a day (a day's number, „+3 weitere“, a day in the year). */
   onOpen: (view: CalendarView, day: string) => void;
-  /** A new event where the click was – `null` where nothing may be put in. */
+  /** A click on a day: what is in it, beside (`EventPanel`'s day). */
+  onDay: (day: string) => void;
+  /** A double click: a new event where it was – `null` where nothing may be put in. */
   onNew: ((draft: NewEvent) => void) | null;
+}
+
+/**
+ * A day's click and double click, as Apple's: a click shows the day beside, a double click makes a
+ * new event where the first click was – the panel coming in moves the days under the second. On
+ * what has a click of its own (an entry, a day's number, „+3“) a double click makes nothing.
+ */
+function useDayClicks(onDay: ViewProps['onDay'], onNew: ViewProps['onNew']) {
+  const first = useRef<NewEvent | null>(null);
+  return (where: (event: MouseEvent<HTMLElement>) => NewEvent) => ({
+    onClick: (event: MouseEvent<HTMLElement>) => {
+      if (event.detail > 1) return;
+      first.current = where(event);
+      onDay(first.current.day);
+    },
+    onDoubleClick: onNew
+      ? (event: MouseEvent<HTMLElement>) => {
+          if ((event.target as HTMLElement).closest('button')) return;
+          onNew(first.current ?? where(event));
+        }
+      : undefined,
+  });
 }
 
 const tint = (color: string, percent: number) =>
@@ -138,7 +172,8 @@ const ENTRY_ROW = 24;
 const lastFit = new Map<number, number>();
 
 /** The month: its weeks fill the page; a day shows as many entries as fit, the rest „+3“. */
-export function MonthView({ anchor, days, entries, onOpen, onNew }: ViewProps) {
+export function MonthView({ anchor, days, entries, picked, onOpen, onDay, onNew }: ViewProps) {
+  const clicks = useDayClicks(onDay, onNew);
   const gridRef = useRef<HTMLDivElement>(null);
   const weeks = days.length / 7;
   const [fit, setFit] = useState(() => lastFit.get(weeks) ?? 3);
@@ -157,13 +192,15 @@ export function MonthView({ anchor, days, entries, onOpen, onNew }: ViewProps) {
     return () => observer.disconnect();
   }, [weeks]);
   const daysOf = byDay(entries);
-  // The day one went to is framed – not today, its red number says it.
-  const picked = iso(anchor) === iso(todayNoon()) ? null : iso(anchor);
+  // The day one chose is framed – not today, its red number says it; a day one only paged or
+  // zoomed onto (the month's 1st, say) is not.
+  const framed = picked === iso(todayNoon()) ? null : picked;
   return (
     <div
       ref={gridRef}
       role="grid"
       aria-label={monthFormat.format(anchor)}
+      data-frame
       className="glass grid min-h-0 flex-1 overflow-hidden rounded-panel"
       style={{
         gridTemplateColumns: '2.25rem repeat(7, minmax(0, 1fr))',
@@ -202,11 +239,11 @@ export function MonthView({ anchor, days, entries, onOpen, onNew }: ViewProps) {
             data-seg
             data-day={key}
             data-week={iso(startOfWeek(date))}
-            onClick={onNew ? () => onNew({ day: key }) : undefined}
+            {...clicks(() => ({ day: key }))}
             className={cn(
               '@container flex min-h-0 min-w-0 flex-col gap-0.5 overflow-hidden border-t border-l border-hairline p-1',
               outside ? 'bg-surface-1 hover:bg-hover' : 'hover:bg-surface-1',
-              key === picked && 'shadow-[inset_0_0_0_2px_var(--color-border-focus)]',
+              key === framed && 'shadow-[inset_0_0_0_2px_var(--color-border-focus)]',
             )}
           >
             <DayNumber day={date} faint={outside} onOpen={onOpen} />
@@ -222,7 +259,9 @@ export function MonthView({ anchor, days, entries, onOpen, onNew }: ViewProps) {
                 }}
                 className="h-5.5 shrink-0 rounded-control-sm px-1.5 text-left text-xs text-fg-subtle hover:bg-hover"
               >
-                {here.length - shown.length} weitere
+                {/* A phone's narrow day: only the count. */}
+                <span className="@max-[4.5rem]:hidden">{here.length - shown.length} weitere</span>
+                <span className="@min-[4.5rem]:hidden">+{here.length - shown.length}</span>
               </button>
             )}
           </div>,
@@ -280,7 +319,8 @@ function useNow() {
 const hours = { top: null as number | null };
 
 /** A day or a week: the all-day row on top, the hours under it, scrolled to the morning. */
-export function TimeGridView({ days, entries, onOpen, onNew }: ViewProps) {
+export function TimeGridView({ days, entries, onOpen, onDay, onNew }: ViewProps) {
+  const clicks = useDayClicks(onDay, onNew);
   const scrollRef = useRef<HTMLDivElement>(null);
   const now = useNow();
   const daysOf = byDay(entries);
@@ -303,7 +343,7 @@ export function TimeGridView({ days, entries, onOpen, onNew }: ViewProps) {
   };
   const week = days.length > 1;
   return (
-    <div className="glass flex min-h-0 flex-1 flex-col overflow-hidden rounded-panel">
+    <div data-frame className="glass flex min-h-0 flex-1 flex-col overflow-hidden rounded-panel">
       {/* Head and hours keep the same room for the hours' scroll bar (shown always where macOS is
           set so): their columns line up. */}
       <div
@@ -367,19 +407,14 @@ export function TimeGridView({ days, entries, onOpen, onNew }: ViewProps) {
                 aria-label={dayFormat.format(day)}
                 data-seg
                 data-day={key}
-                onClick={
-                  onNew
-                    ? (event) => {
-                        const box = event.currentTarget.getBoundingClientRect();
-                        const half = Math.floor(((event.clientY - box.top) / HOUR) * 2);
-                        const minutes = Math.min(23 * 60 + 30, Math.max(0, half * 30));
-                        onNew({ day: key, minutes });
-                      }
-                    : undefined
-                }
+                {...clicks((event) => {
+                  const box = event.currentTarget.getBoundingClientRect();
+                  const half = Math.floor(((event.clientY - box.top) / HOUR) * 2);
+                  return { day: key, minutes: Math.min(23 * 60 + 30, Math.max(0, half * 30)) };
+                })}
                 className="relative border-l border-hairline bg-[repeating-linear-gradient(to_bottom,transparent_0,transparent_47px,var(--color-hairline)_47px,var(--color-hairline)_48px)]"
               >
-                {/* The hour one points at, under the events: a click makes a new one there. */}
+                {/* The hour one points at, under the events: a double click makes a new one there. */}
                 {onNew &&
                   Array.from({ length: 24 }, (_, hour) => (
                     <span
@@ -591,54 +626,16 @@ export function AgendaView({ days, entries, onOpen }: ViewProps) {
               </span>
             </button>
             <ul className="flex flex-col">
-              {daysOf.get(key)!.map((entry) => {
-                const days = entryDays(entry);
-                const when = entry.allDay
-                  ? days.length > 1
-                    ? `Tag ${days.indexOf(key) + 1}/${days.length}`
-                    : 'Ganztägig'
-                  : `${iso(entry.start) === key ? clock(entry.start) : '00:00'} – ${iso(new Date(entry.end.getTime() - 1)) === key ? clock(entry.end) : '24:00'}`;
-                return (
-                  <li key={entry.key}>
-                    <button
-                      type="button"
-                      aria-pressed={isOpen(entry)}
-                      onClick={() => open(entry)}
-                      className={cn(
-                        'flex h-9 w-full min-w-0 items-center gap-3 rounded-control px-3 text-left text-sm hover:bg-hover',
-                        isOpen(entry) && 'bg-selected hover:bg-selected',
-                      )}
-                    >
-                      <span className="w-28 shrink-0 text-fg-subtle tabular-nums">{when}</span>
-                      {entry.todo ? (
-                        <StatusMark status={entry.todo.status} size={14} />
-                      ) : (
-                        <span
-                          className="size-2.5 shrink-0 rounded-full"
-                          style={{ backgroundColor: entry.color }}
-                          aria-hidden
-                        />
-                      )}
-                      <span
-                        className={cn(
-                          'truncate',
-                          entry.todo && !isOpenTodo(entry.todo.status)
-                            ? 'text-fg-muted line-through'
-                            : 'text-fg',
-                        )}
-                      >
-                        {entry.title}
-                      </span>
-                      {entry.location && (
-                        <span className="truncate text-fg-subtle">{entry.location}</span>
-                      )}
-                      <span className="ml-auto shrink-0 truncate text-xs text-fg-faint">
-                        {entry.place}
-                      </span>
-                    </button>
-                  </li>
-                );
-              })}
+              {daysOf.get(key)!.map((entry) => (
+                <li key={entry.key}>
+                  <AgendaRow
+                    entry={entry}
+                    day={key}
+                    pressed={isOpen(entry)}
+                    onClick={() => open(entry)}
+                  />
+                </li>
+              ))}
             </ul>
           </section>
         );

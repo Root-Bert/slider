@@ -26,6 +26,7 @@ import { useFoldProgress } from './hooks/useFoldProgress';
 import { useScrollActiveSlide } from './hooks/useScrollActiveSlide';
 import { useTimelineMetrics } from './hooks/useTimelineMetrics';
 import { useHandPan } from './hooks/useHandPan';
+import { useStylusDraws } from './hooks/useStylusDraws';
 import { useHandleRoom } from './hooks/useHandleRoom';
 import { useZoomToggle } from './hooks/useZoomToggle';
 import { useTimelineWheel } from './hooks/useTimelineWheel';
@@ -98,7 +99,7 @@ export function Timeline({
   const { slides, slideIndex, viewer, variantsOf, deck } = useViewerData();
   const editing = useEditing();
   const viewerState = useViewerState();
-  const { split, activeSlideId, tool, threadPanelOpen, showMinimap, materialOpen } = viewerState;
+  const { split, activeSlideId, tool, threadPanelOpen, showMinimap } = viewerState;
   const sidePanelOpen = isSidePanelOpen(viewerState);
   const { deletedSlides } = useRevisionData();
   const hasDeleted = deletedSlides.length > 0;
@@ -258,11 +259,12 @@ export function Timeline({
     enabled: !narrow,
     onTrackWheel: swipe.wheel,
   });
-  // Space held and dragging, or the middle button: the hand. Asleep on the material page, as the
-  // presentation's other keys.
-  useHandPan({ scrollerRef, enabled: !narrow && !materialOpen });
+  // Space held and dragging, or the middle button: the hand.
+  useHandPan({ scrollerRef, enabled: !narrow });
+  // A pen draws on the slides, the finger scrolls.
+  useStylusDraws(scrollerRef);
   // Space tapped twice: the active slide at 100 %, and back.
-  useZoomToggle(!narrow && !materialOpen);
+  useZoomToggle(!narrow);
 
   useLayoutEffect(() => {
     registry.setScroller(scrollerRef.current);

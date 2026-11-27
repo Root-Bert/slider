@@ -5,6 +5,7 @@ import { cloudAccessAtLeast, searchFold, type CloudArea, type CloudNode } from '
 import { cloudListQuery, useCloudList, type CloudPlace } from '@/lib/api';
 import { pluralize } from '@/lib/format';
 import { routes } from '@/lib/routes';
+import { useViewChoice } from '@/lib/view-choice';
 import { ViewSearch } from '@/features/workspaces';
 import { AvatarStack, Button, Icon, Menu, type MenuAction } from '@/ui';
 import { AreaViews } from './components/AreaViews';
@@ -21,7 +22,14 @@ import { OWN_FILES, useCloud, type CloudTarget } from './hooks/useCloud';
 import { areaTrail, areasUnder, canHaveAreasUnder, isWorkspaceOwn } from './lib/areas';
 import { useStoredChoice } from './hooks/useStoredChoice';
 import { useOpenedFrom } from './hooks/useOpenedFrom';
-import { CLOUD_SORTS, CLOUD_VIEWS, filterNodes, sortNodes, type TypeFilter } from './lib/kinds';
+import {
+  CLOUD_SORTS,
+  CLOUD_VIEW_KEY,
+  CLOUD_VIEWS,
+  filterNodes,
+  sortNodes,
+  type TypeFilter,
+} from './lib/kinds';
 import { ALL_SCOPE, OWN_SCOPE, scopeTabs, useScope, WORKSPACE_SCOPE } from './lib/scopes';
 
 /**
@@ -94,7 +102,13 @@ function Place({
   const [query, setQuery] = useState('');
   const needle = searchFold(query.trim());
   const [sort, setSort] = useStoredChoice('slider.cloud.sort', CLOUD_SORTS, 'name');
-  const [view, setView] = useStoredChoice('slider.cloud.view', CLOUD_VIEWS, 'list');
+  // Each place its own; one never switched opens as the last one did.
+  const [view, setView] = useViewChoice(
+    `slider.cloud.view:${across ? 'all' : (folderId ?? areaId ?? 'own')}`,
+    CLOUD_VIEWS,
+    'list',
+    CLOUD_VIEW_KEY,
+  );
 
   const data = listing.data;
   const areas = ui.home?.areas ?? [];
@@ -279,7 +293,7 @@ function Place({
 
   return (
     <CloudPage
-      docTitle={overview ? 'Dateien' : name}
+      docTitle={overview ? 'Dateien' : atAreaTop && area ? `${area.name} | Dateien` : name}
       title={
         tabs ? (
           tabs

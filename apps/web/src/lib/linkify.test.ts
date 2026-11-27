@@ -26,6 +26,11 @@ describe('linkify', () => {
       links('Am 20.11.2026 um 14:30, Rechnung 2026-11-20, PLZ 80331, 1.234.567 €, Nr. 01234'),
     ).toEqual([]);
     expect(links('index.html, Node.js')).toEqual([]);
+    // A file ending that is a top-level domain too: a name bare, an address with https or www.
+    expect(links('start.md, notes.zip, run.sh https://start.md www.x.zip')).toEqual([
+      'url https://start.md https://start.md',
+      'url www.x.zip https://www.x.zip',
+    ]);
     // A number inside an address stays the address's; no scheme but these opens.
     expect(links('https://firma.de/089123456 javascript:alert(1)')).toEqual([
       'url https://firma.de/089123456 https://firma.de/089123456',

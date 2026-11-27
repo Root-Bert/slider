@@ -15,8 +15,8 @@ Hosted version: [office.bertro.dev](https://office.bertro.dev) | Website:
 Needs a Linux server with Docker and a domain that points at it.
 
 ```bash
-git clone https://github.com/Root-Bert/slider.git
-cd slider/deploy
+git clone https://github.com/Root-Bert/office.git
+cd office/deploy
 cp .env.example .env          # set SLIDER_DOMAIN and POSTGRES_PASSWORD
 docker compose up -d --build
 docker compose logs slider    # setup page address and "Setup token: …"
@@ -30,7 +30,7 @@ Full guide (German): [docs/self-hosting.md](docs/self-hosting.md).
 ## Desktop app
 
 Slider for Mac (Apple Silicon) and Linux (x64 and arm64, AppImage and deb) is on the
-[latest release](https://github.com/Root-Bert/slider/releases/latest). It works offline, keeps
+[latest release](https://github.com/Root-Bert/office/releases/latest). It works offline, keeps
 presentations on your computer and can sign in to office.bertro.dev or your own server
 („Anderer Server“ on the account page). On a Mac it loads LibreOffice on first start if none is
 installed; on Linux install it with your package manager.

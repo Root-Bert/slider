@@ -284,8 +284,9 @@ export async function answerMaterialQuestion(
       const separate = () => (before.trim() ? '\n\n' : '');
       const result = await runTurn(deps, connection, {
         system: `${system(document)}\n\nThe ${document ? 'document' : 'presentation'}: „${promptName(board.title)}“. Today is ${todayForPrompt(deps.clock.now())}.`,
-        // The last turn may only answer.
-        tools: turn < MAX_TURNS - 1 ? MATERIAL_TOOLS : [],
+        // The last turn may only answer – its tools still named: the talk has calls in it.
+        tools: MATERIAL_TOOLS,
+        answerOnly: turn >= MAX_TURNS - 1,
         messages,
         taskBudgetTokens: TASK_BUDGET_TOKENS,
         effort: 'medium',
@@ -324,7 +325,7 @@ export async function answerMaterialQuestion(
         answer += cut;
         break;
       }
-      if (result.stop !== 'tool_use') break;
+      if (result.stop !== 'tool_use' || turn >= MAX_TURNS - 1) break;
       const results: ToolResult[] = [];
       for (const block of result.content) {
         if (block.type !== 'tool_use') continue;

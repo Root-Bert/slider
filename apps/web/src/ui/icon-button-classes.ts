@@ -66,6 +66,10 @@ export function iconButtonClasses({
   return cn(
     'inline-flex shrink-0 items-center justify-center transition-colors',
     sizeClasses[size].box,
+    // Under 40px on a touch screen a finger hits 4px around it too (unseen) – no further, or it
+    // would take a tap meant for the button beside it. Positioned for it unless it already is.
+    size !== 'md' &&
+      "pointer-coarse:after:absolute pointer-coarse:after:-inset-1 pointer-coarse:after:content-[''] pointer-coarse:[&:not(.absolute,.fixed,.sticky)]:relative",
     shape === 'round' ? 'rounded-full' : sizeClasses[size].radius,
     disabledStyle === 'dim'
       ? 'disabled:cursor-default disabled:text-fg-faint disabled:hover:bg-transparent'

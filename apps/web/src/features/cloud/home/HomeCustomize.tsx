@@ -11,19 +11,16 @@ import {
   SidePanelHeader,
   Toggle,
 } from '@/ui';
+import type { BoardKit, WidgetInfo } from './kit';
 import {
   MAX_ROWS,
   newDragId,
-  WIDGET_DEFAULTS,
-  WIDGET_TYPES,
   type HomeLayout,
   type NewDragData,
   type Widget,
   type WidgetLook,
-  type WidgetType,
   type WidgetWidth,
 } from './layout';
-import { WIDGET_INFO } from './widgets';
 
 const WIDTHS: { value: `${WidgetWidth}`; label: string; title: string }[] = [
   { value: '3', label: '¼', title: 'Ein Viertel' },
@@ -61,19 +58,20 @@ function PartHeading({ children }: { children: ReactNode }) {
 
 /** The picked widget's size, look and heading – and taking it off. */
 function Settings({
+  info,
   widget,
   columns,
   onChange,
   onRemove,
   onDeselect,
 }: {
+  info: WidgetInfo;
   widget: Widget;
   columns: number;
   onChange: (patch: Partial<Omit<Widget, 'id' | 'type'>>) => void;
   onRemove: () => void;
   onDeselect: () => void;
 }) {
-  const info = WIDGET_INFO[widget.type];
   const rows = widget.h === 'auto' ? null : widget.h;
   return (
     <section aria-label={`${info.label} anpassen`} className="flex flex-col gap-4">
@@ -174,6 +172,7 @@ function Settings({
  * the page, or put at its end with a click; one already there is shown with a click.
  */
 export function HomeCustomize({
+  kit,
   layout,
   picked,
   columns,
@@ -187,13 +186,14 @@ export function HomeCustomize({
   onReset,
   onDone,
 }: {
+  kit: BoardKit;
   layout: HomeLayout;
   picked: Widget | null;
   columns: number;
   /** Below the page instead of beside it: beside, too little of the page would be left. */
   sheet: boolean;
-  available: (type: WidgetType) => boolean;
-  onAdd: (type: WidgetType) => void;
+  available: (type: string) => boolean;
+  onAdd: (type: string) => void;
   onShow: (id: string) => void;
   onChange: (id: string, patch: Partial<Omit<Widget, 'id' | 'type'>>) => void;
   onRemove: (id: string) => void;
@@ -222,6 +222,7 @@ export function HomeCustomize({
         {picked ? (
           <Settings
             key={picked.id}
+            info={kit.info[picked.type]!}
             widget={picked}
             columns={columns}
             onChange={(patch) => onChange(picked.id, patch)}
@@ -236,13 +237,14 @@ export function HomeCustomize({
         <section aria-label="Alle Widgets" className="flex flex-col gap-2">
           <PartHeading>Alle Widgets</PartHeading>
           <ul className="-mx-2 flex flex-col">
-            {WIDGET_TYPES.filter(available).map((type) => {
+            {kit.spec.types.filter(available).map((type) => {
               const there = layout.find((widget) => widget.type === type);
-              const placed = !WIDGET_DEFAULTS[type].many && !!there;
+              const placed = !kit.spec.defaults[type]!.many && !!there;
               return (
                 <li key={type}>
                   <WidgetRow
                     type={type}
+                    info={kit.info[type]!}
                     placed={placed}
                     onClick={() => (placed && there ? onShow(there.id) : onAdd(type))}
                   />
@@ -267,14 +269,15 @@ export function HomeCustomize({
  */
 function WidgetRow({
   type,
+  info,
   placed,
   onClick,
 }: {
-  type: WidgetType;
+  type: string;
+  info: WidgetInfo;
   placed: boolean;
   onClick: () => void;
 }) {
-  const info = WIDGET_INFO[type];
   const data: NewDragData = { type };
   const { setNodeRef, attributes, listeners, isDragging } = useDraggable({
     id: newDragId(type),

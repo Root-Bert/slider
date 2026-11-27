@@ -410,10 +410,7 @@ export function MailAside({
                             : {}),
                         },
                       },
-                      {
-                        onSuccess: (todo) => notify(`Aufgabe #${todo.number} angelegt`),
-                        onError: fail,
-                      },
+                      { onError: fail },
                     )
                   }
                 >
@@ -563,10 +560,7 @@ export function MailAside({
                               parentId: one.parentId,
                               newFolder: one.newFolder ?? null,
                             },
-                            {
-                              onSuccess: () => notify(`${name} abgelegt`),
-                              onError: (error) => notify(error.message, 'danger'),
-                            },
+                            { onError: (error) => notify(error.message, 'danger') },
                           )
                         }
                       >

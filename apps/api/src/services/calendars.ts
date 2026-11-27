@@ -1,4 +1,4 @@
-import { and, eq, gt, inArray, isNull, lt, or, sql } from 'drizzle-orm';
+import { and, eq, gt, gte, inArray, isNotNull, isNull, lt, or, sql } from 'drizzle-orm';
 import {
   MAX_EVENT_LOCATION,
   MAX_EVENT_RANGE_DAYS,
@@ -11,6 +11,8 @@ import {
   type CalendarEventInput,
   type CalendarInput,
   type EventMeeting,
+  type EventRepeat,
+  type EventScope,
   type MailCalendarRefusal,
 } from '@slider/shared';
 import {
@@ -42,6 +44,19 @@ import {
   updateMailEvent,
 } from './calendar/mail-calendars';
 import { areaAudience, seenChannel, senderLive } from './sender';
+import { wallOf, zonedToUtc } from './calendar/ical';
+import {
+  endedBefore,
+  exKey,
+  occurrenceAt,
+  occurrenceId,
+  occurrencesOf,
+  repeatOf,
+  repeatsUntilOf,
+  ruleOf,
+  seriesRef,
+  zoneOr,
+} from './calendar/recurrence';
 
 /*
  * Calendars (`@slider/shared` calendar). Every area has its own – made the first time its
@@ -106,7 +121,7 @@ async function ensureDefaults(deps: AppDeps, ctx: CloudCtx, rows: CalendarRow[])
   return true;
 }
 
-function seenWhere(ctx: CloudCtx) {
+export function seenWhere(ctx: CloudCtx) {
   const seen = [...ctx.areas.entries()].filter(([, one]) => one.access).map(([id]) => id);
   return and(
     eq(calendars.workspaceId, ctx.workspaceId),
@@ -375,7 +390,10 @@ export async function deleteCalendar(deps: AppDeps, userId: string, calendarId: 
 
 // ── Events ──────────────────────────────────────────────────────────────────
 
-const MAIL_EVENT_FILES = 'Dateien gehen nur an Termine in Slider-Kalendern.';
+const MAIL_EVENT_FILES = 'Dateien gehen nur an Termine in Kalendern des Workspace.';
+const MAIL_SERIES = 'Wiederholungen gehen nur in Kalendern des Workspace.';
+const ONE_REPEAT = 'Die Wiederholung ändert sich nur für alle oder die folgenden Termine.';
+const SERIES_FILES = 'Dateien gehören zur ganzen Serie.';
 
 const DAY_MS = 86_400_000;
 /** An all-day event's days as UTC midnights, so they compare with instants in one range. */
@@ -395,7 +413,7 @@ function bounds(event: { allDay: boolean; start: string; end: string }) {
 }
 
 const SLIDER_CALL_ONLY =
-  'Ein Anruf in Slider geht nur in Slider-Kalendern – im Kalender eines Postfachs ein Link.';
+  'Ein Anruf in Sender geht nur in Kalendern des Workspace – im Kalender eines Postfachs ein Link.';
 const NOT_A_CALL_PLACE = 'In diesem Gespräch kannst du kein Meeting ansetzen.';
 
 /**
@@ -528,7 +546,85 @@ async function toEvents(
     createdBy: (row.createdBy && people.get(row.createdBy)) || null,
     attachments: row.attachments,
     meeting: meetingOf(row),
+    ...(row.recurrence && {
+      repeat: repeatOf(row.recurrence, row.allDay, zoneOr(row.timeZone)),
+      seriesId: seriesRef(row.id)?.seriesId ?? row.id,
+    }),
   }));
+}
+
+/** One of a series as a row of its own: its id and times, the rest the series'. */
+const asOccurrence = (row: CalendarEventRow, startsAt: Date): CalendarEventRow => ({
+  ...row,
+  id: occurrenceId(row.id, startsAt.getTime(), row.allDay),
+  startsAt,
+  endsAt: new Date(startsAt.getTime() + row.endsAt.getTime() - row.startsAt.getTime()),
+});
+
+/** Rows as the page sees them: a series as its occurrences in `[from, to)`. */
+function expanded(rows: CalendarEventRow[], from: number, to: number): CalendarEventRow[] {
+  return rows
+    .flatMap((row) =>
+      row.recurrence
+        ? occurrencesOf(row, from, to).map((one) => asOccurrence(row, one.startsAt))
+        : [row],
+    )
+    .sort((a, b) => a.startsAt.getTime() - b.startsAt.getTime());
+}
+
+/** A row as handed out: a series as its occurrence at `at` (its first where it has none then). */
+function shown(row: CalendarEventRow, at = row.startsAt.getTime()): CalendarEventRow {
+  if (!row.recurrence) return row;
+  const one = occurrenceAt(row, at) ?? occurrencesOf(row, row.startsAt.getTime(), Infinity)[0];
+  return asOccurrence(row, one?.startsAt ?? row.startsAt);
+}
+
+/**
+ * A series' first one on a day of its rule – „Werktags“ asked on a Saturday starts on Monday at
+ * the same wall time, as its first one always counts (here and in every calendar app).
+ */
+function onItsDay(
+  repeat: EventRepeat | null,
+  timing: { allDay: boolean; startsAt: Date; endsAt: Date },
+  zone: string,
+): { startsAt: Date; endsAt: Date } {
+  const { startsAt, endsAt, allDay } = timing;
+  // Only a weekly series names its days (`ruleOf`): any other starts where it was put.
+  if (repeat?.freq !== 'weekly' || !repeat.days?.length) return { startsAt, endsAt };
+  const wall = allDay ? startsAt.getTime() : wallOf(startsAt.getTime(), zone);
+  const weekday = (new Date(wall).getUTCDay() + 6) % 7;
+  const ahead = Math.min(...repeat.days.map((day) => (day - weekday + 7) % 7));
+  if (!ahead) return { startsAt, endsAt };
+  const moved = (at: Date) =>
+    allDay
+      ? new Date(at.getTime() + ahead * DAY_MS)
+      : new Date(zonedToUtc(wallOf(at.getTime(), zone) + ahead * DAY_MS, zone));
+  return { startsAt: moved(startsAt), endsAt: moved(endsAt) };
+}
+
+/** Its left-out ones with one more – added in the database, so two at once both stay out. */
+const withExdate = (key: string) =>
+  sql<
+    string[]
+  >`case when ${calendarEvents.exdates} @> ${JSON.stringify([key])}::jsonb then ${calendarEvents.exdates} else ${calendarEvents.exdates} || ${JSON.stringify([key])}::jsonb end`;
+
+/** The columns that make a row a series (or none): its rule in its zone, where it ends. */
+function seriesColumns(
+  repeat: EventRepeat | null,
+  timing: { allDay: boolean; startsAt: Date; endsAt: Date },
+  zone: string,
+) {
+  if (!repeat) return { recurrence: null, timeZone: null, repeatsUntil: null, exdates: [] };
+  return {
+    recurrence: ruleOf(repeat, timing.startsAt.getTime(), timing.allDay, zone),
+    timeZone: zone,
+    repeatsUntil: repeatsUntilOf(
+      repeat,
+      timing.allDay,
+      zone,
+      timing.endsAt.getTime() - timing.startsAt.getTime(),
+    ),
+  };
 }
 
 /**
@@ -570,13 +666,27 @@ export async function listEvents(
           own.map((row) => row.id),
         ),
         lt(calendarEvents.startsAt, new Date(to.getTime() + DAY_MS)),
-        gt(calendarEvents.endsAt, new Date(from.getTime() - DAY_MS)),
+        or(
+          and(
+            isNull(calendarEvents.recurrence),
+            gt(calendarEvents.endsAt, new Date(from.getTime() - DAY_MS)),
+          ),
+          // A series from before: as long as it has not ended.
+          and(
+            isNotNull(calendarEvents.recurrence),
+            or(
+              isNull(calendarEvents.repeatsUntil),
+              gt(calendarEvents.repeatsUntil, new Date(from.getTime() - DAY_MS)),
+            ),
+          ),
+        ),
       ),
     )
     .orderBy(calendarEvents.startsAt)
     .limit(MAX_LISTED);
+  const occurrences = expanded(rows, from.getTime() - DAY_MS, to.getTime() + DAY_MS);
   return [
-    ...(await toEvents(deps, userId, (id) => access.get(id) === 'edit', rows)),
+    ...(await toEvents(deps, userId, (id) => access.get(id) === 'edit', occurrences)),
     ...(await fromMail),
   ];
 }
@@ -619,7 +729,11 @@ export async function getEvent(
     if (!event) throw eventNotFound();
     return event;
   }
-  const [event] = await deps.db.select().from(calendarEvents).where(eq(calendarEvents.id, eventId));
+  const ref = seriesRef(eventId);
+  const [event] = await deps.db
+    .select()
+    .from(calendarEvents)
+    .where(eq(calendarEvents.id, ref?.seriesId ?? eventId));
   if (!event) throw eventNotFound();
   const [calendar] = await deps.db
     .select()
@@ -629,7 +743,10 @@ export async function getEvent(
     calendar && (await cloudContext(deps.db, calendar.workspaceId, userId).catch(() => null));
   const access = ctx && accessTo(ctx, calendar);
   if (!access) throw eventNotFound();
-  return (await toEvents(deps, userId, () => access === 'edit', [event]))[0]!;
+  const one = ref ? event.recurrence && occurrenceAt(event, ref.at) : null;
+  if (ref && !one) throw eventNotFound();
+  const row = one ? asOccurrence(event, one.startsAt) : shown(event);
+  return (await toEvents(deps, userId, () => access === 'edit', [row]))[0]!;
 }
 
 export async function createEvent(
@@ -640,6 +757,7 @@ export async function createEvent(
   const { row: calendar } = await calendarToEdit(deps, userId, input.calendarId);
   if (calendar.mailAccountId) {
     if (input.attachments?.length) throw badRequest(MAIL_EVENT_FILES);
+    if (input.repeat) throw badRequest(MAIL_SERIES);
     bounds(input);
     const made = await createMailEvent(deps, calendar, {
       title: input.title.trim(),
@@ -654,6 +772,11 @@ export async function createEvent(
     await tellCalendar(deps, calendar);
     return made;
   }
+  const timing = onItsDay(
+    input.repeat ?? null,
+    { allDay: input.allDay, ...bounds(input) },
+    zoneOr(input.timeZone),
+  );
   const [row] = await deps.db
     .insert(calendarEvents)
     .values({
@@ -664,7 +787,12 @@ export async function createEvent(
       location: input.location?.trim() ?? '',
       notes: input.notes ?? '',
       allDay: input.allDay,
-      ...bounds(input),
+      ...timing,
+      ...seriesColumns(
+        input.repeat ?? null,
+        { allDay: input.allDay, ...timing },
+        zoneOr(input.timeZone),
+      ),
       ...(await meetingColumns(deps, userId, calendar.workspaceId, input.meeting ?? null)),
       attachments: await claimAttachments(
         deps.db,
@@ -677,7 +805,7 @@ export async function createEvent(
     })
     .returning();
   await tellCalendar(deps, calendar);
-  return (await toEvents(deps, userId, () => true, [row!]))[0]!;
+  return (await toEvents(deps, userId, () => true, [shown(row!)]))[0]!;
 }
 
 /** Start and end of the kind `allDay` asks: an event's own, or turned (a day ↔ its midnight). */
@@ -719,10 +847,10 @@ async function moveAcross(
     ...timingOf(event, change),
   });
   try {
-    await deleteEvent(deps, userId, event.id);
+    await deleteNow(deps, userId, event.id);
   } catch (error) {
     // The old one stays: the new one goes again, so it is not there twice.
-    await deleteEvent(deps, userId, made.id).catch(() => undefined);
+    await deleteNow(deps, userId, made.id).catch(() => undefined);
     throw error;
   }
   return made;
@@ -772,24 +900,100 @@ export async function updateEvent(
     await tellCalendar(deps, row);
     return changed;
   }
-  const { event, calendar } = await eventToEdit(deps, userId, eventId);
+  const ref = seriesRef(eventId);
+  return inTurn(ref?.seriesId ?? eventId, async () => {
+    const { event, calendar } = await eventToEdit(deps, userId, ref?.seriesId ?? eventId);
+    const { scope, ...rest } = change;
+    if (event.recurrence) {
+      const at = ref?.at ?? event.startsAt.getTime();
+      return updateSeries(deps, userId, event, calendar, at, scope ?? (ref ? 'one' : 'all'), rest);
+    }
+    if (ref) throw eventNotFound();
+    return updateOwn(deps, userId, event, calendar, rest);
+  });
+}
+
+/**
+ * One change of an event at a time: a series' left out ones are read, worked on and written back
+ * whole (`endBefore`, the shift of all of it) – another change between would be lost (a day
+ * deleted alone back again). The server is one process, as its runs and calls are.
+ */
+const turns = new Map<string, Promise<unknown>>();
+
+function inTurn<T>(eventId: string, work: () => Promise<T>): Promise<T> {
+  const next = (turns.get(eventId) ?? Promise.resolve()).catch(() => undefined).then(work);
+  const tail = next.catch(() => undefined);
+  turns.set(eventId, tail);
+  void tail.then(() => {
+    if (turns.get(eventId) === tail) turns.delete(eventId);
+  });
+  return next;
+}
+
+type OwnChange = Omit<CalendarEventChange, 'scope'>;
+
+/**
+ * Changes an event of the workspace's own calendars – a series as a whole (`exdates`: its left
+ * out ones moved along); handed back as its occurrence at `showAt` (else its first).
+ */
+async function updateOwn(
+  deps: AppDeps,
+  userId: string,
+  event: CalendarEventRow,
+  calendar: CalendarRow,
+  change: OwnChange,
+  exdates?: string[],
+  showAt?: number,
+): Promise<CalendarEvent> {
+  const zone = zoneOr(change.timeZone ?? event.timeZone);
+  const repeat =
+    change.repeat !== undefined
+      ? change.repeat
+      : event.recurrence
+        ? repeatOf(event.recurrence, event.allDay, zone)
+        : null;
   let target = calendar;
   if (change.calendarId && change.calendarId !== calendar.id) {
     target = (await calendarToEdit(deps, userId, change.calendarId)).row;
     if (target.workspaceId !== calendar.workspaceId) throw forbidden(READ_ONLY);
     if (target.mailAccountId) {
+      // A series would be made there as one of its days and deleted here as a whole.
+      if (repeat) throw badRequest(MAIL_SERIES);
       const [own] = await toEvents(deps, userId, () => true, [event]);
       return moveAcross(deps, userId, own!, { ...change, calendarId: target.id });
     }
   }
   const allDay = change.allDay ?? event.allDay;
-  const timing =
+  const asked: { startsAt?: Date; endsAt?: Date } =
     change.start !== undefined || change.end !== undefined || change.allDay !== undefined
       ? bounds({
           allDay,
           start: change.start ?? (allDay ? dayOf(event.startsAt) : event.startsAt.toISOString()),
           end: change.end ?? (allDay ? dayOf(event.endsAt) : event.endsAt.toISOString()),
         })
+      : {};
+  const timing = repeat
+    ? onItsDay(
+        repeat,
+        {
+          allDay,
+          startsAt: asked.startsAt ?? event.startsAt,
+          endsAt: asked.endsAt ?? event.endsAt,
+        },
+        zone,
+      )
+    : asked;
+  const series =
+    repeat || event.recurrence
+      ? seriesColumns(
+          repeat,
+          {
+            allDay,
+            startsAt: timing.startsAt ?? event.startsAt,
+            endsAt: timing.endsAt ?? event.endsAt,
+          },
+          zone,
+        )
       : {};
   // Its files as asked: the new ones taken (one's own, waiting), the ones left out deleted after.
   let files = event.attachments;
@@ -816,28 +1020,241 @@ export async function updateEvent(
       ...(change.notes !== undefined && { notes: change.notes }),
       allDay,
       ...timing,
+      ...series,
+      // One day changed alone, given a repeat of its own: a series of its own, deleted on its own
+      // – no longer a part of the one it came from (`deleteFamily` by `seriesRoot`).
+      ...(repeat && !event.recurrence && { seriesRoot: null }),
+      ...(repeat && exdates && { exdates }),
       ...(change.attachments !== undefined && { attachments: files }),
       ...(change.meeting !== undefined &&
         (await meetingColumns(deps, userId, calendar.workspaceId, change.meeting))),
       updatedAt: new Date(),
     })
-    .where(eq(calendarEvents.id, eventId))
+    .where(eq(calendarEvents.id, event.id))
     .returning();
+  // Deleted meanwhile – with the whole series it was split off: gone, not a failure.
+  if (!after) throw eventNotFound();
   await deleteAttachments(deps, gone);
   await tellCalendar(deps, calendar);
   if (target !== calendar) await tellCalendar(deps, target);
-  return (await toEvents(deps, userId, () => true, [after!]))[0]!;
+  return (await toEvents(deps, userId, () => true, [shown(after, showAt)]))[0]!;
 }
 
-export async function deleteEvent(deps: AppDeps, userId: string, eventId: string) {
+/** A copy of a series' row as an event (or series) of its own from `startsAt` – no files. */
+async function splitOff(
+  deps: AppDeps,
+  event: CalendarEventRow,
+  startsAt: Date,
+  series: Partial<CalendarEventRow>,
+): Promise<CalendarEventRow> {
+  const { id: _id, createdAt: _made, ...fields } = event;
+  const [copy] = await deps.db
+    .insert(calendarEvents)
+    .values({
+      ...fields,
+      id: crypto.randomUUID(),
+      startsAt,
+      endsAt: new Date(startsAt.getTime() + event.endsAt.getTime() - event.startsAt.getTime()),
+      // Files stay the series' – a copy naming them would delete them with itself.
+      attachments: [],
+      recurrence: null,
+      timeZone: null,
+      exdates: [],
+      repeatsUntil: null,
+      // Its family: the first series, so deleting all of it takes this along.
+      seriesRoot: event.seriesRoot ?? event.id,
+      ...series,
+      updatedAt: new Date(),
+    })
+    .returning();
+  return copy!;
+}
+
+/**
+ * Changes one of a series (planned for `at`): „one“ – it leaves the series as an event of its
+ * own; „following“ – a new series from it on, the old one ending the day before; „all“ – the
+ * series, its times moved by as much as this one's (on the wall clock).
+ */
+async function updateSeries(
+  deps: AppDeps,
+  userId: string,
+  event: CalendarEventRow,
+  calendar: CalendarRow,
+  at: number,
+  scope: EventScope,
+  change: OwnChange,
+): Promise<CalendarEvent> {
+  const occurrence = occurrenceAt(event, at);
+  if (!occurrence) throw eventNotFound();
+  const zone = zoneOr(event.timeZone);
+  const repeat = repeatOf(event.recurrence ?? '', event.allDay, zone);
+  if (scope === 'one') {
+    if (change.repeat !== undefined) throw badRequest(ONE_REPEAT);
+    if (change.attachments !== undefined) throw badRequest(SERIES_FILES);
+    const copy = await splitOff(deps, event, occurrence.startsAt, {});
+    let made: CalendarEvent;
+    try {
+      made = await updateOwn(deps, userId, copy, calendar, change);
+    } catch (error) {
+      await deps.db.delete(calendarEvents).where(eq(calendarEvents.id, copy.id));
+      throw error;
+    }
+    await deps.db
+      .update(calendarEvents)
+      .set({ exdates: withExdate(exKey(at, event.allDay)), updatedAt: new Date() })
+      .where(eq(calendarEvents.id, event.id));
+    return made;
+  }
+  if (scope === 'following' && at > event.startsAt.getTime() && repeat) {
+    const later = event.exdates.filter((key) => Date.parse(key) > at);
+    const copy = await splitOff(deps, event, occurrence.startsAt, {
+      ...seriesColumns(repeat, { allDay: event.allDay, ...occurrence }, zone),
+      exdates: later,
+    });
+    let made: CalendarEvent;
+    try {
+      made = await updateSeries(deps, userId, copy, calendar, at, 'all', change);
+    } catch (error) {
+      await deps.db.delete(calendarEvents).where(eq(calendarEvents.id, copy.id));
+      throw error;
+    }
+    await endBefore(deps, event, at);
+    return made;
+  }
+  // All of it: the series' first one moves as this one does, on the wall clock (a 9:00 in
+  // summer moved to 10:00 moves a first one in winter to 10:00 too); left out ones along.
+  if (!changesTiming(change))
+    return updateOwn(deps, userId, event, calendar, change, undefined, at);
+  const allDay = change.allDay ?? event.allDay;
+  const as = (value: Date) => (event.allDay ? dayOf(value) : value.toISOString());
+  const moved = timingOf(
+    {
+      allDay: event.allDay,
+      start: as(occurrence.startsAt),
+      end: as(occurrence.endsAt),
+    } as CalendarEvent,
+    change,
+  );
+  const next = bounds(moved);
+  const wall = (instant: number, whole: boolean) => (whole ? instant : wallOf(instant, zone));
+  const instant = (wallTime: number, whole: boolean) =>
+    whole ? wallTime : zonedToUtc(wallTime, zone);
+  const by = wall(next.startsAt.getTime(), allDay) - wall(at, event.allDay);
+  const shift = (instantBefore: number) => instant(wall(instantBefore, event.allDay) + by, allDay);
+  const startsAt = new Date(shift(event.startsAt.getTime()));
+  const endsAt = new Date(startsAt.getTime() + next.endsAt.getTime() - next.startsAt.getTime());
+  const asked = (value: Date) => (allDay ? dayOf(value) : value.toISOString());
+  return updateOwn(
+    deps,
+    userId,
+    event,
+    calendar,
+    { ...change, allDay, start: asked(startsAt), end: asked(endsAt) },
+    event.exdates.map((key) => exKey(shift(Date.parse(key)), allDay)),
+    next.startsAt.getTime(),
+  );
+}
+
+/** A series ends on the day before `at` – its left out ones after that forgotten. */
+async function endBefore(deps: AppDeps, event: CalendarEventRow, at: number) {
+  const zone = zoneOr(event.timeZone);
+  const repeat = repeatOf(event.recurrence ?? '', event.allDay, zone);
+  if (!repeat) return;
+  const ended = endedBefore(repeat, at, event.allDay, zone);
+  await deps.db
+    .update(calendarEvents)
+    .set({
+      ...seriesColumns(ended, event, zone),
+      exdates: event.exdates.filter((key) => Date.parse(key) < at),
+      updatedAt: new Date(),
+    })
+    .where(eq(calendarEvents.id, event.id));
+}
+
+/**
+ * Deletes an event – one of a series as `scope` says (default: this one; a series' own id: all
+ * of it): left out, the series ending before it, or the series with its files. The ones and
+ * series split off it go along – all of them, or those from this one on.
+ */
+export function deleteEvent(deps: AppDeps, userId: string, eventId: string, scope?: EventScope) {
+  return inTurn(seriesRef(eventId)?.seriesId ?? eventId, () =>
+    deleteNow(deps, userId, eventId, scope),
+  );
+}
+
+/** {@link deleteEvent} in a turn already taken – an event moved away is deleted where it was. */
+async function deleteNow(deps: AppDeps, userId: string, eventId: string, scope?: EventScope) {
   if (mailEventId(eventId)) {
     const { row, remoteId } = await mailEventToEdit(deps, userId, eventId, true);
     await deleteMailEvent(deps, row, remoteId);
     await tellCalendar(deps, row);
     return;
   }
-  const { event, calendar } = await eventToEdit(deps, userId, eventId);
-  await deps.db.delete(calendarEvents).where(eq(calendarEvents.id, eventId));
-  await deleteAttachments(deps, event.attachments);
+  const ref = seriesRef(eventId);
+  const { event, calendar, ctx } = await eventToEdit(deps, userId, ref?.seriesId ?? eventId);
+  if (ref && (!event.recurrence || !occurrenceAt(event, ref.at))) throw eventNotFound();
+  const at = ref?.at ?? event.startsAt.getTime();
+  const which = event.recurrence ? (scope ?? (ref ? 'one' : 'all')) : 'all';
+  if (which === 'one') {
+    await deps.db
+      .update(calendarEvents)
+      .set({ exdates: withExdate(exKey(at, event.allDay)), updatedAt: new Date() })
+      .where(eq(calendarEvents.id, event.id));
+  } else if (which === 'following' && at > event.startsAt.getTime()) {
+    await endBefore(deps, event, at);
+  } else {
+    await deps.db.delete(calendarEvents).where(eq(calendarEvents.id, event.id));
+    await deleteAttachments(deps, event.attachments);
+  }
+  if (event.recurrence && which !== 'one') {
+    await deleteFamily(deps, ctx, event, which === 'following' ? at : null);
+  }
   await tellCalendar(deps, calendar);
+}
+
+/**
+ * A series' family – the first series, the ones changed alone and the series split off it – in
+ * the calendars one may change, all of it or from `from` on (the series asked for gone already).
+ */
+async function deleteFamily(
+  deps: AppDeps,
+  ctx: CloudCtx,
+  event: CalendarEventRow,
+  from: number | null,
+) {
+  const root = event.seriesRoot ?? event.id;
+  const family = await deps.db
+    .select()
+    .from(calendarEvents)
+    .where(
+      and(
+        or(eq(calendarEvents.id, root), eq(calendarEvents.seriesRoot, root)),
+        from === null ? undefined : gte(calendarEvents.startsAt, new Date(from)),
+      ),
+    );
+  const near = [...new Set(family.map((row) => row.calendarId))];
+  const changeable = near.length
+    ? (await deps.db.select().from(calendars).where(inArray(calendars.id, near))).filter(
+        (row) => accessTo(ctx, row) === 'edit',
+      )
+    : [];
+  const gone = family.filter(
+    (row) => row.id !== event.id && changeable.some((one) => one.id === row.calendarId),
+  );
+  if (!gone.length) return;
+  await deps.db.delete(calendarEvents).where(
+    inArray(
+      calendarEvents.id,
+      gone.map((row) => row.id),
+    ),
+  );
+  await deleteAttachments(
+    deps,
+    gone.flatMap((row) => row.attachments),
+  );
+  for (const other of changeable) {
+    if (other.id !== event.calendarId && gone.some((row) => row.calendarId === other.id)) {
+      await tellCalendar(deps, other);
+    }
+  }
 }

@@ -8,8 +8,8 @@ import {
   useTakeCloudAgentFile,
 } from '@/lib/api';
 import { routes } from '@/lib/routes';
+import { useViewChoice } from '@/lib/view-choice';
 import { Badge, Button, cn, Dialog, Icon, IconButton, SegmentedControl, Toolbar } from '@/ui';
-import { useStoredChoice } from '../hooks/useStoredChoice';
 import { fileHref, namedBy, namedHref, type Named } from '../lib/named';
 import { DeskIcon, DeskPicture } from './DeskPicture';
 import { NamedIcon } from './Named';
@@ -333,7 +333,7 @@ function Desk({ agent }: { agent: CloudAgentDetail }) {
   const there = new Set(files.flatMap((file) => [file.nodeId, file.deckId]));
   const found = namedBy(agent).filter((named) => !there.has(named.id));
   const empty = files.length === 0 && found.length === 0;
-  const [view, setView] = useStoredChoice('slider.cloud.desk-view', DESK_VIEWS, 'tiles');
+  const [view, setView] = useViewChoice('slider.cloud.desk-view', DESK_VIEWS, 'tiles');
   const takeAll = () =>
     take.mutate(undefined, {
       onSuccess: ({ taken, failed }) => {

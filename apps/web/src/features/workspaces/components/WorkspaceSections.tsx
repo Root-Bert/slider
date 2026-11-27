@@ -62,10 +62,7 @@ export function GeneralSection({
         onSubmit={(event) => {
           event.preventDefault();
           if (!changed) return;
-          rename.mutate(parsed.data, {
-            onSuccess: () => onNotify('Name gespeichert'),
-            onError: (error) => onNotify(error.message, 'danger'),
-          });
+          rename.mutate(parsed.data, { onError: (error) => onNotify(error.message, 'danger') });
         }}
       >
         <TextField
@@ -131,10 +128,7 @@ export function DomainSection({
         icon="personAdd"
         description="Sie treten als Mitglied bei. Rollen änderst du danach unter Mitglieder."
         onChange={(enabled) =>
-          setDomain.mutate(enabled, {
-            onSuccess: () => onNotify(enabled ? `Offen für @${own}` : 'Nur noch mit Einladung'),
-            onError: (error) => onNotify(error.message, 'danger'),
-          })
+          setDomain.mutate(enabled, { onError: (error) => onNotify(error.message, 'danger') })
         }
       />
     </Section>
@@ -154,10 +148,7 @@ function LogoRow({
   const inputRef = useRef<HTMLInputElement>(null);
   const logo = useWorkspaceLogo(workspace.id);
   const save = (file: File | null) =>
-    logo.mutate(file, {
-      onSuccess: () => onNotify(file ? 'Logo gespeichert' : 'Logo entfernt'),
-      onError: (error) => onNotify(error.message, 'danger'),
-    });
+    logo.mutate(file, { onError: (error) => onNotify(error.message, 'danger') });
 
   return (
     <div className="flex items-center gap-4">

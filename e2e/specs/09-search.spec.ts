@@ -168,7 +168,7 @@ test('the search finds slide text and opens the review at that slide (BER-175), 
   const details = page.getByRole('complementary', { name: 'Details zu „Vision.key“' });
   const open = details.getByRole('button', { name: 'Öffnen', exact: true });
   await expect(open).toBeDisabled();
-  await expect(open).toHaveAttribute('title', 'Slider kann .key-Dateien nicht öffnen');
+  await expect(open).toHaveAttribute('title', 'Office kann .key-Dateien nicht öffnen');
   await expect(key).toBeFocused();
   // The picked file is the selection: its actions stand in the toolbar's place, Esc ends both.
   await expect(page.locator('li[data-selected]')).toHaveCount(1);

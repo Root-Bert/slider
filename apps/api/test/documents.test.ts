@@ -3,6 +3,7 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { eq } from 'drizzle-orm';
 import { blankOdt, OdtDocument } from '@slider/odt';
 import {
+  inkStrokeLines,
   writerAiProposalSchema,
   writerCommentSchema,
   writerDocumentSchema,
@@ -523,6 +524,18 @@ describe('Writer – text documents', () => {
       ).status,
     ).toBe(400);
 
+    // A drawing by hand at the foot: its fences reach the AI, its strokes do not.
+    const plain = (value: string) => ({ kind: 'text', runs: [{ text: value }] });
+    await edit([
+      { type: 'insertParagraph', id: 'pink1', afterId: 'L4', paragraph: plain('```ink 300') },
+      {
+        type: 'insertParagraph',
+        id: 'pink2',
+        afterId: 'pink1',
+        paragraph: plain('pen text 4 11 22 33 44'),
+      },
+      { type: 'insertParagraph', id: 'pink3', afterId: 'pink2', paragraph: plain('```') },
+    ]);
     // The AI reads and writes the lines as they stand in the file, signs and all.
     await ctx.request(`/api/workspaces/${ctx.workspaceId}/integrations/keys`, {
       method: 'POST',
@@ -561,6 +574,11 @@ describe('Writer – text documents', () => {
     expect(asked.status).toBe(202);
     await documentAiIdle();
     expect(JSON.stringify(ai.requests.at(-1))).toContain('<p id=\\"L3\\">Ein **Absatz**.</p>');
+    expect(JSON.stringify(ai.requests.at(-1))).toContain('```ink 300');
+    expect(JSON.stringify(ai.requests.at(-1))).not.toContain('11 22 33 44');
+    // A ```ink line inside another code block is that block's text, not a drawing.
+    const fenced = ['```md', '```ink', 'pen text 4 1 2', '```', '```ink 300', 'pen text 4 1 2', '```'];
+    expect([...inkStrokeLines(fenced)]).toEqual([5]);
     expect(text((await open()).content.blocks[3])).toBe('Ein **neuer** Absatz.');
   });
 });

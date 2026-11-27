@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { useNavigate } from 'react-router';
 import { routes } from '@/lib/routes';
-import { Button, PopoverPanel } from '@/ui';
+import { Button, Icon, PopoverPanel } from '@/ui';
 import { dayFormat, iso, todayNoon } from './days';
 import { MonthGrid } from './MonthGrid';
 import { useBusyDays } from './useBusyDays';
@@ -11,6 +11,13 @@ const labelFormat = new Intl.DateTimeFormat('de-DE', {
   day: 'numeric',
   month: 'short',
 });
+
+/** „Do., 26. Nov.“ as its weekday („Do., “) and the rest. */
+function labelParts(day: Date): [string, string] {
+  const label = labelFormat.format(day);
+  const at = label.indexOf(' ') + 1;
+  return [label.slice(0, at), label.slice(at)];
+}
 
 /** Today, and again after midnight while the page stays open. */
 function useToday() {
@@ -62,9 +69,12 @@ export function DateButton({ workspaceId }: { workspaceId: string }) {
         weight="normal"
         onClick={() => go()}
         aria-label={`Kalender öffnen, heute ${dayFormat.format(today)}`}
-        className="tabular-nums"
+        // On a phone the header has no room for the weekday, on the narrowest none for the date.
+        className="tabular-nums max-sm:px-2"
       >
-        {labelFormat.format(today)}
+        <Icon name="event" size={20} className="min-[360px]:hidden" />
+        <span className="whitespace-pre max-sm:hidden">{labelParts(today)[0]}</span>
+        <span className="max-[359px]:hidden">{labelParts(today)[1]}</span>
       </Button>
       {peek && (
         <PopoverPanel role="dialog" aria-label="Kalender" align="end" padding="md" className="w-72">

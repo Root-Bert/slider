@@ -13,6 +13,7 @@ import { isTextTarget } from '@/lib/dom';
 import { withCount } from '@/lib/format';
 import { isOnControl } from '@/lib/marquee-select';
 import { routes } from '@/lib/routes';
+import { useViewChoice } from '@/lib/view-choice';
 import { useAccount } from '@/features/auth';
 import { usePageCommands } from '@/features/commands';
 import { useDeckContextMenu, useStoredChoice } from '@/features/reviews';
@@ -117,7 +118,7 @@ export function Component() {
   };
   const [query, setQuery] = useState('');
   const [sort, setSort] = useStoredChoice('writer.documents.sort', DOCUMENT_SORTS, 'updated');
-  const [view, setView] = useStoredChoice('writer.documents.view', VIEWS, 'grid');
+  const [view, setView] = useViewChoice('writer.documents.view', VIEWS, 'grid');
 
   const list = useDocuments(workspace.id);
   const trash = useDocuments(workspace.id, 'trash');

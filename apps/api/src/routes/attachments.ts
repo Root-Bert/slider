@@ -1,8 +1,9 @@
-import { Hono } from 'hono';
+import { Hono, type Context } from 'hono';
 import { bodyLimit } from 'hono/body-limit';
 import {
   isPictureAttachment,
   MAX_ATTACHMENT_BYTES,
+  isAudioAttachment,
   isVideoAttachment,
   MAX_VIDEO_ATTACHMENT_BYTES,
   type AccountAuthor,
@@ -19,8 +20,18 @@ import {
   dropAttachment,
   uploadAttachment,
 } from '../services/attachments';
+import { attachmentPage, attachmentPages, attachmentSmallPage } from '../services/attachment-pages';
 import { suggestVideoCuts } from '../services/video-cuts';
 import { digestVideo, MAX_VIDEO_STILLS } from '../services/video-digest';
+
+/** A page of a sent document as a JPEG: drawn of bytes that never change, so kept by the browser. */
+function sendPage(c: Context, bytes: Uint8Array | null): Response {
+  if (!bytes) throw notFound('Davon gibt es kein Bild.');
+  c.header('Content-Type', 'image/jpeg');
+  c.header('Cache-Control', 'private, max-age=31536000, immutable');
+  c.header('X-Content-Type-Options', 'nosniff');
+  return c.body(bytes as Uint8Array<ArrayBuffer>);
+}
 
 /**
  * Files put on what one writes (`services/attachments.ts`): up into the workspace, taken off
@@ -161,6 +172,24 @@ export function attachmentRoutes(deps: AppDeps) {
           return c.body(null, 204);
         },
       )
+      // A sent document's pages for its preview (`services/attachment-pages.ts`): how many and
+      // the first one's shape – 404 when it is none this server can show …
+      .get('/attachments/:id/pages', viewer, async (c) => {
+        const pages = await attachmentPages(deps, me(c), c.req.param('id'));
+        if (!pages) throw notFound('Diese Datei lässt sich hier nicht zeigen.');
+        c.header('Cache-Control', 'private, no-cache');
+        return c.json(pages);
+      })
+      // … the first page drawn small, until the sharp one is there …
+      .get('/attachments/:id/thumbnail', viewer, async (c) =>
+        sendPage(c, await attachmentSmallPage(deps, me(c), c.req.param('id'))),
+      )
+      // … and each page drawn sharp.
+      .get('/attachments/:id/pages/:page', viewer, async (c) => {
+        const page = Number(c.req.param('page'));
+        if (!Number.isInteger(page) || page < 1 || page > 5000) throw notFound();
+        return sendPage(c, await attachmentPage(deps, me(c), c.req.param('id'), page));
+      })
       .delete('/attachments/:id', viewer, async (c) => {
         await dropAttachment(deps, me(c), c.req.param('id'));
         return c.body(null, 204);
@@ -168,8 +197,9 @@ export function attachmentRoutes(deps: AppDeps) {
       .get('/attachments/:id', viewer, async (c) => {
         const download = !!c.req.query('download');
         const row = await attachmentRow(deps, me(c), c.req.param('id'));
-        if (isVideoAttachment(row.type) && !download) {
-          // Played in the message: inline, a byte range at a time (seeking, Safari at all).
+        if ((isVideoAttachment(row.type) || isAudioAttachment(row.type)) && !download) {
+          // Played in the message (a video, a voice message): inline, a byte range at a time
+          // (seeking, Safari at all).
           c.header('Content-Type', row.type);
           c.header(
             'Content-Disposition',

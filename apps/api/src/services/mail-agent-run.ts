@@ -236,7 +236,7 @@ export async function runMailTool(
       const servers = `IMAP ${value.imapHost}:${value.imapPort} ${secured(value.imapSecure)}, SMTP ${value.smtpHost}:${value.smtpPort} ${secured(value.smtpSecure)}, user name ${value.username}`;
       return told(
         signIn === 'password'
-          ? `${value.address} stands ready in the form on „Neues Postfach“ (${page}) – open there, it fills in now: ${servers}. Nothing is added yet: the person types the password into the form's own field and presses „Hinzufügen“; Slider then checks both servers and says where it stopped.${provider?.hint ? ` Their provider (${provider.name}): ${provider.hint}` : ''} Never ask for the password here.`
+          ? `${value.address} stands ready in the form on „Neues Postfach“ (${page}) – open there, it fills in now: ${servers}. Nothing is added yet: the person types the password into the form's own field and presses „Hinzufügen“; Office then checks both servers and says where it stopped.${provider?.hint ? ` Their provider (${provider.name}): ${provider.hint}` : ''} Never ask for the password here.`
           : `${value.address} signs in only through ${MAIL_OAUTH_LABELS[signIn]}: it stands in the form on „Neues Postfach“ (${page}), where the person presses „Mit ${MAIL_OAUTH_LABELS[signIn]} anmelden“ and allows the access there. You cannot sign in for them.`,
       );
     }

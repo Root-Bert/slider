@@ -8,6 +8,7 @@ import type {
   CalendarEventInput,
   CalendarInput,
   CalendarOverview,
+  EventScope,
   MailCalendarRefusal,
 } from '@slider/shared';
 import {
@@ -288,12 +289,24 @@ export function useUpdateEvent(workspaceId: string) {
       files?: Attachment[];
     }) => api.patch<CalendarEvent>(eventPath(id), change),
     onMutate: ({ id, change, files }) => {
-      const { attachments: _ids, ...rest } = change;
-      updateEvents(queryClient, workspaceId, (list) =>
-        list.map((each) =>
-          each.id === id ? { ...each, ...rest, ...(files && { attachments: files }) } : each,
-        ),
-      );
+      const { attachments: _ids, scope, timeZone: _zone, ...rest } = change;
+      // Of a series, the following or all: what it says shows on them at once, its times (and
+      // the rule) on this one – the rest comes with the answer.
+      const { start: _start, end: _end, allDay: _allDay, repeat: _repeat, ...words } = rest;
+      updateEvents(queryClient, workspaceId, (list) => {
+        const one = list.find((each) => each.id === id);
+        const along = (each: CalendarEvent) =>
+          !!one?.seriesId &&
+          each.seriesId === one.seriesId &&
+          (scope === 'all' || (scope === 'following' && each.start >= one.start));
+        return list.map((each) =>
+          each.id === id
+            ? { ...each, ...rest, ...(files && { attachments: files }) }
+            : along(each)
+              ? { ...each, ...words }
+              : each,
+        );
+      });
     },
     onSuccess: (event, { id }) =>
       updateEvents(queryClient, workspaceId, (list) =>
@@ -303,12 +316,42 @@ export function useUpdateEvent(workspaceId: string) {
   });
 }
 
+/** Deleted at once – one of a series as `scope` says: it, it and the ones after, all of it. */
 export function useDeleteEvent(workspaceId: string) {
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: (id: string) => api.delete(eventPath(id)),
-    onMutate: (id) =>
-      updateEvents(queryClient, workspaceId, (list) => list.filter((each) => each.id !== id)),
+    mutationFn: ({ event, scope }: { event: CalendarEvent; scope?: EventScope }) =>
+      api.delete(`${eventPath(event.id)}${scope ? `?scope=${scope}` : ''}`),
+    onMutate: ({ event, scope }) =>
+      updateEvents(queryClient, workspaceId, (list) =>
+        list.filter(
+          (each) =>
+            each.id !== event.id &&
+            !(
+              event.seriesId &&
+              each.seriesId === event.seriesId &&
+              (scope === 'all' || (scope === 'following' && each.start >= event.start))
+            ),
+        ),
+      ),
     onSettled: settle(queryClient, workspaceId),
+  });
+}
+
+/** One's link to subscribe to one's calendars of the workspace (Apple's, Google's) – made once. */
+export function useCalendarFeed(workspaceId: string) {
+  return useQuery({
+    queryKey: [...calendarKeys.all(workspaceId), 'feed'] as const,
+    queryFn: () => api.get<{ url: string }>(`/workspaces/${workspaceId}/calendar-feed`),
+    staleTime: Infinity,
+  });
+}
+
+/** A new link: the old one ends, where it was subscribed nothing comes any more. */
+export function useRenewCalendarFeed(workspaceId: string) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: () => api.post<{ url: string }>(`/workspaces/${workspaceId}/calendar-feed`),
+    onSuccess: (feed) => queryClient.setQueryData([...calendarKeys.all(workspaceId), 'feed'], feed),
   });
 }

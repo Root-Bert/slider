@@ -26,8 +26,8 @@ import { useEffect, useState, type ReactNode } from 'react';
 import { cn, IconButton, Toolbar, ToolbarDivider, type IconName } from '@/ui';
 
 /*
- * The buttons that format rich text being typed in Lexical – a sticker on the board
- * (`RichSticker`) and a Sender message (`RichField`): bold, italic, underlined, struck through,
+ * The buttons that format rich text being typed in Lexical – a page (`FormatBar`) and a Sender
+ * message (`RichField`): bold, italic, underlined, struck through,
  * lists, two sizes of heading, a link; for a message also code and a quote. In the format bar's
  * look; where it floats is its owner's.
  */

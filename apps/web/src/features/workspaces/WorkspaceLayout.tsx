@@ -32,11 +32,14 @@ export function Component() {
   // The header is the layout's, not each page's: switching views (Projekte ⇄ Bibliothek, a master)
   // keeps it as it is – logo, switcher and avatar aren't built again, so they don't flash.
   return (
-    <div className="dot-grid flex min-h-full flex-col">
+    <div className="flex min-h-full flex-col bg-canvas">
       <PlanBanner workspace={workspace} userId={user.id} />
       <AppHeader />
-      {/* The page fills what is left below the header (its drop zone, marquee). */}
-      <div className="flex flex-1 flex-col *:flex-1">
+      {/* The page fills what is left below the header (its drop zone, marquee). The dots lie
+          behind the content only, fading out towards the header and just before the screen's
+          right and bottom edge (a side bar's layout keeps them off its bar the same way:
+          `CloudLayout`, `SenderLayout`). */}
+      <div className="dot-grid flex flex-1 flex-col [--dot-fade-b:96px] [--dot-fade-r:96px] [--dot-fade-t:80px] [--dot-gap-t:16px] *:flex-1">
         <Outlet key={workspace.id} />
       </div>
       {/* Founded at sign-up: private or the company's? (BER-148) */}

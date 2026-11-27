@@ -472,6 +472,17 @@ describe('To-dos', () => {
       error: true,
     });
     await app('update_todo', { todo: standNumber, before: null });
+    // „Wartet auf“ from an app: the list as it should stand, by number; read both ways.
+    await app('update_todo', { todo: String(plan2.number), blocked_by: [] });
+    expect(
+      (await app('update_todo', { todo: standNumber, blocked_by: [String(plan2.number)] })).text,
+    ).toContain(`waits on #${plan2.number}`);
+    expect((await app('read_todo', { todo: String(plan2.number) })).text).toContain(
+      `Waiting on it: #${standNumber}`,
+    );
+    expect(
+      await app('update_todo', { todo: String(plan2.number), blocked_by: [standNumber] }),
+    ).toMatchObject({ error: true });
     expect((await ok<Todo>(send('GET', `/todos/${standRef}`))).position).toBe(1.25);
     expect((await app('update_todo', { todo: standNumber, milestone: 'Launch' })).text).toContain(
       'milestone „Launch“',
@@ -597,11 +608,27 @@ describe('To-dos', () => {
     const channel = /^(\S+) channel of the area „Vertrieb“/m.exec(
       (await app('list_conversations', {})).text,
     )?.[1];
-    expect(
+    const posted = /^Posted \((\S+)\)\.$/.exec(
       (await app('post_message', { conversation: channel, text: 'Hallo Vertrieb' })).text,
-    ).toBe('Posted.');
+    )?.[1];
+    expect(posted).toBeTruthy();
     expect((await app('read_conversation', { conversation: channel })).text).toContain(
-      ': Hallo Vertrieb',
+      `[${posted}] `,
+    );
+    // An answer to it, as „Antworten“ does; a file that is none here is refused.
+    await app('post_message', { conversation: channel, text: 'Gern', reply_to: posted });
+    expect((await app('read_conversation', { conversation: channel })).text).toContain(
+      `: (answering [${posted}]) Gern`,
+    );
+    expect(await app('post_message', { conversation: channel, files: ['nope'] })).toMatchObject({
+      error: true,
+    });
+    const note = /\(file id (\S+)\)/.exec(
+      (await app('write_file', { name: 'Plan.md', content: '# Plan', own: true })).text,
+    )?.[1];
+    await app('post_message', { conversation: channel, files: [note] });
+    expect((await app('read_conversation', { conversation: channel })).text).toContain(
+      ': [file „Plan.md“]',
     );
     // Planned for later: said so, nothing in the conversation yet.
     expect(

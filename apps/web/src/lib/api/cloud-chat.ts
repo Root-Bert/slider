@@ -1,5 +1,5 @@
 import type { CloudChatEvent, CloudChatInput } from '@slider/shared';
-import { postEventStream } from './material-questions';
+import { postEventStream } from './event-stream';
 
 /**
  * The AI in Cloud: a message sent with the chat so far, its answer read as it is written

@@ -59,6 +59,7 @@ import {
   usePopover,
   type IconName,
   type MenuAction,
+  useMediaQuery,
 } from '@/ui';
 import { OWN_FILES, useCloud, type CloudTarget } from '../hooks/useCloud';
 import { areaTree, canHaveAreasUnder, isWorkspaceOwn } from '../lib/areas';
@@ -79,6 +80,14 @@ import { isMine } from './todos/order';
  * beside the page (`lg`) – as the panel that slides over it on narrow screens it keeps its names.
  */
 const Folded = createContext(false);
+/**
+ * A row's mark – an avatar, an area's colour – in its box: larger in a folded bar (on a wide
+ * screen), where it is all the row shows.
+ */
+function useMarkSize() {
+  const wide = useMediaQuery('(min-width: 1024px)');
+  return use(Folded) && wide ? 24 : 18;
+}
 /** What a folded bar leaves out: names, counts, headings. */
 const foldedHide = 'lg:hidden';
 
@@ -342,6 +351,7 @@ function AreaRow({
       : []),
   ];
   const toggles = open !== null && !folded;
+  const markSize = useMarkSize();
   // The workspace's own row is where a new area is made: every area stands under it.
   const adds = area.root && !!ui.home?.canCreateAreas && !folded;
   const areaTo = routes.cloudArea(ui.workspace.id, area.id);
@@ -370,8 +380,11 @@ function AreaRow({
           setMenuAt({ x: event.clientX, y: event.clientY });
         }}
       >
-        <span className="flex size-[18px] shrink-0 items-center justify-center">
-          <AreaMark area={area} />
+        <span
+          className="flex shrink-0 items-center justify-center"
+          style={{ width: markSize, height: markSize }}
+        >
+          <AreaMark area={area} size={markSize === 24 ? 'md' : 'sm'} />
         </span>
         <span className={cn('min-w-0 flex-1 truncate', folded && foldedHide)}>{area.name}</span>
         {area.visibility === 'members' && (
@@ -448,13 +461,14 @@ function ChatRow({
     workspaceId: ui.workspace.id,
     notify: ui.notify,
   });
+  const markSize = useMarkSize();
   // A mail a colleague is on: as a group.
   const mark = isMailChat(chat) ? (
     <Icon name="groups" size={18} />
   ) : 'title' in chat ? (
     <AgentFace
       agent={chat}
-      size={18}
+      size={markSize}
       showArea
       areas={ui.home?.areas}
       workspace={ui.workspace}
@@ -462,7 +476,7 @@ function ChatRow({
       className="rounded-mark"
     />
   ) : chat.person ? (
-    <PersonFace person={chat.person} size={18} workspaceId={ui.workspace.id} />
+    <PersonFace person={chat.person} size={markSize} workspaceId={ui.workspace.id} />
   ) : (
     <Icon name="groups" size={18} />
   );
@@ -515,7 +529,12 @@ function ChatRow({
         }
         {...drop.handlers}
       >
-        <span className="flex size-[18px] shrink-0 items-center justify-center">{mark}</span>
+        <span
+          className="flex shrink-0 items-center justify-center"
+          style={{ width: markSize, height: markSize }}
+        >
+          {mark}
+        </span>
         <span className={cn('min-w-0 flex-1 truncate', folded && foldedHide)}>{name}</span>
         {chat.pinnedAt && <PinnedMark className={cn(folded && foldedHide)} />}
         {conversation?.muted && <MutedMark className={cn(folded && foldedHide)} />}
@@ -756,6 +775,12 @@ export function CloudSidebar({
                   onFiles={(data) => filesInto(data, OWN_FILES)}
                 >
                   Dateien
+                </NavRow>
+              )}
+              {/* One's own pages – a folder in one's own files, so only where there are those. */}
+              {home?.ownFiles !== false && (
+                <NavRow to={routes.cloudPages(workspace.id)} icon="notes">
+                  Seiten
                 </NavRow>
               )}
               <NavRow to={routes.cloudAgents(workspace.id)} icon="autoAwesome">

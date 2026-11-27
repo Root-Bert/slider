@@ -55,3 +55,15 @@ export { AreaDot } from './components/AreaDot';
 export { PeopleGraph } from './components/PeopleGraph';
 export { peopleFound } from './lib/people-graph';
 export { VersionList } from './components/VersionList';
+/** A page of widgets – „Zuletzt“'s board, also Sender's overviews. */
+export { HomeBoard } from './home/HomeBoard';
+export {
+  Nothing,
+  SHARED_INFO,
+  SHARED_VIEWS,
+  useFrame,
+  useHomePage,
+  WidgetHead,
+} from './home/frame';
+export type { BoardKit, WidgetInfo } from './home/kit';
+export { SHARED_DEFAULTS, useHomeLayout, type BoardSpec, type WidgetDefaults } from './home/layout';

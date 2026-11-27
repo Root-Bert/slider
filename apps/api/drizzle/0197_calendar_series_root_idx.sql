@@ -1,0 +1,1 @@
+CREATE INDEX "calendar_events_series_root_idx" ON "calendar_events" USING btree ("series_root");

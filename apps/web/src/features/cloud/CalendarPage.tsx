@@ -1,5 +1,6 @@
 import type { Calendar, Todo } from '@slider/shared';
 import {
+  Fragment,
   useEffect,
   useEffectEvent,
   useLayoutEffect,
@@ -56,12 +57,16 @@ import { useShownEvent, type NewEvent } from './components/calendar/EventPanel';
 import {
   finishZoom,
   startZoom,
+  stopZoom,
   useZoomGestures,
   ZOOM_CHAIN,
   zoomLevel,
+  type ZoomDrive,
   type ZoomStart,
 } from './components/calendar/zoom';
 import { useBusyDays } from './components/calendar/useBusyDays';
+import { CalendarSourceTabs } from './components/calendar/CalendarSourceTabs';
+import { hiddenIn, useCalendarSource } from './components/calendar/sources';
 import { useCloud } from './hooks/useCloud';
 import { useStoredChoice } from './hooks/useStoredChoice';
 
@@ -104,9 +109,12 @@ export function Component() {
   const calendars = useCalendars(workspaceId);
   const todos = useTodos(workspaceId);
   const { hidden, toggle } = useHiddenCalendars(workspaceId);
+  // The source atop the page (`?quelle=`): its calendars alone, as one mailbox in Post.
+  const source = useCalendarSource(calendars.data);
+  const shownHidden = hiddenIn(hidden, calendars.data, source);
   useCalendarOAuthOutcome();
   const shownEvent = useShownEvent();
-  const busy = useBusyDays(workspaceId, anchor);
+  const busy = useBusyDays(workspaceId, anchor, true, source);
   const wide = useMediaQuery(WIDE);
   const [asideOpen, setAsideOpen] = useCalendarAside();
   // Narrow, the column lies over the days: opened from its switch each time, not remembered.
@@ -132,6 +140,8 @@ export function Component() {
           CLOUD_FILE_PARAM,
           'neu-tag',
           'neu-um',
+          'neu-meeting',
+          'am',
         ])
           after.delete(key);
         return after;
@@ -153,9 +163,16 @@ export function Component() {
     );
   };
   const frameRef = useRef<HTMLDivElement>(null);
+  const titleRef = useRef<HTMLHeadingElement>(null);
   const overlayRef = useRef<HTMLDivElement>(null);
   const stripRef = useRef<StripHandle>(null);
   const zooming = useRef<ZoomStart | null>(null);
+  /**
+   * The day one chose (a day's number, a pinch on a day, the side's small month): framed where a
+   * view shows it. Paging, a year's month, another view choose none (the day they land on, a
+   * month's 1st, is not one's).
+   */
+  const [chosen, setChosen] = useState<string | null>(null);
   /** The day a slide is for (a day picked in the next month stays picked, not the month's 1st). */
   const sliding = useRef<{ by: 1 | -1; day: string | null } | null>(null);
   /**
@@ -163,9 +180,14 @@ export function Component() {
    * a pinch, the column's month): another view zooms (`zoom.ts`), the page beside slides in,
    * anything further is there at once.
    */
-  const navigate = (nextView: CalendarView, nextDay: Date) => {
+  const navigate = (
+    nextView: CalendarView,
+    nextDay: Date,
+    { drive, chosen: choosing = false }: { drive?: ZoomDrive; chosen?: boolean } = {},
+  ) => {
     // A slide cut short by this (a zoom, a day further away) is for nothing any more.
     sliding.current = null;
+    if (choosing) setChosen(iso(nextDay));
     const day = iso(nextDay) === iso(todayNoon()) ? null : iso(nextDay);
     if (nextView === view) {
       const target = pageKey(view, nextDay);
@@ -188,11 +210,28 @@ export function Component() {
         from: view,
         to: nextView,
         day: nextDay,
+        drive,
+        title: titleRef.current,
       });
+    }
+    // A pinch let go short of the way: the view and day as they were, the old page's copy cleared
+    // once they are there again.
+    if (drive) {
+      const before = { view, day: params.get(CLOUD_DAY_PARAM) };
+      const chosenBefore = chosen;
+      drive.back = (done) => {
+        leaving.current = done;
+        setChosen(chosenBefore);
+        go(before);
+      };
     }
     go({ view: nextView, day });
   };
+  const leaving = useRef<(() => void) | null>(null);
+  useEffect(() => stopZoom, []);
   useLayoutEffect(() => {
+    leaving.current?.();
+    leaving.current = null;
     const start = zooming.current;
     if (!start) return;
     zooming.current = null;
@@ -200,7 +239,7 @@ export function Component() {
     if (pane) finishZoom(start, pane);
     else start.overlay.replaceChildren();
   }, [view, anchorDay]);
-  useZoomGestures(frameRef, (direction, x, y) => {
+  useZoomGestures(frameRef, (direction, x, y, drive) => {
     const level = zoomLevel(view);
     const nextView = level === undefined ? undefined : ZOOM_CHAIN[level - direction];
     if (!nextView) return false;
@@ -215,7 +254,7 @@ export function Component() {
       : hit?.dataset.month && hit.dataset.month !== iso(anchor).slice(0, 7)
         ? at(`${hit.dataset.month}-01`)
         : anchor;
-    navigate(nextView, day);
+    navigate(nextView, day, { drive, chosen: Boolean(hit?.dataset.day) });
     return true;
   });
   const step = (by: 1 | -1) => {
@@ -251,7 +290,7 @@ export function Component() {
   return (
     <CloudPage
       docTitle="Kalender"
-      title="Kalender"
+      title={<CalendarSourceTabs calendars={calendars.data} source={source} />}
       crumbs={[{ label: 'Kalender' }]}
       // As „Postfächer“ beside Post: the accounts whose calendars stand here.
       actions={
@@ -270,9 +309,11 @@ export function Component() {
       {() => (
         <div className="flex min-h-0 flex-1 flex-col gap-4">
           <div className={`flex flex-wrap items-center gap-x-2 gap-y-3 ${GIVE_WAY_TO_PANEL}`}>
-            {/* As on Cloud's other pages: the views and „Neuer Termin“ on the left; on the right the title, stepping through and the calendars' switch. */}
-            <div className="flex flex-wrap items-center gap-2">
-              <GlassPanel className="shrink-0 p-1">
+            {/* The views on the left; on the right the title, stepping through and the calendars' switch. A new event or meeting: „Neu“ in the side bar or a click in the grid (the user: no buttons for them here). */}
+            {/* On a phone the views take a line of their own (scrolling sideways where even that
+                is too narrow), the title and the paging the next. */}
+            <div className="flex flex-wrap items-center gap-2 max-sm:basis-full">
+              <GlassPanel className="shrink-0 p-1 max-sm:max-w-full max-sm:overflow-x-auto max-sm:[scrollbar-width:none]">
                 <SegmentedControl
                   label="Ansicht"
                   value={view}
@@ -286,33 +327,24 @@ export function Component() {
                   }))}
                 />
               </GlassPanel>
-              {canPut && (
-                <Button
-                  icon="add"
-                  onClick={() => {
-                    const now = new Date();
-                    const minutes = isToday ? Math.min(23, now.getHours() + 1) * 60 : 9 * 60;
-                    shownEvent.create({ day: iso(anchor), minutes });
-                  }}
-                >
-                  Neuer Termin
-                </Button>
-              )}
-              {canPut && (
-                <Button
-                  variant="soft"
-                  icon="videocam"
-                  onClick={() => shownEvent.create({ day: iso(anchor), meeting: true })}
-                >
-                  Neues Meeting
-                </Button>
-              )}
             </div>
+            {/* Word by word: zoomed, a word both titles have moves to its place, the others fade
+                (`zoom.ts`). */}
             <h2
-              className="ml-auto min-w-40 flex-1 truncate text-right text-lg font-semibold text-fg"
+              ref={titleRef}
+              className="ml-auto min-w-40 flex-1 truncate text-right text-lg font-semibold text-fg max-sm:min-w-0 max-sm:text-left"
               aria-live="polite"
             >
-              {viewTitle(view, anchor)}
+              {viewTitle(view, anchor)
+                .split(' ')
+                .map((word, index) => (
+                  <Fragment key={index}>
+                    {index > 0 && ' '}
+                    <span data-word className="inline-block">
+                      {word}
+                    </span>
+                  </Fragment>
+                ))}
             </h2>
             <div className="ml-auto flex shrink-0 items-center gap-2">
               <GlassPanel className="flex shrink-0 items-center gap-1 p-1">
@@ -375,8 +407,13 @@ export function Component() {
                             anchor={day}
                             calendars={calendars.data}
                             todos={todos.data ?? []}
-                            hidden={hidden}
-                            onOpen={(nextView, nextDay) => navigate(nextView, at(nextDay))}
+                            hidden={shownHidden}
+                            picked={shownEvent.day ?? chosen}
+                            onOpen={(nextView, nextDay) =>
+                              // A day's number is a day chosen; a year's month is not (its 1st).
+                              navigate(nextView, at(nextDay), { chosen: nextView === 'tag' })
+                            }
+                            onDay={shownEvent.showDay}
                             onNew={canPut ? shownEvent.create : null}
                           />
                         ),
@@ -403,12 +440,13 @@ export function Component() {
                 <CalendarAside
                   anchor={anchor}
                   onPick={(next) => {
-                    navigate(view, at(next));
+                    navigate(view, at(next), { chosen: true });
                     if (!wide) setNarrowOpen(false);
                   }}
                   busy={busy}
                   calendars={calendars.data}
                   hidden={hidden}
+                  source={source}
                   onToggle={toggle}
                 />
               </aside>
@@ -444,7 +482,9 @@ function CalendarPane({
   calendars,
   todos,
   hidden,
+  picked,
   onOpen,
+  onDay,
   onNew,
 }: {
   workspaceId: string;
@@ -453,7 +493,9 @@ function CalendarPane({
   calendars: readonly Calendar[];
   todos: readonly Todo[];
   hidden: ReadonlySet<string>;
+  picked: ViewProps['picked'];
   onOpen: ViewProps['onOpen'];
+  onDay: ViewProps['onDay'];
   onNew: ((draft: NewEvent) => void) | null;
 }) {
   const range = viewRange(view, anchor);
@@ -464,7 +506,9 @@ function CalendarPane({
       anchor={anchor}
       days={viewDays(view, anchor)}
       entries={toEntries(events.data ?? [], calendars, todos, hidden)}
+      picked={picked}
       onOpen={onOpen}
+      onDay={onDay}
       onNew={onNew}
     />
   );

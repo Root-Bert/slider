@@ -5,6 +5,7 @@ import {
   calendarEventInputSchema,
   calendarInputSchema,
   calendarOverviewInputSchema,
+  eventScopeSchema,
   type AccountAuthor,
 } from '@slider/shared';
 import { requireOwner } from '../auth/access';
@@ -26,6 +27,7 @@ import {
   updateCalendar,
   updateEvent,
 } from '../services/calendars';
+import { calendarFeed, calendarFeedLink } from '../services/calendar/feed';
 import { calendarOverview } from '../services/calendar/overview';
 
 /**
@@ -44,6 +46,21 @@ export function calendarRoutes(deps: AppDeps) {
     )
     .get('/workspaces/:workspaceId/mail-calendars/refused', viewer, async (c) =>
       c.json(await listMailCalendarRefusals(deps, me(c), c.req.param('workspaceId'))),
+    )
+    .get('/calendar-feed/:file', async (c) => {
+      // The feed a calendar app fetches by its link's secret – no session there.
+      const ics = await calendarFeed(deps, c.req.param('file').replace(/\.ics$/, ''));
+      return c.body(ics, 200, {
+        'Content-Type': 'text/calendar; charset=utf-8',
+        'Cache-Control': 'private, max-age=300',
+        'Content-Disposition': 'inline; filename="kalender.ics"',
+      });
+    })
+    .get('/workspaces/:workspaceId/calendar-feed', viewer, async (c) =>
+      c.json(await calendarFeedLink(deps, me(c), c.req.param('workspaceId'))),
+    )
+    .post('/workspaces/:workspaceId/calendar-feed', viewer, async (c) =>
+      c.json(await calendarFeedLink(deps, me(c), c.req.param('workspaceId'), true)),
     )
     .get('/workspaces/:workspaceId/calendar-connections', viewer, async (c) =>
       c.json(await listCalendarConnections(deps, me(c), c.req.param('workspaceId'))),
@@ -94,7 +111,14 @@ export function calendarRoutes(deps: AppDeps) {
       return c.json(await updateEvent(deps, me(c), c.req.param('eventId'), change));
     })
     .delete('/calendar-events/:eventId', viewer, async (c) => {
-      await deleteEvent(deps, me(c), c.req.param('eventId'));
+      // One of a series: `?scope=one|following|all` (default this one).
+      const scope = eventScopeSchema.safeParse(c.req.query('scope'));
+      await deleteEvent(
+        deps,
+        me(c),
+        c.req.param('eventId'),
+        scope.success ? scope.data : undefined,
+      );
       return c.body(null, 204);
     });
 }

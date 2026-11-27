@@ -10,7 +10,9 @@ import {
   MAX_CREATED_SLIDES,
   MIN_CREATED_SLIDES,
   boardUrlSchema,
+  commentWords,
   createCommentInputSchema,
+  isPathStroke,
   deckKindSchema,
   markdownToRich,
   searchFold,
@@ -62,6 +64,7 @@ import {
   MATERIAL_TOOLS,
   asJpeg,
   describeMaterial,
+  matchOf,
   materialsOf,
   runMaterialTool,
 } from './material-tools';
@@ -97,6 +100,8 @@ export type McpContent =
 
 export interface McpToolResult {
   content: McpContent[];
+  /** Data for an MCP App page (show_presentation's A2UI card). */
+  structuredContent?: Record<string, unknown>;
   isError?: boolean;
 }
 
@@ -113,27 +118,27 @@ export interface McpTool {
   };
 }
 
-export const MCP_INSTRUCTIONS = `Slider is where a team reviews and builds presentations. Presentations live in workspaces. Every presentation has its material – a board on a page of its own beside the slides, called "Material", never part of the deck – where people collect what the deck is built from: files (PDFs, documents, spreadsheets, pictures), links and notes (stickers with rich text).
+export const MCP_INSTRUCTIONS = `Office is a team's suite of apps in workspaces: presentations (Slider, where a team reviews and builds them), files (Cloud), text documents (Writer), messages and mail (Sender), to-dos and agents. Presentations live in workspaces. Every presentation has its material – what people collected for it, never part of the deck: files (PDFs, documents, spreadsheets, pictures), links and notes (rich text). Everyone on the presentation sees it under „Material“ in its menu.
 
 How to work with it:
-- Find: search looks through everything at once (presentations, their comments, the files and notes on all boards) and fetch reads a hit; list_presentations lists presentations (by title or text on slides and in comments), then get_presentation for its slides' text and what lies on its board. view_slide shows a slide as it looks; list_comments reads the feedback.
-- Research: list_materials, search_materials, read_material, read_sheet and view_material read the board's files.
-- Contribute: add_note puts a sticker on the board (Markdown; one finding or summary per note, with its sources), add_link a web address, add_file a file (text you wrote, or its bytes as base64 – download it yourself first). add_comment comments on a slide. Place several notes one by one; they are laid out next to what is there. Everything shows at once to everyone on the deck, under the person's name – write in the deck's language, as the person would.
+- Find: search looks through everything at once (presentations, their comments, the files and notes of their material) and fetch reads a hit; list_presentations lists presentations (by title or text on slides and in comments), then get_presentation for its slides' text and its material. view_slide shows a slide as it looks; list_comments reads the feedback.
+- Research: list_materials, search_materials, read_material, read_sheet and view_material read the material's files.
+- Contribute: add_note adds a note to the material (Markdown; one finding or summary per note, with its sources), add_link a web address, add_file a file (text you wrote, or its bytes as base64 – download it yourself first). add_comment comments on a slide. Everything shows at once to everyone on the deck, under the person's name – write in the deck's language, as the person would.
 - Change slides: edit_slides has Slider's own AI edit the real slides (it works like a person asking it in a comment; anyone can undo it). Look at the result with view_slide; undo_edit takes a change back.
 - Review: read the slides (get_presentation, view_slide), then add_comment one comment per point, on its slide.
 - Carry out feedback: list_comments, then for each open comment edit_slides with what it asks, check it with view_slide, and resolve_comment it once done. Answer with add_comment (reply_to) where something stays open or you need the person.
 - Manage: update_presentation renames or archives it; set_access says who may open it; download_presentation hands over the file (PDF, the presentation file, a slide as a picture); delete_presentation deletes it for everyone – only when the person asked for exactly that.
-- New presentation: create_presentation makes an empty one; put material on its board; then build_presentation has Slider's AI build the slides from the board and a description (it takes a few minutes; get_presentation shows how far it is).
-- Files (Cloud): beside the presentations every workspace has its files – each person's own („Meine Dateien“) and areas („Bereiche“) shared by a team, with folders in both. list_folder looks around (without a place: the own files and the areas), list_tree shows everything below a folder or an area in one call, search_files finds by name, read_file reads PDFs, documents, sheets and text. write_file writes a new text file; create_folder, move_files, rename_file and delete_files order them; a whole new order – many folders, moves and names – goes to reorganize_files in one call, after list_tree. Every presentation is a file there too – a new one lies in the person's own files („Meine Dateien“) – and where it lies says who sees it: to put a presentation into a folder or an area, move_files with its presentation id. Never write a file with a link to it instead.
+- New presentation: create_presentation makes an empty one; add its material (add_note, add_file, add_link); then build_presentation has Slider's AI build the slides from the material and a description (it takes a few minutes; get_presentation shows how far it is).
+- Files (Cloud): beside the presentations every workspace has its files – each person's own („Meine Dateien“) and areas („Bereiche“) shared by a team, with folders in both. list_folder looks around (without a place: the own files and the areas), list_tree shows everything below a folder or an area in one call, search_files finds by name, read_file reads PDFs, documents, sheets and text. write_file writes a new text file; create_folder, move_files, rename_file and delete_files order them; a whole new order – many folders, moves and names – goes to reorganize_files in one call, after list_tree. Every presentation is a file there too – a new one lies in the person's own files („Meine Dateien“) – and where it lies says who sees it: to put a presentation into a folder or an area, move_files with its presentation id. Never write a file with a link to it instead. A Markdown file (.md) opens in Cloud as a page – headings, lists, check lists, tables, and diagrams shown on it by their line. Diagrams – a flow, dependencies, a structure drawn as boxes and arrows – are files of their own: create_diagram draws one, read_diagram reads it, edit_diagram changes it.
 - Areas and sharing: list_areas shows the areas with their people; create_area makes one (open to the workspace, or people_only with its members), update_area renames it, opens or closes it and says who its people are. file_details shows where a file lies, who reaches it, its shares and versions; share_file shares a file or folder with one person of the workspace (view or edit), unshare_file ends that – only when the person asked for it. Links for people outside are made in Cloud by the person.
 - Deleted and versions: delete_files only moves to „Gelöscht“ – list_deleted shows what lies there, restore_files brings it back; restore_version makes an earlier version of a file its newest again, nothing is lost by it.
 - Text documents (Writer): list_documents finds them, read_document reads one with its paragraphs' ids, create_document makes one – with its text, in a folder or an area if said – and edit_document changes paragraphs by id (read it first; people who have it open see the change, the version before stays). A document is a file in Cloud: move_files, rename_file, delete_files, share_file and file_details take its id.
-- To-dos („Aufgaben“ in Slider – call them so to the person): list_todos shows the person's own to-dos (only they see them) and each area's they see – an area's list is its project plan, with status, priority, who does it and a due date, as in Linear. read_todo reads one (by id or number), create_todo makes one (with area: in that area), update_todo changes it – set its status as the work goes on.
-- Messages (Sender): list_conversations shows the person's conversations (areas' channels, groups, direct ones), read_conversation reads one, post_message writes there under the person's name – only a message they asked for.
-- Mail („Post“ in Slider): list_mailboxes, search_mail and read_mail_thread read the person's own mail; draft_mail_reply leaves a reply as a draft for them to send (nothing is sent), file_mail_attachment puts an attachment into the files; prepare_mailbox, update_mailbox and check_mailbox set up and look after a mailbox – passwords the person types in themselves.
+- To-dos („Aufgaben“ in Cloud – call them so to the person): list_todos shows the person's own to-dos (only they see them) and each area's they see – an area's list is its project plan, with status, priority, who does it, start and due date, as in Linear; a place's to-dos stand in projects ("Allgemein" when none) and milestones, in the order put by hand (update_todo's before); update_todo's blocked_by says what one waits on („Wartet auf“). read_todo reads one (by id or number), create_todo makes one (with area: in that area), update_todo changes it – set its status as the work goes on.
+- Messages (Sender): list_conversations shows the person's conversations (areas' channels, groups, direct ones), read_conversation reads one (files named, a voice message or video with what was said in it), post_message writes there under the person's name – Markdown, Cloud files along, an answer to a message (reply_to) – only a message they asked for.
+- Mail („Post“ in Sender and Cloud): list_mailboxes, search_mail and read_mail_thread read the person's own mail; draft_mail_reply leaves a reply and draft_mail a new mail as their draft (find_mail_address finds whom it goes to – never guess one), file_mail_attachment puts an attachment into the files, mark_mail marks read, unread or spam. These act at once, only on the person's own word: send_mail sends a draft they could see (it waits a minute in the outbox), delete_mail deletes a conversation for good, unsubscribe_mail leaves a newsletter's list; list_mail_rules, add_mail_rule and delete_mail_rule block or trust senders; prepare_mailbox, update_mailbox and check_mailbox set up and look after a mailbox – passwords the person types in themselves.
 - Agents: list_agents shows Cloud's agents the person sees, read_agent what one said last; message_agent gives one an order – or, without agent, starts a new one – which then works on the server with the person's rights.
-- Settings: read_settings shows the person's own (name, colour, the voice in calls, how often mail is checked) and what only their browser keeps. Changing them is the person's own, in Slider under „Einstellungen“.
-Presentations, slides, materials and board items are named by their ids; links to open them in Slider come with the answers – give them to the person.`;
+- Settings: read_settings shows the person's own (name, colour, the voice in calls, how often mail is checked) and what only their browser keeps. Changing them is the person's own, in Office under „Einstellungen“.
+Presentations, slides and the files, notes and links of their material are named by their ids; links to open them come with the answers – give them to the person.`;
 
 const presentationProperty = {
   presentation: {
@@ -154,10 +159,10 @@ const materialTools: McpTool[] = MATERIAL_TOOLS.filter(
   return {
     name: tool.name,
     title: {
-      read_material: 'Read a file of the board',
-      read_sheet: 'Read a spreadsheet of the board',
-      search_materials: "Search the board's files",
-      view_material: 'Look at a file of the board',
+      read_material: 'Read a file of the material',
+      read_sheet: 'Read a spreadsheet of the material',
+      search_materials: "Search the material's files",
+      view_material: 'Look at a file of the material',
     }[tool.name]!,
     description: tool.description ?? '',
     inputSchema: {
@@ -174,9 +179,9 @@ const read = { readOnlyHint: true, openWorldHint: false } as const;
 export const MCP_TOOLS: McpTool[] = [
   {
     name: 'search',
-    title: 'Search Slider',
+    title: 'Search Office',
     description:
-      'Searches everything the person can open in Slider at once: presentations (titles, slide text, comments) and what lies on their boards (the text of files – PDFs, documents, spreadsheets –, notes and stickers). Returns JSON `{"results": [{"id", "title", "url", "snippet"}]}`, best first; `fetch` reads a result in full.',
+      'Searches everything the person can open in Office at once: presentations (titles, slide text, comments) and their material (the text of files – PDFs, documents, spreadsheets –, notes). Returns JSON `{"results": [{"id", "title", "url", "snippet"}]}`, best first; `fetch` reads a result in full.',
     inputSchema: {
       type: 'object',
       properties: {
@@ -194,7 +199,7 @@ export const MCP_TOOLS: McpTool[] = [
     name: 'fetch',
     title: 'Read a search result',
     description:
-      'Reads one result of `search` in full by its id: a presentation (its slides\' text and board), a file of a board (its whole text, page by page) or a note. Returns JSON `{"id", "title", "text", "url", "metadata"}`.',
+      'Reads one result of `search` in full by its id: a presentation (its slides\' text and material), a file of a material (its whole text, page by page) or a note. Returns JSON `{"id", "title", "text", "url", "metadata"}`.',
     inputSchema: {
       type: 'object',
       properties: { id: { type: 'string', description: 'The id from search.' } },
@@ -230,7 +235,7 @@ export const MCP_TOOLS: McpTool[] = [
     name: 'get_presentation',
     title: 'Read a presentation',
     description:
-      "A presentation: title, workspace, link, what the person may do, every slide's number, title and text (hidden ones marked) with open comments, what lies on its board, and – while Slider's AI builds it – how far it is.",
+      "A presentation: title, workspace, link, what the person may do, every slide's number, title and text (hidden ones marked) with open comments, its material, and – while Slider's AI builds it – how far it is.",
     inputSchema: {
       type: 'object',
       properties: presentationProperty,
@@ -345,9 +350,9 @@ export const MCP_TOOLS: McpTool[] = [
   },
   {
     name: 'list_materials',
-    title: "List the board's material",
+    title: "List a presentation's material",
     description:
-      "Everything in a presentation's material (its board, the page „Material“): files with id, kind, size, pages or sheets and the start of their text; notes, stickers, links and folders with their id and text. Items marked „yours“ the person may change.",
+      "Everything in a presentation's material: files with id, kind, size, pages or sheets and the start of their text; notes, links and folders with their id and text. Items marked „yours“ the person may change.",
     inputSchema: {
       type: 'object',
       properties: presentationProperty,
@@ -358,15 +363,15 @@ export const MCP_TOOLS: McpTool[] = [
   ...materialTools,
   {
     name: 'add_note',
-    title: 'Put a note on the board',
+    title: 'Add a note to the material',
     description:
-      "Puts a sticker with `text` (Markdown: headings, **bold**, lists, links) on the presentation's board, next to what is there. With `attach_to` (a file's or link's id) it is a note beside that thing instead. Up to 10 000 characters – one finding or summary per note, with its sources.",
+      "Adds a note with `text` (Markdown: headings, **bold**, lists, links) to the presentation's material. With `attach_to` (a file's or link's id) it is a note about that thing. Up to 10 000 characters – one finding or summary per note, with its sources.",
     inputSchema: {
       type: 'object',
       properties: {
         ...presentationProperty,
         text: { type: 'string', minLength: 1, maxLength: MAX_BOARD_NOTE_LENGTH },
-        attach_to: { type: 'string', description: 'Id of a file or link on the board.' },
+        attach_to: { type: 'string', description: 'Id of a file or link in the material.' },
       },
       required: ['presentation', 'text'],
     },
@@ -374,8 +379,9 @@ export const MCP_TOOLS: McpTool[] = [
   },
   {
     name: 'add_link',
-    title: 'Put a link on the board',
-    description: 'Puts a web address (http/https) as a card on the board, with an optional title.',
+    title: 'Add a link to the material',
+    description:
+      "Adds a web address (http/https) to the presentation's material, with an optional title.",
     inputSchema: {
       type: 'object',
       properties: {
@@ -389,9 +395,9 @@ export const MCP_TOOLS: McpTool[] = [
   },
   {
     name: 'add_file',
-    title: 'Put a file on the board',
+    title: 'Add a file to the material',
     description:
-      "Puts a file on the board – Slider reads its text for everyone's AI. Give exactly one of `text` (a text or Markdown file you write, e.g. research notes, a table as CSV) or `base64` (the file's bytes: PDF, Word, PowerPoint, Excel, pictures …). Slider downloads nothing itself – a web page goes on the board with add_link. `name` with its extension decides the kind.",
+      "Adds a file to the presentation's material – Slider reads its text for everyone's AI. Give exactly one of `text` (a text or Markdown file you write, e.g. research notes, a table as CSV) or `base64` (the file's bytes: PDF, Word, PowerPoint, Excel, pictures …). Slider downloads nothing itself – a web page goes in with add_link. `name` with its extension decides the kind.",
     inputSchema: {
       type: 'object',
       properties: {
@@ -408,7 +414,7 @@ export const MCP_TOOLS: McpTool[] = [
     name: 'update_note',
     title: 'Change a note',
     description:
-      "Replaces the text (Markdown) of one of the person's own notes or stickers on the board, or a link's title.",
+      "Replaces the text (Markdown) of one of the person's own notes in the material, or a link's title.",
     inputSchema: {
       type: 'object',
       properties: {
@@ -422,9 +428,9 @@ export const MCP_TOOLS: McpTool[] = [
   },
   {
     name: 'delete_item',
-    title: 'Delete from the board',
+    title: 'Delete from the material',
     description:
-      "Deletes a file, note, sticker or link from the board – the person's own (or anyone's where they manage the presentation). Cannot be undone.",
+      "Deletes a file, note or link from the material – the person's own (or anyone's where they manage the presentation). Cannot be undone.",
     inputSchema: {
       type: 'object',
       properties: { ...presentationProperty, item: { type: 'string' } },
@@ -436,7 +442,7 @@ export const MCP_TOOLS: McpTool[] = [
     name: 'create_presentation',
     title: 'Create a presentation',
     description:
-      "Makes a new, empty presentation (one blank slide) and returns its id and link. `template`: a template of the workspace (list_workspaces) for its look. It lies in the person's own files („Meine Dateien“), only they see it there – unless `folder` or `area` says where in the workspace's files it is to lie. Put material on its board next, then build_presentation lets Slider's AI build it.",
+      "Makes a new, empty presentation (one blank slide) and returns its id and link. `template`: a template of the workspace (list_workspaces) for its look. It lies in the person's own files („Meine Dateien“), only they see it there – unless `folder` or `area` says where in the workspace's files it is to lie. Put material into it next (add_file, add_note, add_link), then build_presentation lets Slider's AI build it.",
     inputSchema: {
       type: 'object',
       properties: {
@@ -452,7 +458,7 @@ export const MCP_TOOLS: McpTool[] = [
   {
     name: 'build_presentation',
     title: 'Build it with Slider’s AI',
-    description: `Slider's AI builds the slides of a presentation that is still empty (create_presentation) from its board's material and \`description\` – what it is about, for whom, what it should achieve, what must be in it. \`kind\`: ${DECK_KINDS.map((kind) => `${kind.id} (${kind.meaning})`).join(', ')}. \`pages\`: ${MIN_CREATED_SLIDES}–${MAX_CREATED_SLIDES} slides. Runs a few minutes in the background with the workspace's AI key; get_presentation shows its progress.`,
+    description: `Slider's AI builds the slides of a presentation that is still empty (create_presentation) from its material and \`description\` – what it is about, for whom, what it should achieve, what must be in it. \`kind\`: ${DECK_KINDS.map((kind) => `${kind.id} (${kind.meaning})`).join(', ')}. \`pages\`: ${MIN_CREATED_SLIDES}–${MAX_CREATED_SLIDES} slides. Runs a few minutes in the background with the workspace's AI key; get_presentation shows its progress.`,
     inputSchema: {
       type: 'object',
       properties: {
@@ -501,7 +507,7 @@ export const MCP_TOOLS: McpTool[] = [
     name: 'download_presentation',
     title: 'Download a presentation',
     description:
-      'Hands over a presentation as a file, as it is now: `format` pdf (default; with `slide` only that slide), odp (the presentation file itself – PowerPoint, Keynote and LibreOffice open it) or png (one `slide` as a picture). The file comes attached (up to 10 MB), with a link the person opens in a browser where they are signed in to Slider. Needs the right to edit.',
+      'Hands over a presentation as a file, as it is now: `format` pdf (default; with `slide` only that slide), odp (the presentation file itself – PowerPoint, Keynote and LibreOffice open it) or png (one `slide` as a picture). The file comes attached (up to 10 MB), with a link the person opens in a browser where they are signed in to Office. Needs the right to edit.',
     inputSchema: {
       type: 'object',
       properties: {
@@ -517,7 +523,7 @@ export const MCP_TOOLS: McpTool[] = [
     name: 'delete_presentation',
     title: 'Delete a presentation',
     description:
-      'Deletes a presentation for everyone – its slides, comments and board. Cannot be undone; archive it with update_presentation instead unless the person asked to delete exactly this one. Needs the right to manage it.',
+      'Deletes a presentation for everyone – its slides, comments and material. Cannot be undone; archive it with update_presentation instead unless the person asked to delete exactly this one. Needs the right to manage it.',
     inputSchema: {
       type: 'object',
       properties: presentationProperty,
@@ -565,7 +571,7 @@ async function workspacesOf(deps: AppDeps, caller: McpCaller) {
 export async function findWorkspace(deps: AppDeps, caller: McpCaller, wanted: string | undefined) {
   const mine = await workspacesOf(deps, caller);
   if (!wanted) {
-    if (!mine[0]) throw new ToolError('The person has no workspace Slider lets this app into.');
+    if (!mine[0]) throw new ToolError('The person has no workspace Office lets this app into.');
     return mine[0];
   }
   const key = wanted.trim();
@@ -756,34 +762,6 @@ interface Found {
   snippet: string;
 }
 
-/** How well `text` matches the words: words found first, then how often; with a snippet. */
-function matchOf(text: string, words: string[]): { score: number; snippet: string } | null {
-  const folded = searchFold(text);
-  let found = 0;
-  let count = 0;
-  let first = -1;
-  for (const word of words) {
-    let at = folded.indexOf(word);
-    if (at === -1) continue;
-    found += 1;
-    if (first === -1 || at < first) first = at;
-    while (at !== -1) {
-      count += 1;
-      at = folded.indexOf(word, at + word.length);
-    }
-  }
-  if (found === 0) return null;
-  const start = Math.max(0, first - 100);
-  const snippet = text
-    .slice(start, start + 300)
-    .replace(/\s+/g, ' ')
-    .trim();
-  return {
-    score: found * 1000 + Math.min(count, 999),
-    snippet: `${start > 0 ? '…' : ''}${snippet}…`,
-  };
-}
-
 /**
  * Everything at once. The text of slides, comments and files is encrypted at rest, so it is
  * read and compared in the server, not in SQL – counted in the page's search window.
@@ -890,12 +868,12 @@ async function searchEverything(
       const inName = matchOf(file.name, words);
       const inText = best.get(file.id);
       if (!file.deckId || (!inName && !inText)) continue;
-      const on = `on the board of „${titleOf.get(file.deckId) ?? '?'}“`;
+      const on = `in the material of „${titleOf.get(file.deckId) ?? '?'}“`;
       results.push({
         score: Math.max(inName ? inName.score + 500 : 0, inText?.score ?? 0),
         id: `file:${file.id}`,
         title: file.name,
-        url: deckLink(deps, file.deckId, '?material'),
+        url: deckLink(deps, file.deckId),
         snippet: inText
           ? `File ${on}${inText.where ? `, ${inText.where}` : ''}: ${inText.snippet}`
           : `File ${on}`,
@@ -910,8 +888,8 @@ async function searchEverything(
         score: match.score,
         id: `note:${item.id}`,
         title: `${label}: ${(item.text.split('\n')[0] ?? '').replace(/^#+\s*/, '').slice(0, 80) || item.url || label}`,
-        url: item.kind === 'link' && item.url ? item.url : deckLink(deps, item.deckId, '?material'),
-        snippet: `${label} on the board of „${titleOf.get(item.deckId) ?? '?'}“: ${match.snippet}`,
+        url: item.kind === 'link' && item.url ? item.url : deckLink(deps, item.deckId),
+        snippet: `${label} in the material of „${titleOf.get(item.deckId) ?? '?'}“: ${match.snippet}`,
       });
     }
   }
@@ -968,9 +946,9 @@ async function fetchResult(deps: AppDeps, caller: McpCaller, id: string): Promis
       text:
         body ||
         (file.readState === 'pending'
-          ? 'Slider is still reading this file – try again shortly.'
-          : 'This file has no text Slider could read (view_material shows it).'),
-      url: deckLink(deps, deck.id, '?material'),
+          ? 'This file is still being read – try again shortly.'
+          : 'This file has no readable text (view_material shows it).'),
+      url: deckLink(deps, deck.id),
       metadata: {
         presentation: deck.title,
         presentation_id: deck.id,
@@ -991,7 +969,7 @@ async function fetchResult(deps: AppDeps, caller: McpCaller, id: string): Promis
       id,
       title: (item.text.split('\n')[0] ?? '').replace(/^#+\s*/, '').slice(0, 80) || item.kind,
       text: [item.text, item.url].filter(Boolean).join('\n\n'),
-      url: deckLink(deps, deck.id, '?material'),
+      url: deckLink(deps, deck.id),
       metadata: {
         presentation: deck.title,
         presentation_id: deck.id,
@@ -1057,7 +1035,7 @@ async function getPresentation(
   const out = [
     `„${deck.title}“ (id ${deck.id})`,
     `Workspace: ${workspaces.find((each) => each.id === deck.workspaceId)?.name ?? deck.workspaceId} · by ${deck.owner.name} · changed ${deck.updatedAt.slice(0, 16).replace('T', ' ')} · version ${deck.revisionNumber}`,
-    `Open in Slider: ${deckLink(deps, deck.id)} · its board: ${deckLink(deps, deck.id, '?material')}`,
+    `Open in Slider: ${deckLink(deps, deck.id)}`,
     `The person may ${may}.`,
   ];
   if (deck.import.status === 'queued' || deck.import.status === 'running')
@@ -1070,7 +1048,7 @@ async function getPresentation(
   else if (creation?.status === 'failed')
     out.push(`Slider's AI stopped: ${creation.error ?? 'failed'}.`);
   else if (creation?.prompt)
-    out.push("It is still empty – build_presentation lets Slider's AI build it from its board.");
+    out.push("It is still empty – build_presentation lets Slider's AI build it from its material.");
 
   if (deck.permissions.canManage && !creation?.prompt) {
     const reason = blocker(deps, row, await currentRevision(deps.db, row));
@@ -1110,7 +1088,7 @@ async function getPresentation(
   else {
     for (const material of materials) out.push(`- ${describeMaterial(material)}`);
     if (notes.length > 0)
-      out.push(`- and ${notes.length} note(s), sticker(s) or link(s) – list_materials lists them`);
+      out.push(`- and ${notes.length} note(s) or link(s) – list_materials lists them`);
   }
   return text(out.join('\n'));
 }
@@ -1129,8 +1107,34 @@ async function slideAt(deps: AppDeps, deck: DeckRow, number: number) {
   return slide;
 }
 
-const commentLine = (comment: Comment, indent = '') =>
-  `${indent}- ${comment.id} ${comment.author.name}, ${comment.createdAt.slice(0, 16).replace('T', ' ')}${comment.status === 'done' ? ' (done)' : ''}: ${comment.body.trim() || '(a drawing)'}`;
+/** What a comment says beside its words: its voice memo or video as heard, pictures, a drawing. */
+const commentExtras = (comment: Comment) => {
+  const parts: string[] = [];
+  const memo = comment.media;
+  if (memo) {
+    const whole = Math.round(memo.durationMs / 1000);
+    const said =
+      memo.transcript === null
+        ? memo.transcriptStatus === 'none' || memo.transcriptStatus === 'failed'
+          ? 'not transcribed'
+          : 'not transcribed yet'
+        : memo.transcript.trim()
+          ? `said: ${memo.transcript.trim()}`
+          : 'nothing said';
+    parts.push(
+      `(${memo.kind === 'video' ? 'video' : 'voice memo'}, ${Math.floor(whole / 60)}:${String(whole % 60).padStart(2, '0')}, ${said})`,
+    );
+  }
+  const pictures = comment.images?.length ?? 0;
+  if (pictures > 0) parts.push(pictures === 1 ? '(a picture)' : `(${pictures} pictures)`);
+  // A sticker (a text stroke) is words, not a drawing: `commentWords` reads it.
+  if (comment.strokes.some(isPathStroke)) parts.push('(drawn on the slide)');
+  return parts;
+};
+
+/** A comment as a line of `list_comments`: who, when, done – its words, memo, pictures, drawing. */
+export const commentLine = (comment: Comment, indent = '') =>
+  `${indent}- ${comment.id} ${comment.author.name}, ${comment.createdAt.slice(0, 16).replace('T', ' ')}${comment.status === 'done' ? ' (done)' : ''}: ${[commentWords(comment), ...commentExtras(comment)].filter(Boolean).join(' ') || '(empty)'}`;
 
 async function viewSlide(
   deps: AppDeps,
@@ -1251,7 +1255,7 @@ async function listMaterialsTool(
     deps.db.select().from(deckBoardItems).where(eq(deckBoardItems.deckId, deck.id)),
   ]);
   if (materials.length === 0 && items.length === 0)
-    return text(`The board is empty. ${deckLink(deps, deck.id, '?material')}`);
+    return text(`The material is empty. ${deckLink(deps, deck.id)}`);
   const me = caller.viewer.author.id;
   const yours = (author: { id: string }) => (author.id === me ? ', yours' : '');
   const nameOf = new Map<string, string>([
@@ -1292,12 +1296,10 @@ async function listMaterialsTool(
       );
     else
       lines.push(
-        `- sticker ${item.id} (by ${item.author.name}${yours(item.author)})${on.length ? ` holding ${on.join(', ')}` : ''}: ${body}`,
+        `- note ${item.id} (by ${item.author.name}${yours(item.author)})${on.length ? ` holding ${on.join(', ')}` : ''}: ${body}`,
       );
   }
-  return text(
-    `Board of „${deck.title}“ – ${deckLink(deps, deck.id, '?material')}\n${lines.join('\n')}`,
-  );
+  return text(`Material of „${deck.title}“ – ${deckLink(deps, deck.id)}\n${lines.join('\n')}`);
 }
 
 /** The board tools Slider's AI uses, run for the presentation named. */
@@ -1426,7 +1428,9 @@ async function thingOnBoard(
     .from(deckBoardItems)
     .where(and(eq(deckBoardItems.id, id), ownedBy(deckBoardItems, owner)));
   if (item) return item;
-  throw new ToolError(`Nothing with id "${id}" on the board – list_materials names what is there.`);
+  throw new ToolError(
+    `Nothing with id "${id}" in the material – list_materials names what is there.`,
+  );
 }
 
 async function addNote(
@@ -1450,7 +1454,7 @@ async function addNote(
     rich: markdownToRich(input.text, { spaced: true }),
     ...frame,
   });
-  return text(`Put on the board as ${near ? 'note' : 'sticker'} ${item.id}: ${link}`);
+  return text(`Note ${item.id} is in the material: ${link}`);
 }
 
 const linkInput = z.object({ url: boardUrlSchema, title: z.string().trim().max(300).optional() });
@@ -1471,7 +1475,7 @@ async function addLink(
     boundIds: [],
     ...frame,
   });
-  return text(`Link ${item.id} is on the board: ${link}`);
+  return text(`Link ${item.id} is in the material: ${link}`);
 }
 
 /**
@@ -1514,7 +1518,7 @@ async function addFile(
     { name, bytes },
   );
   return text(
-    `File ${material.id} „${material.name}“ (${material.kind}) is on the board${material.readState === 'pending' ? ' – Slider reads its text now' : ''}: ${link}`,
+    `File ${material.id} „${material.name}“ (${material.kind}) is in the material${material.readState === 'pending' ? ' – Slider reads its text now' : ''}: ${link}`,
   );
 }
 
@@ -1542,7 +1546,7 @@ async function updateNote(
     .from(deckBoardItems)
     .where(and(eq(deckBoardItems.id, input.item), ownedBy(deckBoardItems, owner)));
   if (!item)
-    throw new ToolError(`No note "${input.item}" on the board – list_materials names them.`);
+    throw new ToolError(`No note "${input.item}" in the material – list_materials names them.`);
   const rich = item.kind === 'box' || item.kind === 'note';
   await updateBoardItem(deps, viewer, owner, input.item, {
     text: input.text,
@@ -1570,7 +1574,7 @@ async function deleteItem(
   const { item } = z.object({ item: z.string().min(1).max(100) }).parse(args);
   await thingOnBoard(deps, owner, item);
   await deleteBoardItem(deps, viewer, owner, item);
-  return text(`Deleted ${item} from the board.`);
+  return text(`Deleted ${item} from the material.`);
 }
 
 /** The tools that write to a board, by name. */
@@ -1584,7 +1588,7 @@ const BOARD_WRITERS = {
 /** The board of the presentation an app names, for the tools above: found as the caller may. */
 async function deckPlace(deps: AppDeps, caller: McpCaller, wanted: unknown): Promise<BoardPlace> {
   const deck = await findDeck(deps, caller, wanted, 'comment');
-  return { owner: deckBoard(deck.id), link: deckLink(deps, deck.id, '?material') };
+  return { owner: deckBoard(deck.id), link: deckLink(deps, deck.id) };
 }
 
 // ── Comments ───────────────────────────────────────────────────────────────
@@ -1875,7 +1879,7 @@ async function createPresentation(
   // Ready for the next call (edit_slides, view_slide) – a blank deck is read in seconds.
   if (row) await whenRead(deps, row, 30_000).catch(() => undefined);
   return text(
-    `Created „${input.title ?? deck.title}“ (id ${deck.id}) in ${workspace.name}: ${deckLink(deps, deck.id)}\n${place}\nIts board: ${deckLink(deps, deck.id, '?material')}\nNext: put material on its board (add_file, add_note, add_link), then build_presentation.`,
+    `Created „${input.title ?? deck.title}“ (id ${deck.id}) in ${workspace.name}: ${deckLink(deps, deck.id)}\n${place}\nNext: add its material (add_file, add_note, add_link), then build_presentation.`,
   );
 }
 
@@ -2039,7 +2043,7 @@ async function downloadPresentation(
   const content: McpContent[] = [
     {
       type: 'text',
-      text: `${file.fileName} (${size})${attached ? ' is attached' : ' is too big to attach'}. The person downloads it in a browser where they are signed in to Slider: ${link}`,
+      text: `${file.fileName} (${size})${attached ? ' is attached' : ' is too big to attach'}. The person downloads it in a browser where they are signed in to Office: ${link}`,
     },
   ];
   if (attached)

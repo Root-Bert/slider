@@ -99,6 +99,7 @@ const DOCUMENTS = new Set<CloudFileType>([
   'document',
   'presentation',
   'spreadsheet',
+  'diagram',
   'pdf',
   'text',
 ]);

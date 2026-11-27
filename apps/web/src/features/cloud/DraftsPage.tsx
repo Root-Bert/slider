@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { useViewChoice } from '@/lib/view-choice';
 import {
   DRAFT_KINDS,
   DraftList,
@@ -10,7 +11,6 @@ import { ViewSearch } from '@/features/workspaces';
 import { GlassPanel, SegmentedControl } from '@/ui';
 import { CloudPage } from './components/CloudPage';
 import { ListToolbar } from './components/ListToolbar';
-import { useStoredChoice } from './hooks/useStoredChoice';
 
 const DRAFT_VIEWS = ['list', 'tiles'] as const;
 
@@ -22,7 +22,7 @@ export function Component() {
   const all = useWorkspaceDrafts();
   const [kind, setKind] = useState<DraftKind>('all');
   const [query, setQuery] = useState('');
-  const [view, setView] = useStoredChoice('slider.cloud.drafts-view', DRAFT_VIEWS, 'list');
+  const [view, setView] = useViewChoice('slider.cloud.drafts-view', DRAFT_VIEWS, 'list');
   const segments = DRAFT_KINDS.map((each) => ({
     ...each,
     count: draftsOf(all, each.value, '').length,

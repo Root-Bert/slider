@@ -742,29 +742,6 @@ const GRID: Record<BrowserMode, string> = {
     'grid-cols-[minmax(0,1fr)_auto_72px] @xl:grid-cols-[minmax(0,1fr)_auto_112px_72px] @4xl:grid-cols-[minmax(0,1fr)_auto_112px_184px_80px_72px]',
 };
 
-const HEADS: Record<BrowserMode, readonly [string, string, string]> = {
-  folder: ['Geändert', 'Von', 'Größe'],
-  across: ['Geändert', 'Ort', 'Größe'],
-  trash: ['Gelöscht', 'Von', 'Bleibt'],
-};
-
-function ColumnHeads({ mode }: { mode: BrowserMode }) {
-  const [when, who, last] = HEADS[mode];
-  return (
-    <div
-      aria-hidden
-      className={cn('grid h-8 items-center gap-3 px-3 text-caption text-fg-subtle', GRID[mode])}
-    >
-      <span className="pl-[46px]">Name</span>
-      <span />
-      <span className="@max-xl:hidden">{when}</span>
-      <span className="@max-4xl:hidden">{who}</span>
-      <span className="text-right @max-4xl:hidden">{last}</span>
-      <span />
-    </div>
-  );
-}
-
 function FileRow({
   node,
   nodes,
@@ -1122,7 +1099,6 @@ export function FileBrowser({ nodes, mode, view, selection, notes, aside }: Brow
         ) : (
           // Its columns by the room it has – narrower beside the details' panel than the window.
           <div className="@container">
-            <ColumnHeads mode={mode} />
             <ul aria-label="Dateien" className="flex flex-col">
               {nodes.map((node) => (
                 <FileRow

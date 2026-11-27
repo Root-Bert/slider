@@ -258,6 +258,8 @@ describe('sessions', () => {
       (method === 'GET' && route === '/api/legal') ||
       // Cloud: what a link shows – read only, to whoever holds its token (`cloud.test.ts`).
       (method === 'GET' && route.startsWith('/api/cloud/public/:token')) ||
+      // A calendar's feed: read only, to the app that holds its secret address (`calendars.test.ts`).
+      (method === 'GET' && route === '/api/calendar-feed/:file') ||
       // LiveKit's webhook: signed with the key pair it shares with the server (`calls.test.ts`).
       (method === 'POST' && route === '/api/calls/livekit') ||
       (method === 'POST' &&

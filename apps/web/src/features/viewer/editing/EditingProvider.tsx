@@ -422,10 +422,8 @@ export function EditingProvider({ children }: { children: ReactNode }) {
     layersOpen: layers,
     layersPanelOpen,
     tool: reviewTool,
-    materialOpen,
   } = useViewerState();
-  // The editor's keys are off on the material page: ⌘Z, ⌘V, Entf there are the board's.
-  const keysActive = active && !materialOpen;
+  const keysActive = active;
   const stacked = (slideId: string) => {
     const elements = elementsWith(slideId, changed);
     const moves = pendingMoves(changed);
@@ -928,7 +926,7 @@ export function EditingProvider({ children }: { children: ReactNode }) {
     const onKeyDown = (event: KeyboardEvent) => {
       const key = event.key.toLowerCase();
       if (key !== 'e' && key !== 'r' && key !== 'l') return;
-      if (materialOpen || event.defaultPrevented || isModKey(event) || event.altKey) return;
+      if (event.defaultPrevented || isModKey(event) || event.altKey) return;
       if (isTypingTarget(event.target)) return;
       if (event.target instanceof Element && event.target.closest('dialog')) return;
       if (draft || lastDrawing) return;

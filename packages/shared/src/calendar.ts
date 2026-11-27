@@ -120,8 +120,28 @@ export function meetingLinkIn(...texts: string[]): string | null {
   return null;
 }
 
+/**
+ * How an event of the workspace's own calendars repeats, as the panel offers it: every `interval`
+ * days, weeks (on `days`, Monday 0 – none: the first one's weekday), months (the first one's
+ * date) or years – until the last day one may start on, or without end. Mail calendars' events
+ * repeat at their provider (not changed here).
+ */
+export interface EventRepeat {
+  freq: 'daily' | 'weekly' | 'monthly' | 'yearly';
+  interval: number;
+  days?: number[];
+  until: string | null;
+}
+
+/** Which of a series a change or „Löschen“ means: this one, this and the ones after it, all. */
+export type EventScope = 'one' | 'following' | 'all';
+export const eventScopeSchema = z.enum(['one', 'following', 'all']);
+
 export interface CalendarEvent {
-  /** A mail calendar's: the provider's, per occurrence. */
+  /**
+   * A mail calendar's: the provider's, per occurrence. One of a series: the series' id and the
+   * start it was planned for (`<id>@<start>`), so it keeps its id however it is changed.
+   */
   id: string;
   calendarId: string;
   title: string;
@@ -137,6 +157,9 @@ export interface CalendarEvent {
   attachments?: Attachment[];
   /** A meeting to join from it (and from the header shortly before). */
   meeting?: EventMeeting | null;
+  /** One of a series (the workspace's own calendars): how it repeats, and the series' id. */
+  repeat?: EventRepeat | null;
+  seriesId?: string;
 }
 
 export const MAX_CALENDAR_NAME = 80;
@@ -148,6 +171,15 @@ export const MAX_EVENT_RANGE_DAYS = 400;
 
 const day = z.string().regex(/^\d{4}-\d{2}-\d{2}$/);
 const instant = z.string().datetime({ offset: true });
+
+export const eventRepeatSchema = z.object({
+  freq: z.enum(['daily', 'weekly', 'monthly', 'yearly']),
+  interval: z.number().int().min(1).max(99),
+  days: z.array(z.number().int().min(0).max(6)).max(7).optional(),
+  until: day.nullable(),
+});
+/** The person's IANA zone, a series is walked in (its 9:00 stays 9:00 across the DST switch). */
+const timeZone = z.string().min(1).max(64);
 
 export const calendarInputSchema = z
   .object({
@@ -198,6 +230,8 @@ export const calendarEventInputSchema = z
     /** Files up already (`/attachments`), waiting as the caller's. */
     attachments: z.array(z.string().min(1).max(100)).max(MAX_ATTACHMENTS).optional(),
     meeting: eventMeetingSchema.nullable().optional(),
+    repeat: eventRepeatSchema.nullable().optional(),
+    timeZone: timeZone.optional(),
   })
   .refine(fits, { message: 'Der Termin endet vor seinem Beginn.' });
 export type CalendarEventInput = z.infer<typeof calendarEventInputSchema>;
@@ -210,6 +244,11 @@ export const calendarEventChangeSchema = z
     attachments: z.array(z.string().min(1).max(100)).max(MAX_ATTACHMENTS),
     /** `null`: no meeting any more. */
     meeting: eventMeetingSchema.nullable(),
+    /** `null`: it repeats no more (scope „all“ or „following“). */
+    repeat: eventRepeatSchema.nullable(),
+    timeZone,
+    /** One of a series: which of it (default this one; a series' own id: all). */
+    scope: eventScopeSchema,
   })
   .partial();
 export type CalendarEventChange = z.infer<typeof calendarEventChangeSchema>;

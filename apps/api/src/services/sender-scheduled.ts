@@ -162,7 +162,7 @@ export async function scheduleForTool(
   deps: AppDeps,
   userId: string,
   channelId: string,
-  input: { text: string; sendAt: string },
+  input: { text: string; attachments?: readonly string[]; replyTo?: string; sendAt: string },
   agent?: { id: string },
 ): Promise<string> {
   const now = BERLIN.format(deps.clock.now());
